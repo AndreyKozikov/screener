@@ -1,0 +1,574 @@
+{
+    "amortizations": {
+        "metadata": {
+            "isin": {
+                "type": "string",
+                "bytes": 51,
+                "max_size": 0
+            },
+            "name": {
+                "type": "string",
+                "bytes": 765,
+                "max_size": 0
+            },
+            "issuevalue": {
+                "type": "double"
+            },
+            "amortdate": {
+                "type": "date",
+                "bytes": 10,
+                "max_size": 0
+            },
+            "facevalue": {
+                "type": "double"
+            },
+            "initialfacevalue": {
+                "type": "double"
+            },
+            "faceunit": {
+                "type": "string",
+                "bytes": 9,
+                "max_size": 0
+            },
+            "valueprc": {
+                "type": "double"
+            },
+            "value": {
+                "type": "double"
+            },
+            "value_rub": {
+                "type": "double"
+            },
+            "data_source": {
+                "type": "string",
+                "bytes": 36,
+                "max_size": 0
+            },
+            "secid": {
+                "type": "string",
+                "bytes": 36,
+                "max_size": 0
+            },
+            "primary_boardid": {
+                "type": "string",
+                "bytes": 12,
+                "max_size": 0
+            }
+        },
+        "columns": [
+            "isin",
+            "name",
+            "issuevalue",
+            "amortdate",
+            "facevalue",
+            "initialfacevalue",
+            "faceunit",
+            "valueprc",
+            "value",
+            "value_rub",
+            "data_source",
+            "secid",
+            "primary_boardid"
+        ],
+        "data": [
+            [
+                "RU000A101F94",
+                "ОФЗ-ПД 26233 18/07/2035",
+                599487782000,
+                "2035-07-18",
+                1000,
+                1000,
+                "RUB",
+                100,
+                1000,
+                1000,
+                "maturity",
+                "SU26233RMFS5",
+                "TQOB"
+            ]
+        ]
+    },
+    "coupons": {
+        "metadata": {
+            "isin": {
+                "type": "string",
+                "bytes": 51,
+                "max_size": 0
+            },
+            "name": {
+                "type": "string",
+                "bytes": 765,
+                "max_size": 0
+            },
+            "issuevalue": {
+                "type": "double"
+            },
+            "coupondate": {
+                "type": "date",
+                "bytes": 10,
+                "max_size": 0
+            },
+            "recorddate": {
+                "type": "date",
+                "bytes": 10,
+                "max_size": 0
+            },
+            "startdate": {
+                "type": "date",
+                "bytes": 10,
+                "max_size": 0
+            },
+            "initialfacevalue": {
+                "type": "double"
+            },
+            "facevalue": {
+                "type": "double"
+            },
+            "faceunit": {
+                "type": "string",
+                "bytes": 9,
+                "max_size": 0
+            },
+            "value": {
+                "type": "double"
+            },
+            "valueprc": {
+                "type": "double"
+            },
+            "value_rub": {
+                "type": "double"
+            },
+            "secid": {
+                "type": "string",
+                "bytes": 36,
+                "max_size": 0
+            },
+            "primary_boardid": {
+                "type": "string",
+                "bytes": 12,
+                "max_size": 0
+            }
+        },
+        "columns": [
+            "isin",
+            "name",
+            "issuevalue",
+            "coupondate",
+            "recorddate",
+            "startdate",
+            "initialfacevalue",
+            "facevalue",
+            "faceunit",
+            "value",
+            "valueprc",
+            "value_rub",
+            "secid",
+            "primary_boardid"
+        ],
+        "data": [
+            [
+                "RU000A101F94",
+                "ОФЗ-ПД 26233 18/07/2035",
+                599487782000,
+                "2020-08-05",
+                "2020-08-04",
+                "2020-02-19",
+                1000,
+                1000,
+                "RUB",
+                28.08,
+                6.1,
+                28.08,
+                "SU26233RMFS5",
+                "TQOB"
+            ],
+            [
+                "RU000A101F94",
+                "ОФЗ-ПД 26233 18/07/2035",
+                599487782000,
+                "2021-02-03",
+                "2021-02-02",
+                "2020-08-05",
+                1000,
+                1000,
+                "RUB",
+                30.42,
+                6.1,
+                30.42,
+                "SU26233RMFS5",
+                "TQOB"
+            ],
+            [
+                "RU000A101F94",
+                "ОФЗ-ПД 26233 18/07/2035",
+                599487782000,
+                "2021-08-04",
+                "2021-08-03",
+                "2021-02-03",
+                1000,
+                1000,
+                "RUB",
+                30.42,
+                6.1,
+                30.42,
+                "SU26233RMFS5",
+                "TQOB"
+            ],
+            [
+                "RU000A101F94",
+                "ОФЗ-ПД 26233 18/07/2035",
+                599487782000,
+                "2022-02-02",
+                "2022-02-01",
+                "2021-08-04",
+                1000,
+                1000,
+                "RUB",
+                30.42,
+                6.1,
+                30.42,
+                "SU26233RMFS5",
+                "TQOB"
+            ],
+            [
+                "RU000A101F94",
+                "ОФЗ-ПД 26233 18/07/2035",
+                599487782000,
+                "2022-08-03",
+                "2022-08-02",
+                "2022-02-02",
+                1000,
+                1000,
+                "RUB",
+                30.42,
+                6.1,
+                30.42,
+                "SU26233RMFS5",
+                "TQOB"
+            ],
+            [
+                "RU000A101F94",
+                "ОФЗ-ПД 26233 18/07/2035",
+                599487782000,
+                "2023-02-01",
+                "2023-01-31",
+                "2022-08-03",
+                1000,
+                1000,
+                "RUB",
+                30.42,
+                6.1,
+                30.42,
+                "SU26233RMFS5",
+                "TQOB"
+            ],
+            [
+                "RU000A101F94",
+                "ОФЗ-ПД 26233 18/07/2035",
+                599487782000,
+                "2023-08-02",
+                "2023-08-01",
+                "2023-02-01",
+                1000,
+                1000,
+                "RUB",
+                30.42,
+                6.1,
+                30.42,
+                "SU26233RMFS5",
+                "TQOB"
+            ],
+            [
+                "RU000A101F94",
+                "ОФЗ-ПД 26233 18/07/2035",
+                599487782000,
+                "2024-01-31",
+                "2024-01-30",
+                "2023-08-02",
+                1000,
+                1000,
+                "RUB",
+                30.42,
+                6.1,
+                30.42,
+                "SU26233RMFS5",
+                "TQOB"
+            ],
+            [
+                "RU000A101F94",
+                "ОФЗ-ПД 26233 18/07/2035",
+                599487782000,
+                "2024-07-31",
+                "2024-07-30",
+                "2024-01-31",
+                1000,
+                1000,
+                "RUB",
+                30.42,
+                6.1,
+                30.42,
+                "SU26233RMFS5",
+                "TQOB"
+            ],
+            [
+                "RU000A101F94",
+                "ОФЗ-ПД 26233 18/07/2035",
+                599487782000,
+                "2025-01-29",
+                "2025-01-28",
+                "2024-07-31",
+                1000,
+                1000,
+                "RUB",
+                30.42,
+                6.1,
+                30.42,
+                "SU26233RMFS5",
+                "TQOB"
+            ],
+            [
+                "RU000A101F94",
+                "ОФЗ-ПД 26233 18/07/2035",
+                599487782000,
+                "2025-07-30",
+                "2025-07-29",
+                "2025-01-29",
+                1000,
+                1000,
+                "RUB",
+                30.42,
+                6.1,
+                30.42,
+                "SU26233RMFS5",
+                "TQOB"
+            ],
+            [
+                "RU000A101F94",
+                "ОФЗ-ПД 26233 18/07/2035",
+                599487782000,
+                "2026-01-28",
+                "2026-01-27",
+                "2025-07-30",
+                1000,
+                1000,
+                "RUB",
+                30.42,
+                6.1,
+                30.42,
+                "SU26233RMFS5",
+                "TQOB"
+            ],
+            [
+                "RU000A101F94",
+                "ОФЗ-ПД 26233 18/07/2035",
+                599487782000,
+                "2026-07-29",
+                "2026-07-28",
+                "2026-01-28",
+                1000,
+                1000,
+                "RUB",
+                30.42,
+                6.1,
+                30.42,
+                "SU26233RMFS5",
+                "TQOB"
+            ],
+            [
+                "RU000A101F94",
+                "ОФЗ-ПД 26233 18/07/2035",
+                599487782000,
+                "2027-01-27",
+                "2027-01-26",
+                "2026-07-29",
+                1000,
+                1000,
+                "RUB",
+                30.42,
+                6.1,
+                30.42,
+                "SU26233RMFS5",
+                "TQOB"
+            ],
+            [
+                "RU000A101F94",
+                "ОФЗ-ПД 26233 18/07/2035",
+                599487782000,
+                "2027-07-28",
+                "2027-07-27",
+                "2027-01-27",
+                1000,
+                1000,
+                "RUB",
+                30.42,
+                6.1,
+                30.42,
+                "SU26233RMFS5",
+                "TQOB"
+            ],
+            [
+                "RU000A101F94",
+                "ОФЗ-ПД 26233 18/07/2035",
+                599487782000,
+                "2028-01-26",
+                "2028-01-25",
+                "2027-07-28",
+                1000,
+                1000,
+                "RUB",
+                30.42,
+                6.1,
+                30.42,
+                "SU26233RMFS5",
+                "TQOB"
+            ],
+            [
+                "RU000A101F94",
+                "ОФЗ-ПД 26233 18/07/2035",
+                599487782000,
+                "2028-07-26",
+                "2028-07-25",
+                "2028-01-26",
+                1000,
+                1000,
+                "RUB",
+                30.42,
+                6.1,
+                30.42,
+                "SU26233RMFS5",
+                "TQOB"
+            ],
+            [
+                "RU000A101F94",
+                "ОФЗ-ПД 26233 18/07/2035",
+                599487782000,
+                "2029-01-24",
+                "2029-01-23",
+                "2028-07-26",
+                1000,
+                1000,
+                "RUB",
+                30.42,
+                6.1,
+                30.42,
+                "SU26233RMFS5",
+                "TQOB"
+            ],
+            [
+                "RU000A101F94",
+                "ОФЗ-ПД 26233 18/07/2035",
+                599487782000,
+                "2029-07-25",
+                "2029-07-24",
+                "2029-01-24",
+                1000,
+                1000,
+                "RUB",
+                30.42,
+                6.1,
+                30.42,
+                "SU26233RMFS5",
+                "TQOB"
+            ],
+            [
+                "RU000A101F94",
+                "ОФЗ-ПД 26233 18/07/2035",
+                599487782000,
+                "2030-01-23",
+                "2030-01-22",
+                "2029-07-25",
+                1000,
+                1000,
+                "RUB",
+                30.42,
+                6.1,
+                30.42,
+                "SU26233RMFS5",
+                "TQOB"
+            ]
+        ]
+    },
+    "offers": {
+        "metadata": {
+            "isin": {
+                "type": "string",
+                "bytes": 51,
+                "max_size": 0
+            },
+            "name": {
+                "type": "string",
+                "bytes": 765,
+                "max_size": 0
+            },
+            "issuevalue": {
+                "type": "double"
+            },
+            "offerdate": {
+                "type": "date",
+                "bytes": 10,
+                "max_size": 0
+            },
+            "offerdatestart": {
+                "type": "date",
+                "bytes": 10,
+                "max_size": 0
+            },
+            "offerdateend": {
+                "type": "date",
+                "bytes": 10,
+                "max_size": 0
+            },
+            "facevalue": {
+                "type": "double"
+            },
+            "faceunit": {
+                "type": "string",
+                "bytes": 9,
+                "max_size": 0
+            },
+            "price": {
+                "type": "double"
+            },
+            "value": {
+                "type": "double"
+            },
+            "agent": {
+                "type": "string",
+                "bytes": 384,
+                "max_size": 0
+            },
+            "offertype": {
+                "type": "string",
+                "bytes": 189,
+                "max_size": 0
+            },
+            "secid": {
+                "type": "string",
+                "bytes": 36,
+                "max_size": 0
+            },
+            "primary_boardid": {
+                "type": "string",
+                "bytes": 12,
+                "max_size": 0
+            }
+        },
+        "columns": [
+            "isin",
+            "name",
+            "issuevalue",
+            "offerdate",
+            "offerdatestart",
+            "offerdateend",
+            "facevalue",
+            "faceunit",
+            "price",
+            "value",
+            "agent",
+            "offertype",
+            "secid",
+            "primary_boardid"
+        ],
+        "data": []
+    }
+}
