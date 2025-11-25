@@ -8,14 +8,18 @@ import {
   Grid,
   Chip,
   Paper,
-  Button,
   Stack,
   Tooltip,
   Alert,
   Tabs,
   Tab,
+  tabsClasses,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { useUiStore } from '../../stores/uiStore';
 import { fetchBondDetail, fetchBondCoupons } from '../../api/bonds';
@@ -131,6 +135,7 @@ const flattenDescriptions = (descriptions: DescriptionsResponse): FieldDescripti
  * BondDetails Component
  * 
  * Drawer displaying detailed information about a selected bond
+ * with optimized UX structure according to the specification
  */
 export const BondDetails: React.FC = () => {
   const { selectedBondId, setSelectedBond, triggerDataRefresh } = useUiStore();
@@ -198,21 +203,21 @@ export const BondDetails: React.FC = () => {
 
   // Load coupons when tab changes to "Купонные выплаты" or when bond is selected
   useEffect(() => {
-    if (!selectedBondId || activeTab !== 1) {
+    // Find the index of "Купонные выплаты" tab (it should be after "Основные данные")
+    // Based on the tab structure: 0 is "Основные данные", 1 is "Купонные выплаты"
+    const couponsTabIndex = 1;
+    
+    if (!selectedBondId || activeTab !== couponsTabIndex) {
       return;
     }
 
     // Reset coupon count when switching bonds or opening tab
-    // This ensures we detect when coupons are loaded for the first time
     const currentSecIdRef = selectedBondId;
     const hadCouponsBefore = prevCouponsCountRef.current > 0;
     prevCouponsCountRef.current = 0;
 
     // Only load if we don't have coupons already
     if (coupons.length > 0 && !couponsError) {
-      // If we already have coupons but they were from a different bond,
-      // we should still trigger refresh to update the table
-      // (in case data was just downloaded)
       if (!hadCouponsBefore) {
         setTimeout(() => {
           triggerDataRefresh();
@@ -232,13 +237,9 @@ export const BondDetails: React.FC = () => {
           const hasCouponsNow = response.coupons.length > 0;
           setCoupons(response.coupons);
           
-          // If coupons were loaded, always trigger data refresh to update the main table
-          // This ensures the table shows the coupon value after data is downloaded or updated
           if (hasCouponsNow) {
             prevCouponsCountRef.current = response.coupons.length;
-            // Add a small delay to allow backend to save data and clear caches
             setTimeout(() => {
-              // Double-check we're still on the same bond
               if (currentSecIdRef === selectedBondId) {
                 triggerDataRefresh();
               }
@@ -324,116 +325,134 @@ export const BondDetails: React.FC = () => {
     return undefined;
   };
 
-  const renderRecord = (record: Record<string, BondFieldValue> | null) => {
-    if (!record || Object.keys(record).length === 0) {
-      return (
-        <Typography variant="body2" color="text.secondary">
-          Данные отсутствуют
-        </Typography>
-      );
-    }
-
-    const sortedEntries = Object.entries(record).sort((a, b) =>
-      collator.compare(getFieldLabel(a[0]), getFieldLabel(b[0])),
-    );
+  // Helper function to render a field with label and value
+  const renderField = (field: string, value: BondFieldValue, label?: string) => {
+    const fieldLabel = label || getFieldLabel(field);
+    const description = getFieldDescription(field);
 
     return (
-      <Box
-        sx={{
-          display: 'grid',
-          gridTemplateColumns: 'minmax(0, 1.3fr) minmax(0, 1fr)',
-          columnGap: 2,
-          rowGap: 1.5,
-          alignItems: 'start',
-        }}
-      >
-        {sortedEntries.map(([field, value]) => {
-          const label = getFieldLabel(field);
-          const description = getFieldDescription(field);
-
-          return (
-            <React.Fragment key={field}>
-              <Box sx={{ pr: 1, wordBreak: 'break-word', whiteSpace: 'normal' }}>
-                <Typography
-                  variant="body2"
-                  fontWeight={600}
-                  component="span"
-                  sx={{ wordBreak: 'break-word', whiteSpace: 'normal' }}
-                >
-                  {label}
-                </Typography>
-                {description && (
-                  <Tooltip title={description} arrow>
-                    <Box
-                      component="span"
-                      sx={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        ml: 0.5,
-                        verticalAlign: 'text-top',
-                      }}
-                    >
-                      <InfoOutlinedIcon fontSize="small" color="action" />
-                    </Box>
-                  </Tooltip>
-                )}
-              </Box>
-              <Typography
-                variant="body2"
-                color="text.primary"
-                sx={{ wordBreak: 'break-word', whiteSpace: 'normal' }}
+      <React.Fragment key={field}>
+        <Box sx={{ pr: 1, wordBreak: 'break-word', whiteSpace: 'normal' }}>
+          <Typography
+            variant="body2"
+            fontWeight={600}
+            component="span"
+            sx={{ wordBreak: 'break-word', whiteSpace: 'normal' }}
+          >
+            {fieldLabel}
+          </Typography>
+          {description && (
+            <Tooltip title={description} arrow>
+              <Box
+                component="span"
+                sx={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  ml: 0.5,
+                  verticalAlign: 'text-top',
+                }}
               >
-                {formatFieldValue(field, value)}
-              </Typography>
-            </React.Fragment>
-          );
-        })}
+                <InfoOutlinedIcon fontSize="small" color="action" />
+              </Box>
+            </Tooltip>
+          )}
+        </Box>
+        <Typography
+          variant="body2"
+          color="text.primary"
+          sx={{ wordBreak: 'break-word', whiteSpace: 'normal' }}
+        >
+          {formatFieldValue(field, value)}
+        </Typography>
+      </React.Fragment>
+    );
+  };
+
+  // Helper function to render a section with fields
+  const renderSection = (title: string, fields: Array<{ field: string; value: BondFieldValue; label?: string }>) => {
+    return (
+      <Box sx={{ mb: 3 }}>
+        <Typography variant="subtitle1" fontWeight={600} gutterBottom sx={{ mb: 2 }}>
+          {title}
+        </Typography>
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: 'minmax(0, 1.3fr) minmax(0, 1fr)',
+            columnGap: 2,
+            rowGap: 1.5,
+            alignItems: 'start',
+          }}
+        >
+          {fields.map(({ field, value, label }) => renderField(field, value, label))}
+        </Box>
       </Box>
     );
   };
 
-  const prepareRecordForExport = (record: Record<string, BondFieldValue> | null): Record<string, string> => {
-    if (!record) {
+  // Get all data fields
+  const getAllFields = useMemo(() => {
+    if (!bondDetail) {
       return {};
     }
 
-    return Object.fromEntries(
-      Object.entries(record).map(([field, value]) => [
-        getFieldLabel(field),
-        formatFieldValue(field, value),
-      ]),
-    );
-  };
+    const excludedFields = new Set([
+      'IR', 'ICPI', 'BEI', 'BEICLOSE', 'CBR', 'CBRCLOSE', 'IRICPICLOSE',
+      'SYSTIME', 'UPDATETIME', 'TIME', 'TRADEMOMENT',
+      'BIDDEPTH', 'OFFERDEPTH',
+    ]);
 
+    const allFields: Record<string, BondFieldValue> = {};
 
-  const mainMetrics = useMemo(() => {
-    if (!bondDetail) {
-      return [];
+    if (bondDetail.securities) {
+      Object.entries(bondDetail.securities).forEach(([key, value]) => {
+        if (!excludedFields.has(key)) {
+          allFields[key] = value;
+        }
+      });
     }
 
-    const securities = bondDetail.securities;
-    const market = bondDetail.marketdata;
+    if (bondDetail.marketdata) {
+      Object.entries(bondDetail.marketdata).forEach(([key, value]) => {
+        if (!excludedFields.has(key)) {
+          allFields[key] = value;
+        }
+      });
+    }
 
-    return [
-      { label: 'Купонная ставка', field: 'COUPONPERCENT', value: securities.COUPONPERCENT ?? null },
-      {
-        label: 'Доходность',
-        field: 'YIELDATPREVWAPRICE',
-        value: securities.YIELDATPREVWAPRICE ?? market?.YIELD ?? null,
-      },
-      { label: 'Номинал', field: 'FACEVALUE', value: securities.FACEVALUE ?? null },
-      { label: 'Цена', field: 'PREVPRICE', value: securities.PREVPRICE ?? market?.LAST ?? null },
-      { label: 'НКД', field: 'ACCRUEDINT', value: securities.ACCRUEDINT ?? null },
-      { label: 'Размер лота', field: 'LOTSIZE', value: securities.LOTSIZE ?? null },
-      { label: 'Дата погашения', field: 'MATDATE', value: securities.MATDATE ?? null },
-      { label: 'Следующий купон', field: 'NEXTCOUPON', value: securities.NEXTCOUPON ?? null },
-      {
-        label: 'Валюта',
-        field: 'FACEUNIT',
-        value: securities.FACEUNIT ?? securities.CURRENCYID ?? null,
-      },
-    ];
+    if (bondDetail.marketdata_yields && bondDetail.marketdata_yields.length > 0) {
+      bondDetail.marketdata_yields.forEach((entry) => {
+        Object.entries(entry).forEach(([key, value]) => {
+          if (!excludedFields.has(key)) {
+            allFields[key] = value;
+          }
+        });
+      });
+    }
+
+    // Handle YIELDDATE vs BUYBACKDATE
+    const yieldDate = allFields['YIELDDATE'];
+    const buybackDate = allFields['BUYBACKDATE'];
+    const hasYieldDate = yieldDate != null && yieldDate !== '' && yieldDate !== undefined;
+    const hasBuybackDate = buybackDate != null && buybackDate !== '' && buybackDate !== undefined;
+
+    if (hasYieldDate && !hasBuybackDate) {
+      delete allFields['BUYBACKDATE'];
+    } else if (hasBuybackDate && !hasYieldDate) {
+      delete allFields['YIELDDATE'];
+    } else if (!hasYieldDate && !hasBuybackDate) {
+      delete allFields['YIELDDATE'];
+      delete allFields['BUYBACKDATE'];
+    } else if (hasYieldDate && hasBuybackDate) {
+      delete allFields['BUYBACKDATE'];
+    }
+
+    return allFields;
   }, [bondDetail]);
+
+  const securities = bondDetail?.securities;
+  const market = bondDetail?.marketdata;
+  const yields = bondDetail?.marketdata_yields?.[0] || {};
 
   const bondStatus =
     bondDetail && typeof bondDetail.securities.STATUS === 'string'
@@ -444,16 +463,28 @@ export const BondDetails: React.FC = () => {
       ? bondDetail.marketdata.TRADINGSTATUS
       : null;
 
+  // Key metrics for header
+  const keyMetrics = useMemo(() => {
+    if (!bondDetail) return null;
+
+    return {
+      price: securities?.PREVPRICE ?? market?.LAST ?? null,
+      yield: securities?.YIELDATPREVWAPRICE ?? market?.YIELD ?? yields?.EFFECTIVEYIELD ?? null,
+      accruedInt: securities?.ACCRUEDINT ?? null,
+      maturityDate: securities?.MATDATE ?? null,
+    };
+  }, [bondDetail, securities, market, yields]);
+
   return (
     <Drawer
       anchor="right"
       open={isOpen}
       onClose={handleClose}
       PaperProps={{
-        sx: { width: { xs: '100%', sm: 500, md: 600 } },
+        sx: { width: { xs: '100%', sm: 600, md: 700 } },
       }}
     >
-      <Box sx={{ p: 3 }}>
+      <Box sx={{ p: 3, height: '100%', display: 'flex', flexDirection: 'column' }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
           <Typography variant="h5" fontWeight={700}>
             Детали облигации
@@ -476,22 +507,25 @@ export const BondDetails: React.FC = () => {
         )}
 
         {bondDetail && !isLoading && !error && (
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-            <Paper elevation={0} sx={{ p: 2, bgcolor: 'grey.50' }}>
-              <Stack spacing={1.5}>
-                <Box>
-                  <Typography variant="h6" gutterBottom fontWeight={600}>
-                    {typeof bondDetail.securities.SHORTNAME === 'string'
-                      ? bondDetail.securities.SHORTNAME
-                      : bondDetail.securities.SECID}
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, flexGrow: 1, overflow: 'hidden' }}>
+            {/* A. Верхний блок (Header) */}
+            <Paper elevation={0} sx={{ p: 0, bgcolor: 'grey.50', borderRadius: 2, mx: -3, px: 3, py: 2.5 }}>
+              {/* 1. Название */}
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="h6" fontWeight={700} gutterBottom>
+                  {typeof securities?.SECNAME === 'string' ? securities.SECNAME : securities?.SHORTNAME || securities?.SECID}
+                </Typography>
+                {typeof securities?.SHORTNAME === 'string' && securities.SHORTNAME !== securities?.SECNAME && (
+                  <Typography variant="body2" color="text.secondary" gutterBottom>
+                    {securities.SHORTNAME}
                   </Typography>
-                  {typeof bondDetail.securities.SECNAME === 'string' && (
+                )}
+                <Stack direction="row" spacing={1} sx={{ mt: 1, mb: 1 }}>
+                  {typeof securities?.ISIN === 'string' && (
                     <Typography variant="body2" color="text.secondary">
-                      {bondDetail.securities.SECNAME}
+                      ISIN: {securities.ISIN}
                     </Typography>
                   )}
-                </Box>
-                <Stack direction="row" spacing={1}>
                   {bondStatus && (
                     <Chip
                       label={formatBondStatus(bondStatus)}
@@ -500,175 +534,301 @@ export const BondDetails: React.FC = () => {
                       variant="outlined"
                     />
                   )}
-                  {tradingStatus && (
-                    <Chip
-                      label={formatTradingStatus(tradingStatus)}
-                      size="small"
-                      color="success"
-                      variant="outlined"
-                    />
+                </Stack>
+              </Box>
+
+              {/* 2. Основные характеристики в одну строку */}
+              <Box sx={{ mb: 2 }}>
+                <Stack direction="row" spacing={2} flexWrap="wrap" sx={{ gap: 1 }}>
+                  {securities?.FACEUNIT && (
+                    <Typography variant="body2" color="text.secondary">
+                      Валюта: <strong>{formatFieldValue('FACEUNIT', securities.FACEUNIT)}</strong>
+                    </Typography>
+                  )}
+                  {securities?.FACEVALUE && (
+                    <Typography variant="body2" color="text.secondary">
+                      Номинал: <strong>{formatFieldValue('FACEVALUE', securities.FACEVALUE)}</strong>
+                    </Typography>
+                  )}
+                  {securities?.SECTORID && (
+                    <Typography variant="body2" color="text.secondary">
+                      Сектор: <strong>{formatFieldValue('SECTORID', securities.SECTORID)}</strong>
+                    </Typography>
+                  )}
+                  {securities?.LISTLEVEL !== null && securities?.LISTLEVEL !== undefined && (
+                    <Typography variant="body2" color="text.secondary">
+                      Уровень листинга: <strong>{formatFieldValue('LISTLEVEL', securities.LISTLEVEL)}</strong>
+                    </Typography>
+                  )}
+                  {securities?.LOTSIZE && (
+                    <Typography variant="body2" color="text.secondary">
+                      Размер лота: <strong>{formatFieldValue('LOTSIZE', securities.LOTSIZE)}</strong>
+                    </Typography>
                   )}
                 </Stack>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                  <Typography variant="caption" color="text.secondary">
-                    SECID
+              </Box>
+
+              {/* 3. Ключевые показатели (выделенные) */}
+              <Grid container spacing={2}>
+                <Grid item xs={6} sm={3}>
+                  <Typography variant="caption" color="text.secondary" display="block">
+                    Цена
                   </Typography>
-                  <Typography variant="body2">
-                    {typeof bondDetail.securities.SECID === 'string'
-                      ? bondDetail.securities.SECID
-                      : '—'}
+                  <Typography variant="h6" fontWeight={700} color="primary">
+                    {keyMetrics?.price ? formatFieldValue('PRICE', keyMetrics.price) : '—'}
                   </Typography>
-                  {typeof bondDetail.securities.ISIN === 'string' && (
-                    <Typography variant="body2" color="text.secondary">
-                      ISIN: {bondDetail.securities.ISIN}
-                    </Typography>
-                  )}
-                  {typeof bondDetail.securities.REGNUMBER === 'string' && (
-                    <Typography variant="body2" color="text.secondary">
-                      Рег. номер: {bondDetail.securities.REGNUMBER}
-                    </Typography>
-                  )}
-                </Box>
-                {isMetadataLoading && (
-                  <Typography variant="body2" color="text.secondary">
-                    Загружаем метаданные...
+                </Grid>
+                <Grid item xs={6} sm={3}>
+                  <Typography variant="caption" color="text.secondary" display="block">
+                    Доходность к погашению
                   </Typography>
-                )}
-                {metadataError && (
-                  <Alert severity="warning" variant="outlined">
-                    {metadataError}
-                  </Alert>
-                )}
-              </Stack>
+                  <Typography variant="h6" fontWeight={700} color="primary">
+                    {keyMetrics?.yield ? formatFieldValue('YIELD', keyMetrics.yield) : '—'}
+                  </Typography>
+                </Grid>
+                <Grid item xs={6} sm={3}>
+                  <Typography variant="caption" color="text.secondary" display="block">
+                    НКД
+                  </Typography>
+                  <Typography variant="h6" fontWeight={700} color="primary">
+                    {keyMetrics?.accruedInt ? formatFieldValue('ACCRUEDINT', keyMetrics.accruedInt) : '—'}
+                  </Typography>
+                </Grid>
+                <Grid item xs={6} sm={3}>
+                  <Typography variant="caption" color="text.secondary" display="block">
+                    Дата погашения
+                  </Typography>
+                  <Typography variant="h6" fontWeight={700} color="primary">
+                    {keyMetrics?.maturityDate ? formatFieldValue('MATDATE', keyMetrics.maturityDate) : '—'}
+                  </Typography>
+                </Grid>
+              </Grid>
             </Paper>
 
-            {/* Tabs */}
-            <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
-              <Tabs value={activeTab} onChange={(_, newValue) => setActiveTab(newValue)}>
-                <Tab label="Основные данные" />
-                <Tab label="Купонные выплаты" />
-              </Tabs>
-            </Box>
-
-            {/* Tab content */}
-            {activeTab === 0 && (() => {
-              // Поля, которые нужно исключить из отображения
-              const excludedFields = new Set([
-                // Вмененные значения
-                'IR',           // Вмененная RUONIA
-                'ICPI',         // Вмененная инфляция
-                'BEI',          // Вмененная инфляция (BEI)
-                'BEICLOSE',     // Вмененная инфляция (BEI)
-                'CBR',          // Вмененная Банка России
-                'CBRCLOSE',     // Вмененная Банка России
-                'IRICPICLOSE',  // Вмененная ставка
-                // Временные поля
-                'SYSTIME',      // Время загрузки
-                'UPDATETIME',   // Время обновления
-                'TIME',         // Время последней
-                'TRADEMOMENT',  // Время последней
-                // Объемы котировок
-                'BIDDEPTH',     // Объем лучшей котировки на покупку, штук
-                'OFFERDEPTH',   // Объем лучшей котировки на продажу, штук
-              ]);
-              
-              // Объединяем все данные из всех разделов в один объект
-              const allFields: Record<string, BondFieldValue> = {};
-              
-              // Добавляем данные из securities
-              if (bondDetail.securities) {
-                Object.entries(bondDetail.securities).forEach(([key, value]) => {
-                  if (!excludedFields.has(key)) {
-                    allFields[key] = value;
-                  }
-                });
-              }
-              
-              // Добавляем данные из marketdata
-              if (bondDetail.marketdata) {
-                Object.entries(bondDetail.marketdata).forEach(([key, value]) => {
-                  if (!excludedFields.has(key)) {
-                    allFields[key] = value;
-                  }
-                });
-              }
-              
-              // Добавляем данные из marketdata_yields (объединяем все записи)
-              if (bondDetail.marketdata_yields && bondDetail.marketdata_yields.length > 0) {
-                bondDetail.marketdata_yields.forEach((entry) => {
-                  Object.entries(entry).forEach(([key, value]) => {
-                    if (!excludedFields.has(key)) {
-                      allFields[key] = value;
+            {/* B. Вкладки основной информации */}
+            <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+              <Box sx={{ borderBottom: 1, borderColor: 'divider', mx: -3, px: 3 }}>
+                <Tabs
+                  value={activeTab}
+                  onChange={(_, newValue) => setActiveTab(newValue)}
+                  variant="scrollable"
+                  scrollButtons
+                  allowScrollButtonsMobile
+                  sx={{ 
+                    minHeight: 'auto',
+                    [`& .${tabsClasses.scrollButtons}`]: {
+                      '&.Mui-disabled': { opacity: 0.3 },
+                    },
+                    '& .MuiTabs-flexContainer': {
+                      justifyContent: 'flex-start',
+                    },
+                    '& .MuiTab-root': {
+                      minHeight: 'auto',
+                      padding: '8px 12px',
+                      textTransform: 'none',
+                      minWidth: 'auto',
                     }
-                  });
-                });
-              }
-              
-              // Фильтруем похожие поля даты дохода - оставляем только то, которое имеет значение
-              // YIELDDATE ("Дата, к кот.рассч.дох.") и BUYBACKDATE ("Дата, к кот.рассч.доходность")
-              const yieldDate = allFields['YIELDDATE'];
-              const buybackDate = allFields['BUYBACKDATE'];
-              
-              // Проверяем, есть ли реальное значение (не null, не пустая строка, не undefined)
-              const hasYieldDate = yieldDate != null && yieldDate !== '' && yieldDate !== undefined;
-              const hasBuybackDate = buybackDate != null && buybackDate !== '' && buybackDate !== undefined;
-              
-              if (hasYieldDate && !hasBuybackDate) {
-                // Если YIELDDATE имеет значение, а BUYBACKDATE нет - удаляем BUYBACKDATE
-                delete allFields['BUYBACKDATE'];
-              } else if (hasBuybackDate && !hasYieldDate) {
-                // Если BUYBACKDATE имеет значение, а YIELDDATE нет - удаляем YIELDDATE
-                delete allFields['YIELDDATE'];
-              } else if (!hasYieldDate && !hasBuybackDate) {
-                // Если оба пустые, удаляем оба
-                delete allFields['YIELDDATE'];
-                delete allFields['BUYBACKDATE'];
-              } else if (hasYieldDate && hasBuybackDate) {
-                // Если оба имеют значение, оставляем только YIELDDATE (приоритет marketdata_yields)
-                delete allFields['BUYBACKDATE'];
-              }
-              
-              return (
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                  <Box>
-                    <Typography variant="h6" gutterBottom fontWeight={600}>
-                      Основные показатели
-                    </Typography>
-                    <Grid container spacing={2}>
-                      {mainMetrics.map(({ label, field, value }) => (
-                        <Grid item xs={12} sm={6} key={field}>
-                          <Typography variant="caption" color="text.secondary">
-                            {label}
-                          </Typography>
-                          <Typography variant="body1" fontWeight={500}>
-                            {formatFieldValue(field, value ?? null)}
-                          </Typography>
-                        </Grid>
-                      ))}
-                    </Grid>
-                  </Box>
-
-                  {/* Все параметры облигации в одном списке */}
-                  <Box>
-                    <Typography variant="h6" gutterBottom fontWeight={600}>
-                      Все параметры
-                    </Typography>
-                    {renderRecord(allFields)}
-                  </Box>
-                </Box>
-              );
-            })()}
-
-            {activeTab === 1 && (
-              <Box>
-                <CouponsTable
-                  coupons={coupons}
-                  isLoading={isLoadingCoupons}
-                  error={couponsError}
-                  currency={coupons.length > 0 ? coupons[0]?.faceunit || null : null}
-                />
+                  }}
+                >
+                  <Tab label="Основные данные" />
+                  <Tab label="Купонные выплаты" />
+                  <Tab label="Доходность и расчёты" />
+                  <Tab label="Цена и динамика" />
+                  <Tab label="Рынок и ликвидность" />
+                  <Tab label="Параметры выпуска" />
+                  <Tab label="Расширенные метрики" />
+                  <Tab label="Служебные данные" />
+                </Tabs>
               </Box>
-            )}
+
+              <Box sx={{ flexGrow: 1, overflow: 'auto', mt: 2 }}>
+                {/* Вкладка 0: Основные данные */}
+                {activeTab === 0 && (
+                  <Box sx={{ pl: 0 }}>
+                    {renderSection('Идентификация', [
+                      { field: 'SECNAME', value: securities?.SECNAME ?? null },
+                      { field: 'SHORTNAME', value: securities?.SHORTNAME ?? null },
+                      { field: 'ISIN', value: securities?.ISIN ?? null },
+                      { field: 'REGNUMBER', value: securities?.REGNUMBER ?? null },
+                      { field: 'SECTYPE', value: securities?.SECTYPE ?? null },
+                    ])}
+
+                    {renderSection('Выпуск', [
+                      { field: 'FACEVALUE', value: securities?.FACEVALUE ?? null, label: 'Номинал' },
+                      { field: 'FACEUNIT', value: securities?.FACEUNIT ?? null },
+                      { field: 'CURRENCYID', value: securities?.CURRENCYID ?? null, label: 'Валюта расчётов' },
+                      { field: 'ISSUESIZE', value: securities?.ISSUESIZE ?? null },
+                      { field: 'ISSUESIZEPLACED', value: securities?.ISSUESIZEPLACED ?? null, label: 'Количество бумаг в обращении' },
+                      { field: 'FACEVALUE', value: securities?.FACEVALUE ?? null, label: 'Непогашенный долг' },
+                    ])}
+
+                    {renderSection('Купон', [
+                      { field: 'COUPONPERCENT', value: securities?.COUPONPERCENT ?? null },
+                      { field: 'COUPONPERIOD', value: securities?.COUPONPERIOD ?? null },
+                      { field: 'COUPONVALUE', value: securities?.COUPONVALUE ?? null },
+                      { field: 'ACCRUEDINT', value: securities?.ACCRUEDINT ?? null },
+                      { field: 'NEXTCOUPON', value: securities?.NEXTCOUPON ?? null, label: 'Дата окончания текущего купона / Дата следующего купона' },
+                    ])}
+
+                    {renderSection('Сроки', [
+                      { field: 'MATDATE', value: securities?.MATDATE ?? null },
+                      { field: 'OFFERDATE', value: securities?.OFFERDATE ?? null },
+                      { field: 'PUTOPTIONDATE', value: securities?.PUTOPTIONDATE ?? null },
+                      { field: 'CALLOPTIONDATE', value: securities?.CALLOPTIONDATE ?? null },
+                    ])}
+                  </Box>
+                )}
+
+                {/* Вкладка 1: Купонные выплаты */}
+                {activeTab === 1 && (
+                  <Box>
+                    <CouponsTable
+                      coupons={coupons}
+                      isLoading={isLoadingCoupons}
+                      error={couponsError}
+                      currency={coupons.length > 0 ? coupons[0]?.faceunit || null : null}
+                    />
+                  </Box>
+                )}
+
+                {/* Вкладка 2: Доходность и расчёты */}
+                {activeTab === 2 && (
+                  <Box>
+                    {renderSection('Основные доходности', [
+                      { field: 'YIELD', value: market?.YIELD ?? yields?.EFFECTIVEYIELD ?? securities?.YIELDATPREVWAPRICE ?? null, label: 'Доходность к погашению' },
+                      { field: 'YIELDTOOFFER', value: market?.YIELDTOOFFER ?? yields?.YIELDTOOFFER ?? null },
+                      { field: 'CALLOPTIONYIELD', value: market?.CALLOPTIONYIELD ?? null },
+                      { field: 'EFFECTIVEYIELD', value: yields?.EFFECTIVEYIELD ?? null },
+                      { field: 'EFFECTIVEYIELDWAPRICE', value: yields?.EFFECTIVEYIELDWAPRICE ?? null },
+                    ])}
+
+                    {renderSection('Спрэды', [
+                      { field: 'GSPREADBP', value: yields?.GSPREADBP ?? null },
+                      { field: 'ZSPREADBP', value: yields?.ZSPREADBP ?? null },
+                    ])}
+
+                    {renderSection('Дата расчёта', [
+                      { field: 'YIELDDATE', value: yields?.YIELDDATE ?? securities?.BUYBACKDATE ?? null, label: 'Дата, к которой рассчитывается доходность' },
+                      { field: 'DATEYIELDFROMISSUER', value: securities?.DATEYIELDFROMISSUER ?? null, label: 'Дата, указанная эмитентом для расчёта' },
+                    ])}
+                  </Box>
+                )}
+
+                {/* Вкладка 3: Цена и динамика */}
+                {activeTab === 3 && (
+                  <Box>
+                    {renderSection('Текущие цены', [
+                      { field: 'LCURRENTPRICE', value: market?.LCURRENTPRICE ?? null },
+                      { field: 'LAST', value: market?.LAST ?? null },
+                      { field: 'LCLOSEPRICE', value: market?.LCLOSEPRICE ?? null },
+                      { field: 'PREVLEGALCLOSEPRICE', value: securities?.PREVLEGALCLOSEPRICE ?? null },
+                      { field: 'OPEN', value: market?.OPEN ?? null },
+                      { field: 'BUYBACKPRICE', value: securities?.BUYBACKPRICE ?? null },
+                    ])}
+
+                    {renderSection('Средневзвешенные цены', [
+                      { field: 'WAPRICE', value: market?.WAPRICE ?? yields?.WAPRICE ?? null },
+                      { field: 'PREVWAPRICE', value: securities?.PREVWAPRICE ?? null },
+                    ])}
+
+                    {renderSection('Изменения', [
+                      { field: 'LASTTOPREVPRICE', value: market?.LASTTOPREVPRICE ?? null, label: 'Изменение цены последней сделки к предыдущему дню' },
+                      { field: 'LASTCNGTOLASTWAPRICE', value: market?.LASTCNGTOLASTWAPRICE ?? null, label: 'Изменение к средневзвешенной цене' },
+                      { field: 'WAPTOPREVWAPRICEPRCNT', value: market?.WAPTOPREVWAPRICEPRCNT ?? null, label: 'Изменение средневзвешенной к предыдущему дню' },
+                      { field: 'LASTCHANGEPRCNT', value: market?.LASTCHANGEPRCNT ?? null, label: 'Изменение цены последней к предыдущей сделке' },
+                    ])}
+                  </Box>
+                )}
+
+                {/* Вкладка 4: Рынок и ликвидность */}
+                {activeTab === 4 && (
+                  <Box>
+                    {renderSection('Глубина рынка', [
+                      { field: 'BID', value: market?.BID ?? null },
+                      { field: 'OFFER', value: market?.OFFER ?? null },
+                      { field: 'HIGHBID', value: market?.HIGHBID ?? null },
+                      { field: 'LOWOFFER', value: market?.LOWOFFER ?? null },
+                      { field: 'SPREAD', value: market?.SPREAD ?? null },
+                    ])}
+
+                    {renderSection('Активность', [
+                      { field: 'NUMTRADES', value: market?.NUMTRADES ?? null },
+                      { field: 'VOLTODAY', value: market?.VOLTODAY ?? null },
+                      { field: 'QTY', value: market?.QTY ?? null, label: 'Объем последней сделки (лоты/рубли)' },
+                      { field: 'VALUE', value: market?.VALUE ?? null },
+                      { field: 'VALTODAY', value: market?.VALTODAY ?? null },
+                    ])}
+
+                    {renderSection('Статус торгов', [
+                      { field: 'TRADINGSESSION', value: market?.TRADINGSESSION ?? null },
+                      { field: 'TRADINGSTATUS', value: market?.TRADINGSTATUS ?? null },
+                    ])}
+                  </Box>
+                )}
+
+                {/* Вкладка 5: Параметры выпуска */}
+                {activeTab === 5 && (
+                  <Box>
+                    {renderSection('Структурная информация', [
+                      { field: 'ISSUESIZE', value: securities?.ISSUESIZE ?? null },
+                      { field: 'ISSUESIZEPLACED', value: securities?.ISSUESIZEPLACED ?? null },
+                      { field: 'FACEVALUEONSETTLEDATE', value: securities?.FACEVALUEONSETTLEDATE ?? null },
+                      { field: 'OFFERDEPTHT', value: market?.OFFERDEPTHT ?? null },
+                      { field: 'BOARDNAME', value: securities?.BOARDNAME ?? null },
+                      { field: 'MARKETCODE', value: securities?.MARKETCODE ?? null },
+                    ])}
+                  </Box>
+                )}
+
+                {/* Вкладка 6: Расширенные метрики */}
+                {activeTab === 6 && (
+                  <Box>
+                    {renderSection('Дюрация', [
+                      { field: 'DURATION', value: market?.DURATION ?? yields?.DURATION ?? null },
+                      { field: 'CALLOPTIONDURATION', value: market?.CALLOPTIONDURATION ?? null },
+                      { field: 'DURATIONWAPRICE', value: yields?.DURATIONWAPRICE ?? securities?.DURATIONWAPRICE ?? null },
+                    ])}
+
+                    {renderSection('Прочие показатели', [
+                      { field: 'MARKETPRICE2', value: market?.MARKETPRICE2 ?? null },
+                      { field: 'YIELDDATETYPE', value: yields?.YIELDDATETYPE ?? null },
+                    ])}
+                  </Box>
+                )}
+
+                {/* Вкладка 7: Служебные данные (скрыта по умолчанию) */}
+                {activeTab === 7 && (
+                  <Box>
+                    <Accordion defaultExpanded={false}>
+                      <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                        <Typography variant="subtitle2" color="text.secondary">
+                          Служебные данные (вспомогательные)
+                        </Typography>
+                      </AccordionSummary>
+                      <AccordionDetails>
+                        <Box
+                          sx={{
+                            display: 'grid',
+                            gridTemplateColumns: 'minmax(0, 1.3fr) minmax(0, 1fr)',
+                            columnGap: 2,
+                            rowGap: 1.5,
+                            alignItems: 'start',
+                          }}
+                        >
+                          {renderField('SECID', securities?.SECID ?? null)}
+                          {renderField('SEQNUM', market?.SEQNUM ?? yields?.SEQNUM ?? null, 'Номер обновления')}
+                          {renderField('REMARKS', securities?.REMARKS ?? null)}
+                          {renderField('ZCYCMOMENT', yields?.ZCYCMOMENT ?? null, 'Маркер КБД')}
+                          {renderField('DECIMALS', securities?.DECIMALS ?? null)}
+                          {renderField('BOARDID', securities?.BOARDID ?? market?.BOARDID ?? null)}
+                        </Box>
+                      </AccordionDetails>
+                    </Accordion>
+                  </Box>
+                )}
+
+              </Box>
+            </Box>
           </Box>
         )}
       </Box>
