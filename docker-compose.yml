@@ -11,7 +11,9 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - CORS_ORIGINS=http://localhost,http://localhost:80,http://frontend
+      # Разрешаем все origins для работы с внешним IP
+      # В production лучше указать конкретные домены
+      - CORS_ORIGINS=*
     volumes:
       - ./backend/data:/app/data:ro
     healthcheck:
@@ -33,7 +35,9 @@ services:
     ports:
       - "80:80"
     environment:
-      - VITE_API_BASE_URL=http://localhost:8000
+      # Используем относительный путь - nginx будет проксировать запросы к бэкенду
+      # Это работает как для localhost, так и для внешнего IP
+      - VITE_API_BASE_URL=/api
     depends_on:
       backend:
         condition: service_healthy

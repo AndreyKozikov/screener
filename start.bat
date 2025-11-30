@@ -23,12 +23,18 @@ if %ERRORLEVEL% NEQ 0 (
     exit /b 1
 )
 
-REM Check if .env file exists
-if not exist .env (
+REM Check if backend/.env file exists
+if not exist backend\.env (
     echo.
-    echo 📝 Creating .env file from .env.example...
-    copy .env.example .env >nul
-    echo ✅ .env file created. You can customize it if needed.
+    echo 📝 Creating backend/.env file...
+    echo # OpenAI API Configuration > backend\.env
+    echo # Get your API key from: https://platform.openai.com/api-keys >> backend\.env
+    echo OPENAI_API_KEY= >> backend\.env
+    echo. >> backend\.env
+    echo # OpenRouter API Configuration >> backend\.env
+    echo # Get your API key from: https://openrouter.ai/keys >> backend\.env
+    echo OPENROUTER_API_KEY= >> backend\.env
+    echo ✅ backend/.env file created. Please add your API keys.
 )
 
 REM Stop any running containers

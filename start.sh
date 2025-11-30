@@ -21,11 +21,19 @@ if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/
     exit 1
 fi
 
-# Check if .env file exists, if not copy from example
-if [ ! -f .env ]; then
-    echo "📝 Creating .env file from .env.example..."
-    cp .env.example .env
-    echo "✅ .env file created. You can customize it if needed."
+# Check if backend/.env file exists
+if [ ! -f backend/.env ]; then
+    echo "📝 Creating backend/.env file..."
+    cat > backend/.env << 'EOF'
+# OpenAI API Configuration
+# Get your API key from: https://platform.openai.com/api-keys
+OPENAI_API_KEY=
+
+# OpenRouter API Configuration
+# Get your API key from: https://openrouter.ai/keys
+OPENROUTER_API_KEY=
+EOF
+    echo "✅ backend/.env file created. Please add your API keys."
 fi
 
 # Stop any running containers

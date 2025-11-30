@@ -17,12 +17,12 @@ export const fetchBonds = async (filters: BondFilters): Promise<BondsListRespons
   if (filters.couponMax !== null) params.coupon_max = filters.couponMax;
   if (filters.matdateFrom) params.matdate_from = filters.matdateFrom;
   if (filters.matdateTo) params.matdate_to = filters.matdateTo;
-  if (filters.listlevel.length > 0) {
+  if (filters.listlevel && Array.isArray(filters.listlevel) && filters.listlevel.length > 0) {
     // FastAPI expects array parameters to be sent as repeated query params: listlevel=1&listlevel=2
     // Convert numbers to strings for URL serialization
     params.listlevel = filters.listlevel.map(String);
   }
-  if (filters.faceunit.length > 0) {
+  if (filters.faceunit && Array.isArray(filters.faceunit) && filters.faceunit.length > 0) {
     // FastAPI expects array parameters to be sent as repeated query params: faceunit=RUB&faceunit=USD
     params.faceunit = filters.faceunit;
   }
@@ -31,16 +31,20 @@ export const fetchBonds = async (filters: BondFilters): Promise<BondsListRespons
   
   // Load all filtered data in one request (limit is not sent, so backend returns all)
   // Use paramsSerializer to ensure arrays are serialized correctly for FastAPI
-  const response = await apiClient.get<BondsListResponse>('/api/bonds', { 
-    params,
-    paramsSerializer: (params) => {
+  console.log('[Bonds API] Fetching bonds with filters:', filters);
+  console.log('[Bonds API] Request params:', params);
+  
+  let response;
+  try {
+    // Сериализуем параметры вручную для правильной работы с FastAPI
+    const paramsSerializer = (params: Record<string, any>): string => {
       const searchParams = new URLSearchParams();
       Object.entries(params).forEach(([key, value]) => {
         if (value === null || value === undefined) {
           return;
         }
         if (Array.isArray(value)) {
-          // For arrays, add each value as a separate query parameter
+          // For arrays, add each value as a separate query parameter (FastAPI format)
           value.forEach((item) => {
             searchParams.append(key, String(item));
           });
@@ -48,13 +52,45 @@ export const fetchBonds = async (filters: BondFilters): Promise<BondsListRespons
           searchParams.append(key, String(value));
         }
       });
-      return searchParams.toString();
-    },
-  });
+      const serialized = searchParams.toString();
+      console.log('[Bonds API] Serialized params:', serialized);
+      return serialized;
+    };
+    
+    // Важно: эндпоинт определен как "/" с префиксом "/api/bonds", 
+    // что означает полный путь "/api/bonds/" (с trailing slash)
+    // FastAPI автоматически редиректит "/api/bonds" на "/api/bonds/", что вызывает 307
+    // Используем "/bonds/" с trailing slash чтобы избежать редиректа
+    const endpoint = '/bonds/';
+    console.log('[Bonds API] Making request to:', apiClient.defaults.baseURL + endpoint);
+    console.log('[Bonds API] Full URL will be:', apiClient.defaults.baseURL + endpoint + '?' + paramsSerializer(params));
+    
+    response = await apiClient.get<BondsListResponse>(endpoint, { 
+      params,
+      paramsSerializer,
+    });
+    
+    console.log('[Bonds API] Response received:', response.status, response.data ? 'data OK' : 'no data');
+  } catch (error) {
+    console.error('[Bonds API] Error fetching bonds:', error);
+    if (error instanceof Error) {
+      console.error('[Bonds API] Error message:', error.message);
+      if (error.stack) {
+        console.error('[Bonds API] Error stack:', error.stack);
+      }
+    }
+    throw error;
+  }
   
   // Apply client-side search filter if provided
-  let allBonds = response.data.bonds;
-  let filteredCount = response.data.filtered;
+  // Проверяем, что данные есть
+  if (!response || !response.data || !response.data.bonds) {
+    console.error('[Bonds API] Invalid response:', response);
+    throw new Error('Invalid response from server: missing bonds data');
+  }
+  
+  let allBonds = response.data.bonds || [];
+  let filteredCount = response.data.filtered || 0;
   
   if (filters.search && filters.search.trim()) {
     const searchLower = filters.search.toLowerCase().trim();
@@ -79,7 +115,7 @@ export const fetchBonds = async (filters: BondFilters): Promise<BondsListRespons
  * Fetch bond details by SECID
  */
 export const fetchBondDetail = async (secid: string): Promise<BondDetail> => {
-  const response = await apiClient.get<BondDetail>(`/api/bonds/${secid}`);
+  const response = await apiClient.get<BondDetail>(`/bonds/${secid}`);
   return response.data;
 };
 
@@ -103,7 +139,7 @@ export const exportBondsJson = (bonds: Array<Record<string, unknown>>): void => 
  * Request a dataset refresh from the backend
  */
 export const refreshBondsData = async (): Promise<void> => {
-  await apiClient.post('/api/bonds/refresh');
+  await apiClient.post('/bonds/refresh');
 };
 
 /**
@@ -114,6 +150,6 @@ export const fetchBondCoupons = async (secid: string, forceRefresh: boolean = fa
   if (forceRefresh) {
     params.force_refresh = true;
   }
-  const response = await apiClient.get<CouponsListResponse>(`/api/bonds/${secid}/coupons`, { params });
+  const response = await apiClient.get<CouponsListResponse>(`/bonds/${secid}/coupons`, { params });
   return response.data;
 };

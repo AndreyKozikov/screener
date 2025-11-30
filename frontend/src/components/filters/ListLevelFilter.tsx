@@ -43,13 +43,13 @@ export const ListLevelFilter: React.FC = () => {
       <Autocomplete
         multiple
         size="small"
-        options={filterOptions.listlevels}
-        value={filters.listlevel}
+        options={filterOptions.listlevels || []}
+        value={filters.listlevel || []}
         onChange={handleListLevelChange}
         renderInput={(params) => (
           <TextField
             {...params}
-            placeholder={filters.listlevel.length === 0 ? "Выберите уровни листинга" : ""}
+            placeholder={(!filters.listlevel || filters.listlevel.length === 0) ? "Выберите уровни листинга" : ""}
             sx={{
               '& .MuiOutlinedInput-root': {
                 paddingRight: '9px !important',

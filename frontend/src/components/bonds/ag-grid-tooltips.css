@@ -1,0 +1,7 @@
+/* Скрываем встроенные tooltips AG Grid, так как используем Material-UI Tooltip */
+.ag-tooltip {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+}
+

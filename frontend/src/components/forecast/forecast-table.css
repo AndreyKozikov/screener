@@ -1,0 +1,63 @@
+/* Центрирование всех заголовков */
+.ag-header-cell-center .ag-header-cell-label {
+  justify-content: center !important;
+  text-align: center !important;
+  display: flex !important;
+  align-items: center !important;
+}
+
+.ag-header-cell-center .ag-header-cell-text {
+  text-align: center !important;
+  width: 100%;
+}
+
+/* Визуальное выделение заголовков таблиц прогноза */
+.forecast-header {
+  background-color: #f5f5f5 !important;
+  font-weight: 600 !important;
+  border-bottom: 2px solid #1976d2 !important;
+}
+
+.forecast-header .ag-header-cell-label {
+  color: #1976d2;
+  font-size: 14px;
+  justify-content: center !important;
+  text-align: center !important;
+}
+
+/* Перенос текста в столбце Показатель */
+.forecast-indicator-cell {
+  white-space: normal !important;
+  word-wrap: break-word !important;
+  overflow-wrap: break-word !important;
+  line-height: 1.5 !important;
+  padding: 8px !important;
+  display: flex !important;
+  align-items: center !important;
+}
+
+/* Увеличение высоты заголовков таблиц прогноза */
+.forecast-table .ag-header-row {
+  min-height: 64px !important;
+  height: 64px !important;
+}
+
+.forecast-table .ag-header-cell {
+  height: 64px !important;
+  min-height: 64px !important;
+  padding: 12px 8px !important;
+}
+
+/* Вертикальный разделитель для столбца Показатель */
+.forecast-indicator-header {
+  border-right: 2px solid #e0e0e0 !important;
+}
+
+/* Вертикальное выравнивание по центру для столбцов с годами */
+.forecast-year-cell {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  vertical-align: middle !important;
+}
+

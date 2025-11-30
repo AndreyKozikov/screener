@@ -4,6 +4,7 @@ import type { ColDef } from 'ag-grid-community';
 import { ModuleRegistry, AllCommunityModule } from 'ag-grid-community';
 import 'ag-grid-community/styles/ag-grid.css';
 import 'ag-grid-community/styles/ag-theme-material.css';
+import './forecast-table.css';
 import {
   Box,
   Card,
@@ -125,7 +126,11 @@ export const ForecastTable: React.FC = () => {
         pinned: 'left',
         sortable: false,
         filter: false,
-        cellStyle: { fontWeight: 500 },
+        wrapText: true,
+        autoHeight: true,
+        cellStyle: { fontWeight: 500, borderRight: '2px solid #e0e0e0' },
+        cellClass: 'forecast-indicator-cell',
+        headerClass: 'ag-header-cell-center forecast-header forecast-indicator-header',
       },
     ];
 
@@ -136,7 +141,9 @@ export const ForecastTable: React.FC = () => {
         width: 150,
         sortable: false,
         filter: false,
-        cellStyle: { textAlign: 'right' },
+        cellStyle: { textAlign: 'center' },
+        cellClass: 'forecast-year-cell',
+        headerClass: 'ag-header-cell-center forecast-header',
       });
     });
 
@@ -208,11 +215,15 @@ export const ForecastTable: React.FC = () => {
       {
         field: 'indicator',
         headerName: 'Показатель',
-        width: 400,
+        width: 500,
         pinned: 'left',
         sortable: false,
         filter: false,
-        cellStyle: { fontWeight: 500 },
+        wrapText: true,
+        autoHeight: true,
+        cellStyle: { fontWeight: 500, borderRight: '2px solid #e0e0e0' },
+        cellClass: 'forecast-indicator-cell',
+        headerClass: 'ag-header-cell-center forecast-header forecast-indicator-header',
       },
     ];
 
@@ -223,7 +234,9 @@ export const ForecastTable: React.FC = () => {
         width: 150,
         sortable: false,
         filter: false,
-        cellStyle: { textAlign: 'right' },
+        cellStyle: { textAlign: 'center' },
+        cellClass: 'forecast-year-cell',
+        headerClass: 'ag-header-cell-center forecast-header',
       });
     });
 
@@ -327,42 +340,44 @@ export const ForecastTable: React.FC = () => {
       {error && <ErrorMessage message={error} />}
       {isLoading && <LoadingSpinner />}
       {!isLoading && !error && data && (
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, flexGrow: 1, minHeight: 0 }}>
+        <Box sx={{ display: 'flex', flexDirection: 'row', gap: 3, flexGrow: 1, minHeight: 0 }}>
           {/* Main Indicators Table */}
-          <Card sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-            <CardContent>
+          <Card sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+            <CardContent sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, '&:last-child': { pb: 2 } }}>
               <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, mb: 2 }}>
                 Основные параметры прогноза
               </Typography>
-              <Box sx={{ width: '100%', height: '400px' }}>
+              <Box sx={{ width: '100%', flex: 1, minHeight: 0 }}>
                 <AgGridReact
                   rowData={mainIndicatorsRows}
                   columnDefs={mainIndicatorsColumns}
                   defaultColDef={defaultColDef}
+                  headerHeight={64}
                   animateRows={true}
                   domLayout="normal"
                   style={{ width: '100%', height: '100%' }}
-                  className="ag-theme-material"
+                  className="ag-theme-material forecast-table"
                 />
               </Box>
             </CardContent>
           </Card>
 
           {/* Balance Table */}
-          <Card sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-            <CardContent>
+          <Card sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+            <CardContent sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, '&:last-child': { pb: 2 } }}>
               <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, mb: 2 }}>
                 Показатели платёжного баланса
               </Typography>
-              <Box sx={{ width: '100%', height: '400px' }}>
+              <Box sx={{ width: '100%', flex: 1, minHeight: 0 }}>
                 <AgGridReact
                   rowData={balanceRows}
                   columnDefs={balanceColumns}
                   defaultColDef={defaultColDef}
+                  headerHeight={64}
                   animateRows={true}
                   domLayout="normal"
                   style={{ width: '100%', height: '100%' }}
-                  className="ag-theme-material"
+                  className="ag-theme-material forecast-table"
                 />
               </Box>
             </CardContent>

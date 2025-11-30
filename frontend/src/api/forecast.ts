@@ -37,7 +37,7 @@ export interface ForecastDatesResponse {
  * Get list of available forecast dates
  */
 export const fetchForecastDates = async (): Promise<string[]> => {
-  const response = await apiClient.get<ForecastDatesResponse>('/api/forecast/dates');
+  const response = await apiClient.get<ForecastDatesResponse>('/forecast/dates');
   return response.data.dates;
 };
 
@@ -48,7 +48,7 @@ export const fetchForecastData = async (date?: string | null): Promise<ForecastD
   const params: Record<string, string> = {};
   if (date) params.date = date;
 
-  const response = await apiClient.get<ForecastData>('/api/forecast/data', { params });
+  const response = await apiClient.get<ForecastData>('/forecast/data', { params });
   return response.data;
 };
 
@@ -61,7 +61,7 @@ export const downloadForecastJson = async (dates?: string[] | null): Promise<voi
     params.dates = dates.join(',');
   }
 
-  const response = await apiClient.get('/api/forecast/export/json', {
+  const response = await apiClient.get('/forecast/export/json', {
     params,
     responseType: 'blob',
   });

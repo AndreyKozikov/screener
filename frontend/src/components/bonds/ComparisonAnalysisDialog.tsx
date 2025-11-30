@@ -20,6 +20,15 @@ import CloseIcon from '@mui/icons-material/Close';
 import DownloadIcon from '@mui/icons-material/Download';
 import type { BondListItem } from '../../types/bond';
 import { formatNumber } from '../../utils/formatters';
+import { fetchZerocuponData, type ZerocuponRecord } from '../../api/zerocupon';
+import {
+  getLatestZerocuponRecord,
+  buildYieldCurveMap,
+  interpolateZeroCurveYield,
+  calculateSpread,
+  formatSpread,
+} from '../../utils/zerocuponInterpolation';
+import dayjs from 'dayjs';
 
 interface ComparisonAnalysisDialogProps {
   open: boolean;
@@ -34,8 +43,11 @@ interface ComparisonRow {
   price: string;
   ytm: string;
   coupon: string;
+  couponToPrice: string;
+  regularDuration: string;
   duration: string;
   priceChange: string;
+  spread: string;
 }
 
 export const ComparisonAnalysisDialog: React.FC<ComparisonAnalysisDialogProps> = ({
@@ -43,6 +55,35 @@ export const ComparisonAnalysisDialog: React.FC<ComparisonAnalysisDialogProps> =
   onClose,
   bonds,
 }) => {
+  const [zerocuponData, setZerocuponData] = useState<ZerocuponRecord[]>([]);
+  const [isLoadingZerocupon, setIsLoadingZerocupon] = useState(false);
+
+  // Load zero-coupon yield curve data when dialog opens
+  useEffect(() => {
+    if (!open) return;
+
+    const loadZerocuponData = async () => {
+      try {
+        setIsLoadingZerocupon(true);
+        // Load data for the last year to get the latest curve
+        const today = dayjs();
+        const oneYearAgo = today.subtract(1, 'year');
+
+        const dateFrom = oneYearAgo.format('DD.MM.YYYY');
+        const dateTo = today.format('DD.MM.YYYY');
+
+        const response = await fetchZerocuponData(dateFrom, dateTo);
+        setZerocuponData(response.data);
+      } catch (error) {
+        console.error('Error loading zerocupon data:', error);
+        setZerocuponData([]);
+      } finally {
+        setIsLoadingZerocupon(false);
+      }
+    };
+
+    void loadZerocuponData();
+  }, [open]);
   // Calculate years until maturity
   const calculateYearsToMaturity = (matDate: string | null): number | null => {
     if (!matDate) return null;
@@ -84,14 +125,26 @@ export const ComparisonAnalysisDialog: React.FC<ComparisonAnalysisDialogProps> =
     }
   };
 
-  // Calculate modified duration in years
-  const calculateModifiedDuration = (bond: BondListItem): number | null => {
-    if (bond.DURATIONWAPRICE === null || bond.DURATIONWAPRICE === undefined) {
+  // Calculate regular duration in years
+  const calculateRegularDuration = (bond: BondListItem): number | null => {
+    if (bond.DURATION === null || bond.DURATION === undefined || bond.DURATION === 0) {
       return null;
     }
     
-    // Convert from days to years
-    const durationYears = bond.DURATIONWAPRICE / 365;
+    // Convert from days to years (DURATION уже в днях)
+    return bond.DURATION / 365;
+  };
+
+  // Calculate modified duration in years
+  // Используем DURATION из marketdata (то же поле, что отображается в таблице облигаций)
+  const calculateModifiedDuration = (bond: BondListItem): number | null => {
+    // Используем DURATION из marketdata (как в столбце "Дюрация, лет" в таблице)
+    if (bond.DURATION === null || bond.DURATION === undefined || bond.DURATION === 0) {
+      return null;
+    }
+    
+    // Convert from days to years (DURATION уже в днях)
+    const durationYears = bond.DURATION / 365;
     
     // Modified Duration = D / (1 + YTM/100)
     // If YTM is not available, use duration directly
@@ -123,12 +176,79 @@ export const ComparisonAnalysisDialog: React.FC<ComparisonAnalysisDialogProps> =
     return `${sign}${rounded.toFixed(2)}%`;
   };
 
+  // Calculate coupon yield to current price
+  const calculateCouponToPrice = (bond: BondListItem): number | null => {
+    if (
+      bond.COUPONPERCENT === null || bond.COUPONPERCENT === undefined ||
+      bond.PREVPRICE === null || bond.PREVPRICE === undefined ||
+      bond.PREVPRICE === 0
+    ) {
+      return null;
+    }
+    
+    // Coupon yield to current price = (Coupon % / Current Price %) * 100
+    return (bond.COUPONPERCENT / bond.PREVPRICE) * 100;
+  };
+
   // Prepare comparison data - calculate directly when dialog is open
   // Component is remounted with new key each time, so we can calculate directly
-  let comparisonData: ComparisonRow[] = [];
-  
-  if (open && bonds.length > 0) {
-    comparisonData = bonds.map((bond) => {
+  const comparisonData: ComparisonRow[] = useMemo(() => {
+    if (!open || bonds.length === 0) return [];
+
+    // Get latest zero-coupon yield curve record
+    const latestRecord = getLatestZerocuponRecord(zerocuponData);
+    if (!latestRecord) {
+      // If no zerocupon data, return data without spread
+      return bonds.map((bond) => {
+        const price = bond.PREVPRICE !== null && bond.PREVPRICE !== undefined
+          ? formatNumber(bond.PREVPRICE, 2)
+          : '—';
+        
+        const ytm = bond.YIELDATPREVWAPRICE !== null && bond.YIELDATPREVWAPRICE !== undefined
+          ? formatNumber(bond.YIELDATPREVWAPRICE, 2)
+          : '—';
+        
+        const coupon = bond.COUPONPERCENT !== null && bond.COUPONPERCENT !== undefined
+          ? formatNumber(bond.COUPONPERCENT, 2)
+          : '—';
+        
+        const couponToPrice = calculateCouponToPrice(bond);
+        const couponToPriceStr = couponToPrice !== null
+          ? formatNumber(couponToPrice, 2)
+          : '—';
+        
+        const regularDuration = calculateRegularDuration(bond);
+        const regularDurationStr = regularDuration !== null
+          ? formatNumber(regularDuration, 2)
+          : '—';
+        
+        const duration = calculateModifiedDuration(bond);
+        const durationStr = duration !== null
+          ? formatNumber(duration, 2)
+          : '—';
+        
+        const priceChange = formatPriceChange(calculatePriceChange(bond));
+        
+        return {
+          name: bond.SHORTNAME || '—',
+          ticker: bond.SECID || '—',
+          maturity: formatMaturity(bond.MATDATE),
+          price,
+          ytm,
+          coupon,
+          couponToPrice: couponToPriceStr,
+          regularDuration: regularDurationStr,
+          duration: durationStr,
+          priceChange,
+          spread: '—',
+        };
+      });
+    }
+
+    // Build yield curve map
+    const yieldCurveMap = buildYieldCurveMap(latestRecord);
+
+    return bonds.map((bond) => {
       const price = bond.PREVPRICE !== null && bond.PREVPRICE !== undefined
         ? formatNumber(bond.PREVPRICE, 2)
         : '—';
@@ -141,12 +261,34 @@ export const ComparisonAnalysisDialog: React.FC<ComparisonAnalysisDialogProps> =
         ? formatNumber(bond.COUPONPERCENT, 2)
         : '—';
       
+      const couponToPrice = calculateCouponToPrice(bond);
+      const couponToPriceStr = couponToPrice !== null
+        ? formatNumber(couponToPrice, 2)
+        : '—';
+      
+      const regularDuration = calculateRegularDuration(bond);
+      const regularDurationStr = regularDuration !== null
+        ? formatNumber(regularDuration, 2)
+        : '—';
+      
       const duration = calculateModifiedDuration(bond);
       const durationStr = duration !== null
         ? formatNumber(duration, 2)
         : '—';
       
       const priceChange = formatPriceChange(calculatePriceChange(bond));
+
+      // Calculate spread
+      const horizon = calculateYearsToMaturity(bond.MATDATE);
+      let spreadStr = '—';
+      
+      if (horizon !== null && horizon > 0) {
+        const zeroCurveYield = interpolateZeroCurveYield(yieldCurveMap, horizon);
+        if (zeroCurveYield !== null) {
+          const spread = calculateSpread(bond.YIELDATPREVWAPRICE, zeroCurveYield);
+          spreadStr = formatSpread(spread);
+        }
+      }
       
       return {
         name: bond.SHORTNAME || '—',
@@ -155,11 +297,14 @@ export const ComparisonAnalysisDialog: React.FC<ComparisonAnalysisDialogProps> =
         price,
         ytm,
         coupon,
+        couponToPrice: couponToPriceStr,
+        regularDuration: regularDurationStr,
         duration: durationStr,
         priceChange,
+        spread: spreadStr,
       };
     });
-  }
+  }, [open, bonds, zerocuponData]);
 
   // Generate markdown table
   const generateMarkdown = (): string => {
@@ -168,10 +313,13 @@ export const ComparisonAnalysisDialog: React.FC<ComparisonAnalysisDialogProps> =
       'Тикер',
       'Погашение',
       'Цена (%)',
-      'YTM (%)',
-      'Купон (%)',
-      'Дюрация (MD)',
-      'Рост цены при −1% ставки',
+      'Доходность к погашению (%)',
+      'Доходность купона относительно номинала (%)',
+      'Доходность купона к текущей цене (%)',
+      'Дюрация',
+      'Модифицированная дюрация',
+      'Изменение цены при изменении ставки на 1%',
+      'Премии и отклонения по рынку',
     ];
     
     // Calculate column widths for alignment
@@ -185,8 +333,11 @@ export const ComparisonAnalysisDialog: React.FC<ComparisonAnalysisDialogProps> =
           row.price,
           row.ytm,
           row.coupon,
+          row.couponToPrice,
+          row.regularDuration,
           row.duration,
           row.priceChange,
+          row.spread,
         ];
         const cellValue = values[colIndex] || '';
         if (cellValue.length > maxWidth) {
@@ -213,8 +364,11 @@ export const ComparisonAnalysisDialog: React.FC<ComparisonAnalysisDialogProps> =
         row.price,
         row.ytm,
         row.coupon,
+        row.couponToPrice,
+        row.regularDuration,
         row.duration,
         row.priceChange,
+        row.spread,
       ];
       return '| ' + values
         .map((value, i) => (value || '—').padEnd(colWidths[i]))
@@ -266,16 +420,19 @@ export const ComparisonAnalysisDialog: React.FC<ComparisonAnalysisDialogProps> =
                 <TableCell align="center" sx={{ fontWeight: 600 }}>Тикер</TableCell>
                 <TableCell align="center" sx={{ fontWeight: 600 }}>Погашение</TableCell>
                 <TableCell align="center" sx={{ fontWeight: 600 }}>Цена (%)</TableCell>
-                <TableCell align="center" sx={{ fontWeight: 600 }}>YTM (%)</TableCell>
-                <TableCell align="center" sx={{ fontWeight: 600 }}>Купон (%)</TableCell>
-                <TableCell align="center" sx={{ fontWeight: 600 }}>Дюрация (MD)</TableCell>
-                <TableCell align="center" sx={{ fontWeight: 600 }}>Рост цены при −1% ставки</TableCell>
+                <TableCell align="center" sx={{ fontWeight: 600 }}>Доходность к погашению (%)</TableCell>
+                <TableCell align="center" sx={{ fontWeight: 600 }}>Доходность купона относительно номинала (%)</TableCell>
+                <TableCell align="center" sx={{ fontWeight: 600 }}>Доходность купона к текущей цене (%)</TableCell>
+                <TableCell align="center" sx={{ fontWeight: 600 }}>Дюрация</TableCell>
+                <TableCell align="center" sx={{ fontWeight: 600 }}>Модифицированная дюрация</TableCell>
+                <TableCell align="center" sx={{ fontWeight: 600 }}>Изменение цены при изменении ставки на 1%</TableCell>
+                <TableCell align="center" sx={{ fontWeight: 600 }}>Премии и отклонения по рынку</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {comparisonData.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} align="center">
+                  <TableCell colSpan={11} align="center">
                     <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
                       Нет данных для отображения
                     </Typography>
@@ -290,14 +447,24 @@ export const ComparisonAnalysisDialog: React.FC<ComparisonAnalysisDialogProps> =
                     <TableCell align="center">{row.price}</TableCell>
                     <TableCell align="center">{row.ytm}</TableCell>
                     <TableCell align="center">{row.coupon}</TableCell>
+                    <TableCell align="center">{row.couponToPrice}</TableCell>
+                    <TableCell align="center">{row.regularDuration}</TableCell>
                     <TableCell align="center">{row.duration}</TableCell>
                     <TableCell align="center">{row.priceChange}</TableCell>
+                    <TableCell align="center">{row.spread}</TableCell>
                   </TableRow>
                 ))
               )}
             </TableBody>
           </Table>
         </TableContainer>
+        {isLoadingZerocupon && (
+          <Box sx={{ mt: 2, textAlign: 'center' }}>
+            <Typography variant="body2" color="text.secondary">
+              Загрузка данных кривой бескупонной доходности...
+            </Typography>
+          </Box>
+        )}
       </DialogContent>
       <DialogActions>
         {comparisonData.length > 0 && (

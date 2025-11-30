@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useCallback, useState, useRef, useImperativeHandle } from 'react';
 import { AgGridReact } from 'ag-grid-react';
-import type { ColDef, RowClickedEvent, ICellRendererParams } from 'ag-grid-community';
+import type { ColDef, RowClickedEvent, ICellRendererParams, IHeaderParams } from 'ag-grid-community';
 import { ModuleRegistry, AllCommunityModule } from 'ag-grid-community';
 import 'ag-grid-community/styles/ag-grid.css';
 import 'ag-grid-community/styles/ag-theme-material.css';
-import { Box, Card, CardContent, Button } from '@mui/material';
+import './ag-grid-tooltips.css';
+import { Box, Card, CardContent, Button, Tooltip } from '@mui/material';
 
 // Register AG Grid modules
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -170,6 +171,75 @@ export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
     return undefined;
   }, [fieldDescriptions]);
 
+  // Custom header component with Material-UI Tooltip
+  const CustomHeaderWithTooltip = React.memo((params: IHeaderParams) => {
+    const displayName = params.displayName || '';
+    const tooltipText = params.column?.getColDef().headerTooltip as string | undefined;
+    
+    // Если нет tooltip, просто возвращаем стандартный заголовок
+    if (!tooltipText) {
+      return (
+        <div className="ag-header-cell-label" style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {displayName}
+        </div>
+      );
+    }
+
+    return (
+      <Tooltip
+        title={tooltipText}
+        arrow
+        placement="top"
+        enterDelay={300}
+        leaveDelay={0}
+        disableInteractive
+        slotProps={{
+          tooltip: {
+            sx: {
+              maxWidth: 400,
+              minWidth: 200,
+              bgcolor: 'rgba(255, 255, 255, 0.98)',
+              color: 'rgba(0, 0, 0, 0.87)',
+              fontSize: '13px',
+              lineHeight: 1.5,
+              padding: '12px 16px',
+              borderRadius: '8px',
+              boxShadow: '0px 3px 5px -1px rgba(0, 0, 0, 0.2), 0px 6px 10px 0px rgba(0, 0, 0, 0.14), 0px 1px 18px 0px rgba(0, 0, 0, 0.12)',
+              border: '1px solid rgba(0, 0, 0, 0.12)',
+              fontFamily: 'Roboto, Helvetica, Arial, sans-serif',
+              fontWeight: 400,
+              wordWrap: 'break-word',
+              whiteSpace: 'normal',
+              textAlign: 'left',
+              '& .MuiTooltip-arrow': {
+                color: 'rgba(255, 255, 255, 0.98)',
+                '&::before': {
+                  border: '1px solid rgba(0, 0, 0, 0.12)',
+                },
+              },
+            },
+          },
+        }}
+      >
+        <div 
+          className="ag-header-cell-label" 
+          style={{ 
+            width: '100%', 
+            height: '100%', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center',
+            cursor: 'default'
+          }}
+        >
+          {displayName}
+        </div>
+      </Tooltip>
+    );
+  });
+
+  CustomHeaderWithTooltip.displayName = 'CustomHeaderWithTooltip';
+
   // Column definitions
   const columnDefs: ColDef[] = useMemo(() => {
     // Custom cell renderer for SHORTNAME with PUT/CALL superscripts
@@ -221,16 +291,21 @@ export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
     };
 
     // Base column definition with common properties
-    const createColumnDef = (field: string, headerName: string, otherProps: Partial<ColDef> = {}): ColDef => ({
-      field,
-      headerName,
-      headerClass: 'ag-header-center',
-      // Use headerTooltip from otherProps if provided, otherwise use default description
-      headerTooltip: otherProps.headerTooltip !== undefined ? otherProps.headerTooltip : getFieldDescription(field),
-      // Center align cell content by default (can be overridden in otherProps)
-      cellStyle: otherProps.cellStyle !== undefined ? otherProps.cellStyle : { textAlign: 'center' },
-      ...otherProps,
-    });
+    const createColumnDef = (field: string, headerName: string, otherProps: Partial<ColDef> = {}): ColDef => {
+      const tooltipText = otherProps.headerTooltip !== undefined ? otherProps.headerTooltip : getFieldDescription(field);
+      
+      return {
+        field,
+        headerName,
+        headerClass: 'ag-header-center',
+        // Используем кастомный header component с Material-UI Tooltip
+        headerComponent: tooltipText ? CustomHeaderWithTooltip : undefined,
+        headerTooltip: tooltipText, // Оставляем для совместимости
+        // Center align cell content by default (can be overridden in otherProps)
+        cellStyle: otherProps.cellStyle !== undefined ? otherProps.cellStyle : { textAlign: 'center' },
+        ...otherProps,
+      };
+    };
 
     return [
     {
@@ -563,11 +638,34 @@ export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
     setIsComparisonDialogOpen(true);
   };
 
-  // Get selected bonds data
+  // Get selected bonds data directly from AG Grid to avoid duplicates
+  // This ensures we get the exact rows that are selected in the table (with current filter applied)
   const selectedBondsData = useMemo(() => {
-    if (selectedBonds.size === 0) return [];
-    return bonds.filter((bond) => selectedBonds.has(bond.SECID));
-  }, [bonds, selectedBonds]);
+    if (!gridRef.current?.api || selectedBonds.size === 0) return [];
+    
+    // Get selected rows directly from AG Grid (respects current filters)
+    const selectedRows = gridRef.current.api.getSelectedRows() as BondListItem[];
+    
+    if (selectedRows.length === 0) return [];
+    
+    // Remove duplicates by SECID (in case AG Grid returns duplicates)
+    const uniqueBonds = new Map<string, BondListItem>();
+    selectedRows.forEach(bond => {
+      if (bond && bond.SECID) {
+        // Keep the bond with more complete data (prefer one with DURATION)
+        const existing = uniqueBonds.get(bond.SECID);
+        if (!existing) {
+          uniqueBonds.set(bond.SECID, bond);
+        } else if (bond.DURATION !== null && bond.DURATION !== undefined && 
+                   (existing.DURATION === null || existing.DURATION === undefined)) {
+          // Replace with bond that has DURATION data
+          uniqueBonds.set(bond.SECID, bond);
+        }
+      }
+    });
+    
+    return Array.from(uniqueBonds.values());
+  }, [selectedBonds]); // Recalculate when selection changes
 
   // Loading state
   if (isLoading && bonds.length === 0) {
@@ -753,6 +851,8 @@ export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
             suppressAggFuncInHeader={true}
             suppressMenuHide={true}
             getRowId={(params) => params.data.SECID}
+            // Отключаем встроенные tooltips AG Grid, используем Material-UI Tooltip
+            suppressHeaderTooltips={true}
           />
         </Box>
         </Box>

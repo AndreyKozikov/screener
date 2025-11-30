@@ -43,13 +43,13 @@ export const CurrencyFilter: React.FC = () => {
       <Autocomplete
         multiple
         size="small"
-        options={filterOptions.faceunits}
-        value={filters.faceunit}
+        options={filterOptions.faceunits || []}
+        value={filters.faceunit || []}
         onChange={handleCurrencyChange}
         renderInput={(params) => (
           <TextField
             {...params}
-            placeholder={filters.faceunit.length === 0 ? "Выберите валюты" : ""}
+            placeholder={(!filters.faceunit || filters.faceunit.length === 0) ? "Выберите валюты" : ""}
             sx={{
               '& .MuiOutlinedInput-root': {
                 paddingRight: '9px !important',

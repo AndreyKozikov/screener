@@ -1,8 +1,11 @@
 import { apiClient } from './client';
 
 export interface LLMAnalysisResponse {
-  analysis: string;
+  analysis: string;  // Финальный отчет (этап 5)
   model_used: string;
+  stage1_forecast?: string | null;  // Этап 1: Прогноз Банка России
+  stage2_zerocupon?: string | null;  // Этап 2: Кривая бескупонной доходности
+  stage3_bonds?: string | null;  // Этап 3: Нормализация данных по облигациям
 }
 
 /**
@@ -12,28 +15,37 @@ export const analyzeBondsWithLLM = async (
   bondsData: string,
   zerocuponData: string,
   forecastData: string,
-  model: string = 'gpt-5-mini'
+  model: string = 'gpt-5.1',
+  includeZerocupon: boolean = true,
+  includeForecast: boolean = true
 ): Promise<LLMAnalysisResponse> => {
   // Create Blob objects from JSON strings
   const bondsBlob = new Blob([bondsData], { type: 'application/json' });
-  const zerocuponBlob = new Blob([zerocuponData], { type: 'application/json' });
-  const forecastBlob = new Blob([forecastData], { type: 'application/json' });
-  
-  // Create File objects with exact names as specified in prompt
   const bondsFile = new File([bondsBlob], 'bonds_data.json', { type: 'application/json' });
-  const zerocuponFile = new File([zerocuponBlob], 'zerocupon_data.json', { type: 'application/json' });
-  const forecastFile = new File([forecastBlob], 'forecast_data.json', { type: 'application/json' });
   
-  // Create FormData
+  // Create FormData - bonds file is always included
   const formData = new FormData();
   formData.append('bonds_file', bondsFile);
-  formData.append('zerocupon_file', zerocuponFile);
-  formData.append('forecast_file', forecastFile);
+  
+  // Add zerocupon file only if included
+  if (includeZerocupon && zerocuponData) {
+    const zerocuponBlob = new Blob([zerocuponData], { type: 'application/json' });
+    const zerocuponFile = new File([zerocuponBlob], 'zerocupon_data.json', { type: 'application/json' });
+    formData.append('zerocupon_file', zerocuponFile);
+  }
+  
+  // Add forecast file only if included
+  if (includeForecast && forecastData) {
+    const forecastBlob = new Blob([forecastData], { type: 'application/json' });
+    const forecastFile = new File([forecastBlob], 'forecast_data.json', { type: 'application/json' });
+    formData.append('forecast_file', forecastFile);
+  }
+  
   formData.append('model', model);
   
   // Send multipart/form-data request with extended timeout (20 minutes for LLM analysis)
   const response = await apiClient.post<LLMAnalysisResponse>(
-    '/api/llm/analyze',
+    '/llm/analyze',
     formData,
     {
       headers: {

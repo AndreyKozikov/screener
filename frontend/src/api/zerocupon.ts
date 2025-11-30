@@ -24,7 +24,7 @@ export const fetchZerocuponData = async (
   if (dateFrom) params.date_from = dateFrom;
   if (dateTo) params.date_to = dateTo;
 
-  const response = await apiClient.get<ZerocuponDataResponse>('/api/zerocupon/data', { params });
+  const response = await apiClient.get<ZerocuponDataResponse>('/zerocupon/data', { params });
   return response.data;
 };
 
@@ -39,7 +39,7 @@ export const downloadZerocuponJson = async (
   if (dateFrom) params.date_from = dateFrom;
   if (dateTo) params.date_to = dateTo;
 
-  const response = await apiClient.get('/api/zerocupon/download', {
+  const response = await apiClient.get('/zerocupon/download', {
     params,
     responseType: 'blob',
   });
@@ -63,5 +63,23 @@ export const downloadZerocuponJson = async (
   link.download = filename;
   link.click();
   URL.revokeObjectURL(url);
+};
+
+export interface ZerocuponRefreshResponse {
+  status: string;
+  message: string;
+  last_date: string | null;
+  start_date?: string;
+  end_date?: string;
+  dates_fetched: number;
+  dates_failed?: number;
+}
+
+/**
+ * Request a refresh of zero-coupon yield curve data from MOEX API
+ */
+export const refreshZerocuponData = async (): Promise<ZerocuponRefreshResponse> => {
+  const response = await apiClient.post<ZerocuponRefreshResponse>('/zerocupon/refresh');
+  return response.data;
 };
 

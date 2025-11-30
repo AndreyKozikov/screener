@@ -4,7 +4,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import bonds, metadata, zerocupon, forecast, llm
+from app.routers import bonds, metadata, zerocupon, forecast, llm, qwen, grok
 from app.services.data_loader import init_data_loader
 from app.services.coupon_loader import init_coupon_loader
 from app.config import settings
@@ -47,6 +47,8 @@ app.include_router(metadata.router)
 app.include_router(zerocupon.router)
 app.include_router(forecast.router)
 app.include_router(llm.router)
+app.include_router(qwen.router)
+app.include_router(grok.router)
 
 # Root endpoint
 @app.get("/")
@@ -78,7 +80,7 @@ if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
         "main:app",
-        host="127.0.0.1",  # Изменено для локальной разработки
+        host="0.0.0.0",  # Listen on all interfaces for external access
         port=8000,
         reload=True,
     )
