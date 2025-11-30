@@ -28,6 +28,8 @@ class BondListItem(BaseModel):
     CURRENCYID: Optional[str] = None  # Валюта торговли
     FACEUNIT: Optional[str] = None  # Валюта номинала
     LISTLEVEL: Optional[int] = None  # Уровень листинга
+    RATING_AGENCY: Optional[str] = None  # Название рейтингового агентства (agency_name_short_ru)
+    RATING_LEVEL: Optional[str] = None  # Уровень рейтинга (rating_level_name_short_ru)
     
     class Config:
         from_attributes = True

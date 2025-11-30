@@ -4,9 +4,11 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import bonds, metadata, zerocupon, forecast, llm, qwen, grok
+from app.routers import bonds, metadata, zerocupon, forecast, llm, qwen, grok, emitent, rating
 from app.services.data_loader import init_data_loader
 from app.services.coupon_loader import init_coupon_loader
+from app.services.emitent_service import init_emitent_service
+from app.services.rating_service import init_rating_service
 from app.config import settings
 
 
@@ -17,6 +19,8 @@ async def lifespan(app: FastAPI):
     data_dir = Path(__file__).parent / "app" / "data"
     init_data_loader(data_dir)
     init_coupon_loader(data_dir)
+    init_emitent_service(data_dir)
+    init_rating_service(data_dir)
     yield
     # Shutdown: cleanup if needed
     # (currently no cleanup required)
@@ -49,6 +53,8 @@ app.include_router(forecast.router)
 app.include_router(llm.router)
 app.include_router(qwen.router)
 app.include_router(grok.router)
+app.include_router(emitent.router)
+app.include_router(rating.router)
 
 # Root endpoint
 @app.get("/")

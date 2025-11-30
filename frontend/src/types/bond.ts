@@ -26,6 +26,8 @@ export interface BondListItem {
   CURRENCYID: string | null;  // Валюта торговли
   FACEUNIT: string | null;  // Валюта номинала
   LISTLEVEL: number | null;  // Уровень листинга
+  RATING_AGENCY: string | null;  // Название рейтингового агентства
+  RATING_LEVEL: string | null;  // Уровень рейтинга
 }
 
 // Detailed bond information

@@ -13,6 +13,8 @@ import { AnalysisResultDialog } from '../components/llm/AnalysisResultDialog';
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
 import { refreshBondsData } from '../api/bonds';
 import { refreshZerocuponData } from '../api/zerocupon';
+import { refreshRatingsData } from '../api/rating';
+import { refreshEmitentsData } from '../api/emitent';
 import { useUiStore } from '../stores/uiStore';
 import { useBondsStore } from '../stores/bondsStore';
 import { getBondsDataForLLM, getZerocuponDataForLLM, getForecastDataForLLM } from '../utils/llmDataExport';
@@ -30,6 +32,8 @@ export const HomePage: React.FC = () => {
   const triggerDataRefresh = useUiStore((state) => state.triggerDataRefresh);
   const setError = useBondsStore((state) => state.setError);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isRefreshingRatings, setIsRefreshingRatings] = useState(false);
+  const [isRefreshingEmitents, setIsRefreshingEmitents] = useState(false);
   const [currentTab, setCurrentTab] = useState(0);
   const bondsTableRef = useRef<BondsTableRef>(null);
   
@@ -58,6 +62,44 @@ export const HomePage: React.FC = () => {
   // Grok Analysis state
   const [isGrokParamsOpen, setIsGrokParamsOpen] = useState(false);
   const [isGrokAnalyzing, setIsGrokAnalyzing] = useState(false);
+
+  const handleRefreshRatingsClick = async () => {
+    if (isRefreshingRatings) {
+      return;
+    }
+
+    setIsRefreshingRatings(true);
+    setError(null);
+
+    try {
+      // Refresh ratings data - backend handles all processing
+      await refreshRatingsData();
+    } catch (error) {
+      console.error('Failed to refresh ratings', error);
+      setError('Не удалось обновить рейтинги. Попробуйте позже.');
+    } finally {
+      setIsRefreshingRatings(false);
+    }
+  };
+
+  const handleRefreshEmitentsClick = async () => {
+    if (isRefreshingEmitents) {
+      return;
+    }
+
+    setIsRefreshingEmitents(true);
+    setError(null);
+
+    try {
+      // Refresh emitents data - backend handles all processing
+      await refreshEmitentsData();
+    } catch (error) {
+      console.error('Failed to refresh emitents', error);
+      setError('Не удалось обновить данные эмитентов. Попробуйте позже.');
+    } finally {
+      setIsRefreshingEmitents(false);
+    }
+  };
 
   const handleRefreshClick = async () => {
     if (isRefreshing) {
@@ -396,6 +438,30 @@ export const HomePage: React.FC = () => {
                 </Typography>
               </Box>
             </Box>
+            <Button
+              variant="outlined"
+              color="inherit"
+              onClick={handleRefreshRatingsClick}
+              startIcon={
+                isRefreshingRatings ? <CircularProgress size={18} color="inherit" /> : <RefreshIcon />
+              }
+              disabled={isRefreshingRatings}
+              sx={{ mr: 1 }}
+            >
+              Обновить рейтинги
+            </Button>
+            <Button
+              variant="outlined"
+              color="inherit"
+              onClick={handleRefreshEmitentsClick}
+              startIcon={
+                isRefreshingEmitents ? <CircularProgress size={18} color="inherit" /> : <RefreshIcon />
+              }
+              disabled={isRefreshingEmitents}
+              sx={{ mr: 1 }}
+            >
+              Обновить эмитентов
+            </Button>
             <Button
               variant="outlined"
               color="inherit"

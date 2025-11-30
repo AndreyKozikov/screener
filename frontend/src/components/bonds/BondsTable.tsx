@@ -290,6 +290,7 @@ export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
       );
     };
 
+
     // Base column definition with common properties
     const createColumnDef = (field: string, headerName: string, otherProps: Partial<ColDef> = {}): ColDef => {
       const tooltipText = otherProps.headerTooltip !== undefined ? otherProps.headerTooltip : getFieldDescription(field);
@@ -327,6 +328,26 @@ export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
       cellStyle: { textAlign: 'left' }, // Left align for name column
       headerTooltip: getFieldDescription('SHORTNAME'),
       autoHeaderHeight: true,
+    }),
+    createColumnDef('RATING', 'Рейтинг', {
+      minWidth: 100,
+      pinned: 'left',
+      valueGetter: (params) => {
+        const bond = params.data;
+        if (!bond) {
+          return null;
+        }
+        // Use RATING_LEVEL from bond data (loaded from bonds_rating.json)
+        return bond.RATING_LEVEL || null;
+      },
+      valueFormatter: (params) => {
+        return params.value || '—';
+      },
+      cellStyle: { textAlign: 'center' },
+      headerTooltip: 'Рейтинг облигации от рейтинговых агентств',
+      autoHeaderHeight: true,
+      sortable: false,
+      filter: false,
     }),
     createColumnDef('PREVPRICE', 'Текущая цена', {
       minWidth: 100,
@@ -590,6 +611,7 @@ export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
       return () => clearTimeout(timeoutId);
     }
   }, [bonds.length, columnDefs, fieldDescriptions, calculateHeaderHeight]);
+
 
   // Recalculate on window resize
   useEffect(() => {

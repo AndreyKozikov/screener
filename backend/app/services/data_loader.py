@@ -266,6 +266,9 @@ class DataLoader:
                                 bond.DURATIONWAPRICE = durationwaprice
                             break
         
+        # Load and add ratings data
+        self._add_ratings_to_bonds(bonds_list)
+        
         self._bonds_cache = bonds_list
         self._details_cache = details_map
     
@@ -331,6 +334,79 @@ class DataLoader:
             return int(value)
         except (ValueError, TypeError):
             return None
+    
+    def _add_ratings_to_bonds(self, bonds_list: List[BondListItem]):
+        """Load ratings from bonds_rating.json and add to bonds"""
+        ratings_path = self.data_dir / "bonds_rating.json"
+        
+        if not ratings_path.exists():
+            print(f"[DATA LOADER] Ratings file not found: {ratings_path}, skipping ratings")
+            return
+        
+        try:
+            with open(ratings_path, 'rb') as f:
+                ratings_data = orjson.loads(f.read())
+            
+            print(f"[DATA LOADER] Loaded ratings for {len(ratings_data)} bonds")
+            
+            # Create a lookup map for quick access
+            ratings_map = {}
+            for secid, rating_entry in ratings_data.items():
+                if isinstance(rating_entry, dict):
+                    # New format: {last_updated: "...", ratings: [...]}
+                    if "ratings" in rating_entry:
+                        ratings_list = rating_entry["ratings"]
+                        if isinstance(ratings_list, list) and len(ratings_list) > 0:
+                            # Get first rating (most recent or primary)
+                            first_rating = ratings_list[0]
+                            if isinstance(first_rating, dict):
+                                agency_name = first_rating.get("agency_name_short_ru", "")
+                                rating_level = first_rating.get("rating_level_name_short_ru", "")
+                                # Only add if rating is not empty
+                                if agency_name and agency_name.strip():
+                                    ratings_map[secid] = {
+                                        "agency": agency_name.strip(),
+                                        "level": rating_level.strip() if rating_level else None
+                                    }
+                    # Old format: {cci_rating_securities: [...]}
+                    elif "cci_rating_securities" in rating_entry:
+                        ratings_list = rating_entry["cci_rating_securities"]
+                        if isinstance(ratings_list, list) and len(ratings_list) > 0:
+                            first_rating = ratings_list[0]
+                            if isinstance(first_rating, dict):
+                                agency_name = first_rating.get("agency_name_short_ru", "")
+                                rating_level = first_rating.get("rating_level_name_short_ru", "")
+                                if agency_name and agency_name.strip():
+                                    ratings_map[secid] = {
+                                        "agency": agency_name.strip(),
+                                        "level": rating_level.strip() if rating_level else None
+                                    }
+                # Old format: direct array
+                elif isinstance(rating_entry, list) and len(rating_entry) > 0:
+                    first_rating = rating_entry[0]
+                    if isinstance(first_rating, dict):
+                        agency_name = first_rating.get("agency_name_short_ru", "")
+                        rating_level = first_rating.get("rating_level_name_short_ru", "")
+                        if agency_name and agency_name.strip():
+                            ratings_map[secid] = {
+                                "agency": agency_name.strip(),
+                                "level": rating_level.strip() if rating_level else None
+                            }
+            
+            # Add ratings to bonds
+            ratings_added = 0
+            for bond in bonds_list:
+                if bond.SECID in ratings_map:
+                    rating_info = ratings_map[bond.SECID]
+                    bond.RATING_AGENCY = rating_info["agency"]
+                    bond.RATING_LEVEL = rating_info["level"]
+                    ratings_added += 1
+            
+            print(f"[DATA LOADER] Added ratings to {ratings_added} bonds")
+            
+        except (orjson.JSONDecodeError, IOError) as exc:
+            print(f"[DATA LOADER] ERROR: Failed to load ratings file - {type(exc).__name__}: {str(exc)}")
+            # Continue without ratings if file is corrupted or can't be read
     
     @staticmethod
     def _parse_date(date_str: str) -> Optional[date]:
