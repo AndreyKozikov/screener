@@ -23,8 +23,30 @@ export const SearchFilter: React.FC = () => {
       onChange={handleChange}
       sx={{ 
         width: '100%',
-        '& .MuiInputBase-input::placeholder': {
-          fontSize: '0.75rem',
+        backgroundColor: 'white',
+        '& .MuiOutlinedInput-root': {
+          backgroundColor: 'white',
+          color: 'black',
+          '& fieldset': {
+            borderColor: 'rgba(0, 0, 0, 0.23)',
+          },
+          '&:hover fieldset': {
+            borderColor: 'rgba(0, 0, 0, 0.87)',
+          },
+          '&.Mui-focused fieldset': {
+            borderColor: 'primary.main',
+          },
+        },
+        '& .MuiInputBase-input': {
+          color: 'black',
+          '&::placeholder': {
+            color: 'rgba(0, 0, 0, 0.6)',
+            fontSize: '0.75rem',
+            opacity: 1,
+          },
+        },
+        '& .MuiInputAdornment-root': {
+          color: 'rgba(0, 0, 0, 0.54)',
         },
       }}
       InputProps={{

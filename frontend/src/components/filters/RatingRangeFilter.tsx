@@ -77,6 +77,12 @@ export const RatingRangeFilter: React.FC = () => {
           }}
           sx={{ 
             width: '80px',
+            '& .MuiInputBase-root': {
+              height: '32px',
+            },
+            '& .MuiInputBase-input': {
+              padding: '4px 8px',
+            },
             '& .MuiInputBase-input::placeholder': {
               fontSize: '0.75rem',
             },
@@ -95,6 +101,12 @@ export const RatingRangeFilter: React.FC = () => {
           }}
           sx={{ 
             width: '80px',
+            '& .MuiInputBase-root': {
+              height: '32px',
+            },
+            '& .MuiInputBase-input': {
+              padding: '4px 8px',
+            },
             '& .MuiInputBase-input::placeholder': {
               fontSize: '0.75rem',
             },

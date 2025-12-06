@@ -1,19 +1,20 @@
-import React, { useEffect, useMemo, useCallback, useState, useRef, useImperativeHandle } from 'react';
+import React, { useEffect, useMemo, useCallback, useState, useRef } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import type { ColDef, RowClickedEvent, CellClickedEvent, ICellRendererParams, IHeaderParams } from 'ag-grid-community';
 import { ModuleRegistry, AllCommunityModule } from 'ag-grid-community';
 import 'ag-grid-community/styles/ag-grid.css';
 import 'ag-grid-community/styles/ag-theme-material.css';
-import './ag-grid-tooltips.css';
-import { Box, Card, CardContent, Button, Tooltip } from '@mui/material';
+import '../bonds/ag-grid-tooltips.css';
+import { Box, Card, CardContent, Button, Tooltip, IconButton, Alert } from '@mui/material';
+import DeleteIcon from '@mui/icons-material/Delete';
+import SaveIcon from '@mui/icons-material/Save';
+import UploadFileIcon from '@mui/icons-material/UploadFile';
 
 // Register AG Grid modules
 ModuleRegistry.registerModules([AllCommunityModule]);
-import { useBondsStore } from '../../stores/bondsStore';
-import { useFiltersStore } from '../../stores/filtersStore';
-import { useUiStore } from '../../stores/uiStore';
 import { usePortfolioStore } from '../../stores/portfolioStore';
-import { fetchBonds } from '../../api/bonds';
+import { useUiStore } from '../../stores/uiStore';
+import { useFiltersStore } from '../../stores/filtersStore';
 import { fetchDescriptions } from '../../api/metadata';
 import type { DescriptionsResponse } from '../../api/metadata';
 import { 
@@ -26,16 +27,11 @@ import { LoadingSpinner } from '../common/LoadingSpinner';
 import { ErrorMessage } from '../common/ErrorMessage';
 import { EmptyState } from '../common/EmptyState';
 import type { BondListItem } from '../../types/bond';
-import { exportSelectedBonds } from '../../utils/bondExport';
-import { ComparisonAnalysisDialog } from './ComparisonAnalysisDialog';
-import AddToPortfolioRenderer from './AddToPortfolioRenderer';
+import { PortfolioExportDialog } from './PortfolioExportDialog';
+import { PortfolioImportDialog } from './PortfolioImportDialog';
+import { exportPortfolio } from '../../utils/portfolioExport';
 
 type FieldDescriptionMap = Record<string, string>;
-
-// Export selected bonds for use in parent component
-export type BondsTableRef = {
-  getSelectedBonds: () => Set<string>;
-};
 
 const flattenDescriptions = (descriptions: DescriptionsResponse): FieldDescriptionMap => {
   const result: FieldDescriptionMap = {};
@@ -53,25 +49,27 @@ const flattenDescriptions = (descriptions: DescriptionsResponse): FieldDescripti
   return result;
 };
 
-
 /**
- * BondsTable Component
+ * PortfolioTable Component
  * 
- * Main data table displaying bonds using AG Grid
+ * Displays portfolio bonds using AG Grid with same columns as BondsTable
+ * but without "Add to Portfolio" column and with "Remove from Portfolio" column
  */
-export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
-  const { bonds, isLoading, error, setBonds, setLoading, setError } = useBondsStore();
-  const { filters } = useFiltersStore();
-  const setSelectedBond = useUiStore((state) => state.setSelectedBond);
-  const dataRefreshVersion = useUiStore((state) => state.dataRefreshVersion);
+export const PortfolioTable: React.FC = () => {
   const portfolioBonds = usePortfolioStore((state) => state.portfolioBonds);
+  const removeBondFromPortfolio = usePortfolioStore((state) => state.removeBondFromPortfolio);
+  const loadBondsToPortfolio = usePortfolioStore((state) => state.loadBondsToPortfolio);
+  const clearPortfolio = usePortfolioStore((state) => state.clearPortfolio);
+  const setSelectedBond = useUiStore((state) => state.setSelectedBond);
+  const { filters } = useFiltersStore();
   const [fieldDescriptions, setFieldDescriptions] = useState<FieldDescriptionMap>({});
   const metadataLoadedRef = useRef(false);
   const gridRef = useRef<AgGridReact<BondListItem>>(null);
   const [headerHeight, setHeaderHeight] = useState<number | undefined>(undefined);
-  const [selectedBonds, setSelectedBonds] = useState<Set<string>>(new Set());
-  const [isComparisonDialogOpen, setIsComparisonDialogOpen] = useState(false);
-  const [comparisonDialogKey, setComparisonDialogKey] = useState(0);
+  const portfolioCellClickedRef = useRef(false);
+  const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   // Load field descriptions
   useEffect(() => {
@@ -100,58 +98,6 @@ export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
     };
   }, []);
 
-  // Load bonds data
-  const loadBonds = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const response = await fetchBonds(filters);
-      setBonds(response);
-    } catch (error) {
-      console.error('Error loading bonds:', error);
-      if (error instanceof Error) {
-        setError(error.message);
-      } else {
-        setError('Failed to load bonds');
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [filters, setBonds, setLoading, setError]);
-
-  // Load on mount and filter changes
-  useEffect(() => {
-    let isMounted = true;
-    let isLoading = false;
-    
-    const loadData = async () => {
-      // Prevent duplicate loads
-      if (isLoading) {
-        return;
-      }
-      
-      try {
-        isLoading = true;
-        await loadBonds();
-      } catch (error) {
-        if (isMounted) {
-          console.error('Error in loadBonds effect:', error);
-        }
-      } finally {
-        if (isMounted) {
-          isLoading = false;
-        }
-      }
-    };
-    
-    loadData();
-    
-    return () => {
-      isMounted = false;
-      isLoading = false;
-    };
-  }, [loadBonds, dataRefreshVersion]);
-
   // Get field description helper
   const getFieldDescription = useCallback((field: string): string | undefined => {
     const direct = fieldDescriptions[field];
@@ -179,7 +125,6 @@ export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
     const displayName = params.displayName || '';
     const tooltipText = params.column?.getColDef().headerTooltip as string | undefined;
     
-    // Если нет tooltip, просто возвращаем стандартный заголовок
     if (!tooltipText) {
       return (
         <div className="ag-header-cell-label" style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -243,7 +188,7 @@ export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
 
   CustomHeaderWithTooltip.displayName = 'CustomHeaderWithTooltip';
 
-  // Column definitions
+  // Column definitions - same as BondsTable but without "Add to Portfolio" column
   const columnDefs: ColDef[] = useMemo(() => {
     // Custom cell renderer for SHORTNAME with PUT/CALL superscripts
     const ShortNameRenderer = (params: ICellRendererParams<BondListItem>) => {
@@ -260,9 +205,16 @@ export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
             display: 'inline-flex',
             alignItems: 'center',
             gap: 0,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            width: '100%',
+            maxWidth: '100%',
           }}
         >
-          <span>{bond.SHORTNAME}</span>
+          <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {bond.SHORTNAME}
+          </span>
           {hasCall && (
             <Box
               component="span"
@@ -271,6 +223,8 @@ export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
                 fontWeight: 700,
                 color: '#1976d2',
                 ml: 1,
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
               }}
             >
               CALL
@@ -284,11 +238,80 @@ export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
                 fontWeight: 700,
                 color: '#d32f2f',
                 ml: hasCall ? 0.5 : 1,
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
               }}
             >
               PUT
             </Box>
           )}
+        </Box>
+      );
+    };
+
+    // Custom cell renderer for "Remove from Portfolio" column
+    const RemoveFromPortfolioRenderer = (params: ICellRendererParams<BondListItem>) => {
+      const bond = params.data;
+      if (!bond) return null;
+
+      const handleClick = (e: React.MouseEvent) => {
+        e.stopPropagation(); // Prevent row click
+        removeBondFromPortfolio(bond.SECID);
+      };
+
+      const handleCellClick = (e: React.MouseEvent) => {
+        e.stopPropagation(); // Prevent row click from opening details
+        e.preventDefault(); // Prevent default behavior
+      };
+
+      const handleCellMouseDown = (e: React.MouseEvent) => {
+        e.stopPropagation(); // Prevent row click from opening details
+        e.preventDefault(); // Prevent default behavior
+      };
+
+      return (
+        <Box
+          data-portfolio-cell
+          onClick={handleCellClick}
+          onMouseDown={handleCellMouseDown}
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: '100%',
+            height: '32px',
+            maxHeight: '32px',
+            minHeight: '32px',
+            cursor: 'default',
+            padding: '0 !important',
+            margin: '0 !important',
+            lineHeight: '1',
+          }}
+        >
+          <IconButton
+            size="small"
+            onClick={handleClick}
+            sx={{
+              color: 'error.main',
+              padding: '4px !important',
+              margin: '0 !important',
+              width: '28px !important',
+              height: '28px !important',
+              minWidth: '28px !important',
+              minHeight: '28px !important',
+              maxWidth: '28px !important',
+              maxHeight: '28px !important',
+              '& .MuiSvgIcon-root': {
+                fontSize: '18px !important',
+              },
+              '&:hover': {
+                backgroundColor: 'error.light',
+                color: 'error.contrastText',
+              },
+            }}
+          >
+            <DeleteIcon fontSize="small" />
+          </IconButton>
         </Box>
       );
     };
@@ -301,33 +324,19 @@ export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
         field,
         headerName,
         headerClass: 'ag-header-center',
-        // Используем кастомный header component с Material-UI Tooltip
         headerComponent: tooltipText ? CustomHeaderWithTooltip : undefined,
-        headerTooltip: tooltipText, // Оставляем для совместимости
-        // Center align cell content by default (can be overridden in otherProps)
+        headerTooltip: tooltipText,
         cellStyle: otherProps.cellStyle !== undefined ? otherProps.cellStyle : { textAlign: 'center' },
         ...otherProps,
       };
     };
 
     return [
-    {
-      field: 'checkbox',
-      headerName: '',
-      checkboxSelection: true,
-      headerCheckboxSelection: true,
-      width: 50,
-      pinned: 'left',
-      sortable: false,
-      filter: false,
-      suppressMenu: true,
-      cellStyle: { textAlign: 'center' },
-    },
     createColumnDef('SHORTNAME', 'Название', {
       minWidth: 120,
       pinned: 'left',
       cellRenderer: ShortNameRenderer,
-      cellStyle: { textAlign: 'left' }, // Left align for name column
+      cellStyle: { textAlign: 'left' },
       headerTooltip: getFieldDescription('SHORTNAME'),
       autoHeaderHeight: true,
     }),
@@ -339,7 +348,6 @@ export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
         if (!bond) {
           return null;
         }
-        // Use RATING_LEVEL from bond data (loaded from bonds_rating.json)
         return bond.RATING_LEVEL || null;
       },
       valueFormatter: (params) => {
@@ -363,9 +371,7 @@ export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
       valueGetter: (params) => {
         const bond = params.data;
         if (!bond) return null;
-        // Calculate coupon frequency (payments per year)
         const couponFrequency = calculateCouponFrequency(bond.COUPONPERIOD);
-        // Calculate yield: (COUPONVALUE / (PREVPRICE × FACEVALUE / 100)) × (payments per year) × 100
         return calculateCouponYieldToPrice(bond.COUPONVALUE, bond.PREVPRICE, bond.FACEVALUE, couponFrequency);
       },
       valueFormatter: (params) => formatPercent(params.value),
@@ -437,9 +443,7 @@ export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
       valueGetter: (params) => {
         const bond = params.data;
         if (!bond || bond.DURATION == null || bond.DURATION === undefined) return null;
-        // Если дюрация равна 0, возвращаем null для отображения прочерка
         if (bond.DURATION === 0) return null;
-        // Преобразование из дней в годы: DURATION / 365
         return bond.DURATION / 365;
       },
       valueFormatter: (params) => {
@@ -451,8 +455,8 @@ export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
       autoHeaderHeight: true,
     }),
     {
-      field: 'addToPortfolio',
-      headerName: 'Добавить в портфель',
+      field: 'removeFromPortfolio',
+      headerName: 'Удалить из портфеля',
       width: 150,
       minWidth: 150,
       maxWidth: 150,
@@ -461,15 +465,26 @@ export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
       filter: false,
       suppressMenu: true,
       resizable: false, // Prevent column resizing to avoid layout shifts
-      cellRenderer: AddToPortfolioRenderer,
-      cellStyle: { textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+      cellRenderer: RemoveFromPortfolioRenderer,
+      cellStyle: { 
+        textAlign: 'center', 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center',
+        padding: '0 !important',
+        height: '32px',
+        maxHeight: '32px',
+        minHeight: '32px',
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+      },
       cellClass: 'portfolio-action-cell', // Add class for easier identification
       headerClass: 'ag-header-center',
       autoHeaderHeight: true,
       suppressSizeToFit: true, // Prevent auto-sizing to avoid layout shifts
     },
     ];
-  }, [getFieldDescription]);
+  }, [getFieldDescription, removeBondFromPortfolio]);
 
   // Default column properties
   const defaultColDef: ColDef = useMemo(() => ({
@@ -477,20 +492,16 @@ export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
     filter: true,
     resizable: true,
     minWidth: 80,
-      suppressSizeToFit: false,
-      autoHeaderHeight: true,
-    }), []);
-
-  // Stable reference to AddToPortfolioRenderer to prevent column redefinition
-  const addToPortfolioRenderer = useMemo(() => AddToPortfolioRenderer, []);
-
-  // Track if cell click was on portfolio column to prevent row click
-  const portfolioCellClickedRef = useRef(false);
+    suppressSizeToFit: false,
+    autoHeaderHeight: true,
+    wrapText: false,
+    autoHeight: false,
+  }), []);
 
   // Handle cell click - intercept clicks on portfolio column
   const onCellClicked = useCallback((event: CellClickedEvent) => {
-    // If clicking on "Add to Portfolio" column, mark it and prevent row click
-    if (event.column && event.column.getColId() === 'addToPortfolio') {
+    // If clicking on "Remove from Portfolio" column, mark it and prevent row click
+    if (event.column && event.column.getColId() === 'removeFromPortfolio') {
       portfolioCellClickedRef.current = true;
       // Prevent event propagation
       if (event.event) {
@@ -527,7 +538,7 @@ export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
     }
     
     // Check 2: Column object indicates portfolio column
-    if (event.column?.getColId() === 'addToPortfolio') {
+    if (event.column?.getColId() === 'removeFromPortfolio') {
       return;
     }
     
@@ -540,7 +551,7 @@ export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
     const clickedCell = target.closest('.ag-cell');
     if (clickedCell) {
       const colId = clickedCell.getAttribute('col-id');
-      if (colId === 'addToPortfolio') {
+      if (colId === 'removeFromPortfolio') {
         return;
       }
       // Also check by CSS class
@@ -554,7 +565,7 @@ export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
     while (currentElement) {
       if (currentElement.classList.contains('ag-cell')) {
         const colId = currentElement.getAttribute('col-id');
-        if (colId === 'addToPortfolio') {
+        if (colId === 'removeFromPortfolio') {
           return;
         }
         if (currentElement.classList.contains('portfolio-action-cell')) {
@@ -572,16 +583,8 @@ export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
     setSelectedBond(event.data.SECID);
   }, [setSelectedBond]);
 
-  // Handle selection change
-  const onSelectionChanged = useCallback(() => {
-    if (gridRef.current?.api) {
-      const selectedRows = gridRef.current.api.getSelectedRows() as BondListItem[];
-      const selectedSecids = new Set(selectedRows.map(row => row.SECID));
-      setSelectedBonds(selectedSecids);
-    }
-  }, []);
 
-  // Calculate dynamic header height based on content
+  // Calculate dynamic header height
   const calculateHeaderHeight = useCallback(() => {
     const gridContainer = document.querySelector<HTMLElement>('.ag-theme-material');
     if (!gridContainer) return;
@@ -591,12 +594,10 @@ export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
 
     let maxContentHeight = 0;
 
-    // Measure each header cell's content height
     headerCells.forEach((cell) => {
       const label = cell.querySelector<HTMLElement>('.ag-header-cell-label');
       if (!label) return;
 
-      // Temporarily set height to auto to measure content
       const originalDisplay = label.style.display;
       const originalHeight = label.style.height;
       const originalOverflow = label.style.overflow;
@@ -605,10 +606,8 @@ export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
       label.style.height = 'auto';
       label.style.overflow = 'visible';
 
-      // Measure the scroll height (actual content height)
       const contentHeight = label.scrollHeight;
       
-      // Restore original styles
       label.style.display = originalDisplay;
       label.style.height = originalHeight;
       label.style.overflow = originalOverflow;
@@ -618,18 +617,13 @@ export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
       }
     });
 
-    // Calculate total header height: content + padding + borders
-    // Padding: 8px top + 8px bottom = 16px, plus cell padding: 4px + 4px = 8px
     const calculatedHeight = Math.max(Math.ceil(maxContentHeight) + 24, 60);
 
-    // Update header height if it changed
     if (calculatedHeight !== headerHeight) {
       setHeaderHeight(calculatedHeight);
       
-      // Also update CSS variable for AG Grid
       gridContainer.style.setProperty('--ag-header-height', `${calculatedHeight}px`);
       
-      // Force AG Grid to recalculate header height
       if (gridRef.current?.api) {
         gridRef.current.api.sizeColumnsToFit();
       }
@@ -639,13 +633,10 @@ export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
   // Handle grid ready
   const onGridReady = useCallback(() => {
     if (gridRef.current?.api) {
-      // Auto-size all columns to fit content
-      gridRef.current.api.autoSizeAllColumns(false); // false = exclude header from calculation
+      gridRef.current.api.autoSizeAllColumns(false);
       
-      // Calculate header height after headers are rendered
       setTimeout(() => {
         calculateHeaderHeight();
-        // Auto-size again after header height is calculated
         if (gridRef.current?.api) {
           gridRef.current.api.autoSizeAllColumns(false);
         }
@@ -653,11 +644,9 @@ export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
     }
   }, [calculateHeaderHeight]);
 
-  // Handle first data rendered - set default sort
+  // Handle first data rendered
   const onFirstDataRendered = useCallback(() => {
     if (gridRef.current?.api) {
-      // Set default sort by SHORTNAME ascending after data is rendered
-      // Check if sort is already set to avoid resetting user's sort
       const currentSort = gridRef.current.api.getColumnState().find(col => col.colId === 'SHORTNAME' && col.sort);
       if (!currentSort) {
         gridRef.current.api.applyColumnState({
@@ -665,65 +654,31 @@ export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
           defaultState: { sort: null }
         });
       }
+      // Force reset row heights to ensure fixed height is applied
+      setTimeout(() => {
+        gridRef.current?.api.resetRowHeights();
+      }, 100);
     }
   }, []);
 
-  // Preserve selection when data updates
-  const prevBondsRef = useRef<BondListItem[]>([]);
+  // Recalculate header height when data changes
   useEffect(() => {
-    if (bonds.length > 0 && gridRef.current?.api) {
-      // Check if data actually changed (not just a re-render)
-      const dataChanged = 
-        prevBondsRef.current.length !== bonds.length ||
-        prevBondsRef.current.some((prevBond, index) => {
-          const currentBond = bonds[index];
-          return !currentBond || prevBond.SECID !== currentBond.SECID;
-        });
-
-      if (dataChanged && selectedBonds.size > 0) {
-        // Restore selection after data update
-        const timeoutId = setTimeout(() => {
-          if (gridRef.current?.api) {
-            // Restore selected rows by SECID
-            selectedBonds.forEach((secid) => {
-              const rowNode = gridRef.current?.api.getRowNode(secid);
-              if (rowNode) {
-                rowNode.setSelected(true, false); // false = don't clear other selections
-              }
-            });
-          }
-        }, 100);
-
-        prevBondsRef.current = bonds;
-        return () => clearTimeout(timeoutId);
-      }
-      
-      prevBondsRef.current = bonds;
-    }
-  }, [bonds, selectedBonds]);
-
-  // Recalculate header height and auto-size columns when data, columns, or window resize
-  // Only auto-size on initial load or when columns actually change, not on portfolio updates
-  useEffect(() => {
-    if (bonds.length > 0 && gridRef.current?.api) {
+    if (portfolioBonds.length > 0 && gridRef.current?.api) {
       const timeoutId = setTimeout(() => {
         calculateHeaderHeight();
-        // Only auto-size on initial load or major data changes, not on cell updates
-        // This prevents table reformatting when portfolio changes
-        if (bonds.length > 0 && prevBondsRef.current.length === 0) {
-          gridRef.current?.api.autoSizeAllColumns(false);
-        }
+        gridRef.current?.api.autoSizeAllColumns(false);
+        // Force reset row heights to ensure fixed height is applied
+        gridRef.current?.api.resetRowHeights();
       }, 500);
 
       return () => clearTimeout(timeoutId);
     }
-  }, [bonds.length, columnDefs, fieldDescriptions, calculateHeaderHeight]);
-
+  }, [portfolioBonds.length, columnDefs, fieldDescriptions, calculateHeaderHeight]);
 
   // Recalculate on window resize
   useEffect(() => {
     const handleResize = () => {
-      if (bonds.length > 0) {
+      if (portfolioBonds.length > 0) {
         setTimeout(() => {
           calculateHeaderHeight();
         }, 100);
@@ -732,148 +687,138 @@ export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
 
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, [bonds.length, calculateHeaderHeight]);
+  }, [portfolioBonds.length, calculateHeaderHeight]);
 
-  // Refresh "Add to Portfolio" column cells when portfolio changes
-  // Use suppressFlash to prevent visual flashing and layout shifts
-  useEffect(() => {
-    if (gridRef.current?.api && bonds.length > 0) {
-      // Use requestAnimationFrame to batch updates and prevent layout thrashing
-      requestAnimationFrame(() => {
-        if (gridRef.current?.api) {
-          gridRef.current.api.refreshCells({
-            columns: ['addToPortfolio'],
-            suppressFlash: true, // Prevent cell flashing animation
-            force: false, // Use change detection instead of forcing refresh
-          });
-        }
-      });
-    }
-  }, [portfolioBonds.length, bonds.length]);
-
-  // Expose selected bonds via ref - MUST be before any conditional returns
-  useImperativeHandle(ref, () => ({
-    getSelectedBonds: () => {
-      // Return a copy to prevent external mutations
-      return new Set(selectedBonds);
-    },
-  }), [selectedBonds]);
-
-  const handleExportSelected = async () => {
-    if (selectedBonds.size === 0) {
-      return;
-    }
-
+  const handleExportPortfolio = async (format: 'full' | 'secid-only') => {
     try {
-      await exportSelectedBonds(Array.from(selectedBonds));
+      setExportError(null);
+      await exportPortfolio(portfolioBonds, format);
     } catch (error) {
-      if (error instanceof Error) {
-        setError(error.message);
-      } else {
-        setError('Не удалось экспортировать облигации');
-      }
+      const errorMessage = error instanceof Error ? error.message : 'Не удалось сохранить портфель';
+      setExportError(errorMessage);
+      console.error('Failed to export portfolio:', error);
     }
   };
 
-  const handleComparisonAnalysis = () => {
-    if (selectedBonds.size === 0) {
-      return;
-    }
-    // Force remount by updating key
-    setComparisonDialogKey(prev => prev + 1);
-    setIsComparisonDialogOpen(true);
+  const handleImportPortfolio = (bonds: BondListItem[]) => {
+    loadBondsToPortfolio(bonds);
   };
 
-  // Get selected bonds data directly from AG Grid to avoid duplicates
-  // This ensures we get the exact rows that are selected in the table (with current filter applied)
-  const selectedBondsData = useMemo(() => {
-    if (!gridRef.current?.api || selectedBonds.size === 0) return [];
-    
-    // Get selected rows directly from AG Grid (respects current filters)
-    const selectedRows = gridRef.current.api.getSelectedRows() as BondListItem[];
-    
-    if (selectedRows.length === 0) return [];
-    
-    // Remove duplicates by SECID (in case AG Grid returns duplicates)
-    const uniqueBonds = new Map<string, BondListItem>();
-    selectedRows.forEach(bond => {
-      if (bond && bond.SECID) {
-        // Keep the bond with more complete data (prefer one with DURATION)
-        const existing = uniqueBonds.get(bond.SECID);
-        if (!existing) {
-          uniqueBonds.set(bond.SECID, bond);
-        } else if (bond.DURATION !== null && bond.DURATION !== undefined && 
-                   (existing.DURATION === null || existing.DURATION === undefined)) {
-          // Replace with bond that has DURATION data
-          uniqueBonds.set(bond.SECID, bond);
-        }
-      }
-    });
-    
-    return Array.from(uniqueBonds.values());
-  }, [selectedBonds]); // Recalculate when selection changes
+  const handleClearPortfolio = () => {
+    if (window.confirm('Вы уверены, что хотите удалить все облигации из портфеля?')) {
+      clearPortfolio();
+    }
+  };
 
-  // Loading state
-  if (isLoading && bonds.length === 0) {
-    return <LoadingSpinner message="Загрузка облигаций..." />;
-  }
-
-  // Error state
-  if (error) {
-    return <ErrorMessage message={error} onRetry={loadBonds} />;
-  }
-
-  // Filter bonds by search query
-  const filteredBonds = useMemo(() => {
+  // Filter portfolio bonds by search query
+  const filteredPortfolioBonds = useMemo(() => {
     if (!filters.search || filters.search.trim() === '') {
-      return bonds;
+      return portfolioBonds;
     }
     
     const searchLower = filters.search.toLowerCase().trim();
-    return bonds.filter(bond => {
+    return portfolioBonds.filter(bond => {
       const secid = bond.SECID?.toLowerCase() || '';
       const shortname = bond.SHORTNAME?.toLowerCase() || '';
       return secid.includes(searchLower) || shortname.includes(searchLower);
     });
-  }, [bonds, filters.search]);
+  }, [portfolioBonds, filters.search]);
 
   // Empty state
-  if (bonds.length === 0) {
-    return <EmptyState variant="no-results" />;
+  if (portfolioBonds.length === 0) {
+    return (
+      <Box sx={{ flexGrow: 1, minHeight: 0, width: '100%' }}>
+        <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', width: '100%' }}>
+          <CardContent sx={{ p: 0, '&:last-child': { pb: 0 }, flexGrow: 1, display: 'flex', flexDirection: 'column', width: '100%' }}>
+            <Box sx={{ p: 1, display: 'flex', justifyContent: 'flex-start', gap: 1, borderBottom: 1, borderColor: 'divider' }}>
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<UploadFileIcon />}
+                onClick={() => setIsImportDialogOpen(true)}
+                sx={{
+                  '&.Mui-disabled': {
+                    color: 'text.disabled',
+                    borderColor: 'action.disabledBackground',
+                  },
+                }}
+              >
+                Загрузить портфель
+              </Button>
+            </Box>
+            <Box sx={{ flexGrow: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <EmptyState
+                title="Портфель пуст"
+                message="Добавьте облигации в портфель из вкладки 'Скринер облигаций', нажав на иконку плюса в столбце 'Добавить в портфель', или загрузите портфель из файла."
+              />
+            </Box>
+          </CardContent>
+          <PortfolioImportDialog
+            open={isImportDialogOpen}
+            onClose={() => setIsImportDialogOpen(false)}
+            onImport={handleImportPortfolio}
+          />
+        </Card>
+      </Box>
+    );
   }
 
   return (
     <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', width: '100%' }}>
       <CardContent sx={{ p: 0, '&:last-child': { pb: 0 }, flexGrow: 1, display: 'flex', flexDirection: 'column', width: '100%' }}>
-        <Box sx={{ p: 1, display: 'flex', justifyContent: 'flex-end', gap: 1, borderBottom: 1, borderColor: 'divider' }}>
-          <Button
-            variant="outlined"
-            size="small"
-            onClick={handleComparisonAnalysis}
-            disabled={selectedBonds.size === 0 || isLoading}
-            sx={{
-              '&.Mui-disabled': {
-                color: 'text.disabled',
-                borderColor: 'action.disabledBackground',
-              },
-            }}
-          >
-            Сравнительный анализ{selectedBonds.size > 0 && ` (${selectedBonds.size})`}
-          </Button>
-          <Button
-            variant="outlined"
-            size="small"
-            onClick={handleExportSelected}
-            disabled={selectedBonds.size === 0 || isLoading}
-            sx={{
-              '&.Mui-disabled': {
-                color: 'text.disabled',
-                borderColor: 'action.disabledBackground',
-              },
-            }}
-          >
-            Скачать JSON{selectedBonds.size > 0 && ` (${selectedBonds.size})`}
-          </Button>
+        {exportError && (
+          <Alert severity="error" onClose={() => setExportError(null)} sx={{ m: 1 }}>
+            {exportError}
+          </Alert>
+        )}
+        <Box sx={{ p: 1, display: 'flex', justifyContent: 'space-between', gap: 1, borderBottom: 1, borderColor: 'divider' }}>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<SaveIcon />}
+              onClick={() => setIsExportDialogOpen(true)}
+              disabled={portfolioBonds.length === 0}
+              sx={{
+                '&.Mui-disabled': {
+                  color: 'text.disabled',
+                  borderColor: 'action.disabledBackground',
+                },
+              }}
+            >
+              Сохранить портфель
+            </Button>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<UploadFileIcon />}
+              onClick={() => setIsImportDialogOpen(true)}
+              sx={{
+                '&.Mui-disabled': {
+                  color: 'text.disabled',
+                  borderColor: 'action.disabledBackground',
+                },
+              }}
+            >
+              Загрузить портфель
+            </Button>
+            <Button
+              variant="outlined"
+              size="small"
+              color="error"
+              startIcon={<DeleteIcon />}
+              onClick={handleClearPortfolio}
+              disabled={portfolioBonds.length === 0}
+              sx={{
+                '&.Mui-disabled': {
+                  color: 'text.disabled',
+                  borderColor: 'action.disabledBackground',
+                },
+              }}
+            >
+              Очистить портфель
+            </Button>
+          </Box>
         </Box>
         <Box sx={{ flexGrow: 1, display: 'flex' }}>
         <Box
@@ -881,11 +826,9 @@ export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
           sx={{
             height: '100%',
             width: '100%',
-            // Dynamic header height - use CSS variable if headerHeight is set
             ...(headerHeight && {
               '--ag-header-height': `${headerHeight}px`,
             }),
-            // Header cell: center content horizontally and vertically
             '& .ag-header-cell': {
               display: 'flex',
               flexDirection: 'row',
@@ -894,13 +837,11 @@ export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
               padding: '8px 4px',
               boxSizing: 'border-box',
               gap: '0px !important',
-              // Vertical separators - add borders between columns
               borderRight: '1px solid rgba(224, 224, 224, 0.8)',
               '&:last-child': {
                 borderRight: 'none',
               },
             },
-            // Label: only take space needed, allow text wrapping, remove all right spacing
             '& .ag-header-cell-label': {
               fontWeight: 600,
               display: 'flex',
@@ -931,7 +872,6 @@ export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
               marginRight: '0px !important',
               paddingRight: '0px !important',
             },
-            // Filter buttons: positioned immediately after label text, minimal gap
             '& .ag-header-cell-menu-button': {
               flexShrink: 0,
               alignSelf: 'center',
@@ -954,14 +894,12 @@ export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
               width: 'auto !important',
               minWidth: 'auto !important',
             },
-            // Remove any spacing between label and buttons
             '& .ag-header-cell-label + .ag-header-cell-menu-button': {
               marginLeft: '1px !important',
             },
             '& .ag-header-cell-label + .ag-header-cell-filter-button': {
               marginLeft: '1px !important',
             },
-            // Ensure filter icons are always visible on the right
             '& .ag-header-cell-filtered .ag-header-cell-menu-button': {
               opacity: 1,
             },
@@ -977,8 +915,10 @@ export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
               padding: '4px 4px !important',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap !important',
               maxHeight: '32px !important',
               height: '32px !important',
+              minHeight: '32px !important',
               boxSizing: 'border-box',
               '&:last-child': {
                 borderRight: 'none',
@@ -986,12 +926,22 @@ export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
               '& > *': {
                 maxHeight: '24px !important',
                 overflow: 'hidden',
+                whiteSpace: 'nowrap !important',
               },
             },
             '& .ag-cell[col-id="SHORTNAME"]': {
               justifyContent: 'flex-start',
+              whiteSpace: 'nowrap !important',
+              '& > *': {
+                whiteSpace: 'nowrap !important',
+              },
             },
-            // Row styling - keep body rows unchanged (fixed height)
+            '& .ag-cell[col-id="removeFromPortfolio"]': {
+              padding: '0 !important',
+              height: '32px !important',
+              maxHeight: '32px !important',
+              minHeight: '32px !important',
+            },
             '& .ag-row': {
               cursor: 'pointer',
               minHeight: '32px !important',
@@ -1001,14 +951,27 @@ export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
                 maxHeight: '32px !important',
               },
             },
+            '& .ag-cell-wrapper': {
+              whiteSpace: 'nowrap !important',
+              overflow: 'hidden !important',
+            },
+            '& .ag-cell-value': {
+              whiteSpace: 'nowrap !important',
+              overflow: 'hidden !important',
+            },
             '& .ag-row-hover': {
               backgroundColor: 'rgba(25, 118, 210, 0.04)',
             },
             // Prevent row click when clicking on portfolio action cell
             '& .ag-cell.portfolio-action-cell': {
               pointerEvents: 'auto',
+              padding: '0 !important',
+              height: '32px !important',
+              maxHeight: '32px !important',
+              minHeight: '32px !important',
               '& *': {
                 pointerEvents: 'auto',
+                maxHeight: '32px !important',
               },
             },
             // Center header class
@@ -1019,15 +982,13 @@ export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
         >
           <AgGridReact<BondListItem>
             ref={gridRef}
-            rowData={filteredBonds}
+            rowData={filteredPortfolioBonds}
             columnDefs={columnDefs}
             defaultColDef={defaultColDef}
             onRowClicked={onRowClicked}
             onCellClicked={onCellClicked}
             onGridReady={onGridReady}
             onFirstDataRendered={onFirstDataRendered}
-            rowSelection="multiple"
-            onSelectionChanged={onSelectionChanged}
             animateRows={true}
             pagination={true}
             paginationPageSize={100}
@@ -1044,22 +1005,22 @@ export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
             suppressAggFuncInHeader={true}
             suppressMenuHide={true}
             getRowId={(params) => params.data.SECID}
-            // Отключаем встроенные tooltips AG Grid, используем Material-UI Tooltip
             suppressHeaderTooltips={true}
           />
         </Box>
         </Box>
       </CardContent>
-      <ComparisonAnalysisDialog
-        key={comparisonDialogKey}
-        open={isComparisonDialogOpen}
-        onClose={() => setIsComparisonDialogOpen(false)}
-        bonds={selectedBondsData}
+      <PortfolioExportDialog
+        open={isExportDialogOpen}
+        onClose={() => setIsExportDialogOpen(false)}
+        onConfirm={handleExportPortfolio}
+        bondCount={portfolioBonds.length}
+      />
+      <PortfolioImportDialog
+        open={isImportDialogOpen}
+        onClose={() => setIsImportDialogOpen(false)}
+        onImport={handleImportPortfolio}
       />
     </Card>
   );
-});
-
-BondsTable.displayName = 'BondsTable';
-
-export default BondsTable;
+};

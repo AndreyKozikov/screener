@@ -34,7 +34,7 @@ export const CouponTypeFilter: React.FC = () => {
       sx={{ 
         width: '100%',
         '& .MuiAutocomplete-inputRoot': {
-          minHeight: '40px',
+          minHeight: '32px',
         },
       }}
       renderInput={(params) => (
@@ -44,8 +44,8 @@ export const CouponTypeFilter: React.FC = () => {
           sx={{
             '& .MuiOutlinedInput-root': {
               paddingRight: '9px !important',
-              minHeight: '40px',
-              height: '40px',
+              minHeight: '32px',
+              height: '32px',
               '& fieldset': {
                 borderColor: 'rgba(0, 0, 0, 0.23)',
               },
@@ -64,7 +64,7 @@ export const CouponTypeFilter: React.FC = () => {
               },
             },
             '& .MuiAutocomplete-input': {
-              padding: '6.5px 4px 6.5px 14px !important',
+              padding: '4px 4px 4px 14px !important',
             },
             '& .MuiInputBase-input::placeholder': {
               fontSize: '0.75rem',

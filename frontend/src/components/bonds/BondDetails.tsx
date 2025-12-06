@@ -541,7 +541,7 @@ export const BondDetails: React.FC = () => {
         {bondDetail && !isLoading && !error && (
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, flexGrow: 1, overflow: 'hidden' }}>
             {/* Премиальная карточка облигации */}
-            <PremiumBondCard bondDetail={bondDetail} />
+            <PremiumBondCard bondDetail={bondDetail} couponType={couponType} />
 
             {/* A. Верхний блок (Header) - оставляем для совместимости, но можно скрыть */}
             <Paper elevation={0} sx={{ p: 0, bgcolor: 'grey.50', borderRadius: 2, mx: -3, px: 3, py: 2.5, display: 'none' }}>

@@ -31,6 +31,12 @@ export const MaturityDateFilter: React.FC = () => {
         }}
         sx={{
           width: '33.33%',
+          '& .MuiInputBase-root': {
+            height: '32px',
+          },
+          '& .MuiInputBase-input': {
+            padding: '4px 8px',
+          },
           '& input[type="date"]::-webkit-calendar-picker-indicator': {
             cursor: 'pointer',
           },
@@ -50,6 +56,12 @@ export const MaturityDateFilter: React.FC = () => {
         }}
         sx={{
           width: '33.33%',
+          '& .MuiInputBase-root': {
+            height: '32px',
+          },
+          '& .MuiInputBase-input': {
+            padding: '4px 8px',
+          },
           '& input[type="date"]::-webkit-calendar-picker-indicator': {
             cursor: 'pointer',
           },

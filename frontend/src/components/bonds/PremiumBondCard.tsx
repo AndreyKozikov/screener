@@ -27,6 +27,7 @@ import {
 
 interface PremiumBondCardProps {
   bondDetail: BondDetailType;
+  couponType?: string | null;  // FIX or FLOAT
 }
 
 /**
@@ -35,7 +36,7 @@ interface PremiumBondCardProps {
  * Displays a premium, compact card with key bond information
  * including identification, key metrics, coupon info, volume, and rating
  */
-export const PremiumBondCard: React.FC<PremiumBondCardProps> = ({ bondDetail }) => {
+export const PremiumBondCard: React.FC<PremiumBondCardProps> = ({ bondDetail, couponType: couponTypeProp }) => {
   const securities = bondDetail?.securities;
   const market = bondDetail?.marketdata;
   const [emitentInfo, setEmitentInfo] = useState<EmitentInfo | null>(null);
@@ -118,6 +119,7 @@ export const PremiumBondCard: React.FC<PremiumBondCardProps> = ({ bondDetail }) 
   const couponValue = typeof securities?.COUPONVALUE === 'number' ? securities.COUPONVALUE : null;
   const nextCoupon = typeof securities?.NEXTCOUPON === 'string' ? securities.NEXTCOUPON : null;
   const couponPeriod = typeof securities?.COUPONPERIOD === 'number' ? securities.COUPONPERIOD : null;
+  const couponType = couponTypeProp ?? null;
 
   // Volume and issue
   const issueSizePlaced = typeof securities?.ISSUESIZEPLACED === 'number' 
@@ -199,6 +201,15 @@ export const PremiumBondCard: React.FC<PremiumBondCardProps> = ({ bondDetail }) 
     if (lastDigit === 1) return `${days} день`;
     if (lastDigit >= 2 && lastDigit <= 4) return `${days} дня`;
     return `${days} дней`;
+  };
+
+  // Format coupon type
+  const formatCouponType = (type: string | null): string => {
+    if (!type) return '—';
+    const typeUpper = type.toUpperCase();
+    if (typeUpper === 'FIX') return 'Постоянный';
+    if (typeUpper === 'FLOAT') return 'Плавающий';
+    return type;
   };
 
   const currencySymbol = getCurrencySymbol(faceUnit);
@@ -451,6 +462,14 @@ export const PremiumBondCard: React.FC<PremiumBondCardProps> = ({ bondDetail }) 
             </Typography>
             <Typography variant="body1" fontWeight={600}>
               {couponPeriod !== null ? `${couponPeriod} дней` : '—'}
+            </Typography>
+          </Grid>
+          <Grid item xs={6} sx={{ textAlign: 'center' }}>
+            <Typography variant="body2" color="text.secondary" gutterBottom>
+              Тип купона
+            </Typography>
+            <Typography variant="body1" fontWeight={600}>
+              {formatCouponType(couponType)}
             </Typography>
           </Grid>
           {couponProgress && (

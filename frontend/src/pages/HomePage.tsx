@@ -3,11 +3,14 @@ import { Container, Box, Typography, AppBar, Toolbar, Button, CircularProgress, 
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import PsychologyIcon from '@mui/icons-material/Psychology';
-import { FiltersPanel } from '../components/filters/FiltersPanel';
+import FilterAltIcon from '@mui/icons-material/FilterAlt';
+import { SearchFilter } from '../components/filters/SearchFilter';
+import { FiltersModal } from '../components/filters/FiltersModal';
 import { BondsTable } from '../components/bonds/BondsTable';
 import { BondDetails } from '../components/bonds/BondDetails';
 import { ZerocuponTable } from '../components/zerocupon/ZerocuponTable';
 import { ForecastTable } from '../components/forecast/ForecastTable';
+import { PortfolioTable } from '../components/portfolio/PortfolioTable';
 import { AnalysisParamsDialog } from '../components/llm/AnalysisParamsDialog';
 import { AnalysisResultDialog } from '../components/llm/AnalysisResultDialog';
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
@@ -63,6 +66,7 @@ export const HomePage: React.FC = () => {
   // Grok Analysis state
   const [isGrokParamsOpen, setIsGrokParamsOpen] = useState(false);
   const [isGrokAnalyzing, setIsGrokAnalyzing] = useState(false);
+  const [isFiltersModalOpen, setIsFiltersModalOpen] = useState(false);
 
   const handleRefreshRatingsClick = async () => {
     if (isRefreshingRatings) {
@@ -458,6 +462,9 @@ export const HomePage: React.FC = () => {
                 </Typography>
               </Box>
             </Box>
+            <Box sx={{ width: '300px', mr: 2 }}>
+              <SearchFilter />
+            </Box>
             <Button
               variant="outlined"
               color="inherit"
@@ -554,15 +561,23 @@ export const HomePage: React.FC = () => {
               <Tab label="Скринер облигаций" />
               <Tab label="Кривая бескупонной доходности" />
               <Tab label="Среднесрочный прогноз Банка России" />
+              <Tab label="Мой портфель" />
             </Tabs>
           </Box>
 
           {/* Tab Content */}
           {currentTab === 0 && (
             <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', gap: 2, minHeight: 0, width: '100%' }}>
-              {/* Filters Panel - Above Table */}
-              <Box sx={{ width: '100%', flexShrink: 0 }}>
-                <FiltersPanel />
+              {/* Filters Button - Above Table */}
+              <Box sx={{ width: '100%', flexShrink: 0, display: 'flex', justifyContent: 'flex-start' }}>
+                <Button
+                  variant="outlined"
+                  startIcon={<FilterAltIcon />}
+                  onClick={() => setIsFiltersModalOpen(true)}
+                  sx={{ mb: 1 }}
+                >
+                  Фильтры
+                </Button>
               </Box>
 
               {/* Table - Full Width */}
@@ -585,11 +600,23 @@ export const HomePage: React.FC = () => {
               <ForecastTable />
             </Box>
           )}
+
+          {currentTab === 3 && (
+            <Box sx={{ flexGrow: 1, minHeight: 0 }}>
+              <PortfolioTable />
+            </Box>
+          )}
         </Container>
       </Box>
 
       {/* Bond Details Drawer */}
       <BondDetails />
+
+      {/* Filters Modal */}
+      <FiltersModal
+        open={isFiltersModalOpen}
+        onClose={() => setIsFiltersModalOpen(false)}
+      />
 
       {/* LLM Analysis Dialogs */}
       <AnalysisParamsDialog

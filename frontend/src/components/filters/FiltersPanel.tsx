@@ -5,7 +5,6 @@ import ClearIcon from '@mui/icons-material/Clear';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import { useFiltersStore } from '../../stores/filtersStore';
-import { SearchFilter } from './SearchFilter';
 import { CouponRangeFilter } from './CouponRangeFilter';
 import { YieldRangeFilter } from './YieldRangeFilter';
 import { CouponYieldRangeFilter } from './CouponYieldRangeFilter';
@@ -101,9 +100,6 @@ export const FiltersPanel: React.FC = () => {
           <Divider sx={{ my: 2 }} />
           {/* Filters - Horizontal Layout */}
           <Box sx={{ display: 'flex', flexDirection: 'row', gap: 2, flexWrap: 'wrap', width: '100%', justifyContent: 'flex-start' }}>
-            <Box sx={{ width: '300px', flexShrink: 0 }}>
-              <SearchFilter />
-            </Box>
             <Box sx={{ width: '250px', flexShrink: 0 }}>
               <Box sx={{ mb: 0.5 }}>
                 <Typography variant="subtitle2" color="text.secondary" sx={{ fontSize: '0.875rem' }}>
