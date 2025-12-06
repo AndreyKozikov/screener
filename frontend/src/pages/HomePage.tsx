@@ -13,7 +13,9 @@ import { ForecastTable } from '../components/forecast/ForecastTable';
 import { PortfolioTable } from '../components/portfolio/PortfolioTable';
 import { AnalysisParamsDialog } from '../components/llm/AnalysisParamsDialog';
 import { AnalysisResultDialog } from '../components/llm/AnalysisResultDialog';
+import { LLMAnalysisModelDialog, type LLMModel } from '../components/llm/LLMAnalysisModelDialog';
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
+import { RefreshDataDialog, type RefreshTask } from '../components/common/RefreshDataDialog';
 import { refreshBondsData, refreshCouponsData } from '../api/bonds';
 import { refreshZerocuponData } from '../api/zerocupon';
 import { refreshRatingsData } from '../api/rating';
@@ -34,15 +36,25 @@ import type { BondsTableRef } from '../components/bonds/BondsTable';
 export const HomePage: React.FC = () => {
   const triggerDataRefresh = useUiStore((state) => state.triggerDataRefresh);
   const setError = useBondsStore((state) => state.setError);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isRefreshingRatings, setIsRefreshingRatings] = useState(false);
-  const [isRefreshingEmitents, setIsRefreshingEmitents] = useState(false);
-  const [isRefreshingCoupons, setIsRefreshingCoupons] = useState(false);
   const [currentTab, setCurrentTab] = useState(0);
   const bondsTableRef = useRef<BondsTableRef>(null);
   
+  // Refresh data dialog state
+  const [isRefreshDialogOpen, setIsRefreshDialogOpen] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [refreshStatus, setRefreshStatus] = useState<Record<string, { status: 'idle' | 'loading' | 'success' | 'error'; error?: string }>>({});
+  
   // LLM Analysis state
   const [isAnalysisParamsOpen, setIsAnalysisParamsOpen] = useState(false);
+  const [isLLMModelDialogOpen, setIsLLMModelDialogOpen] = useState(false);
+  const [selectedLLMModel, setSelectedLLMModel] = useState<LLMModel | null>(null);
+  const [savedAnalysisParams, setSavedAnalysisParams] = useState<{
+    zerocuponDateFrom: string;
+    zerocuponDateTo: string;
+    forecastDate: string;
+    includeZerocupon: boolean;
+    includeForecast: boolean;
+  } | null>(null);
   const [isAnalysisResultOpen, setIsAnalysisResultOpen] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<string | null>(null);
@@ -58,100 +70,82 @@ export const HomePage: React.FC = () => {
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [modelUsed, setModelUsed] = useState<string>('');
   const [isNoSelectionDialogOpen, setIsNoSelectionDialogOpen] = useState(false);
-  
-  // Qwen Analysis state
-  const [isQwenParamsOpen, setIsQwenParamsOpen] = useState(false);
-  const [isQwenAnalyzing, setIsQwenAnalyzing] = useState(false);
-  
-  // Grok Analysis state
-  const [isGrokParamsOpen, setIsGrokParamsOpen] = useState(false);
-  const [isGrokAnalyzing, setIsGrokAnalyzing] = useState(false);
   const [isFiltersModalOpen, setIsFiltersModalOpen] = useState(false);
 
-  const handleRefreshRatingsClick = async () => {
-    if (isRefreshingRatings) {
-      return;
-    }
-
-    setIsRefreshingRatings(true);
-    setError(null);
-
-    try {
-      // Refresh ratings data - backend handles all processing
-      await refreshRatingsData();
-    } catch (error) {
-      console.error('Failed to refresh ratings', error);
-      setError('Не удалось обновить рейтинги. Попробуйте позже.');
-    } finally {
-      setIsRefreshingRatings(false);
-    }
+  const handleRefreshDataClick = () => {
+    setIsRefreshDialogOpen(true);
   };
 
-  const handleRefreshEmitentsClick = async () => {
-    if (isRefreshingEmitents) {
-      return;
-    }
-
-    setIsRefreshingEmitents(true);
-    setError(null);
-
-    try {
-      // Refresh emitents data - backend handles all processing
-      await refreshEmitentsData();
-    } catch (error) {
-      console.error('Failed to refresh emitents', error);
-      setError('Не удалось обновить данные эмитентов. Попробуйте позже.');
-    } finally {
-      setIsRefreshingEmitents(false);
-    }
-  };
-
-  const handleRefreshCouponsClick = async () => {
-    if (isRefreshingCoupons) {
-      return;
-    }
-
-    setIsRefreshingCoupons(true);
-    setError(null);
-
-    try {
-      // Refresh coupons data - backend handles all processing
-      await refreshCouponsData();
-    } catch (error) {
-      console.error('Failed to refresh coupons', error);
-      setError('Не удалось обновить данные купонов. Попробуйте позже.');
-    } finally {
-      setIsRefreshingCoupons(false);
-    }
-  };
-
-  const handleRefreshClick = async () => {
-    if (isRefreshing) {
+  const handleRefreshConfirm = async (selectedTasks: string[]) => {
+    if (selectedTasks.length === 0) {
       return;
     }
 
     setIsRefreshing(true);
     setError(null);
+    
+    // Initialize status for all selected tasks
+    const initialStatus: Record<string, { status: 'idle' | 'loading' | 'success' | 'error'; error?: string }> = {};
+    selectedTasks.forEach(taskId => {
+      initialStatus[taskId] = { status: 'loading' };
+    });
+    setRefreshStatus(initialStatus);
 
-    try {
-      // Refresh bonds data
-      await refreshBondsData();
-      
-      // Refresh zero-coupon yield curve data
-      try {
-        await refreshZerocuponData();
-      } catch (zerocuponError) {
-        console.error('Failed to refresh zerocupon data', zerocuponError);
-        // Don't fail the whole refresh if zerocupon update fails
+    // Define task handlers
+    const taskHandlers: Record<string, () => Promise<void>> = {
+      bonds: async () => {
+        await refreshBondsData();
+        // Also refresh zero-coupon yield curve data as part of bonds refresh
+        try {
+          await refreshZerocuponData();
+        } catch (zerocuponError) {
+          console.error('Failed to refresh zerocupon data', zerocuponError);
+          // Don't fail the whole refresh if zerocupon update fails
+        }
+        triggerDataRefresh();
+      },
+      ratings: async () => {
+        await refreshRatingsData();
+      },
+      emitents: async () => {
+        await refreshEmitentsData();
+      },
+      coupons: async () => {
+        await refreshCouponsData();
+      },
+    };
+
+    // Execute all selected tasks in parallel
+    const promises = selectedTasks.map(async (taskId) => {
+      const handler = taskHandlers[taskId];
+      if (!handler) {
+        setRefreshStatus(prev => ({
+          ...prev,
+          [taskId]: { status: 'error', error: 'Неизвестная задача' },
+        }));
+        return;
       }
-      
-      triggerDataRefresh();
-    } catch (error) {
-      console.error('Failed to refresh bonds dataset', error);
-      setError('Не удалось обновить данные облигаций. Попробуйте позже.');
-    } finally {
-      setIsRefreshing(false);
-    }
+
+      try {
+        await handler();
+        setRefreshStatus(prev => ({
+          ...prev,
+          [taskId]: { status: 'success' },
+        }));
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
+        console.error(`Failed to refresh ${taskId}`, error);
+        setRefreshStatus(prev => ({
+          ...prev,
+          [taskId]: { status: 'error', error: errorMessage },
+        }));
+      }
+    });
+
+    // Wait for all tasks to complete
+    await Promise.allSettled(promises);
+    
+    setIsRefreshing(false);
   };
 
   const handleLLMAnalysisClick = () => {
@@ -162,6 +156,7 @@ export const HomePage: React.FC = () => {
         setIsNoSelectionDialogOpen(true);
         return;
       }
+      // First open parameters dialog
       setIsAnalysisParamsOpen(true);
     } catch (error) {
       console.error('Error getting selected bonds:', error);
@@ -169,208 +164,27 @@ export const HomePage: React.FC = () => {
     }
   };
 
-  const handleQwenAnalysisClick = () => {
-    try {
-      // Get selected bonds
-      const selectedBonds = bondsTableRef.current?.getSelectedBonds();
-      if (!selectedBonds || selectedBonds.size === 0) {
-        setIsNoSelectionDialogOpen(true);
-        return;
-      }
-      setIsQwenParamsOpen(true);
-    } catch (error) {
-      console.error('Error getting selected bonds:', error);
-      setIsNoSelectionDialogOpen(true);
-    }
-  };
-
-  const handleGrokAnalysisClick = () => {
-    try {
-      // Get selected bonds
-      const selectedBonds = bondsTableRef.current?.getSelectedBonds();
-      if (!selectedBonds || selectedBonds.size === 0) {
-        setIsNoSelectionDialogOpen(true);
-        return;
-      }
-      setIsGrokParamsOpen(true);
-    } catch (error) {
-      console.error('Error getting selected bonds:', error);
-      setIsNoSelectionDialogOpen(true);
-    }
-  };
-
-  const handleQwenAnalysisParamsConfirm = async (params: {
+  const handleAnalysisParamsConfirm = (params: {
     zerocuponDateFrom: string;
     zerocuponDateTo: string;
     forecastDate: string;
     includeZerocupon: boolean;
     includeForecast: boolean;
   }) => {
-    setIsQwenParamsOpen(false);
-    setIsQwenAnalyzing(true);
-    setAnalysisError(null);
-    setAnalysisResult(null);
-    setAnalysisStages({
-      stage1_forecast: null,
-      stage2_zerocupon: null,
-      stage3_bonds: null,
-    });
-    // Open result dialog immediately to show loading state
-    setIsAnalysisResultOpen(true);
-
-    try {
-      // Get selected bonds
-      const selectedBonds = bondsTableRef.current?.getSelectedBonds();
-      if (!selectedBonds || selectedBonds.size === 0) {
-        setIsNoSelectionDialogOpen(true);
-        return;
-      }
-
-      // Step 1: Load data files conditionally based on checkboxes
-      console.log('[QWEN] Step 1: Loading data files...');
-      const bondsData = await getBondsDataForLLM(Array.from(selectedBonds));
-      
-      let zerocuponData = '';
-      let forecastData = '';
-      
-      if (params.includeZerocupon) {
-        zerocuponData = await getZerocuponDataForLLM(params.zerocuponDateFrom, params.zerocuponDateTo);
-      }
-      if (params.includeForecast) {
-        forecastData = await getForecastDataForLLM(params.forecastDate);
-      }
-      
-      console.log('[QWEN] Step 1 complete: Data files loaded');
-      console.log(`[QWEN] Bonds data size: ${bondsData.length} chars`);
-      if (params.includeZerocupon) {
-        console.log(`[QWEN] Zerocupon data size: ${zerocuponData.length} chars`);
-      }
-      if (params.includeForecast) {
-        console.log(`[QWEN] Forecast data size: ${forecastData.length} chars`);
-      }
-
-      // Step 2: Send loaded data to Qwen (data is already loaded, no reduction)
-      // Note: This request has a 20-minute timeout to allow for complete Qwen analysis
-      console.log('[QWEN] Step 2: Sending data to Qwen 3 via OpenRouter as files...');
-      console.log('[QWEN] This may take several minutes. Please wait...');
-      const response = await analyzeBondsWithQwen(
-        bondsData,
-        zerocuponData,
-        forecastData,
-        'qwen/qwen3-235b-a22b:free',
-        params.includeZerocupon,
-        params.includeForecast
-      );
-
-      setAnalysisResult(response.analysis);
-      setAnalysisStages({
-        stage1_forecast: response.stage1_forecast || null,
-        stage2_zerocupon: response.stage2_zerocupon || null,
-        stage3_bonds: response.stage3_bonds || null,
-      });
-      setModelUsed(response.model_used);
-      setIsAnalysisResultOpen(true);
-    } catch (error) {
-      console.error('Error during Qwen analysis:', error);
-      setAnalysisError(
-        error instanceof Error ? error.message : 'Не удалось выполнить анализ Qwen 3'
-      );
-      setIsAnalysisResultOpen(true);
-    } finally {
-      setIsQwenAnalyzing(false);
-    }
-  };
-
-  const handleGrokAnalysisParamsConfirm = async (params: {
-    zerocuponDateFrom: string;
-    zerocuponDateTo: string;
-    forecastDate: string;
-    includeZerocupon: boolean;
-    includeForecast: boolean;
-  }) => {
-    setIsGrokParamsOpen(false);
-    setIsGrokAnalyzing(true);
-    setAnalysisError(null);
-    setAnalysisResult(null);
-    setAnalysisStages({
-      stage1_forecast: null,
-      stage2_zerocupon: null,
-      stage3_bonds: null,
-    });
-    // Open result dialog immediately to show loading state
-    setIsAnalysisResultOpen(true);
-
-    try {
-      // Get selected bonds
-      const selectedBonds = bondsTableRef.current?.getSelectedBonds();
-      if (!selectedBonds || selectedBonds.size === 0) {
-        setIsNoSelectionDialogOpen(true);
-        return;
-      }
-
-      // Step 1: Load data files conditionally based on checkboxes
-      console.log('[GROK] Step 1: Loading data files...');
-      const bondsData = await getBondsDataForLLM(Array.from(selectedBonds));
-      
-      let zerocuponData = '';
-      let forecastData = '';
-      
-      if (params.includeZerocupon) {
-        zerocuponData = await getZerocuponDataForLLM(params.zerocuponDateFrom, params.zerocuponDateTo);
-      }
-      if (params.includeForecast) {
-        forecastData = await getForecastDataForLLM(params.forecastDate);
-      }
-      
-      console.log('[GROK] Step 1 complete: Data files loaded');
-      console.log(`[GROK] Bonds data size: ${bondsData.length} chars`);
-      if (params.includeZerocupon) {
-        console.log(`[GROK] Zerocupon data size: ${zerocuponData.length} chars`);
-      }
-      if (params.includeForecast) {
-        console.log(`[GROK] Forecast data size: ${forecastData.length} chars`);
-      }
-
-      // Step 2: Send loaded data to Grok (data is already loaded, no reduction)
-      // Note: This request has a 20-minute timeout to allow for complete Grok analysis
-      console.log('[GROK] Step 2: Sending data to Grok 4.1 Fast via OpenRouter as files...');
-      console.log('[GROK] This may take several minutes. Please wait...');
-      const response = await analyzeBondsWithGrok(
-        bondsData,
-        zerocuponData,
-        forecastData,
-        'x-ai/grok-4.1-fast:free',
-        params.includeZerocupon,
-        params.includeForecast
-      );
-
-      setAnalysisResult(response.analysis);
-      setAnalysisStages({
-        stage1_forecast: response.stage1_forecast || null,
-        stage2_zerocupon: response.stage2_zerocupon || null,
-        stage3_bonds: response.stage3_bonds || null,
-      });
-      setModelUsed(response.model_used);
-      setIsAnalysisResultOpen(true);
-    } catch (error) {
-      console.error('Error during Grok analysis:', error);
-      setAnalysisError(
-        error instanceof Error ? error.message : 'Не удалось выполнить анализ Grok 4.1 Fast'
-      );
-      setIsAnalysisResultOpen(true);
-    } finally {
-      setIsGrokAnalyzing(false);
-    }
-  };
-
-  const handleAnalysisParamsConfirm = async (params: {
-    zerocuponDateFrom: string;
-    zerocuponDateTo: string;
-    forecastDate: string;
-    includeZerocupon: boolean;
-    includeForecast: boolean;
-  }) => {
+    // Save parameters and open model selection dialog
+    setSavedAnalysisParams(params);
     setIsAnalysisParamsOpen(false);
+    setIsLLMModelDialogOpen(true);
+  };
+
+  const handleLLMModelSelect = async (model: LLMModel) => {
+    if (!savedAnalysisParams) {
+      return;
+    }
+
+    setSelectedLLMModel(model);
+    setIsLLMModelDialogOpen(false);
+    
     setIsAnalyzing(true);
     setAnalysisError(null);
     setAnalysisResult(null);
@@ -390,8 +204,11 @@ export const HomePage: React.FC = () => {
         return;
       }
 
+      const params = savedAnalysisParams;
+
       // Step 1: Load data files conditionally based on checkboxes
-      console.log('[LLM] Step 1: Loading data files...');
+      const modelPrefix = model.toUpperCase();
+      console.log(`[${modelPrefix}] Step 1: Loading data files...`);
       const bondsData = await getBondsDataForLLM(Array.from(selectedBonds));
       
       let zerocuponData = '';
@@ -404,27 +221,53 @@ export const HomePage: React.FC = () => {
         forecastData = await getForecastDataForLLM(params.forecastDate);
       }
       
-      console.log('[LLM] Step 1 complete: Data files loaded');
-      console.log(`[LLM] Bonds data size: ${bondsData.length} chars`);
+      console.log(`[${modelPrefix}] Step 1 complete: Data files loaded`);
+      console.log(`[${modelPrefix}] Bonds data size: ${bondsData.length} chars`);
       if (params.includeZerocupon) {
-        console.log(`[LLM] Zerocupon data size: ${zerocuponData.length} chars`);
+        console.log(`[${modelPrefix}] Zerocupon data size: ${zerocuponData.length} chars`);
       }
       if (params.includeForecast) {
-        console.log(`[LLM] Forecast data size: ${forecastData.length} chars`);
+        console.log(`[${modelPrefix}] Forecast data size: ${forecastData.length} chars`);
       }
 
-      // Step 2: Send loaded data to LLM as files (data is already loaded, no reduction)
-      // Note: This request has a 20-minute timeout to allow for complete LLM analysis
-      console.log('[LLM] Step 2: Sending data to LLM as files...');
-      console.log('[LLM] This may take several minutes. Please wait...');
-      const response = await analyzeBondsWithLLM(
-        bondsData,
-        zerocuponData,
-        forecastData,
-        'gpt-5.1', // Using GPT-5.1 model
-        params.includeZerocupon,
-        params.includeForecast
-      );
+      // Step 2: Send loaded data to selected model
+      let response;
+      if (model === 'llm') {
+        console.log(`[${modelPrefix}] Step 2: Sending data to LLM as files...`);
+        console.log(`[${modelPrefix}] This may take several minutes. Please wait...`);
+        response = await analyzeBondsWithLLM(
+          bondsData,
+          zerocuponData,
+          forecastData,
+          'gpt-5.1',
+          params.includeZerocupon,
+          params.includeForecast
+        );
+      } else if (model === 'qwen') {
+        console.log(`[${modelPrefix}] Step 2: Sending data to Qwen 3 via OpenRouter as files...`);
+        console.log(`[${modelPrefix}] This may take several minutes. Please wait...`);
+        response = await analyzeBondsWithQwen(
+          bondsData,
+          zerocuponData,
+          forecastData,
+          'qwen/qwen3-235b-a22b:free',
+          params.includeZerocupon,
+          params.includeForecast
+        );
+      } else if (model === 'grok') {
+        console.log(`[${modelPrefix}] Step 2: Sending data to Grok 4.1 Fast via OpenRouter as files...`);
+        console.log(`[${modelPrefix}] This may take several minutes. Please wait...`);
+        response = await analyzeBondsWithGrok(
+          bondsData,
+          zerocuponData,
+          forecastData,
+          'x-ai/grok-4.1-fast:free',
+          params.includeZerocupon,
+          params.includeForecast
+        );
+      } else {
+        throw new Error('Неизвестная модель');
+      }
 
       setAnalysisResult(response.analysis);
       setAnalysisStages({
@@ -435,13 +278,20 @@ export const HomePage: React.FC = () => {
       setModelUsed(response.model_used);
       setIsAnalysisResultOpen(true);
     } catch (error) {
-      console.error('Error during LLM analysis:', error);
+      console.error(`Error during ${model} analysis:`, error);
+      const errorMessages: Record<LLMModel, string> = {
+        llm: 'Не удалось выполнить анализ',
+        qwen: 'Не удалось выполнить анализ Qwen 3',
+        grok: 'Не удалось выполнить анализ Grok 4.1 Fast',
+      };
       setAnalysisError(
-        error instanceof Error ? error.message : 'Не удалось выполнить анализ'
+        error instanceof Error ? error.message : errorMessages[model]
       );
       setIsAnalysisResultOpen(true);
     } finally {
       setIsAnalyzing(false);
+      setSelectedLLMModel(null);
+      setSavedAnalysisParams(null);
     }
   };
 
@@ -468,43 +318,7 @@ export const HomePage: React.FC = () => {
             <Button
               variant="outlined"
               color="inherit"
-              onClick={handleRefreshRatingsClick}
-              startIcon={
-                isRefreshingRatings ? <CircularProgress size={18} color="inherit" /> : <RefreshIcon />
-              }
-              disabled={isRefreshingRatings}
-              sx={{ mr: 1 }}
-            >
-              Обновить рейтинги
-            </Button>
-            <Button
-              variant="outlined"
-              color="inherit"
-              onClick={handleRefreshEmitentsClick}
-              startIcon={
-                isRefreshingEmitents ? <CircularProgress size={18} color="inherit" /> : <RefreshIcon />
-              }
-              disabled={isRefreshingEmitents}
-              sx={{ mr: 1 }}
-            >
-              Обновить эмитентов
-            </Button>
-            <Button
-              variant="outlined"
-              color="inherit"
-              onClick={handleRefreshCouponsClick}
-              startIcon={
-                isRefreshingCoupons ? <CircularProgress size={18} color="inherit" /> : <RefreshIcon />
-              }
-              disabled={isRefreshingCoupons}
-              sx={{ mr: 1 }}
-            >
-              Обновить купоны
-            </Button>
-            <Button
-              variant="outlined"
-              color="inherit"
-              onClick={handleRefreshClick}
+              onClick={handleRefreshDataClick}
               startIcon={
                 isRefreshing ? <CircularProgress size={18} color="inherit" /> : <RefreshIcon />
               }
@@ -523,30 +337,7 @@ export const HomePage: React.FC = () => {
               sx={{ mr: 1 }}
               disabled={isAnalyzing}
             >
-              Отправить на анализ LLM
-            </Button>
-            <Button
-              variant="outlined"
-              color="inherit"
-              onClick={handleQwenAnalysisClick}
-              startIcon={
-                isQwenAnalyzing ? <CircularProgress size={18} color="inherit" /> : <PsychologyIcon />
-              }
-              disabled={isQwenAnalyzing}
-              sx={{ mr: 1 }}
-            >
-              Отправить Qwen 3
-            </Button>
-            <Button
-              variant="outlined"
-              color="inherit"
-              onClick={handleGrokAnalysisClick}
-              startIcon={
-                isGrokAnalyzing ? <CircularProgress size={18} color="inherit" /> : <PsychologyIcon />
-              }
-              disabled={isGrokAnalyzing}
-            >
-              Отправить Grok 4.1 Fast
+              Анализ LLM
             </Button>
           </Box>
         </Toolbar>
@@ -618,33 +409,54 @@ export const HomePage: React.FC = () => {
         onClose={() => setIsFiltersModalOpen(false)}
       />
 
-      {/* LLM Analysis Dialogs */}
+      {/* Refresh Data Dialog */}
+      <RefreshDataDialog
+        open={isRefreshDialogOpen}
+        onClose={() => {
+          if (!isRefreshing) {
+            setIsRefreshDialogOpen(false);
+            // Reset status when closing
+            setRefreshStatus({});
+          }
+        }}
+        onConfirm={handleRefreshConfirm}
+        tasks={[
+          { id: 'bonds', label: 'Обновить данные облигаций', checked: false },
+          { id: 'ratings', label: 'Обновить рейтинги', checked: false },
+          { id: 'emitents', label: 'Обновить эмитентов', checked: false },
+          { id: 'coupons', label: 'Обновить купоны', checked: false },
+        ]}
+        isRefreshing={isRefreshing}
+        refreshStatus={refreshStatus}
+      />
+
+      {/* LLM Analysis Parameters Dialog - First step */}
       <AnalysisParamsDialog
         open={isAnalysisParamsOpen}
-        onClose={() => setIsAnalysisParamsOpen(false)}
+        onClose={() => {
+          setIsAnalysisParamsOpen(false);
+          setSavedAnalysisParams(null);
+        }}
         onConfirm={handleAnalysisParamsConfirm}
       />
-      
-      {/* Qwen Analysis Dialogs */}
-      <AnalysisParamsDialog
-        open={isQwenParamsOpen}
-        onClose={() => setIsQwenParamsOpen(false)}
-        onConfirm={handleQwenAnalysisParamsConfirm}
+
+      {/* LLM Model Selection Dialog - Second step */}
+      <LLMAnalysisModelDialog
+        open={isLLMModelDialogOpen}
+        onClose={() => {
+          setIsLLMModelDialogOpen(false);
+          setSavedAnalysisParams(null);
+        }}
+        onConfirm={handleLLMModelSelect}
       />
       
-      {/* Grok Analysis Dialogs */}
-      <AnalysisParamsDialog
-        open={isGrokParamsOpen}
-        onClose={() => setIsGrokParamsOpen(false)}
-        onConfirm={handleGrokAnalysisParamsConfirm}
-      />
-      
+      {/* LLM Analysis Result Dialog */}
       <AnalysisResultDialog
         open={isAnalysisResultOpen}
         onClose={() => setIsAnalysisResultOpen(false)}
         analysis={analysisResult}
         stages={analysisStages}
-        isLoading={isAnalyzing || isQwenAnalyzing || isGrokAnalyzing}
+        isLoading={isAnalyzing}
         error={analysisError}
         modelUsed={modelUsed}
       />
