@@ -11,7 +11,7 @@ import { ForecastTable } from '../components/forecast/ForecastTable';
 import { AnalysisParamsDialog } from '../components/llm/AnalysisParamsDialog';
 import { AnalysisResultDialog } from '../components/llm/AnalysisResultDialog';
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
-import { refreshBondsData } from '../api/bonds';
+import { refreshBondsData, refreshCouponsData } from '../api/bonds';
 import { refreshZerocuponData } from '../api/zerocupon';
 import { refreshRatingsData } from '../api/rating';
 import { refreshEmitentsData } from '../api/emitent';
@@ -34,6 +34,7 @@ export const HomePage: React.FC = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isRefreshingRatings, setIsRefreshingRatings] = useState(false);
   const [isRefreshingEmitents, setIsRefreshingEmitents] = useState(false);
+  const [isRefreshingCoupons, setIsRefreshingCoupons] = useState(false);
   const [currentTab, setCurrentTab] = useState(0);
   const bondsTableRef = useRef<BondsTableRef>(null);
   
@@ -98,6 +99,25 @@ export const HomePage: React.FC = () => {
       setError('Не удалось обновить данные эмитентов. Попробуйте позже.');
     } finally {
       setIsRefreshingEmitents(false);
+    }
+  };
+
+  const handleRefreshCouponsClick = async () => {
+    if (isRefreshingCoupons) {
+      return;
+    }
+
+    setIsRefreshingCoupons(true);
+    setError(null);
+
+    try {
+      // Refresh coupons data - backend handles all processing
+      await refreshCouponsData();
+    } catch (error) {
+      console.error('Failed to refresh coupons', error);
+      setError('Не удалось обновить данные купонов. Попробуйте позже.');
+    } finally {
+      setIsRefreshingCoupons(false);
     }
   };
 
@@ -465,6 +485,18 @@ export const HomePage: React.FC = () => {
             <Button
               variant="outlined"
               color="inherit"
+              onClick={handleRefreshCouponsClick}
+              startIcon={
+                isRefreshingCoupons ? <CircularProgress size={18} color="inherit" /> : <RefreshIcon />
+              }
+              disabled={isRefreshingCoupons}
+              sx={{ mr: 1 }}
+            >
+              Обновить купоны
+            </Button>
+            <Button
+              variant="outlined"
+              color="inherit"
               onClick={handleRefreshClick}
               startIcon={
                 isRefreshing ? <CircularProgress size={18} color="inherit" /> : <RefreshIcon />
@@ -478,9 +510,11 @@ export const HomePage: React.FC = () => {
               variant="outlined"
               color="inherit"
               onClick={handleLLMAnalysisClick}
-              startIcon={<PsychologyIcon />}
+              startIcon={
+                isAnalyzing ? <CircularProgress size={18} color="inherit" /> : <PsychologyIcon />
+              }
               sx={{ mr: 1 }}
-              disabled={true}
+              disabled={isAnalyzing}
             >
               Отправить на анализ LLM
             </Button>
@@ -512,8 +546,8 @@ export const HomePage: React.FC = () => {
       </AppBar>
 
       {/* Main Content */}
-      <Box sx={{ flexGrow: 1, bgcolor: 'background.default', display: 'flex', flexDirection: 'column', height: 'calc(100vh - 64px)' }}>
-        <Container maxWidth={false} sx={{ px: 2, py: 2, flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
+      <Box sx={{ flexGrow: 1, bgcolor: 'background.default', display: 'flex', flexDirection: 'column', height: 'calc(100vh - 64px)', width: '100%' }}>
+        <Container maxWidth={false} sx={{ px: 2, py: 2, flexGrow: 1, display: 'flex', flexDirection: 'column', width: '100%' }}>
           {/* Tabs */}
           <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
             <Tabs value={currentTab} onChange={(_, newValue) => setCurrentTab(newValue)}>
@@ -525,14 +559,14 @@ export const HomePage: React.FC = () => {
 
           {/* Tab Content */}
           {currentTab === 0 && (
-            <Box sx={{ flexGrow: 1, display: 'flex', gap: 2, minHeight: 0 }}>
-              {/* Left Side - Filters Panel */}
-              <Box sx={{ width: { xs: '100%', md: '250px', lg: '200px', xl: '180px' }, flexShrink: 0 }}>
+            <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', gap: 2, minHeight: 0, width: '100%' }}>
+              {/* Filters Panel - Above Table */}
+              <Box sx={{ width: '100%', flexShrink: 0 }}>
                 <FiltersPanel />
               </Box>
 
-              {/* Right Side - Table */}
-              <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+              {/* Table - Full Width */}
+              <Box sx={{ flexGrow: 1, minWidth: 0, width: '100%' }}>
                 <ErrorBoundary>
                   <BondsTable ref={bondsTableRef} />
                 </ErrorBoundary>

@@ -103,6 +103,32 @@ class CouponLoader:
         
         return None
     
+    def get_coupon_type(self, secid: str) -> Optional[str]:
+        """
+        Get coupon type (FIX or FLOAT) from amortizations section.
+        
+        Args:
+            secid: Security ID
+            
+        Returns:
+            Coupon type (FIX or FLOAT) from amortizations, or None if not found
+        """
+        coupons_data = self._load_coupons_data()
+        
+        if secid not in coupons_data:
+            return None
+        
+        bond_data = coupons_data[secid]
+        amortizations = bond_data.get("amortizations", [])
+        
+        if not amortizations:
+            return None
+        
+        # Get coupon_type from first amortization (all amortizations have the same coupon_type)
+        coupon_type = amortizations[0].get("coupon_type")
+        
+        return coupon_type if coupon_type in ("FIX", "FLOAT") else None
+    
     def clear_cache(self):
         """Clear the coupons cache"""
         self._coupons_cache = None

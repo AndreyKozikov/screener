@@ -36,16 +36,19 @@ async def get_filter_options():
     Returns:
     - Available list levels
     - Available currency face units
+    - Available bond types
     """
     loader = get_data_loader()
     all_bonds = await loader.get_bonds()
     
     listlevels = list(set(b.LISTLEVEL for b in all_bonds if b.LISTLEVEL is not None))
     faceunits = list(set(b.FACEUNIT for b in all_bonds if b.FACEUNIT is not None))
+    bondtypes = list(set(b.BONDTYPE for b in all_bonds if b.BONDTYPE is not None))
     
     return {
         "listlevels": sorted(listlevels),
         "faceunits": sorted(faceunits),
+        "bondtypes": sorted(bondtypes),
     }
 
 

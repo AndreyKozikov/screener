@@ -162,7 +162,7 @@ class DataLoader:
                 
                 list_item = BondListItem(**list_item_data)
                 
-                # Try to get coupon value from coupons data if available
+                # Try to get coupon value and coupon_type from coupons data if available
                 coupon_loader = get_coupon_loader()
                 if coupon_loader is not None:
                     nearest_coupon_value = coupon_loader.get_nearest_coupon_value(
@@ -171,6 +171,11 @@ class DataLoader:
                     # Set COUPONVALUE with coupon value from coupons data if found
                     if nearest_coupon_value is not None:
                         list_item.COUPONVALUE = nearest_coupon_value
+                    
+                    # Get coupon_type from coupons data
+                    coupon_type = coupon_loader.get_coupon_type(list_item.SECID)
+                    if coupon_type is not None:
+                        list_item.COUPON_TYPE = coupon_type
                 
                 bonds_list.append(list_item)
             except Exception as e:
@@ -267,7 +272,25 @@ class DataLoader:
                             break
         
         # Load and add ratings data
-        self._add_ratings_to_bonds(bonds_list)
+        ratings_map = self._load_ratings_map()
+        self._add_ratings_to_bonds(bonds_list, ratings_map)
+        
+        # Also add ratings to details_map for BondDetail
+        for secid, rating_info in ratings_map.items():
+            if secid in details_map:
+                # Add rating to securities section in details_map
+                details_map[secid]["securities"]["RATING_AGENCY"] = rating_info["agency"]
+                details_map[secid]["securities"]["RATING_LEVEL"] = rating_info["level"]
+        
+        # Load and add bond types from bonds_emitent.json
+        bondtype_map = self._load_bondtype_map()
+        self._add_bondtypes_to_bonds(bonds_list, bondtype_map)
+        
+        # Also add bondtype to details_map for BondDetail
+        for secid, bondtype in bondtype_map.items():
+            if secid in details_map:
+                # Add bondtype to securities section in details_map
+                details_map[secid]["securities"]["BONDTYPE"] = bondtype
         
         self._bonds_cache = bonds_list
         self._details_cache = details_map
@@ -335,13 +358,14 @@ class DataLoader:
         except (ValueError, TypeError):
             return None
     
-    def _add_ratings_to_bonds(self, bonds_list: List[BondListItem]):
-        """Load ratings from bonds_rating.json and add to bonds"""
+    def _load_ratings_map(self) -> Dict[str, Dict[str, Optional[str]]]:
+        """Load ratings from bonds_rating.json and return as a map"""
         ratings_path = self.data_dir / "bonds_rating.json"
+        ratings_map = {}
         
         if not ratings_path.exists():
             print(f"[DATA LOADER] Ratings file not found: {ratings_path}, skipping ratings")
-            return
+            return ratings_map
         
         try:
             with open(ratings_path, 'rb') as f:
@@ -350,7 +374,6 @@ class DataLoader:
             print(f"[DATA LOADER] Loaded ratings for {len(ratings_data)} bonds")
             
             # Create a lookup map for quick access
-            ratings_map = {}
             for secid, rating_entry in ratings_data.items():
                 if isinstance(rating_entry, dict):
                     # New format: {last_updated: "...", ratings: [...]}
@@ -393,20 +416,63 @@ class DataLoader:
                                 "level": rating_level.strip() if rating_level else None
                             }
             
-            # Add ratings to bonds
-            ratings_added = 0
-            for bond in bonds_list:
-                if bond.SECID in ratings_map:
-                    rating_info = ratings_map[bond.SECID]
-                    bond.RATING_AGENCY = rating_info["agency"]
-                    bond.RATING_LEVEL = rating_info["level"]
-                    ratings_added += 1
-            
-            print(f"[DATA LOADER] Added ratings to {ratings_added} bonds")
-            
         except (orjson.JSONDecodeError, IOError) as exc:
             print(f"[DATA LOADER] ERROR: Failed to load ratings file - {type(exc).__name__}: {str(exc)}")
             # Continue without ratings if file is corrupted or can't be read
+        
+        return ratings_map
+    
+    def _add_ratings_to_bonds(self, bonds_list: List[BondListItem], ratings_map: Dict[str, Dict[str, Optional[str]]]):
+        """Add ratings from ratings_map to bonds"""
+        ratings_added = 0
+        for bond in bonds_list:
+            if bond.SECID in ratings_map:
+                rating_info = ratings_map[bond.SECID]
+                bond.RATING_AGENCY = rating_info["agency"]
+                bond.RATING_LEVEL = rating_info["level"]
+                ratings_added += 1
+        
+        print(f"[DATA LOADER] Added ratings to {ratings_added} bonds")
+    
+    def _load_bondtype_map(self) -> Dict[str, Optional[str]]:
+        """Load bond types from bonds_emitent.json and return as a map"""
+        emitent_path = self.data_dir / "bonds_emitent.json"
+        bondtype_map = {}
+        
+        if not emitent_path.exists():
+            print(f"[DATA LOADER] Emitent file not found: {emitent_path}, skipping bond types")
+            return bondtype_map
+        
+        try:
+            with open(emitent_path, 'rb') as f:
+                emitent_data = orjson.loads(f.read())
+            
+            print(f"[DATA LOADER] Loaded emitent data for {len(emitent_data)} bonds")
+            
+            # Create a lookup map for quick access
+            for secid, emitent_entry in emitent_data.items():
+                if isinstance(emitent_entry, dict):
+                    bondtype = emitent_entry.get("type")
+                    if bondtype and isinstance(bondtype, str):
+                        bondtype_map[secid] = bondtype.strip()
+            
+            print(f"[DATA LOADER] Extracted bond types for {len(bondtype_map)} bonds")
+            
+        except (orjson.JSONDecodeError, IOError) as exc:
+            print(f"[DATA LOADER] ERROR: Failed to load emitent file - {type(exc).__name__}: {str(exc)}")
+            # Continue without bond types if file is corrupted or can't be read
+        
+        return bondtype_map
+    
+    def _add_bondtypes_to_bonds(self, bonds_list: List[BondListItem], bondtype_map: Dict[str, Optional[str]]):
+        """Add bond types from bondtype_map to bonds"""
+        bondtypes_added = 0
+        for bond in bonds_list:
+            if bond.SECID in bondtype_map:
+                bond.BONDTYPE = bondtype_map[bond.SECID]
+                bondtypes_added += 1
+        
+        print(f"[DATA LOADER] Added bond types to {bondtypes_added} bonds")
     
     @staticmethod
     def _parse_date(date_str: str) -> Optional[date]:

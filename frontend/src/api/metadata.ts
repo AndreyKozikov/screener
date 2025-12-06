@@ -40,5 +40,6 @@ export const fetchFilterOptions = async (): Promise<FilterOptions> => {
   return {
     listlevels: response.data.listlevels || [],
     faceunits: response.data.faceunits || [],
+    bondtypes: response.data.bondtypes || [],
   };
 };

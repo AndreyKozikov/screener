@@ -1,3 +1,4 @@
+from collections import Counter
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -55,6 +56,50 @@ class CouponService:
             return days_ago > self.STALE_DAYS
         except (ValueError, TypeError):
             return True
+    
+    def detect_coupon_type(self, coupons: List[Dict]) -> str:
+        """
+        Определение типа купона только по фактическим купонным выплатам (поле value):
+        - "FIX"   — купон по сути постоянный (почти все выплаты одинаковые, изменения редки)
+        - "FLOAT" — купон переменный (выплаты систематически меняются)
+
+        Анализируется весь ряд выплат, а не только минимум и максимум.
+        """
+        payments = [c.get("value") for c in coupons if c.get("value") is not None]
+
+        # Недостаточно данных для осмысленного вывода
+        if len(payments) < 4:
+            return "FIX"
+
+        # Округляем до 2 знаков, чтобы убрать мелкие погрешности округления
+        rounded = [round(v, 2) for v in payments]
+
+        counter = Counter(rounded)
+        unique_values = list(counter.keys())
+        unique_count = len(unique_values)
+        total = len(rounded)
+
+        # Все выплаты по одному уровню
+        if unique_count == 1:
+            return "FIX"
+
+        # Основной (самый частый) уровень выплат и его доля
+        most_common_value, most_common_count = counter.most_common(1)[0]
+        share_most_common = most_common_count / total
+
+        # Считаем число реальных переходов между выплатами
+        threshold = 0.10  # изменение выплаты менее 10 копеек считаем шумом
+        changes = 0
+        for prev, cur in zip(rounded, rounded[1:]):
+            if abs(cur - prev) > threshold:
+                changes += 1
+
+        # Если большинство выплат одинаковые и изменений мало — считаем FIX
+        if share_most_common >= 0.8 and changes <= 2:
+            return "FIX"
+
+        # В любом другом случае — переменный купон
+        return "FLOAT"
     
     def _download_coupons_from_moex(self, secid: str) -> Dict:
         """
@@ -139,16 +184,56 @@ class CouponService:
             last_updated = bond_data.get("last_updated", "")
             
             if last_updated and not self._is_data_stale(last_updated):
+                # Load coupon_type from file ONLY - no recalculation
+                # Coupon type is calculated and saved only during data refresh from MOEX API
+                coupons = bond_data.get("coupons", [])
+                amortizations = bond_data.get("amortizations", [])
+                
+                # For old data structure: one-time in-memory migration for backward compatibility
+                # This only affects the returned data, does NOT save to file
+                if coupons and len(coupons) > 0 and amortizations and len(amortizations) > 0:
+                    # Check if amortizations already have coupon_type
+                    has_coupon_type_in_amort = any(
+                        amort.get("coupon_type") is not None 
+                        for amort in amortizations
+                    )
+                    
+                    # Only migrate in-memory if amortizations don't have coupon_type but coupons do (old structure)
+                    if not has_coupon_type_in_amort:
+                        coupon_type_from_coupons = coupons[0].get("coupon_type")
+                        if coupon_type_from_coupons:
+                            # In-memory migration only (for reading old data structure)
+                            # This does NOT save to file - actual migration happens only on refresh
+                            for amort in amortizations:
+                                if "coupon_type" not in amort:
+                                    amort["coupon_type"] = coupon_type_from_coupons
+                
+                # Clean duplicate fields from coupons (for old data structure)
+                bond_data["coupons"] = [self._clean_coupon_fields(c) for c in coupons]
+                
                 return bond_data
         
         # Download fresh data
         try:
             fresh_data = self._download_coupons_from_moex(secid)
         except Exception as exc:
-            # If download fails and we have cached data, return it
+            # If download fails and we have cached data, return it (with cleaned coupons)
             if secid in bonds:
-                return bonds[secid]
+                cached_data = bonds[secid].copy()
+                cached_coupons = cached_data.get("coupons", [])
+                cached_data["coupons"] = [self._clean_coupon_fields(c) for c in cached_coupons]
+                return cached_data
             raise exc
+        
+        # Detect coupon type
+        coupon_type = self.detect_coupon_type(fresh_data["coupons"])
+        
+        # Add coupon_type to each amortization entry
+        for amort in fresh_data["amortizations"]:
+            amort["coupon_type"] = coupon_type
+        
+        # Remove duplicate fields from coupons using helper method
+        fresh_data["coupons"] = [self._clean_coupon_fields(c) for c in fresh_data["coupons"]]
         
         # Save to file
         bond_entry = {
@@ -179,6 +264,21 @@ class CouponService:
         
         return bond_entry
     
+    def _clean_coupon_fields(self, coupon: Dict) -> Dict:
+        """
+        Remove duplicate fields from coupon that should not be in coupons section.
+        
+        Args:
+            coupon: Coupon dictionary
+            
+        Returns:
+            Cleaned coupon dictionary
+        """
+        # Fields to remove from coupons (these are duplicated and moved to amortizations)
+        fields_to_remove = ["isin", "name", "issuevalue", "primary_boardid", "coupon_type", "secid"]
+        cleaned = {k: v for k, v in coupon.items() if k not in fields_to_remove}
+        return cleaned
+    
     def get_coupons_only(self, secid: str, force_refresh: bool = False) -> List[Dict]:
         """
         Get only coupons data (for frontend display)
@@ -188,10 +288,12 @@ class CouponService:
             force_refresh: If True, force download from MOEX API
             
         Returns:
-            List of coupon dictionaries
+            List of coupon dictionaries (with duplicate fields removed)
         """
         bond_data = self.get_coupons(secid, force_refresh)
-        return bond_data.get("coupons", [])
+        coupons = bond_data.get("coupons", [])
+        # Clean old fields from coupons for backward compatibility with old data structure
+        return [self._clean_coupon_fields(c) for c in coupons]
 
 
 # Singleton instance

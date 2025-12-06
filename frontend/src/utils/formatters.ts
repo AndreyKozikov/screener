@@ -210,22 +210,30 @@ export const formatDaysToMaturity = (matDate: string | null): string => {
 
 /**
  * Calculate coupon yield to current price
- * @param couponPercent - Coupon rate in percent
+ * @param couponValue - Coupon payment amount in currency
  * @param currentPrice - Current price in percent of face value
- * @returns Coupon yield to current price in percent
+ * @param faceValue - Face value (nominal value) of the bond
+ * @param couponFrequency - Number of coupon payments per year
+ * @returns Coupon yield to current price in percent per annum
  */
 export const calculateCouponYieldToPrice = (
-  couponPercent: number | null,
-  currentPrice: number | null
+  couponValue: number | null,
+  currentPrice: number | null,
+  faceValue: number | null,
+  couponFrequency: number | null
 ): number | null => {
-  if (couponPercent === null || currentPrice === null || currentPrice === 0) {
+  if (couponValue === null || currentPrice === null || faceValue === null || couponFrequency === null || 
+      currentPrice === 0 || faceValue === 0) {
     return null;
   }
   
-  // Current price is in percent of face value (e.g., 95.5 means 95.5%)
-  // Coupon percent is annual coupon rate (e.g., 7.5 means 7.5% per year)
-  // Yield to current price = (Coupon % / Current Price %) * 100
-  return (couponPercent / currentPrice) * 100;
+  // Formula: (COUPONVALUE / (PREVPRICE × FACEVALUE / 100)) × (number of payments per year) × 100
+  // COUPONVALUE - next coupon payment amount in currency
+  // PREVPRICE - previous transaction price in % of face value
+  // FACEVALUE - nominal value of the bond
+  // Simplified: (COUPONVALUE × 10000 / (PREVPRICE × FACEVALUE)) × couponFrequency
+  // Result is annual yield in percent
+  return (couponValue * 10000 / (currentPrice * faceValue)) * couponFrequency;
 };
 
 /**

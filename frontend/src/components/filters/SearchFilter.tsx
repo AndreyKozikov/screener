@@ -17,11 +17,16 @@ export const SearchFilter: React.FC = () => {
 
   return (
     <TextField
-      fullWidth
       size="small"
       placeholder="Поиск по коду или названию"
       value={filters.search}
       onChange={handleChange}
+      sx={{ 
+        width: '100%',
+        '& .MuiInputBase-input::placeholder': {
+          fontSize: '0.75rem',
+        },
+      }}
       InputProps={{
         startAdornment: (
           <InputAdornment position="start">

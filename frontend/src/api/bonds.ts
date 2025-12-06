@@ -15,6 +15,10 @@ export const fetchBonds = async (filters: BondFilters): Promise<BondsListRespons
   // Build query parameters (exclude search and skip/limit for client-side operations)
   if (filters.couponMin !== null) params.coupon_min = filters.couponMin;
   if (filters.couponMax !== null) params.coupon_max = filters.couponMax;
+  if (filters.yieldMin !== null) params.yield_min = filters.yieldMin;
+  if (filters.yieldMax !== null) params.yield_max = filters.yieldMax;
+  if (filters.couponYieldMin !== null) params.coupon_yield_min = filters.couponYieldMin;
+  if (filters.couponYieldMax !== null) params.coupon_yield_max = filters.couponYieldMax;
   if (filters.matdateFrom) params.matdate_from = filters.matdateFrom;
   if (filters.matdateTo) params.matdate_to = filters.matdateTo;
   if (filters.listlevel && Array.isArray(filters.listlevel) && filters.listlevel.length > 0) {
@@ -26,6 +30,16 @@ export const fetchBonds = async (filters: BondFilters): Promise<BondsListRespons
     // FastAPI expects array parameters to be sent as repeated query params: faceunit=RUB&faceunit=USD
     params.faceunit = filters.faceunit;
   }
+  if (filters.bondtype && Array.isArray(filters.bondtype) && filters.bondtype.length > 0) {
+    // FastAPI expects array parameters to be sent as repeated query params: bondtype=exchange_bond&bondtype=corporate_bond
+    params.bondtype = filters.bondtype;
+  }
+  if (filters.couponType && Array.isArray(filters.couponType) && filters.couponType.length > 0) {
+    // FastAPI expects array parameters to be sent as repeated query params: coupon_type=FIX&coupon_type=FLOAT
+    params.coupon_type = filters.couponType;
+  }
+  if (filters.ratingMin !== null) params.rating_min = filters.ratingMin;
+  if (filters.ratingMax !== null) params.rating_max = filters.ratingMax;
   // Note: search is NOT sent to server - it will be filtered on client side
   // Note: skip/limit are NOT sent - we load all data by not sending limit parameter
   
@@ -140,6 +154,13 @@ export const exportBondsJson = (bonds: Array<Record<string, unknown>>): void => 
  */
 export const refreshBondsData = async (): Promise<void> => {
   await apiClient.post('/bonds/refresh');
+};
+
+/**
+ * Request coupons data refresh for all bonds from the backend
+ */
+export const refreshCouponsData = async (): Promise<void> => {
+  await apiClient.post('/bonds/refresh-coupons');
 };
 
 /**

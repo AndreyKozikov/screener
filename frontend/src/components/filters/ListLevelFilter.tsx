@@ -9,7 +9,7 @@ import { fetchFilterOptions } from '../../api/metadata';
  * Multi-select filter for list level
  */
 export const ListLevelFilter: React.FC = () => {
-  const { filters, setFilter, filterOptions, setFilterOptions } = useFiltersStore();
+  const { draftFilters, setDraftFilter, filterOptions, setFilterOptions } = useFiltersStore();
 
   // Load filter options on mount
   useEffect(() => {
@@ -28,7 +28,7 @@ export const ListLevelFilter: React.FC = () => {
   }, [filterOptions, setFilterOptions]);
 
   const handleListLevelChange = (_: React.SyntheticEvent<Element, Event>, value: number[]) => {
-    setFilter('listlevel', value);
+    setDraftFilter('listlevel', value);
   };
 
   if (!filterOptions) {
@@ -36,23 +36,27 @@ export const ListLevelFilter: React.FC = () => {
   }
 
   return (
-    <Box>
-      <Typography variant="body2" gutterBottom color="text.secondary" fontWeight={500}>
-        Уровень листинга
-      </Typography>
-      <Autocomplete
-        multiple
-        size="small"
-        options={filterOptions.listlevels || []}
-        value={filters.listlevel || []}
-        onChange={handleListLevelChange}
-        renderInput={(params) => (
-          <TextField
-            {...params}
-            placeholder={(!filters.listlevel || filters.listlevel.length === 0) ? "Выберите уровни листинга" : ""}
+    <Autocomplete
+      multiple
+      size="small"
+      options={filterOptions.listlevels || []}
+      value={draftFilters.listlevel || []}
+      onChange={handleListLevelChange}
+      sx={{ 
+        width: '100%',
+        '& .MuiAutocomplete-inputRoot': {
+          minHeight: '40px',
+        },
+      }}
+      renderInput={(params) => (
+        <TextField
+          {...params}
+          placeholder={(!draftFilters.listlevel || draftFilters.listlevel.length === 0) ? "Уровень листинга" : ""}
             sx={{
               '& .MuiOutlinedInput-root': {
                 paddingRight: '9px !important',
+                minHeight: '40px',
+                height: '40px',
                 '& fieldset': {
                   borderColor: 'rgba(0, 0, 0, 0.23)',
                 },
@@ -72,6 +76,9 @@ export const ListLevelFilter: React.FC = () => {
               },
               '& .MuiAutocomplete-input': {
                 padding: '6.5px 4px 6.5px 14px !important',
+              },
+              '& .MuiInputBase-input::placeholder': {
+                fontSize: '0.75rem',
               },
             }}
           />
@@ -95,9 +102,7 @@ export const ListLevelFilter: React.FC = () => {
           },
         }}
       />
-    </Box>
   );
 };
 
 export default ListLevelFilter;
-

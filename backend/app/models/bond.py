@@ -30,6 +30,8 @@ class BondListItem(BaseModel):
     LISTLEVEL: Optional[int] = None  # Уровень листинга
     RATING_AGENCY: Optional[str] = None  # Название рейтингового агентства (agency_name_short_ru)
     RATING_LEVEL: Optional[str] = None  # Уровень рейтинга (rating_level_name_short_ru)
+    BONDTYPE: Optional[str] = None  # Тип облигации (type из bonds_emitent.json)
+    COUPON_TYPE: Optional[str] = None  # Тип купона (FIX или FLOAT) из coupons_data.json
     
     class Config:
         from_attributes = True

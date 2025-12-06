@@ -17,13 +17,13 @@ class Amortization(BaseModel):
     data_source: Optional[str] = None
     secid: Optional[str] = None
     primary_boardid: Optional[str] = None
+    coupon_type: Optional[str] = None  # Moved from coupons section (FIX or FLOAT)
 
 
 class Coupon(BaseModel):
     """Coupon data model"""
-    isin: Optional[str] = None
-    name: Optional[str] = None
-    issuevalue: Optional[float] = None
+    # Removed duplicate fields: isin, name, issuevalue, primary_boardid, secid, coupon_type
+    # These are now only in amortizations section
     coupondate: Optional[str] = None
     recorddate: Optional[str] = None
     startdate: Optional[str] = None
@@ -33,8 +33,6 @@ class Coupon(BaseModel):
     value: Optional[float] = None
     valueprc: Optional[float] = None
     value_rub: Optional[float] = None
-    secid: Optional[str] = None
-    primary_boardid: Optional[str] = None
 
 
 class Offer(BaseModel):
@@ -66,4 +64,5 @@ class BondCouponsResponse(BaseModel):
 class CouponsListResponse(BaseModel):
     """Response model for coupons list (for table display)"""
     coupons: List[Coupon]
+    coupon_type: Optional[str] = None  # FIX or FLOAT from amortizations section
 

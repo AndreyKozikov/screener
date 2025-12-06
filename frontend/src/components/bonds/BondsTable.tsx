@@ -361,11 +361,14 @@ export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
       valueGetter: (params) => {
         const bond = params.data;
         if (!bond) return null;
-        return calculateCouponYieldToPrice(bond.COUPONPERCENT, bond.PREVPRICE);
+        // Calculate coupon frequency (payments per year)
+        const couponFrequency = calculateCouponFrequency(bond.COUPONPERIOD);
+        // Calculate yield: (COUPONVALUE / (PREVPRICE × FACEVALUE / 100)) × (payments per year) × 100
+        return calculateCouponYieldToPrice(bond.COUPONVALUE, bond.PREVPRICE, bond.FACEVALUE, couponFrequency);
       },
       valueFormatter: (params) => formatPercent(params.value),
       type: 'numericColumn',
-      headerTooltip: getFieldDescription('COUPON_YIELD_TO_PRICE') || getFieldDescription('COUPONPERCENT'),
+      headerTooltip: 'Рассчитывается как (Размер купона / (Текущая цена × Номинал / 100)) × (Число выплат в год) × 100',
       autoHeaderHeight: true,
     }),
     createColumnDef('YIELDATPREVWAPRICE', 'Доходность к погашению при текущей цене', {
@@ -705,8 +708,8 @@ export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
   }
 
   return (
-    <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <CardContent sx={{ p: 0, '&:last-child': { pb: 0 }, flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
+    <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', width: '100%' }}>
+      <CardContent sx={{ p: 0, '&:last-child': { pb: 0 }, flexGrow: 1, display: 'flex', flexDirection: 'column', width: '100%' }}>
         <Box sx={{ p: 1, display: 'flex', justifyContent: 'flex-end', gap: 1, borderBottom: 1, borderColor: 'divider' }}>
           <Button
             variant="outlined"

@@ -145,7 +145,9 @@ export const exportSelectedBonds = async (secids: string[]): Promise<void> => {
   for (let i = 0; i < bondDetails.length; i++) {
     const bondDetail = bondDetails[i];
     const secid = secids[i];
-    const coupons = couponsResponses[i]?.coupons || [];
+    const couponsResponse = couponsResponses[i];
+    const coupons = couponsResponse?.coupons || [];
+    const couponType = couponsResponse?.coupon_type || null;
 
     // Get bond name from securities data
     const bondName = 
@@ -180,6 +182,11 @@ export const exportSelectedBonds = async (secids: string[]): Promise<void> => {
       }));
     } else {
       payload.Купоны = [];
+    }
+
+    // Add coupon type (Тип купона)
+    if (couponType) {
+      payload['Тип купона'] = couponType === 'FIX' ? 'постоянный' : couponType === 'FLOAT' ? 'плавающий' : couponType;
     }
 
     exportData[bondName] = payload;

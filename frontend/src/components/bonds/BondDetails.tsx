@@ -33,6 +33,7 @@ import type { Coupon } from '../../types/coupon';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { ErrorMessage } from '../common/ErrorMessage';
 import { CouponsTable } from './CouponsTable';
+import { PremiumBondCard } from './PremiumBondCard';
 import {
   formatDate,
   formatNumber,
@@ -150,6 +151,7 @@ export const BondDetails: React.FC = () => {
   
   // Coupons state
   const [coupons, setCoupons] = useState<Coupon[]>([]);
+  const [couponType, setCouponType] = useState<string | null>(null);  // FIX or FLOAT
   const [isLoadingCoupons, setIsLoadingCoupons] = useState(false);
   const [couponsError, setCouponsError] = useState<string | null>(null);
   
@@ -167,6 +169,7 @@ export const BondDetails: React.FC = () => {
       setBondDetail(null);
       setError(null);
       setCoupons([]);
+      setCouponType(null);
       setCouponsError(null);
       setActiveTab(0);
       prevCouponsCountRef.current = 0;
@@ -201,7 +204,35 @@ export const BondDetails: React.FC = () => {
     };
   }, [selectedBondId]);
 
-  // Load coupons when tab changes to "Купонные выплаты" or when bond is selected
+  // Load coupon_type when bond is selected (needed for "Основные данные" tab)
+  useEffect(() => {
+    if (!selectedBondId || couponType !== null) {
+      return;
+    }
+
+    let isCancelled = false;
+    const currentSecIdRef = selectedBondId;
+
+    const loadCouponType = async () => {
+      try {
+        const response = await fetchBondCoupons(currentSecIdRef);
+        if (!isCancelled && currentSecIdRef === selectedBondId) {
+          setCouponType(response.coupon_type || null);
+        }
+      } catch (err) {
+        // Silently fail - coupon_type is optional
+        console.warn('Failed to load coupon_type:', err);
+      }
+    };
+
+    void loadCouponType();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [selectedBondId, couponType]);
+
+  // Load coupons when tab changes to "Купонные выплаты"
   useEffect(() => {
     // Find the index of "Купонные выплаты" tab (it should be after "Основные данные")
     // Based on the tab structure: 0 is "Основные данные", 1 is "Купонные выплаты"
@@ -236,6 +267,7 @@ export const BondDetails: React.FC = () => {
         if (!isCancelled && currentSecIdRef === selectedBondId) {
           const hasCouponsNow = response.coupons.length > 0;
           setCoupons(response.coupons);
+          setCouponType(response.coupon_type || null);
           
           if (hasCouponsNow) {
             prevCouponsCountRef.current = response.coupons.length;
@@ -508,8 +540,11 @@ export const BondDetails: React.FC = () => {
 
         {bondDetail && !isLoading && !error && (
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, flexGrow: 1, overflow: 'hidden' }}>
-            {/* A. Верхний блок (Header) */}
-            <Paper elevation={0} sx={{ p: 0, bgcolor: 'grey.50', borderRadius: 2, mx: -3, px: 3, py: 2.5 }}>
+            {/* Премиальная карточка облигации */}
+            <PremiumBondCard bondDetail={bondDetail} />
+
+            {/* A. Верхний блок (Header) - оставляем для совместимости, но можно скрыть */}
+            <Paper elevation={0} sx={{ p: 0, bgcolor: 'grey.50', borderRadius: 2, mx: -3, px: 3, py: 2.5, display: 'none' }}>
               {/* 1. Название */}
               <Box sx={{ mb: 2 }}>
                 <Typography variant="h6" fontWeight={700} gutterBottom>
@@ -667,7 +702,12 @@ export const BondDetails: React.FC = () => {
                       { field: 'COUPONPERIOD', value: securities?.COUPONPERIOD ?? null },
                       { field: 'COUPONVALUE', value: securities?.COUPONVALUE ?? null },
                       { field: 'ACCRUEDINT', value: securities?.ACCRUEDINT ?? null },
-                      { field: 'NEXTCOUPON', value: securities?.NEXTCOUPON ?? null, label: 'Дата окончания текущего купона / Дата следующего купона' },
+                      { field: 'NEXTCOUPON', value: securities?.NEXTCOUPON ?? null, label: 'Дата следующего купона' },
+                      { 
+                        field: 'COUPONTYPE', 
+                        value: couponType === 'FIX' ? 'постоянный' : couponType === 'FLOAT' ? 'плавающий' : null,
+                        label: 'Тип купона'
+                      },
                     ])}
 
                     {renderSection('Сроки', [

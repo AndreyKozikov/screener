@@ -73,10 +73,10 @@ export const CouponsTable: React.FC<CouponsTableProps> = ({
         <TableHead>
           <TableRow>
             <TableCell sx={{ fontWeight: 600 }}>Дата купона</TableCell>
-            <TableCell align="right" sx={{ fontWeight: 600 }}>
+            <TableCell align="center" sx={{ fontWeight: 600 }}>
               {couponAmountHeader}
             </TableCell>
-            <TableCell align="right" sx={{ fontWeight: 600 }}>
+            <TableCell align="center" sx={{ fontWeight: 600 }}>
               Ставка купона
             </TableCell>
           </TableRow>
@@ -87,12 +87,12 @@ export const CouponsTable: React.FC<CouponsTableProps> = ({
               <TableCell>
                 {coupon.coupondate ? formatDate(coupon.coupondate) : '—'}
               </TableCell>
-              <TableCell align="right">
+              <TableCell align="center">
                 {coupon.value !== null && coupon.value !== undefined
                   ? formatNumber(coupon.value, 2)
                   : '—'}
               </TableCell>
-              <TableCell align="right">
+              <TableCell align="center">
                 {coupon.valueprc !== null && coupon.valueprc !== undefined
                   ? formatPercent(coupon.valueprc)
                   : '—'}

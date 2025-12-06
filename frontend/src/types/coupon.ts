@@ -3,9 +3,8 @@
  */
 
 export interface Coupon {
-  isin: string | null;
-  name: string | null;
-  issuevalue: number | null;
+  // Removed duplicate fields: isin, name, issuevalue, primary_boardid, secid, coupon_type
+  // These are now only in amortizations section
   coupondate: string | null;
   recorddate: string | null;
   startdate: string | null;
@@ -15,11 +14,10 @@ export interface Coupon {
   value: number | null;  // Сумма купона
   valueprc: number | null;  // Ставка купона
   value_rub: number | null;
-  secid: string | null;
-  primary_boardid: string | null;
 }
 
 export interface CouponsListResponse {
   coupons: Coupon[];
+  coupon_type?: string | null;  // FIX or FLOAT from amortizations section
 }
 

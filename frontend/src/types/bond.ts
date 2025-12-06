@@ -28,6 +28,8 @@ export interface BondListItem {
   LISTLEVEL: number | null;  // Уровень листинга
   RATING_AGENCY: string | null;  // Название рейтингового агентства
   RATING_LEVEL: string | null;  // Уровень рейтинга
+  BONDTYPE: string | null;  // Тип облигации
+  COUPON_TYPE: string | null;  // Тип купона (FIX или FLOAT)
 }
 
 // Detailed bond information
