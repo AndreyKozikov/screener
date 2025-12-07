@@ -58,6 +58,139 @@ const flattenDescriptions = (descriptions: DescriptionsResponse): FieldDescripti
   return result;
 };
 
+/**
+ * Нормализует рейтинг, удаляя префиксы, суффиксы и локальные индикаторы
+ * Оставляет только основную буквенную часть: AAA, AA, A, BBB, BB, B, CCC, CC, C, D
+ * 
+ * Примеры:
+ * "ruAAA" → "AAA"
+ * "AAA(RU)" → "AAA"
+ * "ruBBB+.sf" → "BBB"
+ * "ruAA-" → "AA"
+ * "A(RU)" → "A"
+ * "BBB+" → "BBB"
+ * "CCC-" → "CCC"
+ */
+const normalizeRating = (rating: string): string => {
+  if (!rating || rating.trim() === '' || rating === '—' || rating === '-') {
+    return '';
+  }
+  
+  // Привести к верхнему регистру и убрать пробелы
+  let normalized = rating.toUpperCase().trim();
+  
+  // Удалить префиксы: RU, (RU) в начале строки
+  normalized = normalized.replace(/^RU\s*/i, '');
+  normalized = normalized.replace(/^\(RU\)\s*/i, '');
+  
+  // Удалить все скобки и их содержимое (включая (RU) в любом месте)
+  normalized = normalized.replace(/\([^)]*\)/g, '');
+  
+  // Удалить суффиксы: .SF, -SF, .sf в конце
+  normalized = normalized.replace(/[.\-]?SF$/i, '');
+  normalized = normalized.replace(/\.sf$/i, '');
+  
+  // Удалить знаки + и - в конце
+  normalized = normalized.replace(/[+\-]+$/, '');
+  
+  // Удалить все точки и дефисы
+  normalized = normalized.replace(/[.\-]/g, '');
+  
+  // Извлечь основную буквенную часть (AAA, AA, A, BBB, BB, B, CCC, CC, C, D)
+  const letterMatch = normalized.match(/^(AAA|AA|A|BBB|BB|B|CCC|CC|C|D)/);
+  if (letterMatch) {
+    return letterMatch[1];
+  }
+  
+  // Если точного совпадения нет, попробуем извлечь только буквы и найти паттерн
+  const lettersOnly = normalized.replace(/[^A-Z]/g, '');
+  const patternMatch = lettersOnly.match(/^(AAA|AA|A|BBB|BB|B|CCC|CC|C|D)/);
+  if (patternMatch) {
+    return patternMatch[1];
+  }
+  
+  // Если ничего не найдено, вернуть пустую строку
+  return '';
+};
+
+/**
+ * Определяет цвет рейтинга на основе нормализованного значения
+ * 
+ * Цветовая схема:
+ * - AAA, AA, A → зелёный (#4CAF50)
+ * - BBB → жёлтый (#FFB300)
+ * - BB, B → оранжевый (#FB8C00)
+ * - CCC, CC, C, D → красный (#E53935)
+ * - пустой/неопознанный → серый (#E0E0E0)
+ */
+const getRatingColor = (rating: string | null | undefined): { bg: string; color: string } => {
+  if (!rating || rating.trim() === '' || rating === '—' || rating === '-') {
+    return { bg: '#E0E0E0', color: '#666' };
+  }
+  
+  // Нормализовать рейтинг
+  const normalized = normalizeRating(rating);
+  
+  if (!normalized) {
+    return { bg: '#E0E0E0', color: '#666' };
+  }
+  
+  // Проверяем в порядке от более длинных к более коротким для правильного определения
+  
+  // AAA → зелёный (проверяем первым, так как это самое длинное)
+  if (normalized.startsWith('AAA')) {
+    return { bg: '#4CAF50', color: '#fff' };
+  }
+  
+  // AA → зелёный
+  if (normalized.startsWith('AA')) {
+    return { bg: '#4CAF50', color: '#fff' };
+  }
+  
+  // BBB → жёлтый (проверяем перед BB)
+  if (normalized.startsWith('BBB')) {
+    return { bg: '#FFB300', color: '#000' };
+  }
+  
+  // CCC → красный (проверяем перед CC)
+  if (normalized.startsWith('CCC')) {
+    return { bg: '#E53935', color: '#fff' };
+  }
+  
+  // CC → красный
+  if (normalized.startsWith('CC')) {
+    return { bg: '#E53935', color: '#fff' };
+  }
+  
+  // BB → оранжевый
+  if (normalized.startsWith('BB')) {
+    return { bg: '#FB8C00', color: '#fff' };
+  }
+  
+  // A → зелёный
+  if (normalized === 'A') {
+    return { bg: '#4CAF50', color: '#fff' };
+  }
+  
+  // B → оранжевый
+  if (normalized === 'B') {
+    return { bg: '#FB8C00', color: '#fff' };
+  }
+  
+  // C → красный
+  if (normalized === 'C') {
+    return { bg: '#E53935', color: '#fff' };
+  }
+  
+  // D → красный
+  if (normalized === 'D') {
+    return { bg: '#E53935', color: '#fff' };
+  }
+  
+  // Неопознанный рейтинг → серый
+  return { bg: '#E0E0E0', color: '#666' };
+};
+
 
 /**
  * BondsTable Component
@@ -347,8 +480,30 @@ export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ on
         // Use RATING_LEVEL from bond data (loaded from bonds_rating.json)
         return bond.RATING_LEVEL || null;
       },
-      valueFormatter: (params) => {
-        return params.value || '—';
+      cellRenderer: (params: ICellRendererParams<BondListItem>) => {
+        const rating = params.value;
+        if (!rating) {
+          return '—';
+        }
+        const { bg, color } = getRatingColor(rating);
+        return (
+          <Box
+            sx={{
+              px: 1,
+              py: 0.5,
+              borderRadius: '6px',
+              fontSize: '12px',
+              backgroundColor: bg,
+              color: color,
+              fontWeight: 600,
+              display: 'inline-block',
+              textAlign: 'center',
+              minWidth: '50px',
+            }}
+          >
+            {rating}
+          </Box>
+        );
       },
       cellStyle: { textAlign: 'center' },
       headerTooltip: 'Рейтинг облигации от рейтинговых агентств',
@@ -458,9 +613,8 @@ export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ on
     {
       field: 'addToPortfolio',
       headerName: 'Добавить в портфель',
-      width: 150,
       minWidth: 150,
-      maxWidth: 150,
+      width: 150,
       pinned: 'right',
       sortable: false,
       filter: false,
@@ -848,7 +1002,14 @@ export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ on
   }
 
   return (
-    <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', width: '100%' }}>
+    <Card sx={{ 
+      height: '100%', 
+      display: 'flex', 
+      flexDirection: 'column', 
+      width: '100%',
+      boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+      borderRadius: '12px',
+    }}>
       <CardContent sx={{ p: 0, '&:last-child': { pb: 0 }, flexGrow: 1, display: 'flex', flexDirection: 'column', width: '100%' }}>
         <Box sx={{ p: 1, display: 'flex', justifyContent: 'flex-end', gap: 1, borderBottom: 1, borderColor: 'divider' }}>
           {onOpenFilters && (
@@ -902,6 +1063,9 @@ export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ on
               '--ag-header-height': `${headerHeight}px`,
             }),
             // Header cell: center content horizontally and vertically
+            '& .ag-header': {
+              borderBottom: '1px solid #ddd',
+            },
             '& .ag-header-cell': {
               display: 'flex',
               flexDirection: 'row',
@@ -910,11 +1074,12 @@ export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ on
               padding: '8px 4px',
               boxSizing: 'border-box',
               gap: '0px !important',
-              // Vertical separators - add borders between columns
-              borderRight: '1px solid rgba(224, 224, 224, 0.8)',
-              '&:last-child': {
-                borderRight: 'none',
-              },
+              // Remove vertical separators
+              borderRight: 'none !important',
+              fontWeight: 600,
+              color: '#444',
+              background: '#fafafa',
+              borderBottom: '1px solid #ddd',
             },
             // Label: only take space needed, allow text wrapping, remove all right spacing
             '& .ag-header-cell-label': {
@@ -985,40 +1150,45 @@ export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ on
               opacity: 1,
             },
             '& .ag-cell': {
-              borderRight: '1px solid rgba(224, 224, 224, 0.8)',
+              // Remove vertical borders, add horizontal
+              borderRight: 'none !important',
+              borderBottom: '1px solid #eee !important',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               lineHeight: '1.5 !important',
-              padding: '4px 4px !important',
+              padding: '8px 12px !important',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
-              maxHeight: '32px !important',
-              height: '32px !important',
+              maxHeight: '44px !important',
+              height: '44px !important',
               boxSizing: 'border-box',
-              '&:last-child': {
-                borderRight: 'none',
-              },
               '& > *': {
-                maxHeight: '24px !important',
+                maxHeight: '36px !important',
                 overflow: 'hidden',
               },
             },
             '& .ag-cell[col-id="SHORTNAME"]': {
               justifyContent: 'flex-start',
+              textAlign: 'left !important',
             },
-            // Row styling - keep body rows unchanged (fixed height)
+            // Ensure numeric columns are centered
+            '& .ag-cell[col-id="PREVPRICE"], & .ag-cell[col-id="COUPON_YIELD_TO_PRICE"], & .ag-cell[col-id="YIELDATPREVWAPRICE"], & .ag-cell[col-id="FACEVALUE"], & .ag-cell[col-id="COUPONPERCENT"], & .ag-cell[col-id="COUPONPERCENT_NOMINAL"], & .ag-cell[col-id="COUPONPERIOD"], & .ag-cell[col-id="ACCRUEDINT"], & .ag-cell[col-id="DURATION_YEARS"], & .ag-cell[col-id="FACEUNIT"], & .ag-cell[col-id="RATING"]': {
+              justifyContent: 'center',
+              textAlign: 'center !important',
+            },
+            // Row styling - increased height for better readability
             '& .ag-row': {
               cursor: 'pointer',
-              minHeight: '32px !important',
-              maxHeight: '32px !important',
-              height: '32px !important',
+              minHeight: '44px !important',
+              maxHeight: '44px !important',
+              height: '44px !important',
               '& > *': {
-                maxHeight: '32px !important',
+                maxHeight: '44px !important',
               },
             },
             '& .ag-row-hover': {
-              backgroundColor: 'rgba(25, 118, 210, 0.04)',
+              backgroundColor: '#f7f9fc !important',
             },
             // Prevent row click when clicking on portfolio action cell
             '& .ag-cell.portfolio-action-cell': {
@@ -1030,6 +1200,22 @@ export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ on
             // Center header class
             '& .ag-header-center .ag-header-cell-label': {
               justifyContent: 'center',
+            },
+            // Remove shadow from pinned-right sections to make it look like part of the table
+            '& .ag-pinned-right-header': {
+              boxShadow: 'none !important',
+            },
+            '& .ag-pinned-right-cols-container': {
+              boxShadow: 'none !important',
+            },
+            // Make pinned-right cells look continuous with the rest of the table
+            '& .ag-pinned-right-cols-container .ag-cell': {
+              background: '#fff !important',
+              borderRight: 'none !important',
+            },
+            '& .ag-pinned-right-header .ag-header-cell': {
+              background: '#fafafa !important',
+              borderRight: 'none !important',
             },
           }}
         >
@@ -1051,7 +1237,7 @@ export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ on
             enableCellTextSelection={true}
             suppressRowClickSelection={true}
             headerHeight={headerHeight}
-            rowHeight={32}
+            rowHeight={44}
             suppressRowAutoHeight={true}
             autoSizeStrategy={{
               type: 'fitGridWidth',

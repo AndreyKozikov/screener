@@ -5,3 +5,74 @@
   opacity: 0 !important;
 }
 
+/* Стилизация скроллбара для современного вида */
+.ag-body-viewport {
+  scrollbar-gutter: stable;
+}
+
+.ag-body-viewport::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.ag-body-viewport::-webkit-scrollbar-track {
+  background: #f5f5f5;
+  border-radius: 4px;
+}
+
+.ag-body-viewport::-webkit-scrollbar-thumb {
+  background: #ccc;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.ag-body-viewport::-webkit-scrollbar-thumb:hover {
+  background: #999;
+}
+
+/* Для Firefox */
+.ag-body-viewport {
+  scrollbar-width: thin;
+  scrollbar-color: #ccc #f5f5f5;
+}
+
+/* Убираем тень у pinned-right секции для визуального единства таблицы */
+.ag-theme-material .ag-pinned-right-header {
+  box-shadow: none !important;
+}
+
+.ag-theme-material .ag-pinned-right-cols-container {
+  box-shadow: none !important;
+}
+
+/* Делаем pinned-right ячейки визуально непрерывными с остальной таблицей */
+.ag-theme-material .ag-pinned-right-cols-container .ag-cell {
+  background: #fff !important;
+  border-right: none !important;
+}
+
+.ag-theme-material .ag-pinned-right-header .ag-header-cell {
+  background: #fafafa !important;
+  border-right: none !important;
+}
+
+/* Sticky right column header for PortfolioTable */
+.ag-theme-material .sticky-right-header {
+  position: sticky !important;
+  right: 0 !important;
+  z-index: 5 !important;
+  background: #fafafa !important;
+}
+
+/* Sticky right column cells for PortfolioTable */
+.ag-theme-material .sticky-right-cell {
+  position: sticky !important;
+  right: 0 !important;
+  z-index: 4 !important;
+  background: #fff !important;
+}
+
+.ag-theme-material .ag-row-hover .sticky-right-cell {
+  background: #f7f9fc !important;
+}
+

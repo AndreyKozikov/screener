@@ -23,8 +23,6 @@ import {
   calculateCouponYieldToPrice,
   calculateCouponFrequency 
 } from '../../utils/formatters';
-import { LoadingSpinner } from '../common/LoadingSpinner';
-import { ErrorMessage } from '../common/ErrorMessage';
 import { EmptyState } from '../common/EmptyState';
 import type { BondListItem } from '../../types/bond';
 import { PortfolioExportDialog } from './PortfolioExportDialog';
@@ -47,6 +45,81 @@ const flattenDescriptions = (descriptions: DescriptionsResponse): FieldDescripti
   });
 
   return result;
+};
+
+/**
+ * Нормализует рейтинг, удаляя префиксы, суффиксы и локальные индикаторы
+ * Оставляет только основную буквенную часть: AAA, AA, A, BBB, BB, B, CCC, CC, C, D
+ */
+const normalizeRating = (rating: string): string => {
+  if (!rating || rating.trim() === '' || rating === '—' || rating === '-') {
+    return '';
+  }
+  
+  let normalized = rating.toUpperCase().trim();
+  normalized = normalized.replace(/^RU\s*/i, '');
+  normalized = normalized.replace(/^\(RU\)\s*/i, '');
+  normalized = normalized.replace(/\([^)]*\)/g, '');
+  normalized = normalized.replace(/[.\-]?SF$/i, '');
+  normalized = normalized.replace(/\.sf$/i, '');
+  normalized = normalized.replace(/[+\-]+$/, '');
+  normalized = normalized.replace(/[.\-]/g, '');
+  const letterMatch = normalized.match(/^(AAA|AA|A|BBB|BB|B|CCC|CC|C|D)/);
+  if (letterMatch) {
+    return letterMatch[1];
+  }
+  const lettersOnly = normalized.replace(/[^A-Z]/g, '');
+  const patternMatch = lettersOnly.match(/^(AAA|AA|A|BBB|BB|B|CCC|CC|C|D)/);
+  if (patternMatch) {
+    return patternMatch[1];
+  }
+  return '';
+};
+
+/**
+ * Определяет цвет рейтинга на основе нормализованного значения
+ */
+const getRatingColor = (rating: string | null | undefined): { bg: string; color: string } => {
+  if (!rating || rating.trim() === '' || rating === '—' || rating === '-') {
+    return { bg: '#E0E0E0', color: '#666' };
+  }
+  
+  const normalized = normalizeRating(rating);
+  if (!normalized) {
+    return { bg: '#E0E0E0', color: '#666' };
+  }
+  
+  if (normalized.startsWith('AAA')) {
+    return { bg: '#4CAF50', color: '#fff' };
+  }
+  if (normalized.startsWith('AA')) {
+    return { bg: '#4CAF50', color: '#fff' };
+  }
+  if (normalized.startsWith('BBB')) {
+    return { bg: '#FFB300', color: '#000' };
+  }
+  if (normalized.startsWith('CCC')) {
+    return { bg: '#E53935', color: '#fff' };
+  }
+  if (normalized.startsWith('CC')) {
+    return { bg: '#E53935', color: '#fff' };
+  }
+  if (normalized.startsWith('BB')) {
+    return { bg: '#FB8C00', color: '#fff' };
+  }
+  if (normalized === 'A') {
+    return { bg: '#4CAF50', color: '#fff' };
+  }
+  if (normalized === 'B') {
+    return { bg: '#FB8C00', color: '#fff' };
+  }
+  if (normalized === 'C') {
+    return { bg: '#E53935', color: '#fff' };
+  }
+  if (normalized === 'D') {
+    return { bg: '#E53935', color: '#fff' };
+  }
+  return { bg: '#E0E0E0', color: '#666' };
 };
 
 /**
@@ -279,13 +352,8 @@ export const PortfolioTable: React.FC = () => {
             alignItems: 'center',
             justifyContent: 'center',
             width: '100%',
-            height: '32px',
-            maxHeight: '32px',
-            minHeight: '32px',
+            height: '100%',
             cursor: 'default',
-            padding: '0 !important',
-            margin: '0 !important',
-            lineHeight: '1',
           }}
         >
           <IconButton
@@ -293,17 +361,6 @@ export const PortfolioTable: React.FC = () => {
             onClick={handleClick}
             sx={{
               color: 'error.main',
-              padding: '4px !important',
-              margin: '0 !important',
-              width: '28px !important',
-              height: '28px !important',
-              minWidth: '28px !important',
-              minHeight: '28px !important',
-              maxWidth: '28px !important',
-              maxHeight: '28px !important',
-              '& .MuiSvgIcon-root': {
-                fontSize: '18px !important',
-              },
               '&:hover': {
                 backgroundColor: 'error.light',
                 color: 'error.contrastText',
@@ -334,7 +391,6 @@ export const PortfolioTable: React.FC = () => {
     return [
     createColumnDef('SHORTNAME', 'Название', {
       minWidth: 120,
-      pinned: 'left',
       cellRenderer: ShortNameRenderer,
       cellStyle: { textAlign: 'left' },
       headerTooltip: getFieldDescription('SHORTNAME'),
@@ -342,7 +398,6 @@ export const PortfolioTable: React.FC = () => {
     }),
     createColumnDef('RATING', 'Рейтинг', {
       minWidth: 100,
-      pinned: 'left',
       valueGetter: (params) => {
         const bond = params.data;
         if (!bond) {
@@ -350,8 +405,30 @@ export const PortfolioTable: React.FC = () => {
         }
         return bond.RATING_LEVEL || null;
       },
-      valueFormatter: (params) => {
-        return params.value || '—';
+      cellRenderer: (params: ICellRendererParams<BondListItem>) => {
+        const rating = params.value;
+        if (!rating) {
+          return '—';
+        }
+        const { bg, color } = getRatingColor(rating);
+        return (
+          <Box
+            sx={{
+              px: 1,
+              py: 0.5,
+              borderRadius: '6px',
+              fontSize: '12px',
+              backgroundColor: bg,
+              color: color,
+              fontWeight: 600,
+              display: 'inline-block',
+              textAlign: 'center',
+              minWidth: '50px',
+            }}
+          >
+            {rating}
+          </Box>
+        );
       },
       cellStyle: { textAlign: 'center' },
       headerTooltip: 'Рейтинг облигации от рейтинговых агентств',
@@ -457,31 +534,19 @@ export const PortfolioTable: React.FC = () => {
     {
       field: 'removeFromPortfolio',
       headerName: 'Удалить из портфеля',
-      width: 150,
       minWidth: 150,
-      maxWidth: 150,
+      width: 150,
       pinned: 'right',
       sortable: false,
       filter: false,
       suppressMenu: true,
-      resizable: false, // Prevent column resizing to avoid layout shifts
+      resizable: false,
       cellRenderer: RemoveFromPortfolioRenderer,
-      cellStyle: { 
-        textAlign: 'center', 
-        display: 'flex', 
-        alignItems: 'center', 
-        justifyContent: 'center',
-        padding: '0 !important',
-        height: '32px',
-        maxHeight: '32px',
-        minHeight: '32px',
-        whiteSpace: 'nowrap',
-        overflow: 'hidden',
-      },
-      cellClass: 'portfolio-action-cell', // Add class for easier identification
+      cellStyle: { textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+      cellClass: 'portfolio-action-cell',
       headerClass: 'ag-header-center',
       autoHeaderHeight: true,
-      suppressSizeToFit: true, // Prevent auto-sizing to avoid layout shifts
+      suppressSizeToFit: true,
     },
     ];
   }, [getFieldDescription, removeBondFromPortfolio]);
@@ -494,8 +559,6 @@ export const PortfolioTable: React.FC = () => {
     minWidth: 80,
     suppressSizeToFit: false,
     autoHeaderHeight: true,
-    wrapText: false,
-    autoHeight: false,
   }), []);
 
   // Handle cell click - intercept clicks on portfolio column
@@ -537,12 +600,7 @@ export const PortfolioTable: React.FC = () => {
       return;
     }
     
-    // Check 2: Column object indicates portfolio column
-    if (event.column?.getColId() === 'removeFromPortfolio') {
-      return;
-    }
-    
-    // Check 3: data-portfolio-cell attribute in click path
+    // Check 2: data-portfolio-cell attribute in click path
     if (target.closest('[data-portfolio-cell]')) {
       return;
     }
@@ -633,20 +691,20 @@ export const PortfolioTable: React.FC = () => {
   // Handle grid ready
   const onGridReady = useCallback(() => {
     if (gridRef.current?.api) {
+      // Auto-size columns after grid is ready
       gridRef.current.api.autoSizeAllColumns(false);
       
       setTimeout(() => {
         calculateHeaderHeight();
-        if (gridRef.current?.api) {
-          gridRef.current.api.autoSizeAllColumns(false);
-        }
       }, 250);
     }
   }, [calculateHeaderHeight]);
 
-  // Handle first data rendered
+  // Handle first data rendered - set default sort
   const onFirstDataRendered = useCallback(() => {
     if (gridRef.current?.api) {
+      // Set default sort by SHORTNAME ascending after data is rendered
+      // Check if sort is already set to avoid resetting user's sort
       const currentSort = gridRef.current.api.getColumnState().find(col => col.colId === 'SHORTNAME' && col.sort);
       if (!currentSort) {
         gridRef.current.api.applyColumnState({
@@ -654,21 +712,32 @@ export const PortfolioTable: React.FC = () => {
           defaultState: { sort: null }
         });
       }
-      // Force reset row heights to ensure fixed height is applied
-      setTimeout(() => {
-        gridRef.current?.api.resetRowHeights();
-      }, 100);
     }
   }, []);
 
-  // Recalculate header height when data changes
+  // Preserve selection when data updates
+  const prevPortfolioBondsRef = useRef<BondListItem[]>([]);
+  useEffect(() => {
+    if (portfolioBonds.length > 0 && gridRef.current?.api) {
+      // Check if data actually changed (not just a re-render)
+      const dataChanged = 
+        prevPortfolioBondsRef.current.length !== portfolioBonds.length ||
+        prevPortfolioBondsRef.current.some((prevBond, index) => {
+          const currentBond = portfolioBonds[index];
+          return !currentBond || prevBond.SECID !== currentBond.SECID;
+        });
+
+      if (dataChanged) {
+        prevPortfolioBondsRef.current = portfolioBonds;
+      }
+    }
+  }, [portfolioBonds]);
+
+  // Recalculate header height when data, columns, or window resize
   useEffect(() => {
     if (portfolioBonds.length > 0 && gridRef.current?.api) {
       const timeoutId = setTimeout(() => {
         calculateHeaderHeight();
-        gridRef.current?.api.autoSizeAllColumns(false);
-        // Force reset row heights to ensure fixed height is applied
-        gridRef.current?.api.resetRowHeights();
       }, 500);
 
       return () => clearTimeout(timeoutId);
@@ -728,7 +797,14 @@ export const PortfolioTable: React.FC = () => {
   if (portfolioBonds.length === 0) {
     return (
       <Box sx={{ flexGrow: 1, minHeight: 0, width: '100%' }}>
-        <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', width: '100%' }}>
+        <Card sx={{ 
+          height: '100%', 
+          display: 'flex', 
+          flexDirection: 'column', 
+          width: '100%',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+          borderRadius: '12px',
+        }}>
           <CardContent sx={{ p: 0, '&:last-child': { pb: 0 }, flexGrow: 1, display: 'flex', flexDirection: 'column', width: '100%' }}>
             <Box sx={{ p: 1, display: 'flex', justifyContent: 'flex-start', gap: 1, borderBottom: 1, borderColor: 'divider' }}>
               <Button
@@ -764,7 +840,14 @@ export const PortfolioTable: React.FC = () => {
   }
 
   return (
-    <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', width: '100%' }}>
+    <Card sx={{ 
+      height: '100%', 
+      display: 'flex', 
+      flexDirection: 'column', 
+      width: '100%',
+      boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+      borderRadius: '12px',
+    }}>
       <CardContent sx={{ p: 0, '&:last-child': { pb: 0 }, flexGrow: 1, display: 'flex', flexDirection: 'column', width: '100%' }}>
         {exportError && (
           <Alert severity="error" onClose={() => setExportError(null)} sx={{ m: 1 }}>
@@ -829,6 +912,10 @@ export const PortfolioTable: React.FC = () => {
             ...(headerHeight && {
               '--ag-header-height': `${headerHeight}px`,
             }),
+            // Header with horizontal line
+            '& .ag-header': {
+              borderBottom: '1px solid #ddd',
+            },
             '& .ag-header-cell': {
               display: 'flex',
               flexDirection: 'row',
@@ -837,10 +924,12 @@ export const PortfolioTable: React.FC = () => {
               padding: '8px 4px',
               boxSizing: 'border-box',
               gap: '0px !important',
-              borderRight: '1px solid rgba(224, 224, 224, 0.8)',
-              '&:last-child': {
-                borderRight: 'none',
-              },
+              // Remove vertical separators
+              borderRight: 'none !important',
+              fontWeight: 600,
+              color: '#444',
+              background: '#fafafa',
+              borderBottom: '1px solid #ddd',
             },
             '& .ag-header-cell-label': {
               fontWeight: 600,
@@ -907,76 +996,72 @@ export const PortfolioTable: React.FC = () => {
               opacity: 1,
             },
             '& .ag-cell': {
-              borderRight: '1px solid rgba(224, 224, 224, 0.8)',
+              // Remove vertical borders, add horizontal
+              borderRight: 'none !important',
+              borderBottom: '1px solid #eee !important',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               lineHeight: '1.5 !important',
-              padding: '4px 4px !important',
+              padding: '8px 12px !important',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap !important',
-              maxHeight: '32px !important',
-              height: '32px !important',
-              minHeight: '32px !important',
+              maxHeight: '44px !important',
+              height: '44px !important',
               boxSizing: 'border-box',
-              '&:last-child': {
-                borderRight: 'none',
-              },
               '& > *': {
-                maxHeight: '24px !important',
+                maxHeight: '36px !important',
                 overflow: 'hidden',
-                whiteSpace: 'nowrap !important',
               },
             },
             '& .ag-cell[col-id="SHORTNAME"]': {
               justifyContent: 'flex-start',
-              whiteSpace: 'nowrap !important',
-              '& > *': {
-                whiteSpace: 'nowrap !important',
-              },
+              textAlign: 'left !important',
             },
-            '& .ag-cell[col-id="removeFromPortfolio"]': {
-              padding: '0 !important',
-              height: '32px !important',
-              maxHeight: '32px !important',
-              minHeight: '32px !important',
+            // Ensure numeric columns are centered
+            '& .ag-cell[col-id="PREVPRICE"], & .ag-cell[col-id="COUPON_YIELD_TO_PRICE"], & .ag-cell[col-id="YIELDATPREVWAPRICE"], & .ag-cell[col-id="FACEVALUE"], & .ag-cell[col-id="COUPONPERCENT"], & .ag-cell[col-id="COUPONPERCENT_NOMINAL"], & .ag-cell[col-id="COUPONPERIOD"], & .ag-cell[col-id="ACCRUEDINT"], & .ag-cell[col-id="DURATION_YEARS"], & .ag-cell[col-id="FACEUNIT"], & .ag-cell[col-id="RATING"]': {
+              justifyContent: 'center',
+              textAlign: 'center !important',
             },
+            // Row styling - increased height for better readability
             '& .ag-row': {
               cursor: 'pointer',
-              minHeight: '32px !important',
-              maxHeight: '32px !important',
-              height: '32px !important',
+              minHeight: '44px !important',
+              maxHeight: '44px !important',
+              height: '44px !important',
               '& > *': {
-                maxHeight: '32px !important',
+                maxHeight: '44px !important',
               },
             },
-            '& .ag-cell-wrapper': {
-              whiteSpace: 'nowrap !important',
-              overflow: 'hidden !important',
-            },
-            '& .ag-cell-value': {
-              whiteSpace: 'nowrap !important',
-              overflow: 'hidden !important',
-            },
             '& .ag-row-hover': {
-              backgroundColor: 'rgba(25, 118, 210, 0.04)',
+              backgroundColor: '#f7f9fc !important',
             },
             // Prevent row click when clicking on portfolio action cell
             '& .ag-cell.portfolio-action-cell': {
               pointerEvents: 'auto',
-              padding: '0 !important',
-              height: '32px !important',
-              maxHeight: '32px !important',
-              minHeight: '32px !important',
               '& *': {
                 pointerEvents: 'auto',
-                maxHeight: '32px !important',
               },
             },
             // Center header class
             '& .ag-header-center .ag-header-cell-label': {
               justifyContent: 'center',
+            },
+            // Remove shadow from pinned-right sections to make it look like part of the table
+            '& .ag-pinned-right-header': {
+              boxShadow: 'none !important',
+            },
+            '& .ag-pinned-right-cols-container': {
+              boxShadow: 'none !important',
+            },
+            // Make pinned-right cells look continuous with the rest of the table
+            '& .ag-pinned-right-cols-container .ag-cell': {
+              background: '#fff !important',
+              borderRight: 'none !important',
+            },
+            '& .ag-pinned-right-header .ag-header-cell': {
+              background: '#fafafa !important',
+              borderRight: 'none !important',
             },
           }}
         >
@@ -996,7 +1081,7 @@ export const PortfolioTable: React.FC = () => {
             enableCellTextSelection={true}
             suppressRowClickSelection={true}
             headerHeight={headerHeight}
-            rowHeight={32}
+            rowHeight={44}
             suppressRowAutoHeight={true}
             autoSizeStrategy={{
               type: 'fitGridWidth',
