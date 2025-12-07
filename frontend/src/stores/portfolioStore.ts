@@ -1,18 +1,20 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { BondListItem } from '../types/bond';
+import type { BondListItem, PortfolioBond } from '../types/bond';
 
 interface PortfolioState {
-  // Portfolio bonds stored as array
-  portfolioBonds: BondListItem[];
+  // Portfolio bonds stored as array with quantity
+  portfolioBonds: PortfolioBond[];
   
   // Actions
   addBondToPortfolio: (bond: BondListItem) => void;
   removeBondFromPortfolio: (secid: string) => void;
   isInPortfolio: (secid: string) => boolean;
-  getPortfolioBonds: () => BondListItem[];
+  getPortfolioBonds: () => PortfolioBond[];
   clearPortfolio: () => void;
   loadBondsToPortfolio: (bonds: BondListItem[]) => void;
+  loadPortfolioBonds: (bonds: PortfolioBond[]) => void;
+  updateBondQuantity: (secid: string, quantity: number) => void;
 }
 
 export const usePortfolioStore = create<PortfolioState>()(
@@ -26,8 +28,13 @@ export const usePortfolioStore = create<PortfolioState>()(
           if (state.portfolioBonds.some(b => b.SECID === bond.SECID)) {
             return state;
           }
+          // Add bond with default quantity of 1
+          const portfolioBond: PortfolioBond = {
+            ...bond,
+            quantity: 1,
+          };
           return {
-            portfolioBonds: [...state.portfolioBonds, bond],
+            portfolioBonds: [...state.portfolioBonds, portfolioBond],
           };
         });
       },
@@ -57,11 +64,50 @@ export const usePortfolioStore = create<PortfolioState>()(
           // Create a map of existing bonds by SECID
           const existingBondsMap = new Map(state.portfolioBonds.map(b => [b.SECID, b]));
           
-          // Add new bonds, avoiding duplicates
-          const newBonds = bonds.filter(bond => !existingBondsMap.has(bond.SECID));
+          // Add new bonds, avoiding duplicates, with default quantity of 1
+          const newBonds: PortfolioBond[] = bonds
+            .filter(bond => !existingBondsMap.has(bond.SECID))
+            .map(bond => ({
+              ...bond,
+              quantity: 1,
+            }));
           
           return {
             portfolioBonds: [...state.portfolioBonds, ...newBonds],
+          };
+        });
+      },
+
+      loadPortfolioBonds: (bonds) => {
+        set((state) => {
+          // Create a map of existing bonds by SECID
+          const existingBondsMap = new Map(state.portfolioBonds.map(b => [b.SECID, b]));
+          
+          // Add new bonds, avoiding duplicates, preserving quantities from import
+          const newBonds: PortfolioBond[] = bonds
+            .filter(bond => !existingBondsMap.has(bond.SECID))
+            .map(bond => ({
+              ...bond,
+              quantity: bond.quantity ?? 1, // Preserve quantity from import or default to 1
+            }));
+          
+          return {
+            portfolioBonds: [...state.portfolioBonds, ...newBonds],
+          };
+        });
+      },
+
+      updateBondQuantity: (secid, quantity) => {
+        set((state) => {
+          // Validate quantity: must be integer > 0
+          const validQuantity = Math.max(1, Math.floor(quantity));
+          
+          return {
+            portfolioBonds: state.portfolioBonds.map(bond =>
+              bond.SECID === secid
+                ? { ...bond, quantity: validQuantity }
+                : bond
+            ),
           };
         });
       },

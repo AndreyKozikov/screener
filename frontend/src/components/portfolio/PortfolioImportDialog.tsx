@@ -16,7 +16,7 @@ import { importPortfolioFromFile } from '../../utils/portfolioImport';
 interface PortfolioImportDialogProps {
   open: boolean;
   onClose: () => void;
-  onImport: (bonds: import('../../types/bond').BondListItem[]) => void;
+  onImport: (bonds: import('../../types/bond').PortfolioBond[]) => void;
 }
 
 /**

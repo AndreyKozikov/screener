@@ -1,4 +1,4 @@
-import type { BondListItem } from '../types/bond';
+import type { BondListItem, PortfolioBond } from '../types/bond';
 import { fetchBonds } from '../api/bonds';
 import type { BondsListResponse } from '../types/api';
 import type { PortfolioSecidFormat } from './portfolioExport';
@@ -8,7 +8,7 @@ import type { PortfolioSecidFormat } from './portfolioExport';
  */
 export interface PortfolioImportResult {
   secids: string[];
-  bonds: BondListItem[];
+  bonds: PortfolioBond[];
   errors: string[];
 }
 
@@ -104,24 +104,43 @@ const extractSecidsFromFullFormat = (data: Record<string, unknown>): string[] =>
 };
 
 /**
- * Extract SECIDs from SECID-only format
+ * Extract SECIDs and quantities from SECID-only format
  */
-const extractSecidsFromSecidFormat = (data: PortfolioSecidFormat | string[]): string[] => {
+const extractSecidsFromSecidFormat = (
+  data: PortfolioSecidFormat | string[]
+): { secids: string[]; quantities: Record<string, number> } => {
+  const quantities: Record<string, number> = {};
+  
   if (Array.isArray(data)) {
-    return data.filter((secid: unknown) => typeof secid === 'string' && secid.length > 0);
+    const secids = data.filter((secid: unknown) => typeof secid === 'string' && secid.length > 0);
+    return { secids, quantities };
   }
 
   if (data.format === 'secid-only' && Array.isArray(data.secids)) {
-    return data.secids.filter((secid: unknown) => typeof secid === 'string' && secid.length > 0);
+    const secids = data.secids.filter((secid: unknown) => typeof secid === 'string' && secid.length > 0);
+    
+    // Extract quantities if present
+    if (data.quantities && typeof data.quantities === 'object' && !Array.isArray(data.quantities)) {
+      const quantitiesObj = data.quantities as Record<string, unknown>;
+      for (const [secid, qty] of Object.entries(quantitiesObj)) {
+        if (typeof qty === 'number' && qty > 0 && Number.isInteger(qty)) {
+          quantities[secid] = qty;
+        }
+      }
+    }
+    
+    return { secids, quantities };
   }
 
-  return [];
+  return { secids: [], quantities };
 };
 
 /**
- * Parse portfolio file and extract SECIDs
+ * Parse portfolio file and extract SECIDs and quantities
  */
-export const parsePortfolioFile = (fileContent: string): string[] => {
+export const parsePortfolioFile = (
+  fileContent: string
+): { secids: string[]; quantities: Record<string, number> } => {
   let parsedData: unknown;
 
   try {
@@ -137,7 +156,10 @@ export const parsePortfolioFile = (fileContent: string): string[] => {
 
   // Try full export format
   if (isFullExportFormat(parsedData)) {
-    return extractSecidsFromFullFormat(parsedData as Record<string, unknown>);
+    const secids = extractSecidsFromFullFormat(parsedData as Record<string, unknown>);
+    // For full format, check if there's a separate quantities file or embedded quantities
+    // For now, return empty quantities (default to 1)
+    return { secids, quantities: {} };
   }
 
   // If neither format matches, try to extract SECIDs from any structure
@@ -162,7 +184,7 @@ export const parsePortfolioFile = (fileContent: string): string[] => {
         }
       }
       if (secids.length > 0) {
-        return secids;
+        return { secids, quantities: {} };
       }
     }
   }
@@ -175,9 +197,12 @@ export const parsePortfolioFile = (fileContent: string): string[] => {
 };
 
 /**
- * Load bonds data by SECIDs from API
+ * Load bonds data by SECIDs from API and convert to PortfolioBond with quantities
  */
-const loadBondsBySecids = async (secids: string[]): Promise<BondListItem[]> => {
+const loadBondsBySecids = async (
+  secids: string[],
+  quantities: Record<string, number>
+): Promise<PortfolioBond[]> => {
   if (secids.length === 0) {
     return [];
   }
@@ -207,11 +232,16 @@ const loadBondsBySecids = async (secids: string[]): Promise<BondListItem[]> => {
     limit: 10000, // Large limit to get all bonds
   });
 
-  // Filter bonds by SECIDs
+  // Filter bonds by SECIDs and convert to PortfolioBond with quantities
   const secidSet = new Set(secids);
-  const bonds = response.bonds.filter(bond => secidSet.has(bond.SECID));
+  const portfolioBonds: PortfolioBond[] = response.bonds
+    .filter(bond => secidSet.has(bond.SECID))
+    .map(bond => ({
+      ...bond,
+      quantity: quantities[bond.SECID] ?? 1, // Use saved quantity or default to 1
+    }));
 
-  return bonds;
+  return portfolioBonds;
 };
 
 /**
@@ -229,10 +259,10 @@ export const importPortfolioFromFile = async (file: File): Promise<PortfolioImpo
     throw new Error('Не удалось прочитать файл. Убедитесь, что файл не поврежден.');
   }
 
-  // Parse file and extract SECIDs
-  let secids: string[];
+  // Parse file and extract SECIDs and quantities
+  let parseResult: { secids: string[]; quantities: Record<string, number> };
   try {
-    secids = parsePortfolioFile(fileContent);
+    parseResult = parsePortfolioFile(fileContent);
   } catch (error) {
     if (error instanceof Error) {
       throw error;
@@ -240,17 +270,31 @@ export const importPortfolioFromFile = async (file: File): Promise<PortfolioImpo
     throw new Error('Не удалось обработать файл портфеля.');
   }
 
+  const { secids, quantities } = parseResult;
+
   if (secids.length === 0) {
     throw new Error('В файле не найдено ни одного SECID облигации.');
   }
 
-  // Remove duplicates
-  const uniqueSecids = Array.from(new Set(secids));
+  // Remove duplicates while preserving quantities
+  const uniqueSecids: string[] = [];
+  const uniqueQuantities: Record<string, number> = {};
+  const seenSecids = new Set<string>();
+  
+  secids.forEach(secid => {
+    if (!seenSecids.has(secid)) {
+      seenSecids.add(secid);
+      uniqueSecids.push(secid);
+      if (quantities[secid] !== undefined) {
+        uniqueQuantities[secid] = quantities[secid];
+      }
+    }
+  });
 
-  // Load bonds data from API
-  let bonds: BondListItem[] = [];
+  // Load bonds data from API with quantities
+  let bonds: PortfolioBond[] = [];
   try {
-    bonds = await loadBondsBySecids(uniqueSecids);
+    bonds = await loadBondsBySecids(uniqueSecids, uniqueQuantities);
     
     // Check if some bonds were not found
     const foundSecids = new Set(bonds.map(b => b.SECID));

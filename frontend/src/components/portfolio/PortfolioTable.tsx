@@ -24,7 +24,7 @@ import {
   calculateCouponFrequency 
 } from '../../utils/formatters';
 import { EmptyState } from '../common/EmptyState';
-import type { BondListItem } from '../../types/bond';
+import type { BondListItem, PortfolioBond } from '../../types/bond';
 import { PortfolioExportDialog } from './PortfolioExportDialog';
 import { PortfolioImportDialog } from './PortfolioImportDialog';
 import { exportPortfolio } from '../../utils/portfolioExport';
@@ -131,13 +131,14 @@ const getRatingColor = (rating: string | null | undefined): { bg: string; color:
 export const PortfolioTable: React.FC = () => {
   const portfolioBonds = usePortfolioStore((state) => state.portfolioBonds);
   const removeBondFromPortfolio = usePortfolioStore((state) => state.removeBondFromPortfolio);
-  const loadBondsToPortfolio = usePortfolioStore((state) => state.loadBondsToPortfolio);
+  const loadPortfolioBonds = usePortfolioStore((state) => state.loadPortfolioBonds);
   const clearPortfolio = usePortfolioStore((state) => state.clearPortfolio);
+  const updateBondQuantity = usePortfolioStore((state) => state.updateBondQuantity);
   const setSelectedBond = useUiStore((state) => state.setSelectedBond);
   const { filters } = useFiltersStore();
   const [fieldDescriptions, setFieldDescriptions] = useState<FieldDescriptionMap>({});
   const metadataLoadedRef = useRef(false);
-  const gridRef = useRef<AgGridReact<BondListItem>>(null);
+  const gridRef = useRef<AgGridReact<PortfolioBond>>(null);
   const [headerHeight, setHeaderHeight] = useState<number | undefined>(undefined);
   const portfolioCellClickedRef = useRef(false);
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
@@ -531,6 +532,49 @@ export const PortfolioTable: React.FC = () => {
       headerTooltip: getFieldDescription('DURATION') || 'Дюрация, лет',
       autoHeaderHeight: true,
     }),
+    createColumnDef('quantity', 'Количество, шт.', {
+      minWidth: 120,
+      width: 120,
+      editable: true,
+      cellEditor: 'agNumberCellEditor',
+      cellEditorParams: {
+        min: 1,
+        precision: 0,
+        step: 1,
+      },
+      cellStyle: { textAlign: 'center' },
+      valueSetter: (params) => {
+        const bond = params.data as PortfolioBond | undefined;
+        if (!bond) return false;
+        
+        // Validate: must be integer > 0
+        const newValue = params.newValue;
+        if (typeof newValue !== 'number' || isNaN(newValue) || newValue <= 0) {
+          return false;
+        }
+        
+        const quantity = Math.floor(newValue);
+        if (quantity <= 0) {
+          return false;
+        }
+        
+        // Update both the data object (for grid) and the store (for persistence)
+        const valueChanged = bond.quantity !== quantity;
+        if (valueChanged) {
+          bond.quantity = quantity;
+          updateBondQuantity(bond.SECID, quantity);
+        }
+        return valueChanged;
+      },
+      valueFormatter: (params) => {
+        const value = params.value;
+        if (value == null || value === undefined) return '1';
+        return formatNumber(value, 0);
+      },
+      type: 'numericColumn',
+      headerTooltip: 'Количество облигаций в портфеле',
+      autoHeaderHeight: true,
+    }),
     {
       field: 'removeFromPortfolio',
       headerName: 'Удалить из портфеля',
@@ -548,8 +592,8 @@ export const PortfolioTable: React.FC = () => {
       autoHeaderHeight: true,
       suppressSizeToFit: true,
     },
-    ];
-  }, [getFieldDescription, removeBondFromPortfolio]);
+    ] as ColDef[];
+  }, [getFieldDescription, removeBondFromPortfolio, updateBondQuantity]);
 
   // Default column properties
   const defaultColDef: ColDef = useMemo(() => ({
@@ -575,6 +619,22 @@ export const PortfolioTable: React.FC = () => {
       setTimeout(() => {
         portfolioCellClickedRef.current = false;
       }, 200);
+      return;
+    }
+    
+    // If clicking on "quantity" column, mark it and prevent row click (opening details)
+    if (event.column && event.column.getColId() === 'quantity') {
+      portfolioCellClickedRef.current = true;
+      // Prevent event propagation to avoid opening details
+      if (event.event) {
+        event.event.stopPropagation();
+        event.event.preventDefault();
+      }
+      // Reset flag after a short delay to allow row click check
+      setTimeout(() => {
+        portfolioCellClickedRef.current = false;
+      }, 200);
+      // Allow editing to proceed normally (editing is handled by AG Grid)
       return;
     }
   }, []);
@@ -605,10 +665,14 @@ export const PortfolioTable: React.FC = () => {
       return;
     }
     
-    // Check 4: Find the cell element that was clicked and check its col-id
+    // Check 3: Don't open details if clicking on editable quantity cell
     const clickedCell = target.closest('.ag-cell');
     if (clickedCell) {
       const colId = clickedCell.getAttribute('col-id');
+      if (colId === 'quantity') {
+        // Allow editing, don't open details
+        return;
+      }
       if (colId === 'removeFromPortfolio') {
         return;
       }
@@ -624,6 +688,9 @@ export const PortfolioTable: React.FC = () => {
       if (currentElement.classList.contains('ag-cell')) {
         const colId = currentElement.getAttribute('col-id');
         if (colId === 'removeFromPortfolio') {
+          return;
+        }
+        if (colId === 'quantity') {
           return;
         }
         if (currentElement.classList.contains('portfolio-action-cell')) {
@@ -716,7 +783,7 @@ export const PortfolioTable: React.FC = () => {
   }, []);
 
   // Preserve selection when data updates
-  const prevPortfolioBondsRef = useRef<BondListItem[]>([]);
+  const prevPortfolioBondsRef = useRef<PortfolioBond[]>([]);
   useEffect(() => {
     if (portfolioBonds.length > 0 && gridRef.current?.api) {
       // Check if data actually changed (not just a re-render)
@@ -769,8 +836,8 @@ export const PortfolioTable: React.FC = () => {
     }
   };
 
-  const handleImportPortfolio = (bonds: BondListItem[]) => {
-    loadBondsToPortfolio(bonds);
+  const handleImportPortfolio = (bonds: PortfolioBond[]) => {
+    loadPortfolioBonds(bonds);
   };
 
   const handleClearPortfolio = () => {
@@ -1019,7 +1086,7 @@ export const PortfolioTable: React.FC = () => {
               textAlign: 'left !important',
             },
             // Ensure numeric columns are centered
-            '& .ag-cell[col-id="PREVPRICE"], & .ag-cell[col-id="COUPON_YIELD_TO_PRICE"], & .ag-cell[col-id="YIELDATPREVWAPRICE"], & .ag-cell[col-id="FACEVALUE"], & .ag-cell[col-id="COUPONPERCENT"], & .ag-cell[col-id="COUPONPERCENT_NOMINAL"], & .ag-cell[col-id="COUPONPERIOD"], & .ag-cell[col-id="ACCRUEDINT"], & .ag-cell[col-id="DURATION_YEARS"], & .ag-cell[col-id="FACEUNIT"], & .ag-cell[col-id="RATING"]': {
+            '& .ag-cell[col-id="PREVPRICE"], & .ag-cell[col-id="COUPON_YIELD_TO_PRICE"], & .ag-cell[col-id="YIELDATPREVWAPRICE"], & .ag-cell[col-id="FACEVALUE"], & .ag-cell[col-id="COUPONPERCENT"], & .ag-cell[col-id="COUPONPERCENT_NOMINAL"], & .ag-cell[col-id="COUPONPERIOD"], & .ag-cell[col-id="ACCRUEDINT"], & .ag-cell[col-id="DURATION_YEARS"], & .ag-cell[col-id="FACEUNIT"], & .ag-cell[col-id="RATING"], & .ag-cell[col-id="quantity"]': {
               justifyContent: 'center',
               textAlign: 'center !important',
             },
@@ -1065,7 +1132,7 @@ export const PortfolioTable: React.FC = () => {
             },
           }}
         >
-          <AgGridReact<BondListItem>
+          <AgGridReact<PortfolioBond>
             ref={gridRef}
             rowData={filteredPortfolioBonds}
             columnDefs={columnDefs}
@@ -1080,9 +1147,9 @@ export const PortfolioTable: React.FC = () => {
             paginationPageSizeSelector={[50, 100, 200, 500]}
             enableCellTextSelection={true}
             suppressRowClickSelection={true}
+            singleClickEdit={true}
             headerHeight={headerHeight}
             rowHeight={44}
-            suppressRowAutoHeight={true}
             autoSizeStrategy={{
               type: 'fitGridWidth',
               defaultMinWidth: 80,
@@ -1090,7 +1157,6 @@ export const PortfolioTable: React.FC = () => {
             suppressAggFuncInHeader={true}
             suppressMenuHide={true}
             getRowId={(params) => params.data.SECID}
-            suppressHeaderTooltips={true}
           />
         </Box>
         </Box>
