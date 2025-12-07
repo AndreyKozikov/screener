@@ -60,6 +60,9 @@ export const BondTypeFilter: React.FC = () => {
         '& .MuiAutocomplete-inputRoot': {
           minHeight: '32px',
         },
+        '& .MuiAutocomplete-tag': {
+          margin: '2px',
+        },
       }}
       renderInput={(params) => (
         <TextField
@@ -109,11 +112,6 @@ export const BondTypeFilter: React.FC = () => {
             />
           ))
         }
-        sx={{
-          '& .MuiAutocomplete-tag': {
-            margin: '2px',
-          },
-        }}
       />
   );
 };

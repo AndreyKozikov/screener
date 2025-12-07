@@ -6,6 +6,7 @@ import 'ag-grid-community/styles/ag-grid.css';
 import 'ag-grid-community/styles/ag-theme-material.css';
 import './ag-grid-tooltips.css';
 import { Box, Card, CardContent, Button, Tooltip } from '@mui/material';
+import FilterAltIcon from '@mui/icons-material/FilterAlt';
 
 // Register AG Grid modules
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -37,6 +38,10 @@ export type BondsTableRef = {
   getSelectedBonds: () => Set<string>;
 };
 
+export type BondsTableProps = {
+  onOpenFilters?: () => void;
+};
+
 const flattenDescriptions = (descriptions: DescriptionsResponse): FieldDescriptionMap => {
   const result: FieldDescriptionMap = {};
 
@@ -59,7 +64,7 @@ const flattenDescriptions = (descriptions: DescriptionsResponse): FieldDescripti
  * 
  * Main data table displaying bonds using AG Grid
  */
-export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
+export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ onOpenFilters }, ref) => {
   const { bonds, isLoading, error, setBonds, setLoading, setError } = useBondsStore();
   const { filters } = useFiltersStore();
   const setSelectedBond = useUiStore((state) => state.setSelectedBond);
@@ -846,6 +851,17 @@ export const BondsTable = React.forwardRef<BondsTableRef, {}>((_props, ref) => {
     <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', width: '100%' }}>
       <CardContent sx={{ p: 0, '&:last-child': { pb: 0 }, flexGrow: 1, display: 'flex', flexDirection: 'column', width: '100%' }}>
         <Box sx={{ p: 1, display: 'flex', justifyContent: 'flex-end', gap: 1, borderBottom: 1, borderColor: 'divider' }}>
+          {onOpenFilters && (
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<FilterAltIcon />}
+              onClick={onOpenFilters}
+              sx={{ mr: 'auto' }}
+            >
+              Фильтры
+            </Button>
+          )}
           <Button
             variant="outlined"
             size="small"

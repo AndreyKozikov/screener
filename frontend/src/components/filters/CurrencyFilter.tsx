@@ -47,6 +47,9 @@ export const CurrencyFilter: React.FC = () => {
         '& .MuiAutocomplete-inputRoot': {
           minHeight: '32px',
         },
+        '& .MuiAutocomplete-tag': {
+          margin: '2px',
+        },
       }}
       renderInput={(params) => (
         <TextField
@@ -96,11 +99,6 @@ export const CurrencyFilter: React.FC = () => {
             />
           ))
         }
-        sx={{
-          '& .MuiAutocomplete-tag': {
-            margin: '2px',
-          },
-        }}
       />
   );
 };

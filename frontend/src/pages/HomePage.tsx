@@ -3,7 +3,6 @@ import { Container, Box, Typography, AppBar, Toolbar, Button, CircularProgress, 
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import PsychologyIcon from '@mui/icons-material/Psychology';
-import FilterAltIcon from '@mui/icons-material/FilterAlt';
 import { SearchFilter } from '../components/filters/SearchFilter';
 import { FiltersModal } from '../components/filters/FiltersModal';
 import { BondsTable } from '../components/bonds/BondsTable';
@@ -359,22 +358,13 @@ export const HomePage: React.FC = () => {
           {/* Tab Content */}
           {currentTab === 0 && (
             <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', gap: 2, minHeight: 0, width: '100%' }}>
-              {/* Filters Button - Above Table */}
-              <Box sx={{ width: '100%', flexShrink: 0, display: 'flex', justifyContent: 'flex-start' }}>
-                <Button
-                  variant="outlined"
-                  startIcon={<FilterAltIcon />}
-                  onClick={() => setIsFiltersModalOpen(true)}
-                  sx={{ mb: 1 }}
-                >
-                  Фильтры
-                </Button>
-              </Box>
-
               {/* Table - Full Width */}
               <Box sx={{ flexGrow: 1, minWidth: 0, width: '100%' }}>
                 <ErrorBoundary>
-                  <BondsTable ref={bondsTableRef} />
+                  <BondsTable 
+                    ref={bondsTableRef} 
+                    onOpenFilters={() => setIsFiltersModalOpen(true)}
+                  />
                 </ErrorBoundary>
               </Box>
             </Box>
