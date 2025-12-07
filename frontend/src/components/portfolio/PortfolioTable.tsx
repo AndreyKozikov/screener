@@ -979,6 +979,11 @@ export const PortfolioTable: React.FC = () => {
             ...(headerHeight && {
               '--ag-header-height': `${headerHeight}px`,
             }),
+            // External border for table (Bootstrap .table-bordered style)
+            '& .ag-root-wrapper': {
+              border: '1px solid #dee2e6',
+              borderRadius: '4px',
+            },
             // Header with horizontal line
             '& .ag-header': {
               borderBottom: '1px solid #ddd',
@@ -991,12 +996,15 @@ export const PortfolioTable: React.FC = () => {
               padding: '8px 4px',
               boxSizing: 'border-box',
               gap: '0px !important',
-              // Remove vertical separators
-              borderRight: 'none !important',
+              // Bootstrap-style borders
+              borderRight: '1px solid #dee2e6 !important',
+              borderBottom: '1px solid #dee2e6 !important',
               fontWeight: 600,
               color: '#444',
               background: '#fafafa',
-              borderBottom: '1px solid #ddd',
+            },
+            '& .ag-header-cell:last-child': {
+              borderRight: 'none !important',
             },
             '& .ag-header-cell-label': {
               fontWeight: 600,
@@ -1063,9 +1071,9 @@ export const PortfolioTable: React.FC = () => {
               opacity: 1,
             },
             '& .ag-cell': {
-              // Remove vertical borders, add horizontal
-              borderRight: 'none !important',
-              borderBottom: '1px solid #eee !important',
+              // Bootstrap-style borders
+              borderRight: '1px solid #dee2e6 !important',
+              borderBottom: '1px solid #dee2e6 !important',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -1080,6 +1088,9 @@ export const PortfolioTable: React.FC = () => {
                 maxHeight: '36px !important',
                 overflow: 'hidden',
               },
+            },
+            '& .ag-row .ag-cell:last-child': {
+              borderRight: 'none !important',
             },
             '& .ag-cell[col-id="SHORTNAME"]': {
               justifyContent: 'flex-start',

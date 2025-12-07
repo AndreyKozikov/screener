@@ -5,8 +5,14 @@ import { ModuleRegistry, AllCommunityModule } from 'ag-grid-community';
 import 'ag-grid-community/styles/ag-grid.css';
 import 'ag-grid-community/styles/ag-theme-material.css';
 import './ag-grid-tooltips.css';
-import { Box, Card, CardContent, Button, Tooltip } from '@mui/material';
+import { Box, Card, CardContent, Button, Tooltip, IconButton } from '@mui/material';
 import FilterAltIcon from '@mui/icons-material/FilterAlt';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import FullscreenIcon from '@mui/icons-material/Fullscreen';
+import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
+import CloseIcon from '@mui/icons-material/Close';
+import SaveIcon from '@mui/icons-material/Save';
+import InsightsIcon from '@mui/icons-material/Insights';
 
 // Register AG Grid modules
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -202,6 +208,7 @@ export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ on
   const { filters } = useFiltersStore();
   const setSelectedBond = useUiStore((state) => state.setSelectedBond);
   const dataRefreshVersion = useUiStore((state) => state.dataRefreshVersion);
+  const triggerDataRefresh = useUiStore((state) => state.triggerDataRefresh);
   const portfolioBonds = usePortfolioStore((state) => state.portfolioBonds);
   const [fieldDescriptions, setFieldDescriptions] = useState<FieldDescriptionMap>({});
   const metadataLoadedRef = useRef(false);
@@ -210,6 +217,8 @@ export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ on
   const [selectedBonds, setSelectedBonds] = useState<Set<string>>(new Set());
   const [isComparisonDialogOpen, setIsComparisonDialogOpen] = useState(false);
   const [comparisonDialogKey, setComparisonDialogKey] = useState(0);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isClosed, setIsClosed] = useState(false);
 
   // Load field descriptions
   useEffect(() => {
@@ -245,6 +254,19 @@ export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ on
       setError(null);
       const response = await fetchBonds(filters);
       setBonds(response);
+      
+      // Explicitly refresh AG Grid data after loading
+      if (gridRef.current?.api) {
+        // Small delay to ensure state is updated
+        setTimeout(() => {
+          if (gridRef.current?.api) {
+            // Refresh all cells to ensure data is displayed
+            gridRef.current.api.refreshCells({ force: true });
+            // Resize columns to fit new data
+            gridRef.current.api.sizeColumnsToFit();
+          }
+        }, 100);
+      }
     } catch (error) {
       console.error('Error loading bonds:', error);
       if (error instanceof Error) {
@@ -453,7 +475,7 @@ export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ on
       field: 'checkbox',
       headerName: '',
       checkboxSelection: true,
-      headerCheckboxSelection: true,
+      headerCheckboxSelection: false,
       width: 50,
       pinned: 'left',
       sortable: false,
@@ -972,6 +994,11 @@ export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ on
     return Array.from(uniqueBonds.values());
   }, [selectedBonds]); // Recalculate when selection changes
 
+  // Check if component is closed
+  if (isClosed) {
+    return null;
+  }
+
   // Loading state
   if (isLoading && bonds.length === 0) {
     return <LoadingSpinner message="Загрузка облигаций..." />;
@@ -1003,65 +1030,221 @@ export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ on
 
   return (
     <Card sx={{ 
-      height: '100%', 
-      display: 'flex', 
-      flexDirection: 'column', 
-      width: '100%',
-      boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
-      borderRadius: '12px',
+      position: isFullscreen ? 'fixed' : 'relative',
+      top: isFullscreen ? 0 : 'auto',
+      left: isFullscreen ? 0 : 'auto',
+      width: isFullscreen ? '100vw' : '100%',
+      height: isFullscreen ? '100vh' : '100%',
+      zIndex: isFullscreen ? 2000 : 'auto',
+      borderRadius: isFullscreen ? 0 : '6px',
+      backgroundColor: '#ffffff',
+      border: '1px solid #e0e0e0',
+      boxShadow: isFullscreen ? '0 4px 10px rgba(0,0,0,0.15)' : '0 2px 4px rgba(0,0,0,0.06)',
+      display: 'flex',
+      flexDirection: 'column',
     }}>
-      <CardContent sx={{ p: 0, '&:last-child': { pb: 0 }, flexGrow: 1, display: 'flex', flexDirection: 'column', width: '100%' }}>
-        <Box sx={{ p: 1, display: 'flex', justifyContent: 'flex-end', gap: 1, borderBottom: 1, borderColor: 'divider' }}>
-          {onOpenFilters && (
-            <Button
-              variant="outlined"
-              size="small"
-              startIcon={<FilterAltIcon />}
-              onClick={onOpenFilters}
-              sx={{ mr: 'auto' }}
+      <CardContent sx={{ 
+        p: 0, 
+        flexGrow: 1, 
+        display: 'flex', 
+        flexDirection: 'column', 
+        '&:last-child': { pb: 0 },
+      }}>
+        {/* Header with icon buttons */}
+        <Box
+          sx={{
+            px: 1.5,
+            py: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            borderBottom: '1px solid #e0e0e0',
+            backgroundColor: '#fafafa',
+            minHeight: '46px',
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, ml: 'auto' }}>
+            {/* Filter button */}
+            {onOpenFilters && (
+              <Tooltip title="Фильтры">
+                <IconButton
+                  size="small"
+                  onClick={onOpenFilters}
+                  sx={{ 
+                    width: 28, 
+                    height: 28,
+                    padding: '4px',
+                    '&:focus': {
+                      outline: 'none',
+                    },
+                    '&:focus-visible': {
+                      outline: 'none',
+                    },
+                  }}
+                >
+                  <FilterAltIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            )}
+
+            {/* Comparison analysis button */}
+            <Tooltip 
+              title={
+                selectedBonds.size === 0 
+                  ? 'Выберите облигации для сравнения' 
+                  : `Сравнительный анализ (${selectedBonds.size} облигаций)`
+              }
             >
-              Фильтры
-            </Button>
-          )}
-          <Button
-            variant="outlined"
-            size="small"
-            onClick={handleComparisonAnalysis}
-            disabled={selectedBonds.size === 0 || isLoading}
-            sx={{
-              '&.Mui-disabled': {
-                color: 'text.disabled',
-                borderColor: 'action.disabledBackground',
-              },
-            }}
-          >
-            Сравнительный анализ{selectedBonds.size > 0 && ` (${selectedBonds.size})`}
-          </Button>
-          <Button
-            variant="outlined"
-            size="small"
-            onClick={handleExportSelected}
-            disabled={selectedBonds.size === 0 || isLoading}
-            sx={{
-              '&.Mui-disabled': {
-                color: 'text.disabled',
-                borderColor: 'action.disabledBackground',
-              },
-            }}
-          >
-            Скачать JSON{selectedBonds.size > 0 && ` (${selectedBonds.size})`}
-          </Button>
+              <span>
+                <IconButton
+                  size="small"
+                  onClick={handleComparisonAnalysis}
+                  disabled={selectedBonds.size === 0 || isLoading}
+                  sx={{ 
+                    width: 28, 
+                    height: 28,
+                    padding: '4px',
+                    '&:focus': {
+                      outline: 'none',
+                    },
+                    '&:focus-visible': {
+                      outline: 'none',
+                    },
+                    '&.Mui-disabled': {
+                      color: 'text.disabled',
+                    },
+                  }}
+                >
+                  <InsightsIcon fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
+
+            {/* Export JSON button */}
+            <Tooltip 
+              title={
+                selectedBonds.size === 0 
+                  ? 'Выберите облигации для сохранения' 
+                  : `Скачать JSON (${selectedBonds.size} облигаций)`
+              }
+            >
+              <span>
+                <IconButton
+                  size="small"
+                  onClick={handleExportSelected}
+                  disabled={selectedBonds.size === 0 || isLoading}
+                  sx={{ 
+                    width: 28, 
+                    height: 28,
+                    padding: '4px',
+                    '&:focus': {
+                      outline: 'none',
+                    },
+                    '&:focus-visible': {
+                      outline: 'none',
+                    },
+                    '&.Mui-disabled': {
+                      color: 'text.disabled',
+                    },
+                  }}
+                >
+                  <SaveIcon fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
+
+            {/* Vertical divider */}
+            <Box sx={{ width: '1px', backgroundColor: '#ddd', mx: 1 }} />
+
+            {/* Refresh button */}
+            <Tooltip title="Обновить данные">
+              <IconButton
+                size="small"
+                onClick={() => triggerDataRefresh()}
+                disabled={isLoading}
+                sx={{ 
+                  padding: '4px', 
+                  width: 28, 
+                  height: 28,
+                  '&:focus': {
+                    outline: 'none',
+                  },
+                  '&:focus-visible': {
+                    outline: 'none',
+                  },
+                }}
+              >
+                <RefreshIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            
+            {/* Fullscreen button */}
+            <Tooltip title={isFullscreen ? 'Свернуть' : 'На весь экран'}>
+              <IconButton
+                size="small"
+                onClick={() => setIsFullscreen(prev => !prev)}
+                sx={{ 
+                  padding: '4px', 
+                  width: 28, 
+                  height: 28,
+                  '&:focus': {
+                    outline: 'none',
+                  },
+                  '&:focus-visible': {
+                    outline: 'none',
+                  },
+                }}
+              >
+                {isFullscreen ? <FullscreenExitIcon fontSize="small" /> : <FullscreenIcon fontSize="small" />}
+              </IconButton>
+            </Tooltip>
+            
+            {/* Close button */}
+            <Tooltip title="Закрыть таблицу">
+              <IconButton
+                size="small"
+                onClick={() => setIsClosed(true)}
+                sx={{ 
+                  padding: '4px', 
+                  width: 28, 
+                  height: 28,
+                  '&:focus': {
+                    outline: 'none',
+                  },
+                  '&:focus-visible': {
+                    outline: 'none',
+                  },
+                }}
+              >
+                <CloseIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          </Box>
         </Box>
-        <Box sx={{ flexGrow: 1, display: 'flex' }}>
+
+        {/* Table content */}
+        <Box sx={{ 
+            flexGrow: 1, 
+            display: 'flex', 
+            height: '100%',
+            width: '100%',
+            overflow: 'hidden',
+          }}>
         <Box
           className="ag-theme-material"
           sx={{
             height: '100%',
             width: '100%',
+            flexGrow: 1,
             // Dynamic header height - use CSS variable if headerHeight is set
             ...(headerHeight && {
               '--ag-header-height': `${headerHeight}px`,
             }),
+            // External border for table (Bootstrap .table-bordered style)
+            '& .ag-root-wrapper': {
+              border: '1px solid #dee2e6',
+              borderRadius: '4px',
+            },
             // Header cell: center content horizontally and vertically
             '& .ag-header': {
               borderBottom: '1px solid #ddd',
@@ -1074,12 +1257,23 @@ export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ on
               padding: '8px 4px',
               boxSizing: 'border-box',
               gap: '0px !important',
-              // Remove vertical separators
-              borderRight: 'none !important',
+              // Bootstrap-style borders
+              borderRight: '1px solid #dee2e6 !important',
+              borderBottom: '1px solid #dee2e6 !important',
               fontWeight: 600,
               color: '#444',
               background: '#fafafa',
-              borderBottom: '1px solid #ddd',
+            },
+            // Remove right border only from the last header cell in the main container
+            '& .ag-header-cell:last-child': {
+              borderRight: 'none !important',
+            },
+            '& .ag-center-cols-container ~ .ag-pinned-right-header .ag-header-cell:last-child': {
+              borderRight: 'none !important',
+            },
+            // Ensure pinned-left header cells keep their right border
+            '& .ag-pinned-left-header .ag-header-cell': {
+              borderRight: '1px solid #dee2e6 !important',
             },
             // Label: only take space needed, allow text wrapping, remove all right spacing
             '& .ag-header-cell-label': {
@@ -1149,24 +1343,40 @@ export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ on
             '& .ag-header-cell-filtered .ag-header-cell-filter-button': {
               opacity: 1,
             },
+            // Unified font style for cells and headers
+            '& .ag-cell, & .ag-header-cell': {
+              fontFamily: 'Roboto, Helvetica, Arial, sans-serif',
+              fontSize: '14px',
+              lineHeight: 1.35,
+            },
             '& .ag-cell': {
-              // Remove vertical borders, add horizontal
-              borderRight: 'none !important',
-              borderBottom: '1px solid #eee !important',
+              // Bootstrap-style borders
+              borderRight: '1px solid #dee2e6 !important',
+              borderBottom: '1px solid #dee2e6 !important',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              lineHeight: '1.5 !important',
               padding: '8px 12px !important',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
-              maxHeight: '44px !important',
-              height: '44px !important',
+              maxHeight: '38px !important',
+              height: '38px !important',
               boxSizing: 'border-box',
               '& > *': {
-                maxHeight: '36px !important',
+                maxHeight: '38px !important',
                 overflow: 'hidden',
               },
+            },
+            // Remove right border only from the last cell in the main container (not pinned-left/right)
+            '& .ag-center-cols-container .ag-row .ag-cell:last-child': {
+              borderRight: 'none !important',
+            },
+            '& .ag-pinned-right-cols-container .ag-row .ag-cell:last-child': {
+              borderRight: 'none !important',
+            },
+            // Ensure pinned-left cells keep their right border (especially the last one before main content)
+            '& .ag-pinned-left-cols-container .ag-cell': {
+              borderRight: '1px solid #dee2e6 !important',
             },
             '& .ag-cell[col-id="SHORTNAME"]': {
               justifyContent: 'flex-start',
@@ -1177,14 +1387,14 @@ export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ on
               justifyContent: 'center',
               textAlign: 'center !important',
             },
-            // Row styling - increased height for better readability
+            // Row styling - fixed height
             '& .ag-row': {
               cursor: 'pointer',
-              minHeight: '44px !important',
-              maxHeight: '44px !important',
-              height: '44px !important',
+              minHeight: '38px !important',
+              maxHeight: '38px !important',
+              height: '38px !important',
               '& > *': {
-                maxHeight: '44px !important',
+                maxHeight: '38px !important',
               },
             },
             '& .ag-row-hover': {
@@ -1237,7 +1447,7 @@ export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ on
             enableCellTextSelection={true}
             suppressRowClickSelection={true}
             headerHeight={headerHeight}
-            rowHeight={44}
+            rowHeight={38}
             suppressRowAutoHeight={true}
             autoSizeStrategy={{
               type: 'fitGridWidth',
