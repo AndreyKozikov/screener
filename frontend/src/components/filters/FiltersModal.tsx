@@ -94,7 +94,7 @@ export const FiltersModal: React.FC<FiltersModalProps> = ({ open, onClose }) => 
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
           {/* Доходность купона относительно номинала и Доходность купона к текущей цене в одну строку */}
           <Box sx={{ display: 'flex', gap: 1.5, flexDirection: { xs: 'column', md: 'row' }, alignItems: 'flex-start' }}>
-            {/* Доходность купона относительно номинала */}
+              {/* Доходность купона относительно номинала */}
             <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'grey.50', flex: 1 }}>
               <Box display="flex" justifyContent="space-between" alignItems="center">
                 <Typography variant="subtitle1" fontSize="0.85rem">
@@ -122,12 +122,12 @@ export const FiltersModal: React.FC<FiltersModalProps> = ({ open, onClose }) => 
               </Box>
               <Collapse in={showCouponRange}>
                 <Box mt={1.5}>
-                  <CouponRangeFilter />
-                </Box>
+                <CouponRangeFilter />
+              </Box>
               </Collapse>
-            </Box>
+              </Box>
 
-            {/* Доходность купона к текущей цене */}
+              {/* Доходность купона к текущей цене */}
             <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'grey.50', flex: 1 }}>
               <Box display="flex" justifyContent="space-between" alignItems="center">
                 <Typography variant="subtitle1" fontSize="0.85rem">
@@ -155,8 +155,8 @@ export const FiltersModal: React.FC<FiltersModalProps> = ({ open, onClose }) => 
               </Box>
               <Collapse in={showCouponYieldRange}>
                 <Box mt={1.5}>
-                  <CouponYieldRangeFilter />
-                </Box>
+                <CouponYieldRangeFilter />
+              </Box>
               </Collapse>
             </Box>
           </Box>
@@ -192,14 +192,14 @@ export const FiltersModal: React.FC<FiltersModalProps> = ({ open, onClose }) => 
                 <YieldRangeFilter />
               </Box>
             </Collapse>
-          </Box>
+            </Box>
 
           {/* Дата погашения */}
           <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'grey.50' }}>
             <Box display="flex" justifyContent="space-between" alignItems="center">
               <Typography variant="subtitle1" fontSize="0.85rem">
-                Дата погашения
-              </Typography>
+              Дата погашения
+            </Typography>
               <IconButton 
                 onClick={() => setShowMaturityDate(!showMaturityDate)}
                 sx={{ 
@@ -222,7 +222,7 @@ export const FiltersModal: React.FC<FiltersModalProps> = ({ open, onClose }) => 
             </Box>
             <Collapse in={showMaturityDate}>
               <Box mt={1.5}>
-                <MaturityDateFilter />
+            <MaturityDateFilter />
               </Box>
             </Collapse>
           </Box>
@@ -232,7 +232,7 @@ export const FiltersModal: React.FC<FiltersModalProps> = ({ open, onClose }) => 
             <Box display="flex" justifyContent="space-between" alignItems="center">
               <Typography variant="subtitle1" fontSize="0.85rem">
                 Уровень листинга
-              </Typography>
+            </Typography>
               <IconButton 
                 onClick={() => setShowListLevel(!showListLevel)}
                 sx={{ 
@@ -291,7 +291,7 @@ export const FiltersModal: React.FC<FiltersModalProps> = ({ open, onClose }) => 
                 <CurrencyFilter />
               </Box>
             </Collapse>
-          </Box>
+              </Box>
 
           {/* Тип облигации */}
           <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'grey.50' }}>
@@ -321,8 +321,8 @@ export const FiltersModal: React.FC<FiltersModalProps> = ({ open, onClose }) => 
             </Box>
             <Collapse in={showBondType}>
               <Box mt={1.5}>
-                <BondTypeFilter />
-              </Box>
+              <BondTypeFilter />
+            </Box>
             </Collapse>
           </Box>
 
@@ -363,8 +363,8 @@ export const FiltersModal: React.FC<FiltersModalProps> = ({ open, onClose }) => 
           <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'grey.50' }}>
             <Box display="flex" justifyContent="space-between" alignItems="center">
               <Typography variant="subtitle1" fontSize="0.85rem">
-                Рейтинг
-              </Typography>
+              Рейтинг
+            </Typography>
               <IconButton 
                 onClick={() => setShowRating(!showRating)}
                 sx={{ 
@@ -387,7 +387,7 @@ export const FiltersModal: React.FC<FiltersModalProps> = ({ open, onClose }) => 
             </Box>
             <Collapse in={showRating}>
               <Box mt={1.5}>
-                <RatingRangeFilter />
+            <RatingRangeFilter />
               </Box>
             </Collapse>
           </Box>
