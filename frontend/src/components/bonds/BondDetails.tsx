@@ -141,8 +141,6 @@ export const BondDetails: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [columnMapping, setColumnMapping] = useState<ColumnMapping>({});
   const [fieldDescriptions, setFieldDescriptions] = useState<FieldDescriptionMap>({});
-  const [isMetadataLoading, setIsMetadataLoading] = useState(false);
-  const [metadataError, setMetadataError] = useState<string | null>(null);
   const metadataLoadedRef = useRef(false);
   
   // Coupons state
@@ -300,9 +298,6 @@ export const BondDetails: React.FC = () => {
 
     const loadMetadata = async () => {
       try {
-        setIsMetadataLoading(true);
-        setMetadataError(null);
-
         const [mapping, descriptionsResponse] = await Promise.all([
           fetchColumnMapping(),
           fetchDescriptions(),
@@ -316,13 +311,8 @@ export const BondDetails: React.FC = () => {
         setFieldDescriptions(flattenDescriptions(descriptionsResponse));
         metadataLoadedRef.current = true;
       } catch (err: unknown) {
-        if (!isCancelled) {
-          setMetadataError(err instanceof Error ? err.message : 'Не удалось загрузить описания полей');
-        }
-      } finally {
-        if (!isCancelled) {
-          setIsMetadataLoading(false);
-        }
+        // Silently fail - metadata is optional
+        console.warn('Failed to load metadata:', err);
       }
     };
 
@@ -484,10 +474,6 @@ export const BondDetails: React.FC = () => {
   const bondStatus =
     bondDetail && typeof bondDetail.securities.STATUS === 'string'
       ? bondDetail.securities.STATUS
-      : null;
-  const tradingStatus =
-    bondDetail && bondDetail.marketdata && typeof bondDetail.marketdata.TRADINGSTATUS === 'string'
-      ? bondDetail.marketdata.TRADINGSTATUS
       : null;
 
   // Key metrics for header

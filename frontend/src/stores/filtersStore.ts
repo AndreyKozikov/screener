@@ -84,7 +84,7 @@ export const useFiltersStore = create<FiltersState>((set) => ({
     filters: {
       ...state.filters,
       [key]: value,
-      skip: key !== 'skip' ? 0 : value,
+      skip: key !== 'skip' ? 0 : (typeof value === 'number' ? value : state.filters.skip),
     },
   })),
   

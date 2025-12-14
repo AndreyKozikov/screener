@@ -1,11 +1,8 @@
 import { fetchBondDetail, fetchBondCoupons } from '../api/bonds';
 import { fetchColumnMapping, fetchDescriptions } from '../api/metadata';
 import type { BondFieldValue } from '../types/bond';
-import type { DescriptionsResponse } from '../api/metadata';
 import type { Coupon } from '../types/coupon';
 import { formatDate, formatNumber, formatPercent } from './formatters';
-
-type FieldDescriptionMap = Record<string, string>;
 
 const isoDateRegex = /^\d{4}-\d{2}-\d{2}/;
 const isoDateTimeRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:/;
@@ -79,21 +76,21 @@ const formatFieldValue = (field: string, rawValue: BondFieldValue): string => {
   return String(rawValue);
 };
 
-const flattenDescriptions = (descriptions: DescriptionsResponse): FieldDescriptionMap => {
-  const result: FieldDescriptionMap = {};
-
-  Object.values(descriptions).forEach((section) => {
-    if (section && typeof section === 'object' && !Array.isArray(section)) {
-      Object.entries(section).forEach(([field, description]) => {
-        if (typeof description === 'string' && description.trim().length > 0) {
-          result[field] = description;
-        }
-      });
-    }
-  });
-
-  return result;
-};
+// const flattenDescriptions = (descriptions: DescriptionsResponse): FieldDescriptionMap => {
+//   const result: FieldDescriptionMap = {};
+//
+//   Object.values(descriptions).forEach((section) => {
+//     if (section && typeof section === 'object' && !Array.isArray(section)) {
+//       Object.entries(section).forEach(([field, description]) => {
+//         if (typeof description === 'string' && description.trim().length > 0) {
+//           result[field] = description;
+//         }
+//       });
+//     }
+//   });
+//
+//   return result;
+// };
 
 const prepareRecordForExport = (
   record: Record<string, BondFieldValue> | null,
@@ -122,12 +119,10 @@ export const exportSelectedBonds = async (secids: string[]): Promise<void> => {
   }
 
   // Load metadata once
-  const [columnMapping, descriptionsResponse] = await Promise.all([
+  const [columnMapping] = await Promise.all([
     fetchColumnMapping(),
     fetchDescriptions(),
   ]);
-
-  // const fieldDescriptions = flattenDescriptions(descriptionsResponse);
 
   // Load all bond details and coupons
   const bondDetailsPromises = secids.map(secid => fetchBondDetail(secid));
@@ -135,7 +130,7 @@ export const exportSelectedBonds = async (secids: string[]): Promise<void> => {
 
   // Load coupons for all bonds in parallel
   const couponsPromises = secids.map(secid => 
-    fetchBondCoupons(secid).catch(() => ({ coupons: [] as Coupon[] }))
+    fetchBondCoupons(secid).catch(() => ({ coupons: [] as Coupon[], coupon_type: null }))
   );
   const couponsResponses = await Promise.all(couponsPromises);
 
@@ -147,7 +142,7 @@ export const exportSelectedBonds = async (secids: string[]): Promise<void> => {
     const secid = secids[i];
     const couponsResponse = couponsResponses[i];
     const coupons = couponsResponse?.coupons || [];
-    const couponType = couponsResponse?.coupon_type || null;
+    const couponType = couponsResponse && 'coupon_type' in couponsResponse ? couponsResponse.coupon_type : null;
 
     // Get bond name from securities data
     const bondName = 

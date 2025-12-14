@@ -224,8 +224,6 @@ const loadBondsBySecids = async (
     couponType: [],
     ratingMin: null,
     ratingMax: null,
-    tradingStatus: [],
-    boardid: [],
     search: '',
     skip: 0,
     limit: 10000, // Large limit to get all bonds

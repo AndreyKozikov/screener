@@ -457,6 +457,25 @@ export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ on
     const createColumnDef = (field: string, headerName: string, otherProps: Partial<ColDef> = {}): ColDef => {
       const tooltipText = otherProps.headerTooltip !== undefined ? otherProps.headerTooltip : getFieldDescription(field);
       
+      // Remove cellStyle from otherProps to avoid conflicts
+      const { cellStyle: otherCellStyle, ...restProps } = otherProps;
+      
+      // Create cellStyle without undefined properties
+      let cellStyle: ColDef['cellStyle'];
+      if (otherCellStyle !== undefined) {
+        if (typeof otherCellStyle === 'function') {
+          cellStyle = otherCellStyle;
+        } else if (typeof otherCellStyle === 'object') {
+          // Filter out undefined properties
+          const filtered = Object.fromEntries(
+            Object.entries(otherCellStyle).filter(([_, value]) => value !== undefined)
+          );
+          cellStyle = filtered as Record<string, string | number>;
+        }
+      } else {
+        cellStyle = { textAlign: 'center' };
+      }
+      
       return {
         field,
         headerName,
@@ -465,8 +484,8 @@ export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ on
         headerComponent: tooltipText ? CustomHeaderWithTooltip : undefined,
         headerTooltip: tooltipText, // Оставляем для совместимости
         // Center align cell content by default (can be overridden in otherProps)
-        cellStyle: otherProps.cellStyle !== undefined ? otherProps.cellStyle : { textAlign: 'center' as const },
-        ...otherProps,
+        cellStyle,
+        ...restProps,
       };
     };
 
@@ -481,13 +500,13 @@ export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ on
       sortable: false,
       filter: false,
       suppressMenu: true,
-      cellStyle: { textAlign: 'center' as const },
+      cellStyle: { textAlign: 'center' } as Record<string, string | number>,
     },
     createColumnDef('SHORTNAME', 'Название', {
       minWidth: 120,
       pinned: 'left',
       cellRenderer: ShortNameRenderer,
-      cellStyle: { textAlign: 'left' as const }, // Left align for name column
+      cellStyle: { textAlign: 'left' }, // Left align for name column
       headerTooltip: getFieldDescription('SHORTNAME'),
       autoHeaderHeight: true,
     }),
@@ -527,7 +546,7 @@ export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ on
           </Box>
         );
       },
-      cellStyle: { textAlign: 'center' as const },
+      cellStyle: { textAlign: 'center' },
       headerTooltip: 'Рейтинг облигации от рейтинговых агентств',
       autoHeaderHeight: true,
       sortable: false,
@@ -643,7 +662,7 @@ export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ on
       suppressMenu: true,
       resizable: false, // Prevent column resizing to avoid layout shifts
       cellRenderer: AddToPortfolioRenderer,
-      cellStyle: { textAlign: 'center' as const, display: 'flex', alignItems: 'center', justifyContent: 'center' },
+      cellStyle: { textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center' },
       cellClass: 'portfolio-action-cell', // Add class for easier identification
       headerClass: 'ag-header-center',
       autoHeaderHeight: true,
@@ -1450,8 +1469,6 @@ export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ on
             suppressAggFuncInHeader={true}
             suppressMenuHide={true}
             getRowId={(params) => params.data.SECID}
-            // Отключаем встроенные tooltips AG Grid, используем Material-UI Tooltip
-            suppressHeaderTooltips={true}
           />
         </Box>
         </Box>

@@ -1,4 +1,4 @@
-import React, { Component } from 'react';
+import { Component } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
 import { Box, Typography, Button, Alert, AlertTitle } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
