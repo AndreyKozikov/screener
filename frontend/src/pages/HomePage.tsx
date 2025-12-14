@@ -3,6 +3,7 @@ import { Container, Box, Typography, AppBar, Toolbar, Button, CircularProgress, 
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import PsychologyIcon from '@mui/icons-material/Psychology';
+import FeedbackIcon from '@mui/icons-material/Feedback';
 import { SearchFilter } from '../components/filters/SearchFilter';
 import { FiltersModal } from '../components/filters/FiltersModal';
 import { BondsTable } from '../components/bonds/BondsTable';
@@ -14,7 +15,9 @@ import { AnalysisParamsDialog } from '../components/llm/AnalysisParamsDialog';
 import { AnalysisResultDialog } from '../components/llm/AnalysisResultDialog';
 import { LLMAnalysisModelDialog, type LLMModel } from '../components/llm/LLMAnalysisModelDialog';
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
+import { BondSelectionGuidePage } from './BondSelectionGuidePage';
 import { RefreshDataDialog } from '../components/common/RefreshDataDialog';
+import { FeedbackDialog } from '../components/common/FeedbackDialog';
 import { refreshBondsData, refreshCouponsData } from '../api/bonds';
 import { refreshZerocuponData } from '../api/zerocupon';
 import { refreshRatingsData } from '../api/rating';
@@ -25,6 +28,7 @@ import { getBondsDataForLLM, getZerocuponDataForLLM, getForecastDataForLLM } fro
 import { analyzeBondsWithLLM } from '../api/llm';
 import { analyzeBondsWithQwen } from '../api/qwen';
 import { analyzeBondsWithGrok } from '../api/grok';
+import { submitFeedback } from '../api/feedback';
 import type { BondsTableRef } from '../components/bonds/BondsTable';
 
 /**
@@ -70,6 +74,7 @@ export const HomePage: React.FC = () => {
   const [modelUsed, setModelUsed] = useState<string>('');
   const [isNoSelectionDialogOpen, setIsNoSelectionDialogOpen] = useState(false);
   const [isFiltersModalOpen, setIsFiltersModalOpen] = useState(false);
+  const [isFeedbackDialogOpen, setIsFeedbackDialogOpen] = useState(false);
 
   const handleRefreshDataClick = () => {
     setIsRefreshDialogOpen(true);
@@ -294,6 +299,26 @@ export const HomePage: React.FC = () => {
     }
   };
 
+  // Get current tab name
+  const getCurrentTabName = (): string => {
+    const tabNames = [
+      'Скринер облигаций',
+      'Кривая бескупонной доходности',
+      'Среднесрочный прогноз Банка России',
+      'Мой портфель',
+      'Советы по выбору облигаций',
+    ];
+    return tabNames[currentTab] || 'Неизвестная вкладка';
+  };
+
+  const handleFeedbackClick = () => {
+    setIsFeedbackDialogOpen(true);
+  };
+
+  const handleFeedbackSend = async (text: string, tabName: string) => {
+    await submitFeedback(text, tabName);
+  };
+
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
       {/* App Bar */}
@@ -338,56 +363,85 @@ export const HomePage: React.FC = () => {
             >
               Анализ LLM
             </Button>
+            <Button
+              variant="outlined"
+              color="inherit"
+              onClick={handleFeedbackClick}
+              startIcon={<FeedbackIcon />}
+              sx={{ mr: 1 }}
+            >
+              Предложения
+            </Button>
           </Box>
         </Toolbar>
       </AppBar>
 
       {/* Main Content */}
-      <Box sx={{ flexGrow: 1, bgcolor: 'background.default', display: 'flex', flexDirection: 'column', height: 'calc(100vh - 64px)', width: '100%' }}>
-        <Container maxWidth={false} sx={{ px: 2, py: 2, flexGrow: 1, display: 'flex', flexDirection: 'column', width: '100%' }}>
-          {/* Tabs */}
-          <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
-            <Tabs value={currentTab} onChange={(_, newValue) => setCurrentTab(newValue)}>
-              <Tab label="Скринер облигаций" />
-              <Tab label="Кривая бескупонной доходности" />
-              <Tab label="Среднесрочный прогноз Банка России" />
-              <Tab label="Мой портфель" />
-            </Tabs>
-          </Box>
+      <Box sx={{ flexGrow: 1, bgcolor: 'background.default', display: 'flex', flexDirection: 'column', width: '100%', ...(currentTab !== 4 ? { height: 'calc(100vh - 64px)' } : {}) }}>
+        {currentTab === 4 ? (
+          <>
+            {/* Tabs for course tab */}
+            <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2, px: 2, pt: 2 }}>
+              <Tabs value={currentTab} onChange={(_, newValue) => setCurrentTab(newValue)}>
+                <Tab label="Скринер облигаций" />
+                <Tab label="Кривая бескупонной доходности" />
+                <Tab label="Среднесрочный прогноз Банка России" />
+                <Tab label="Мой портфель" />
+                <Tab label="Советы по выбору облигаций" />
+              </Tabs>
+            </Box>
+            {/* Course content without Container */}
+            <Box sx={{ flexGrow: 1, minHeight: 0, width: '100%' }}>
+              <BondSelectionGuidePage />
+            </Box>
+          </>
+        ) : (
+          <Container maxWidth={false} sx={{ px: 2, py: 2, flexGrow: 1, display: 'flex', flexDirection: 'column', width: '100%' }}>
+            {/* Tabs */}
+            <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
+              <Tabs value={currentTab} onChange={(_, newValue) => setCurrentTab(newValue)}>
+                <Tab label="Скринер облигаций" />
+                <Tab label="Кривая бескупонной доходности" />
+                <Tab label="Среднесрочный прогноз Банка России" />
+                <Tab label="Мой портфель" />
+                <Tab label="Советы по выбору облигаций" />
+              </Tabs>
+            </Box>
 
-          {/* Tab Content */}
-          {currentTab === 0 && (
-            <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', gap: 2, minHeight: 0, width: '100%' }}>
-              {/* Table - Full Width */}
-              <Box sx={{ flexGrow: 1, minWidth: 0, width: '100%' }}>
-                <ErrorBoundary>
-                  <BondsTable 
-                    ref={bondsTableRef} 
-                    onOpenFilters={() => setIsFiltersModalOpen(true)}
-                  />
-                </ErrorBoundary>
+            {/* Tab Content */}
+            {currentTab === 0 && (
+              <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', gap: 2, minHeight: 0, width: '100%' }}>
+                {/* Table - Full Width */}
+                <Box sx={{ flexGrow: 1, minWidth: 0, width: '100%' }}>
+                  <ErrorBoundary>
+                    <BondsTable 
+                      ref={bondsTableRef} 
+                      onOpenFilters={() => setIsFiltersModalOpen(true)}
+                    />
+                  </ErrorBoundary>
+                </Box>
               </Box>
-            </Box>
-          )}
+            )}
 
-          {currentTab === 1 && (
-            <Box sx={{ flexGrow: 1, minHeight: 0 }}>
-              <ZerocuponTable />
-            </Box>
-          )}
+            {currentTab === 1 && (
+              <Box sx={{ flexGrow: 1, minHeight: 0 }}>
+                <ZerocuponTable />
+              </Box>
+            )}
 
-          {currentTab === 2 && (
-            <Box sx={{ flexGrow: 1, minHeight: 0 }}>
-              <ForecastTable />
-            </Box>
-          )}
+            {currentTab === 2 && (
+              <Box sx={{ flexGrow: 1, minHeight: 0 }}>
+                <ForecastTable />
+              </Box>
+            )}
 
-          {currentTab === 3 && (
-            <Box sx={{ flexGrow: 1, minHeight: 0 }}>
-              <PortfolioTable />
-            </Box>
-          )}
-        </Container>
+            {currentTab === 3 && (
+              <Box sx={{ flexGrow: 1, minHeight: 0 }}>
+                <PortfolioTable />
+              </Box>
+            )}
+          </Container>
+        )}
       </Box>
 
       {/* Bond Details Drawer */}
@@ -471,6 +525,14 @@ export const HomePage: React.FC = () => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Feedback Dialog */}
+      <FeedbackDialog
+        open={isFeedbackDialogOpen}
+        onClose={() => setIsFeedbackDialogOpen(false)}
+        onSend={handleFeedbackSend}
+        tabName={getCurrentTabName()}
+      />
 
       {/* Footer */}
       <Box

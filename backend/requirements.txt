@@ -19,4 +19,6 @@ cachetools==5.5.0
 httpx==0.28.1  # для health checks в Docker
 openai==1.54.0  # для LLM анализа и Qwen 3 через OpenRouter (используется OpenAI клиент с base_url)
 requests==2.32.3  # для загрузки данных рейтингов с сайта Мосбиржи
+sendgrid==6.11.0  # для отправки email через SendGrid API (без пароля)
+python-dotenv==1.0.0  # для загрузки переменных окружения из .env файла
 # openrouter==0.1.0  # больше не используется, заменен на OpenAI клиент

@@ -4,7 +4,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import bonds, metadata, zerocupon, forecast, llm, qwen, grok, emitent, rating
+from app.routers import bonds, metadata, zerocupon, forecast, llm, qwen, grok, emitent, rating, feedback
 from app.services.data_loader import init_data_loader
 from app.services.coupon_loader import init_coupon_loader
 from app.services.emitent_service import init_emitent_service
@@ -55,6 +55,7 @@ app.include_router(qwen.router)
 app.include_router(grok.router)
 app.include_router(emitent.router)
 app.include_router(rating.router)
+app.include_router(feedback.router)
 
 # Root endpoint
 @app.get("/")
