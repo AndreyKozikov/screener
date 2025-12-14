@@ -2,7 +2,7 @@
  * API response structures
  */
 
-import { BondListItem } from './bond';
+import type { BondListItem } from './bond';
 
 export interface BondsListResponse {
   total: number;

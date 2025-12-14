@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, TextField, Typography } from '@mui/material';
+import { TextField } from '@mui/material';
 import { useFiltersStore } from '../../stores/filtersStore';
 
 /**

@@ -29,7 +29,9 @@ export const apiClient = axios.create({
 // Request interceptor for logging
 apiClient.interceptors.request.use(
   (config) => {
-    console.log('[API Client] Request:', config.method?.toUpperCase(), config.baseURL + config.url);
+    const baseURL = config.baseURL || '';
+    const url = config.url || '';
+    console.log('[API Client] Request:', config.method?.toUpperCase(), baseURL + url);
     if (config.params) {
       console.log('[API Client] Request params:', config.params);
     }

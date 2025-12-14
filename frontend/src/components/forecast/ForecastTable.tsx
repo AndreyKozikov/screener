@@ -347,7 +347,7 @@ export const ForecastTable: React.FC = () => {
               <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, mb: 2 }}>
                 Основные параметры прогноза
               </Typography>
-              <Box sx={{ width: '100%', flex: 1, minHeight: 0 }}>
+              <Box sx={{ width: '100%', flex: 1, minHeight: 0, height: '100%' }}>
                 <AgGridReact
                   rowData={mainIndicatorsRows}
                   columnDefs={mainIndicatorsColumns}
@@ -355,7 +355,6 @@ export const ForecastTable: React.FC = () => {
                   headerHeight={64}
                   animateRows={true}
                   domLayout="normal"
-                  style={{ width: '100%', height: '100%' }}
                   className="ag-theme-material forecast-table"
                 />
               </Box>
@@ -368,7 +367,7 @@ export const ForecastTable: React.FC = () => {
               <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, mb: 2 }}>
                 Показатели платёжного баланса
               </Typography>
-              <Box sx={{ width: '100%', flex: 1, minHeight: 0 }}>
+              <Box sx={{ width: '100%', flex: 1, minHeight: 0, height: '100%' }}>
                 <AgGridReact
                   rowData={balanceRows}
                   columnDefs={balanceColumns}
@@ -376,7 +375,6 @@ export const ForecastTable: React.FC = () => {
                   headerHeight={64}
                   animateRows={true}
                   domLayout="normal"
-                  style={{ width: '100%', height: '100%' }}
                   className="ag-theme-material forecast-table"
                 />
               </Box>

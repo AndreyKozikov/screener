@@ -14,7 +14,7 @@ import { AnalysisParamsDialog } from '../components/llm/AnalysisParamsDialog';
 import { AnalysisResultDialog } from '../components/llm/AnalysisResultDialog';
 import { LLMAnalysisModelDialog, type LLMModel } from '../components/llm/LLMAnalysisModelDialog';
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
-import { RefreshDataDialog, type RefreshTask } from '../components/common/RefreshDataDialog';
+import { RefreshDataDialog } from '../components/common/RefreshDataDialog';
 import { refreshBondsData, refreshCouponsData } from '../api/bonds';
 import { refreshZerocuponData } from '../api/zerocupon';
 import { refreshRatingsData } from '../api/rating';
@@ -46,7 +46,7 @@ export const HomePage: React.FC = () => {
   // LLM Analysis state
   const [isAnalysisParamsOpen, setIsAnalysisParamsOpen] = useState(false);
   const [isLLMModelDialogOpen, setIsLLMModelDialogOpen] = useState(false);
-  const [selectedLLMModel, setSelectedLLMModel] = useState<LLMModel | null>(null);
+  const [, setSelectedLLMModel] = useState<LLMModel | null>(null);
   const [savedAnalysisParams, setSavedAnalysisParams] = useState<{
     zerocuponDateFrom: string;
     zerocuponDateTo: string;

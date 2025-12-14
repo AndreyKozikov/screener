@@ -1,9 +1,9 @@
 import { fetchBondDetail, fetchBondCoupons } from '../api/bonds';
 import { fetchColumnMapping, fetchDescriptions } from '../api/metadata';
-import type { BondDetail, BondFieldValue } from '../types/bond';
+import type { BondFieldValue } from '../types/bond';
 import type { DescriptionsResponse } from '../api/metadata';
 import type { Coupon } from '../types/coupon';
-import { formatDate, formatNumber, formatPercent, formatBondStatus, formatTradingStatus } from './formatters';
+import { formatDate, formatNumber, formatPercent } from './formatters';
 
 type FieldDescriptionMap = Record<string, string>;
 
@@ -127,7 +127,7 @@ export const exportSelectedBonds = async (secids: string[]): Promise<void> => {
     fetchDescriptions(),
   ]);
 
-  const fieldDescriptions = flattenDescriptions(descriptionsResponse);
+  // const fieldDescriptions = flattenDescriptions(descriptionsResponse);
 
   // Load all bond details and coupons
   const bondDetailsPromises = secids.map(secid => fetchBondDetail(secid));

@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { Box, Autocomplete, TextField, Chip } from '@mui/material';
+import { Autocomplete, TextField, Chip } from '@mui/material';
 import { useFiltersStore } from '../../stores/filtersStore';
 import { fetchFilterOptions } from '../../api/metadata';
 

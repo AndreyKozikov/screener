@@ -1,4 +1,4 @@
-import type { BondListItem, PortfolioBond } from '../types/bond';
+import type { PortfolioBond } from '../types/bond';
 import { exportSelectedBonds } from './bondExport';
 
 /**

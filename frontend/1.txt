@@ -1,0 +1,230 @@
+
+> frontend@0.0.0 build
+> tsc -b && vite build
+
+src/api/client.ts(32,72): error TS18048: 'config.baseURL' is possibly 'undefined'.
+src/api/client.ts(32,89): error TS18048: 'config.url' is possibly 'undefined'.
+src/components/bonds/BondDetails.tsx(13,3): error TS6133: 'Alert' is declared but its value is never read.
+src/components/bonds/BondDetails.tsx(27,7): error TS6133: 'triggerDataRefresh' is declared but its value is never read.
+src/components/bonds/BondDetails.tsx(42,3): error TS6133: 'formatTradingStatus' is declared but its value is never read.
+src/components/bonds/BondDetails.tsx(148,10): error TS6133: 'isMetadataLoading' is declared but its value is never read.
+src/components/bonds/BondDetails.tsx(149,10): error TS6133: 'metadataError' is declared but its value is never read.
+src/components/bonds/BondDetails.tsx(164,9): error TS6133: 'collator' is declared but its value is never read.
+src/components/bonds/BondDetails.tsx(426,9): error TS6133: 'getAllFields' is declared but its value is never read.
+src/components/bonds/BondDetails.tsx(493,9): error TS6133: 'tradingStatus' is declared but its value is never read.
+src/components/bonds/BondDetails.tsx(608,18): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: { component: ElementType<any, keyof IntrinsicElements>; } & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<...> & Omit<...>): Element | null', gave the following error.
+    Property 'component' is missing in type '{ children: Element[]; item: true; xs: number; sm: number; }' but required in type '{ component: ElementType<any, keyof IntrinsicElements>; }'.
+  Overload 2 of 2, '(props: DefaultComponentProps<GridTypeMap<{}, "div">>): Element | null', gave the following error.
+    Type '{ children: Element[]; item: true; xs: number; sm: number; }' is not assignable to type 'IntrinsicAttributes & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<Theme> & Omit<...>'.
+      Property 'item' does not exist on type 'IntrinsicAttributes & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<Theme> & Omit<...>'.
+src/components/bonds/BondDetails.tsx(616,18): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: { component: ElementType<any, keyof IntrinsicElements>; } & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<...> & Omit<...>): Element | null', gave the following error.
+    Property 'component' is missing in type '{ children: Element[]; item: true; xs: number; sm: number; }' but required in type '{ component: ElementType<any, keyof IntrinsicElements>; }'.
+  Overload 2 of 2, '(props: DefaultComponentProps<GridTypeMap<{}, "div">>): Element | null', gave the following error.
+    Type '{ children: Element[]; item: true; xs: number; sm: number; }' is not assignable to type 'IntrinsicAttributes & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<Theme> & Omit<...>'.
+      Property 'item' does not exist on type 'IntrinsicAttributes & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<Theme> & Omit<...>'.
+src/components/bonds/BondDetails.tsx(624,18): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: { component: ElementType<any, keyof IntrinsicElements>; } & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<...> & Omit<...>): Element | null', gave the following error.
+    Property 'component' is missing in type '{ children: Element[]; item: true; xs: number; sm: number; }' but required in type '{ component: ElementType<any, keyof IntrinsicElements>; }'.
+  Overload 2 of 2, '(props: DefaultComponentProps<GridTypeMap<{}, "div">>): Element | null', gave the following error.
+    Type '{ children: Element[]; item: true; xs: number; sm: number; }' is not assignable to type 'IntrinsicAttributes & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<Theme> & Omit<...>'.
+      Property 'item' does not exist on type 'IntrinsicAttributes & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<Theme> & Omit<...>'.
+src/components/bonds/BondDetails.tsx(632,18): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: { component: ElementType<any, keyof IntrinsicElements>; } & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<...> & Omit<...>): Element | null', gave the following error.
+    Property 'component' is missing in type '{ children: Element[]; item: true; xs: number; sm: number; }' but required in type '{ component: ElementType<any, keyof IntrinsicElements>; }'.
+  Overload 2 of 2, '(props: DefaultComponentProps<GridTypeMap<{}, "div">>): Element | null', gave the following error.
+    Type '{ children: Element[]; item: true; xs: number; sm: number; }' is not assignable to type 'IntrinsicAttributes & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<Theme> & Omit<...>'.
+      Property 'item' does not exist on type 'IntrinsicAttributes & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<Theme> & Omit<...>'.
+src/components/bonds/BondMetrics.tsx(29,8): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: { component: ElementType<any, keyof IntrinsicElements>; } & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<...> & Omit<...>): Element | null', gave the following error.
+    Property 'component' is missing in type '{ children: Element; item: true; xs: number; sm: number; md: number; }' but required in type '{ component: ElementType<any, keyof IntrinsicElements>; }'.
+  Overload 2 of 2, '(props: DefaultComponentProps<GridTypeMap<{}, "div">>): Element | null', gave the following error.
+    Type '{ children: Element; item: true; xs: number; sm: number; md: number; }' is not assignable to type 'IntrinsicAttributes & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<Theme> & Omit<...>'.
+      Property 'item' does not exist on type 'IntrinsicAttributes & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<Theme> & Omit<...>'.
+src/components/bonds/BondMetrics.tsx(46,8): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: { component: ElementType<any, keyof IntrinsicElements>; } & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<...> & Omit<...>): Element | null', gave the following error.
+    Property 'component' is missing in type '{ children: Element; item: true; xs: number; sm: number; md: number; }' but required in type '{ component: ElementType<any, keyof IntrinsicElements>; }'.
+  Overload 2 of 2, '(props: DefaultComponentProps<GridTypeMap<{}, "div">>): Element | null', gave the following error.
+    Type '{ children: Element; item: true; xs: number; sm: number; md: number; }' is not assignable to type 'IntrinsicAttributes & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<Theme> & Omit<...>'.
+      Property 'item' does not exist on type 'IntrinsicAttributes & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<Theme> & Omit<...>'.
+src/components/bonds/BondMetrics.tsx(63,8): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: { component: ElementType<any, keyof IntrinsicElements>; } & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<...> & Omit<...>): Element | null', gave the following error.
+    Property 'component' is missing in type '{ children: Element; item: true; xs: number; sm: number; md: number; }' but required in type '{ component: ElementType<any, keyof IntrinsicElements>; }'.
+  Overload 2 of 2, '(props: DefaultComponentProps<GridTypeMap<{}, "div">>): Element | null', gave the following error.
+    Type '{ children: Element; item: true; xs: number; sm: number; md: number; }' is not assignable to type 'IntrinsicAttributes & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<Theme> & Omit<...>'.
+      Property 'item' does not exist on type 'IntrinsicAttributes & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<Theme> & Omit<...>'.
+src/components/bonds/BondMetrics.tsx(80,8): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: { component: ElementType<any, keyof IntrinsicElements>; } & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<...> & Omit<...>): Element | null', gave the following error.
+    Property 'component' is missing in type '{ children: Element; item: true; xs: number; sm: number; md: number; }' but required in type '{ component: ElementType<any, keyof IntrinsicElements>; }'.
+  Overload 2 of 2, '(props: DefaultComponentProps<GridTypeMap<{}, "div">>): Element | null', gave the following error.
+    Type '{ children: Element; item: true; xs: number; sm: number; md: number; }' is not assignable to type 'IntrinsicAttributes & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<Theme> & Omit<...>'.
+      Property 'item' does not exist on type 'IntrinsicAttributes & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<Theme> & Omit<...>'.
+src/components/bonds/BondsTable.tsx(8,34): error TS6133: 'Button' is declared but its value is never read.
+src/components/bonds/BondsTable.tsx(407,9): error TS2322: Type '(ColDef<any, any> | { field: string; headerName: string; checkboxSelection: true; headerCheckboxSelection: false; width: number; pinned: "left"; sortable: false; filter: boolean; ... 8 more ...; suppressSizeToFit?: undefined; } | { ...; })[]' is not assignable to type 'ColDef<any, any>[]'.
+  Type 'ColDef<any, any> | { field: string; headerName: string; checkboxSelection: true; headerCheckboxSelection: false; width: number; pinned: "left"; sortable: false; filter: boolean; ... 8 more ...; suppressSizeToFit?: undefined; } | { ...; }' is not assignable to type 'ColDef<any, any>'.
+    Type '{ field: string; headerName: string; checkboxSelection: true; headerCheckboxSelection: false; width: number; pinned: "left"; sortable: false; filter: boolean; suppressMenu: boolean; cellStyle: { ...; }; ... 6 more ...; suppressSizeToFit?: undefined; }' is not assignable to type 'ColDef<any, any>'.
+      Types of property 'cellStyle' are incompatible.
+        Type '{ textAlign: string; display?: undefined; alignItems?: undefined; justifyContent?: undefined; }' is not assignable to type 'CellStyle | CellStyleFunc<any, any, any> | undefined'.
+          Type '{ textAlign: string; display?: undefined; alignItems?: undefined; justifyContent?: undefined; }' is not assignable to type 'CellStyle'.
+            Property 'display' is incompatible with index signature.
+              Type 'undefined' is not assignable to type 'string | number'.
+src/components/bonds/BondsTable.tsx(666,9): error TS6133: 'addToPortfolioRenderer' is declared but its value is never read.
+src/components/bonds/BondsTable.tsx(711,15): error TS2339: Property 'column' does not exist on type 'RowClickedEvent<any, any>'.
+src/components/bonds/BondsTable.tsx(1451,13): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: AgGridReactProps<BondListItem>): AgGridReact<BondListItem>', gave the following error.
+    Type '{ ref: RefObject<AgGridReact<BondListItem> | null>; rowData: BondListItem[]; columnDefs: ColDef<any, any>[]; defaultColDef: ColDef<...>; ... 19 more ...; suppressHeaderTooltips: boolean; }' is not assignable to type 'IntrinsicAttributes & IntrinsicClassAttributes<AgGridReact<BondListItem>> & Readonly<AgGridReactProps<BondListItem>>'.
+      Property 'suppressRowAutoHeight' does not exist on type 'IntrinsicAttributes & IntrinsicClassAttributes<AgGridReact<BondListItem>> & Readonly<AgGridReactProps<BondListItem>>'.
+  Overload 2 of 2, '(props: AgGridReactProps<BondListItem>, context: any): AgGridReact<BondListItem>', gave the following error.
+    Type '{ ref: RefObject<AgGridReact<BondListItem> | null>; rowData: BondListItem[]; columnDefs: ColDef<any, any>[]; defaultColDef: ColDef<...>; ... 19 more ...; suppressHeaderTooltips: boolean; }' is not assignable to type 'IntrinsicAttributes & IntrinsicClassAttributes<AgGridReact<BondListItem>> & Readonly<AgGridReactProps<BondListItem>>'.
+      Property 'suppressRowAutoHeight' does not exist on type 'IntrinsicAttributes & IntrinsicClassAttributes<AgGridReact<BondListItem>> & Readonly<AgGridReactProps<BondListItem>>'.
+src/components/bonds/PremiumBondCard.tsx(19,45): error TS6196: 'BondFieldValue' is declared but never used.
+src/components/bonds/PremiumBondCard.tsx(125,9): error TS6133: 'issueSizePlaced' is declared but its value is never read.
+src/components/bonds/PremiumBondCard.tsx(128,9): error TS6133: 'issueSize' is declared but its value is never read.
+src/components/bonds/PremiumBondCard.tsx(129,9): error TS6133: 'listLevel' is declared but its value is never read.
+src/components/bonds/PremiumBondCard.tsx(131,9): error TS6133: 'secType' is declared but its value is never read.
+src/components/bonds/PremiumBondCard.tsx(187,9): error TS6133: 'formatBondType' is declared but its value is never read.
+src/components/bonds/PremiumBondCard.tsx(300,10): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: { component: ElementType<any, keyof IntrinsicElements>; } & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<...> & Omit<...>): Element | null', gave the following error.
+    Property 'component' is missing in type '{ children: Element; item: true; xs: number; }' but required in type '{ component: ElementType<any, keyof IntrinsicElements>; }'.
+  Overload 2 of 2, '(props: DefaultComponentProps<GridTypeMap<{}, "div">>): Element | null', gave the following error.
+    Type '{ children: Element; item: true; xs: number; }' is not assignable to type 'IntrinsicAttributes & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<Theme> & Omit<...>'.
+      Property 'item' does not exist on type 'IntrinsicAttributes & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<Theme> & Omit<...>'.
+src/components/bonds/PremiumBondCard.tsx(320,10): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: { component: ElementType<any, keyof IntrinsicElements>; } & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<...> & Omit<...>): Element | null', gave the following error.
+    Property 'component' is missing in type '{ children: Element; item: true; xs: number; }' but required in type '{ component: ElementType<any, keyof IntrinsicElements>; }'.
+  Overload 2 of 2, '(props: DefaultComponentProps<GridTypeMap<{}, "div">>): Element | null', gave the following error.
+    Type '{ children: Element; item: true; xs: number; }' is not assignable to type 'IntrinsicAttributes & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<Theme> & Omit<...>'.
+      Property 'item' does not exist on type 'IntrinsicAttributes & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<Theme> & Omit<...>'.
+src/components/bonds/PremiumBondCard.tsx(340,10): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: { component: ElementType<any, keyof IntrinsicElements>; } & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<...> & Omit<...>): Element | null', gave the following error.
+    Property 'component' is missing in type '{ children: Element; item: true; xs: number; }' but required in type '{ component: ElementType<any, keyof IntrinsicElements>; }'.
+  Overload 2 of 2, '(props: DefaultComponentProps<GridTypeMap<{}, "div">>): Element | null', gave the following error.
+    Type '{ children: Element; item: true; xs: number; }' is not assignable to type 'IntrinsicAttributes & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<Theme> & Omit<...>'.
+      Property 'item' does not exist on type 'IntrinsicAttributes & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<Theme> & Omit<...>'.
+src/components/bonds/PremiumBondCard.tsx(360,10): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: { component: ElementType<any, keyof IntrinsicElements>; } & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<...> & Omit<...>): Element | null', gave the following error.
+    Property 'component' is missing in type '{ children: Element; item: true; xs: number; }' but required in type '{ component: ElementType<any, keyof IntrinsicElements>; }'.
+  Overload 2 of 2, '(props: DefaultComponentProps<GridTypeMap<{}, "div">>): Element | null', gave the following error.
+    Type '{ children: Element; item: true; xs: number; }' is not assignable to type 'IntrinsicAttributes & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<Theme> & Omit<...>'.
+      Property 'item' does not exist on type 'IntrinsicAttributes & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<Theme> & Omit<...>'.
+src/components/bonds/PremiumBondCard.tsx(380,10): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: { component: ElementType<any, keyof IntrinsicElements>; } & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<...> & Omit<...>): Element | null', gave the following error.
+    Property 'component' is missing in type '{ children: Element; item: true; xs: number; }' but required in type '{ component: ElementType<any, keyof IntrinsicElements>; }'.
+  Overload 2 of 2, '(props: DefaultComponentProps<GridTypeMap<{}, "div">>): Element | null', gave the following error.
+    Type '{ children: Element; item: true; xs: number; }' is not assignable to type 'IntrinsicAttributes & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<Theme> & Omit<...>'.
+      Property 'item' does not exist on type 'IntrinsicAttributes & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<Theme> & Omit<...>'.
+src/components/bonds/PremiumBondCard.tsx(400,10): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: { component: ElementType<any, keyof IntrinsicElements>; } & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<...> & Omit<...>): Element | null', gave the following error.
+    Property 'component' is missing in type '{ children: Element; item: true; xs: number; }' but required in type '{ component: ElementType<any, keyof IntrinsicElements>; }'.
+  Overload 2 of 2, '(props: DefaultComponentProps<GridTypeMap<{}, "div">>): Element | null', gave the following error.
+    Type '{ children: Element; item: true; xs: number; }' is not assignable to type 'IntrinsicAttributes & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<Theme> & Omit<...>'.
+      Property 'item' does not exist on type 'IntrinsicAttributes & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<Theme> & Omit<...>'.
+src/components/bonds/PremiumBondCard.tsx(435,12): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: { component: ElementType<any, keyof IntrinsicElements>; } & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<...> & Omit<...>): Element | null', gave the following error.
+    Property 'component' is missing in type '{ children: Element[]; item: true; xs: number; sx: { textAlign: "center"; }; }' but required in type '{ component: ElementType<any, keyof IntrinsicElements>; }'.
+  Overload 2 of 2, '(props: DefaultComponentProps<GridTypeMap<{}, "div">>): Element | null', gave the following error.
+    Type '{ children: Element[]; item: true; xs: number; sx: { textAlign: "center"; }; }' is not assignable to type 'IntrinsicAttributes & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<Theme> & Omit<...>'.
+      Property 'item' does not exist on type 'IntrinsicAttributes & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<Theme> & Omit<...>'.
+src/components/bonds/PremiumBondCard.tsx(443,12): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: { component: ElementType<any, keyof IntrinsicElements>; } & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<...> & Omit<...>): Element | null', gave the following error.
+    Property 'component' is missing in type '{ children: Element[]; item: true; xs: number; sx: { textAlign: "center"; }; }' but required in type '{ component: ElementType<any, keyof IntrinsicElements>; }'.
+  Overload 2 of 2, '(props: DefaultComponentProps<GridTypeMap<{}, "div">>): Element | null', gave the following error.
+    Type '{ children: Element[]; item: true; xs: number; sx: { textAlign: "center"; }; }' is not assignable to type 'IntrinsicAttributes & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<Theme> & Omit<...>'.
+      Property 'item' does not exist on type 'IntrinsicAttributes & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<Theme> & Omit<...>'.
+src/components/bonds/PremiumBondCard.tsx(451,12): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: { component: ElementType<any, keyof IntrinsicElements>; } & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<...> & Omit<...>): Element | null', gave the following error.
+    Property 'component' is missing in type '{ children: Element[]; item: true; xs: number; sx: { textAlign: "center"; }; }' but required in type '{ component: ElementType<any, keyof IntrinsicElements>; }'.
+  Overload 2 of 2, '(props: DefaultComponentProps<GridTypeMap<{}, "div">>): Element | null', gave the following error.
+    Type '{ children: Element[]; item: true; xs: number; sx: { textAlign: "center"; }; }' is not assignable to type 'IntrinsicAttributes & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<Theme> & Omit<...>'.
+      Property 'item' does not exist on type 'IntrinsicAttributes & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<Theme> & Omit<...>'.
+src/components/bonds/PremiumBondCard.tsx(459,12): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: { component: ElementType<any, keyof IntrinsicElements>; } & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<...> & Omit<...>): Element | null', gave the following error.
+    Property 'component' is missing in type '{ children: Element[]; item: true; xs: number; sx: { textAlign: "center"; }; }' but required in type '{ component: ElementType<any, keyof IntrinsicElements>; }'.
+  Overload 2 of 2, '(props: DefaultComponentProps<GridTypeMap<{}, "div">>): Element | null', gave the following error.
+    Type '{ children: Element[]; item: true; xs: number; sx: { textAlign: "center"; }; }' is not assignable to type 'IntrinsicAttributes & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<Theme> & Omit<...>'.
+      Property 'item' does not exist on type 'IntrinsicAttributes & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<Theme> & Omit<...>'.
+src/components/bonds/PremiumBondCard.tsx(467,12): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: { component: ElementType<any, keyof IntrinsicElements>; } & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<...> & Omit<...>): Element | null', gave the following error.
+    Property 'component' is missing in type '{ children: Element[]; item: true; xs: number; sx: { textAlign: "center"; }; }' but required in type '{ component: ElementType<any, keyof IntrinsicElements>; }'.
+  Overload 2 of 2, '(props: DefaultComponentProps<GridTypeMap<{}, "div">>): Element | null', gave the following error.
+    Type '{ children: Element[]; item: true; xs: number; sx: { textAlign: "center"; }; }' is not assignable to type 'IntrinsicAttributes & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<Theme> & Omit<...>'.
+      Property 'item' does not exist on type 'IntrinsicAttributes & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<Theme> & Omit<...>'.
+src/components/bonds/PremiumBondCard.tsx(476,14): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: { component: ElementType<any, keyof IntrinsicElements>; } & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<...> & Omit<...>): Element | null', gave the following error.
+    Property 'component' is missing in type '{ children: Element; item: true; xs: number; }' but required in type '{ component: ElementType<any, keyof IntrinsicElements>; }'.
+  Overload 2 of 2, '(props: DefaultComponentProps<GridTypeMap<{}, "div">>): Element | null', gave the following error.
+    Type '{ children: Element; item: true; xs: number; }' is not assignable to type 'IntrinsicAttributes & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<Theme> & Omit<...>'.
+      Property 'item' does not exist on type 'IntrinsicAttributes & GridBaseProps & { sx?: SxProps<Theme> | undefined; } & SystemProps<Theme> & Omit<...>'.
+src/components/common/ErrorBoundary.tsx(1,8): error TS6133: 'React' is declared but its value is never read.
+src/components/common/ErrorBoundary.tsx(1,28): error TS1484: 'ErrorInfo' is a type and must be imported using a type-only import when 'verbatimModuleSyntax' is enabled.
+src/components/common/ErrorBoundary.tsx(1,39): error TS1484: 'ReactNode' is a type and must be imported using a type-only import when 'verbatimModuleSyntax' is enabled.
+src/components/common/ErrorBoundary.tsx(85,14): error TS2591: Cannot find name 'process'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/components/common/RefreshDataDialog.tsx(130,37): error TS2322: Type '{ size: string; }' is not assignable to type 'IntrinsicAttributes & LinearProgressProps'.
+  Property 'size' does not exist on type 'IntrinsicAttributes & LinearProgressProps'.
+src/components/filters/BondTypeFilter.tsx(2,10): error TS6133: 'Box' is declared but its value is never read.
+src/components/filters/CurrencyFilter.tsx(2,10): error TS6133: 'Box' is declared but its value is never read.
+src/components/filters/CurrencyFilter.tsx(2,46): error TS6133: 'Typography' is declared but its value is never read.
+src/components/filters/ListLevelFilter.tsx(2,10): error TS6133: 'Box' is declared but its value is never read.
+src/components/filters/ListLevelFilter.tsx(2,46): error TS6133: 'Typography' is declared but its value is never read.
+src/components/filters/MaturityDateFilter.tsx(2,26): error TS6133: 'Typography' is declared but its value is never read.
+src/components/forecast/ForecastTable.tsx(358,19): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: AgGridReactProps<any>): AgGridReact<any>', gave the following error.
+    Type '{ rowData: Record<string, any>[]; columnDefs: ColDef<any, any>[]; defaultColDef: ColDef<any, any>; headerHeight: number; animateRows: true; domLayout: "normal"; style: { ...; }; className: string; }' is not assignable to type 'IntrinsicAttributes & IntrinsicClassAttributes<AgGridReact<any>> & Readonly<AgGridReactProps<any>>'.
+      Property 'style' does not exist on type 'IntrinsicAttributes & IntrinsicClassAttributes<AgGridReact<any>> & Readonly<AgGridReactProps<any>>'.
+  Overload 2 of 2, '(props: AgGridReactProps<any>, context: any): AgGridReact<any>', gave the following error.
+    Type '{ rowData: Record<string, any>[]; columnDefs: ColDef<any, any>[]; defaultColDef: ColDef<any, any>; headerHeight: number; animateRows: true; domLayout: "normal"; style: { ...; }; className: string; }' is not assignable to type 'IntrinsicAttributes & IntrinsicClassAttributes<AgGridReact<any>> & Readonly<AgGridReactProps<any>>'.
+      Property 'style' does not exist on type 'IntrinsicAttributes & IntrinsicClassAttributes<AgGridReact<any>> & Readonly<AgGridReactProps<any>>'.
+src/components/forecast/ForecastTable.tsx(379,19): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: AgGridReactProps<any>): AgGridReact<any>', gave the following error.
+    Type '{ rowData: Record<string, any>[]; columnDefs: ColDef<any, any>[]; defaultColDef: ColDef<any, any>; headerHeight: number; animateRows: true; domLayout: "normal"; style: { ...; }; className: string; }' is not assignable to type 'IntrinsicAttributes & IntrinsicClassAttributes<AgGridReact<any>> & Readonly<AgGridReactProps<any>>'.
+      Property 'style' does not exist on type 'IntrinsicAttributes & IntrinsicClassAttributes<AgGridReact<any>> & Readonly<AgGridReactProps<any>>'.
+  Overload 2 of 2, '(props: AgGridReactProps<any>, context: any): AgGridReact<any>', gave the following error.
+    Type '{ rowData: Record<string, any>[]; columnDefs: ColDef<any, any>[]; defaultColDef: ColDef<any, any>; headerHeight: number; animateRows: true; domLayout: "normal"; style: { ...; }; className: string; }' is not assignable to type 'IntrinsicAttributes & IntrinsicClassAttributes<AgGridReact<any>> & Readonly<AgGridReactProps<any>>'.
+      Property 'style' does not exist on type 'IntrinsicAttributes & IntrinsicClassAttributes<AgGridReact<any>> & Readonly<AgGridReactProps<any>>'.
+src/components/llm/AnalysisParamsDialog.tsx(8,3): error TS6133: 'TextField' is declared but its value is never read.
+src/components/ui/badge.tsx(2,40): error TS2307: Cannot find module 'class-variance-authority' or its corresponding type declarations.
+src/components/ui/badge.tsx(4,20): error TS2307: Cannot find module '@/lib/utils' or its corresponding type declarations.
+src/components/ui/badge.tsx(30,29): error TS2339: Property 'variant' does not exist on type 'BadgeProps'.
+src/components/ui/button.tsx(2,22): error TS2307: Cannot find module '@radix-ui/react-slot' or its corresponding type declarations.
+src/components/ui/button.tsx(3,40): error TS2307: Cannot find module 'class-variance-authority' or its corresponding type declarations.
+src/components/ui/button.tsx(5,20): error TS2307: Cannot find module '@/lib/utils' or its corresponding type declarations.
+src/components/ui/button.tsx(44,17): error TS2339: Property 'variant' does not exist on type 'ButtonProps'.
+src/components/ui/button.tsx(44,26): error TS2339: Property 'size' does not exist on type 'ButtonProps'.
+src/components/ui/card.tsx(3,20): error TS2307: Cannot find module '@/lib/utils' or its corresponding type declarations.
+src/components/ui/input.tsx(3,20): error TS2307: Cannot find module '@/lib/utils' or its corresponding type declarations.
+src/components/ui/table.tsx(3,20): error TS2307: Cannot find module '@/lib/utils' or its corresponding type declarations.
+src/components/ui/tabs.tsx(2,32): error TS2307: Cannot find module '@radix-ui/react-tabs' or its corresponding type declarations.
+src/components/ui/tabs.tsx(4,20): error TS2307: Cannot find module '@/lib/utils' or its corresponding type declarations.
+src/components/zerocupon/ZerocuponTable.tsx(306,17): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: AgGridReactProps<any>): AgGridReact<any>', gave the following error.
+    Type '{ rowData: ZerocuponRecord[]; columnDefs: ColDef<any, any>[]; defaultColDef: ColDef<any, any>; animateRows: true; rowSelection: "multiple"; suppressRowClickSelection: true; ... 5 more ...; className: string; }' is not assignable to type 'IntrinsicAttributes & IntrinsicClassAttributes<AgGridReact<any>> & Readonly<AgGridReactProps<any>>'.
+      Property 'style' does not exist on type 'IntrinsicAttributes & IntrinsicClassAttributes<AgGridReact<any>> & Readonly<AgGridReactProps<any>>'.
+  Overload 2 of 2, '(props: AgGridReactProps<any>, context: any): AgGridReact<any>', gave the following error.
+    Type '{ rowData: ZerocuponRecord[]; columnDefs: ColDef<any, any>[]; defaultColDef: ColDef<any, any>; animateRows: true; rowSelection: "multiple"; suppressRowClickSelection: true; ... 5 more ...; className: string; }' is not assignable to type 'IntrinsicAttributes & IntrinsicClassAttributes<AgGridReact<any>> & Readonly<AgGridReactProps<any>>'.
+      Property 'style' does not exist on type 'IntrinsicAttributes & IntrinsicClassAttributes<AgGridReact<any>> & Readonly<AgGridReactProps<any>>'.
+src/main.tsx(21,5): error TS2591: Cannot find name 'process'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/pages/HomePage.tsx(17,34): error TS6133: 'RefreshTask' is declared but its value is never read.
+src/pages/HomePage.tsx(49,10): error TS6133: 'selectedLLMModel' is declared but its value is never read.
+src/stores/filtersStore.ts(83,34): error TS2345: Argument of type '(state: FiltersState) => { filters: { skip: string | number | string[] | number[] | null; couponMin: number | null; couponMax: number | null; yieldMin: number | null; yieldMax: number | null; ... 11 more ...; limit: number; }; }' is not assignable to parameter of type 'FiltersState | Partial<FiltersState> | ((state: FiltersState) => FiltersState | Partial<FiltersState>)'.
+  Type '(state: FiltersState) => { filters: { skip: string | number | string[] | number[] | null; couponMin: number | null; couponMax: number | null; yieldMin: number | null; yieldMax: number | null; ... 11 more ...; limit: number; }; }' is not assignable to type '(state: FiltersState) => FiltersState | Partial<FiltersState>'.
+    Type '{ filters: { skip: string | number | string[] | number[] | null; couponMin: number | null; couponMax: number | null; yieldMin: number | null; yieldMax: number | null; couponYieldMin: number | null; ... 10 more ...; limit: number; }; }' is not assignable to type 'FiltersState | Partial<FiltersState>'.
+      Type '{ filters: { skip: string | number | string[] | number[] | null; couponMin: number | null; couponMax: number | null; yieldMin: number | null; yieldMax: number | null; couponYieldMin: number | null; ... 10 more ...; limit: number; }; }' is not assignable to type 'Partial<FiltersState>'.
+        The types of 'filters.skip' are incompatible between these types.
+          Type 'string | number | string[] | number[] | null' is not assignable to type 'number'.
+            Type 'null' is not assignable to type 'number'.
+src/types/api.ts(5,10): error TS1484: 'BondListItem' is a type and must be imported using a type-only import when 'verbatimModuleSyntax' is enabled.
+src/utils/bondExport.ts(3,15): error TS6196: 'BondDetail' is declared but never used.
+src/utils/bondExport.ts(6,51): error TS6133: 'formatBondStatus' is declared but its value is never read.
+src/utils/bondExport.ts(6,69): error TS6133: 'formatTradingStatus' is declared but its value is never read.
+src/utils/bondExport.ts(130,9): error TS6133: 'fieldDescriptions' is declared but its value is never read.
+src/utils/bondExport.ts(150,41): error TS2339: Property 'coupon_type' does not exist on type 'CouponsListResponse | { coupons: Coupon[]; }'.
+  Property 'coupon_type' does not exist on type '{ coupons: Coupon[]; }'.
+src/utils/llmDataExport.ts(131,9): error TS6133: 'fieldDescriptions' is declared but its value is never read.
+src/utils/portfolioExport.ts(1,15): error TS6196: 'BondListItem' is declared but never used.
+src/utils/portfolioImport.ts(1,15): error TS6196: 'BondListItem' is declared but never used.
+src/utils/portfolioImport.ts(227,5): error TS2353: Object literal may only specify known properties, and 'status' does not exist in type 'BondFilters'.
+vite.config.ts(21,48): error TS6133: 'res' is declared but its value is never read.
+vite.config.ts(36,59): error TS2339: Property 'code' does not exist on type 'Error'.
+vite.config.ts(45,48): error TS6133: 'res' is declared but its value is never read.
+vite.config.ts(51,17): error TS18048: 'proxyRes.statusCode' is possibly 'undefined'.

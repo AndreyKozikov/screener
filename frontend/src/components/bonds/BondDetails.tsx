@@ -10,7 +10,6 @@ import {
   Paper,
   Stack,
   Tooltip,
-  Alert,
   Tabs,
   Tab,
   tabsClasses,
@@ -21,15 +20,13 @@ import {
 import CloseIcon from '@mui/icons-material/Close';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
-import { useUiStore } from '../../stores/uiStore';
 import { fetchBondDetail, fetchBondCoupons } from '../../api/bonds';
-
-const { triggerDataRefresh } = useUiStore.getState();
 import { fetchColumnMapping, fetchDescriptions } from '../../api/metadata';
 import type { ColumnMapping } from '../../types/api';
 import type { DescriptionsResponse } from '../../api/metadata';
 import type { BondDetail as BondDetailType, BondFieldValue } from '../../types/bond';
 import type { Coupon } from '../../types/coupon';
+import { useUiStore } from '../../stores/uiStore';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { ErrorMessage } from '../common/ErrorMessage';
 import { CouponsTable } from './CouponsTable';
@@ -39,7 +36,6 @@ import {
   formatNumber,
   formatPercent,
   formatBondStatus,
-  formatTradingStatus,
 } from '../../utils/formatters';
 
 type FieldDescriptionMap = Record<string, string>;
@@ -161,7 +157,6 @@ export const BondDetails: React.FC = () => {
   // Track previous coupons count to detect when new data is loaded
   const prevCouponsCountRef = useRef(0);
 
-  const collator = useMemo(() => new Intl.Collator('ru-RU'), []);
   const isOpen = Boolean(selectedBondId);
 
   useEffect(() => {
@@ -422,65 +417,65 @@ export const BondDetails: React.FC = () => {
     );
   };
 
-  // Get all data fields
-  const getAllFields = useMemo(() => {
-    if (!bondDetail) {
-      return {};
-    }
-
-    const excludedFields = new Set([
-      'IR', 'ICPI', 'BEI', 'BEICLOSE', 'CBR', 'CBRCLOSE', 'IRICPICLOSE',
-      'SYSTIME', 'UPDATETIME', 'TIME', 'TRADEMOMENT',
-      'BIDDEPTH', 'OFFERDEPTH',
-    ]);
-
-    const allFields: Record<string, BondFieldValue> = {};
-
-    if (bondDetail.securities) {
-      Object.entries(bondDetail.securities).forEach(([key, value]) => {
-        if (!excludedFields.has(key)) {
-          allFields[key] = value;
-        }
-      });
-    }
-
-    if (bondDetail.marketdata) {
-      Object.entries(bondDetail.marketdata).forEach(([key, value]) => {
-        if (!excludedFields.has(key)) {
-          allFields[key] = value;
-        }
-      });
-    }
-
-    if (bondDetail.marketdata_yields && bondDetail.marketdata_yields.length > 0) {
-      bondDetail.marketdata_yields.forEach((entry) => {
-        Object.entries(entry).forEach(([key, value]) => {
-          if (!excludedFields.has(key)) {
-            allFields[key] = value;
-          }
-        });
-      });
-    }
-
-    // Handle YIELDDATE vs BUYBACKDATE
-    const yieldDate = allFields['YIELDDATE'];
-    const buybackDate = allFields['BUYBACKDATE'];
-    const hasYieldDate = yieldDate != null && yieldDate !== '' && yieldDate !== undefined;
-    const hasBuybackDate = buybackDate != null && buybackDate !== '' && buybackDate !== undefined;
-
-    if (hasYieldDate && !hasBuybackDate) {
-      delete allFields['BUYBACKDATE'];
-    } else if (hasBuybackDate && !hasYieldDate) {
-      delete allFields['YIELDDATE'];
-    } else if (!hasYieldDate && !hasBuybackDate) {
-      delete allFields['YIELDDATE'];
-      delete allFields['BUYBACKDATE'];
-    } else if (hasYieldDate && hasBuybackDate) {
-      delete allFields['BUYBACKDATE'];
-    }
-
-    return allFields;
-  }, [bondDetail]);
+  // Get all data fields (for future use)
+  // const getAllFields = useMemo(() => {
+  //   if (!bondDetail) {
+  //     return {};
+  //   }
+  //
+  //   const excludedFields = new Set([
+  //     'IR', 'ICPI', 'BEI', 'BEICLOSE', 'CBR', 'CBRCLOSE', 'IRICPICLOSE',
+  //     'SYSTIME', 'UPDATETIME', 'TIME', 'TRADEMOMENT',
+  //     'BIDDEPTH', 'OFFERDEPTH',
+  //   ]);
+  //
+  //   const allFields: Record<string, BondFieldValue> = {};
+  //
+  //   if (bondDetail.securities) {
+  //     Object.entries(bondDetail.securities).forEach(([key, value]) => {
+  //       if (!excludedFields.has(key)) {
+  //         allFields[key] = value;
+  //       }
+  //     });
+  //   }
+  //
+  //   if (bondDetail.marketdata) {
+  //     Object.entries(bondDetail.marketdata).forEach(([key, value]) => {
+  //       if (!excludedFields.has(key)) {
+  //         allFields[key] = value;
+  //       }
+  //     });
+  //   }
+  //
+  //   if (bondDetail.marketdata_yields && bondDetail.marketdata_yields.length > 0) {
+  //     bondDetail.marketdata_yields.forEach((entry) => {
+  //       Object.entries(entry).forEach(([key, value]) => {
+  //         if (!excludedFields.has(key)) {
+  //           allFields[key] = value;
+  //         }
+  //       });
+  //     });
+  //   }
+  //
+  //   // Handle YIELDDATE vs BUYBACKDATE
+  //   const yieldDate = allFields['YIELDDATE'];
+  //   const buybackDate = allFields['BUYBACKDATE'];
+  //   const hasYieldDate = yieldDate != null && yieldDate !== '' && yieldDate !== undefined;
+  //   const hasBuybackDate = buybackDate != null && buybackDate !== '' && buybackDate !== undefined;
+  //
+  //   if (hasYieldDate && !hasBuybackDate) {
+  //     delete allFields['BUYBACKDATE'];
+  //   } else if (hasBuybackDate && !hasYieldDate) {
+  //     delete allFields['YIELDDATE'];
+  //   } else if (!hasYieldDate && !hasBuybackDate) {
+  //     delete allFields['YIELDDATE'];
+  //     delete allFields['BUYBACKDATE'];
+  //   } else if (hasYieldDate && hasBuybackDate) {
+  //     delete allFields['BUYBACKDATE'];
+  //   }
+  //
+  //   return allFields;
+  // }, [bondDetail]);
 
   const securities = bondDetail?.securities;
   const market = bondDetail?.marketdata;
@@ -605,7 +600,7 @@ export const BondDetails: React.FC = () => {
 
               {/* 3. Ключевые показатели (выделенные) */}
               <Grid container spacing={2}>
-                <Grid item xs={6} sm={3}>
+                <Grid size={{ xs: 6, sm: 3 }}>
                   <Typography variant="caption" color="text.secondary" display="block">
                     Цена
                   </Typography>
@@ -613,7 +608,7 @@ export const BondDetails: React.FC = () => {
                     {keyMetrics?.price ? formatFieldValue('PRICE', keyMetrics.price) : '—'}
                   </Typography>
                 </Grid>
-                <Grid item xs={6} sm={3}>
+                <Grid size={{ xs: 6, sm: 3 }}>
                   <Typography variant="caption" color="text.secondary" display="block">
                     Доходность к погашению
                   </Typography>
@@ -621,7 +616,7 @@ export const BondDetails: React.FC = () => {
                     {keyMetrics?.yield ? formatFieldValue('YIELD', keyMetrics.yield) : '—'}
                   </Typography>
                 </Grid>
-                <Grid item xs={6} sm={3}>
+                <Grid size={{ xs: 6, sm: 3 }}>
                   <Typography variant="caption" color="text.secondary" display="block">
                     НКД
                   </Typography>
@@ -629,7 +624,7 @@ export const BondDetails: React.FC = () => {
                     {keyMetrics?.accruedInt ? formatFieldValue('ACCRUEDINT', keyMetrics.accruedInt) : '—'}
                   </Typography>
                 </Grid>
-                <Grid item xs={6} sm={3}>
+                <Grid size={{ xs: 6, sm: 3 }}>
                   <Typography variant="caption" color="text.secondary" display="block">
                     Дата погашения
                   </Typography>

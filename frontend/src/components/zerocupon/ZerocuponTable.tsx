@@ -303,7 +303,6 @@ export const ZerocuponTable: React.FC = () => {
                 paginationPageSize={50}
                 paginationPageSizeSelector={[25, 50, 100, 200]}
                 domLayout="normal"
-                style={{ width: '100%', height: '100%' }}
                 className="ag-theme-material"
               />
             </Box>

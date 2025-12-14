@@ -1,4 +1,5 @@
-import React, { Component, ErrorInfo, ReactNode } from 'react';
+import React, { Component } from 'react';
+import type { ErrorInfo, ReactNode } from 'react';
 import { Box, Typography, Button, Alert, AlertTitle } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
 
@@ -82,7 +83,7 @@ export class ErrorBoundary extends Component<Props, State> {
             <Typography variant="body2" sx={{ mb: 2 }}>
               {this.state.error?.message || 'Неизвестная ошибка'}
             </Typography>
-            {process.env.NODE_ENV === 'development' && this.state.errorInfo && (
+            {import.meta.env.DEV && this.state.errorInfo && (
               <Box sx={{ mt: 2 }}>
                 <Typography variant="caption" component="pre" sx={{ 
                   fontSize: '0.75rem', 

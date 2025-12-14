@@ -128,7 +128,7 @@ export const getBondsDataForLLM = async (secids: string[]): Promise<string> => {
     fetchDescriptions(),
   ]);
 
-  const fieldDescriptions = flattenDescriptions(descriptionsResponse);
+  // const fieldDescriptions = flattenDescriptions(descriptionsResponse);
 
   // Step 2: Load all bond details and coupons (all data loaded before processing)
   console.log(`[LLM Export] Loading bond details for ${secids.length} bonds...`);

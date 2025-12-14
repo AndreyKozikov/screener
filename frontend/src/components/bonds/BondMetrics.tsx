@@ -26,7 +26,7 @@ export const BondMetrics: React.FC = () => {
   return (
     <Grid container spacing={2}>
       {/* Total Bonds */}
-      <Grid item xs={12} sm={6} md={3}>
+      <Grid size={{ xs: 12, sm: 6, md: 3 }}>
         <Card>
           <CardContent>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
@@ -43,7 +43,7 @@ export const BondMetrics: React.FC = () => {
       </Grid>
 
       {/* Filtered Count */}
-      <Grid item xs={12} sm={6} md={3}>
+      <Grid size={{ xs: 12, sm: 6, md: 3 }}>
         <Card>
           <CardContent>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
@@ -60,7 +60,7 @@ export const BondMetrics: React.FC = () => {
       </Grid>
 
       {/* Average Coupon */}
-      <Grid item xs={12} sm={6} md={3}>
+      <Grid size={{ xs: 12, sm: 6, md: 3 }}>
         <Card>
           <CardContent>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
@@ -77,7 +77,7 @@ export const BondMetrics: React.FC = () => {
       </Grid>
 
       {/* Displayed */}
-      <Grid item xs={12} sm={6} md={3}>
+      <Grid size={{ xs: 12, sm: 6, md: 3 }}>
         <Card>
           <CardContent>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>

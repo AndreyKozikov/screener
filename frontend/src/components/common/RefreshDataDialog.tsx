@@ -127,7 +127,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                 />
                 {isTaskLoading && (
                   <Box sx={{ mt: 1, ml: 4 }}>
-                    <LinearProgress size="small" />
+                    <LinearProgress />
                   </Box>
                 )}
                 {isTaskSuccess && (

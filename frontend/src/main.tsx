@@ -18,7 +18,7 @@ root.render(
 );
 
 // Log errors that occur during rendering
-if (process.env.NODE_ENV === 'development') {
+if (import.meta.env.DEV) {
   window.addEventListener('error', (event) => {
     console.error('Global error:', event.error);
   });

@@ -16,7 +16,7 @@ import {
   SwapHoriz as SwapHorizIcon,
   Warning as WarningIcon,
 } from '@mui/icons-material';
-import type { BondDetail as BondDetailType, BondFieldValue } from '../../types/bond';
+import type { BondDetail as BondDetailType } from '../../types/bond';
 import { getEmitentBySecid, type EmitentInfo } from '../../api/emitent';
 import {
   formatDate,
@@ -122,13 +122,7 @@ export const PremiumBondCard: React.FC<PremiumBondCardProps> = ({ bondDetail, co
   const couponType = couponTypeProp ?? null;
 
   // Volume and issue
-  const issueSizePlaced = typeof securities?.ISSUESIZEPLACED === 'number' 
-    ? securities.ISSUESIZEPLACED 
-    : null;
-  const issueSize = typeof securities?.ISSUESIZE === 'number' ? securities.ISSUESIZE : null;
-  const listLevel = typeof securities?.LISTLEVEL === 'number' ? securities.LISTLEVEL : null;
   const faceUnit = typeof securities?.FACEUNIT === 'string' ? securities.FACEUNIT : null;
-  const secType = typeof securities?.SECTYPE === 'string' ? securities.SECTYPE : null;
 
   // Risk indicators
   const offerDate = typeof securities?.OFFERDATE === 'string' ? securities.OFFERDATE : null;
@@ -183,13 +177,13 @@ export const PremiumBondCard: React.FC<PremiumBondCardProps> = ({ bondDetail, co
     return unit;
   };
 
-  // Format bond type
-  const formatBondType = (type: string | null): string => {
-    if (!type) return '—';
-    // SECTYPE 8 = биржевая облигация
-    if (type === '8') return 'Биржевая облигация';
-    return type;
-  };
+  // Format bond type (for future use)
+  // const formatBondType = (type: string | null): string => {
+  //   if (!type) return '—';
+  //   // SECTYPE 8 = биржевая облигация
+  //   if (type === '8') return 'Биржевая облигация';
+  //   return type;
+  // };
 
   // Format days remaining text
   const formatDaysRemaining = (days: number): string => {
@@ -297,7 +291,7 @@ export const PremiumBondCard: React.FC<PremiumBondCardProps> = ({ bondDetail, co
 
       {/* 2. Основной инфоблок с ключевыми метриками */}
       <Grid container spacing={2} sx={{ mb: 3 }}>
-        <Grid item xs={4}>
+        <Grid size={{ xs: 4 }}>
           <Card
             elevation={0}
             sx={{
@@ -317,7 +311,7 @@ export const PremiumBondCard: React.FC<PremiumBondCardProps> = ({ bondDetail, co
             </CardContent>
           </Card>
         </Grid>
-        <Grid item xs={4}>
+        <Grid size={{ xs: 4 }}>
           <Card
             elevation={0}
             sx={{
@@ -337,7 +331,7 @@ export const PremiumBondCard: React.FC<PremiumBondCardProps> = ({ bondDetail, co
             </CardContent>
           </Card>
         </Grid>
-        <Grid item xs={4}>
+        <Grid size={{ xs: 4 }}>
           <Card
             elevation={0}
             sx={{
@@ -357,7 +351,7 @@ export const PremiumBondCard: React.FC<PremiumBondCardProps> = ({ bondDetail, co
             </CardContent>
           </Card>
         </Grid>
-        <Grid item xs={4}>
+        <Grid size={{ xs: 4 }}>
           <Card
             elevation={0}
             sx={{
@@ -377,7 +371,7 @@ export const PremiumBondCard: React.FC<PremiumBondCardProps> = ({ bondDetail, co
             </CardContent>
           </Card>
         </Grid>
-        <Grid item xs={4}>
+        <Grid size={{ xs: 4 }}>
           <Card
             elevation={0}
             sx={{
@@ -397,7 +391,7 @@ export const PremiumBondCard: React.FC<PremiumBondCardProps> = ({ bondDetail, co
             </CardContent>
           </Card>
         </Grid>
-        <Grid item xs={4}>
+        <Grid size={{ xs: 4 }}>
           <Card
             elevation={0}
             sx={{
@@ -432,7 +426,7 @@ export const PremiumBondCard: React.FC<PremiumBondCardProps> = ({ bondDetail, co
       >
         <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
         <Grid container spacing={2}>
-          <Grid item xs={6} sx={{ textAlign: 'center' }}>
+          <Grid size={{ xs: 6 }} sx={{ textAlign: 'center' }}>
             <Typography variant="body2" color="text.secondary" gutterBottom>
               Купонная ставка
             </Typography>
@@ -440,7 +434,7 @@ export const PremiumBondCard: React.FC<PremiumBondCardProps> = ({ bondDetail, co
               {couponPercent !== null ? formatPercent(couponPercent, 2) : '—'}
             </Typography>
           </Grid>
-          <Grid item xs={6} sx={{ textAlign: 'center' }}>
+          <Grid size={{ xs: 6 }} sx={{ textAlign: 'center' }}>
             <Typography variant="body2" color="text.secondary" gutterBottom>
               Сумма купона
             </Typography>
@@ -448,7 +442,7 @@ export const PremiumBondCard: React.FC<PremiumBondCardProps> = ({ bondDetail, co
               {couponValue !== null ? `${formatNumber(couponValue, 2)} ${currencySymbol}` : '—'}
             </Typography>
           </Grid>
-          <Grid item xs={6} sx={{ textAlign: 'center' }}>
+          <Grid size={{ xs: 6 }} sx={{ textAlign: 'center' }}>
             <Typography variant="body2" color="text.secondary" gutterBottom>
               Ближайшая выплата
             </Typography>
@@ -456,7 +450,7 @@ export const PremiumBondCard: React.FC<PremiumBondCardProps> = ({ bondDetail, co
               {nextCoupon ? formatDate(nextCoupon) : '—'}
             </Typography>
           </Grid>
-          <Grid item xs={6} sx={{ textAlign: 'center' }}>
+          <Grid size={{ xs: 6 }} sx={{ textAlign: 'center' }}>
             <Typography variant="body2" color="text.secondary" gutterBottom>
               Периодичность
             </Typography>
@@ -464,7 +458,7 @@ export const PremiumBondCard: React.FC<PremiumBondCardProps> = ({ bondDetail, co
               {couponPeriod !== null ? `${couponPeriod} дней` : '—'}
             </Typography>
           </Grid>
-          <Grid item xs={6} sx={{ textAlign: 'center' }}>
+          <Grid size={{ xs: 6 }} sx={{ textAlign: 'center' }}>
             <Typography variant="body2" color="text.secondary" gutterBottom>
               Тип купона
             </Typography>
@@ -473,7 +467,7 @@ export const PremiumBondCard: React.FC<PremiumBondCardProps> = ({ bondDetail, co
             </Typography>
           </Grid>
           {couponProgress && (
-            <Grid item xs={12}>
+            <Grid size={{ xs: 12 }}>
               <Box sx={{ mt: 1 }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
                   <Typography variant="caption" color="text.secondary">

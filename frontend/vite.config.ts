@@ -18,7 +18,7 @@ export default defineConfig({
         // rewrite: (path) => path.replace(/^\/api/, '') - НЕ используем!
         configure: (proxy, options) => {
           // Устанавливаем правильный host header
-          proxy.on('proxyReq', (proxyReq, req, res) => {
+          proxy.on('proxyReq', (proxyReq, req) => {
             // Убеждаемся, что Host header установлен правильно
             proxyReq.setHeader('Host', 'localhost:8000');
             // Логируем для отладки
@@ -33,7 +33,10 @@ export default defineConfig({
           proxy.on('error', (err, req, res) => {
             console.error('[Vite Proxy] Error:', err.message);
             console.error('[Vite Proxy] Request URL:', req.url);
-            console.error('[Vite Proxy] Error code:', err.code);
+            const errorCode = (err as { code?: string }).code;
+            if (errorCode) {
+              console.error('[Vite Proxy] Error code:', errorCode);
+            }
             if (res && !res.headersSent) {
               res.writeHead(500, {
                 'Content-Type': 'text/plain',
@@ -42,14 +45,17 @@ export default defineConfig({
             }
           });
           
-          proxy.on('proxyRes', (proxyRes, req, res) => {
-            console.log('[Vite Proxy] Response:', proxyRes.statusCode, req.url);
-            if (proxyRes.statusCode === 307 || proxyRes.statusCode === 308) {
-              console.warn('[Vite Proxy] Redirect detected:', proxyRes.statusCode);
-              console.warn('[Vite Proxy] Location header:', proxyRes.headers.location);
-            }
-            if (proxyRes.statusCode >= 400) {
-              console.error('[Vite Proxy] Error response:', proxyRes.statusCode, req.url);
+          proxy.on('proxyRes', (proxyRes, req) => {
+            const statusCode = proxyRes.statusCode;
+            if (statusCode) {
+              console.log('[Vite Proxy] Response:', statusCode, req.url);
+              if (statusCode === 307 || statusCode === 308) {
+                console.warn('[Vite Proxy] Redirect detected:', statusCode);
+                console.warn('[Vite Proxy] Location header:', proxyRes.headers.location);
+              }
+              if (statusCode >= 400) {
+                console.error('[Vite Proxy] Error response:', statusCode, req.url);
+              }
             }
           });
         },

@@ -5,7 +5,7 @@ import { ModuleRegistry, AllCommunityModule } from 'ag-grid-community';
 import 'ag-grid-community/styles/ag-grid.css';
 import 'ag-grid-community/styles/ag-theme-material.css';
 import './ag-grid-tooltips.css';
-import { Box, Card, CardContent, Button, Tooltip, IconButton } from '@mui/material';
+import { Box, Card, CardContent, Tooltip, IconButton } from '@mui/material';
 import FilterAltIcon from '@mui/icons-material/FilterAlt';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import FullscreenIcon from '@mui/icons-material/Fullscreen';
@@ -465,7 +465,7 @@ export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ on
         headerComponent: tooltipText ? CustomHeaderWithTooltip : undefined,
         headerTooltip: tooltipText, // Оставляем для совместимости
         // Center align cell content by default (can be overridden in otherProps)
-        cellStyle: otherProps.cellStyle !== undefined ? otherProps.cellStyle : { textAlign: 'center' },
+        cellStyle: otherProps.cellStyle !== undefined ? otherProps.cellStyle : { textAlign: 'center' as const },
         ...otherProps,
       };
     };
@@ -481,13 +481,13 @@ export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ on
       sortable: false,
       filter: false,
       suppressMenu: true,
-      cellStyle: { textAlign: 'center' },
+      cellStyle: { textAlign: 'center' as const },
     },
     createColumnDef('SHORTNAME', 'Название', {
       minWidth: 120,
       pinned: 'left',
       cellRenderer: ShortNameRenderer,
-      cellStyle: { textAlign: 'left' }, // Left align for name column
+      cellStyle: { textAlign: 'left' as const }, // Left align for name column
       headerTooltip: getFieldDescription('SHORTNAME'),
       autoHeaderHeight: true,
     }),
@@ -527,7 +527,7 @@ export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ on
           </Box>
         );
       },
-      cellStyle: { textAlign: 'center' },
+      cellStyle: { textAlign: 'center' as const },
       headerTooltip: 'Рейтинг облигации от рейтинговых агентств',
       autoHeaderHeight: true,
       sortable: false,
@@ -643,7 +643,7 @@ export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ on
       suppressMenu: true,
       resizable: false, // Prevent column resizing to avoid layout shifts
       cellRenderer: AddToPortfolioRenderer,
-      cellStyle: { textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+      cellStyle: { textAlign: 'center' as const, display: 'flex', alignItems: 'center', justifyContent: 'center' },
       cellClass: 'portfolio-action-cell', // Add class for easier identification
       headerClass: 'ag-header-center',
       autoHeaderHeight: true,
@@ -663,7 +663,7 @@ export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ on
     }), []);
 
   // Stable reference to AddToPortfolioRenderer to prevent column redefinition
-  const addToPortfolioRenderer = useMemo(() => AddToPortfolioRenderer, []);
+  // const addToPortfolioRenderer = useMemo(() => AddToPortfolioRenderer, []);
 
   // Track if cell click was on portfolio column to prevent row click
   const portfolioCellClickedRef = useRef(false);
@@ -707,12 +707,7 @@ export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ on
       return;
     }
     
-    // Check 2: Column object indicates portfolio column
-    if (event.column?.getColId() === 'addToPortfolio') {
-      return;
-    }
-    
-    // Check 3: data-portfolio-cell attribute in click path
+    // Check 2: data-portfolio-cell attribute in click path
     if (target.closest('[data-portfolio-cell]')) {
       return;
     }
@@ -1448,7 +1443,6 @@ export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ on
             suppressRowClickSelection={true}
             headerHeight={headerHeight}
             rowHeight={38}
-            suppressRowAutoHeight={true}
             autoSizeStrategy={{
               type: 'fitGridWidth',
               defaultMinWidth: 80,

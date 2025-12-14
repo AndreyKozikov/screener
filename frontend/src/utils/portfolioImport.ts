@@ -1,4 +1,4 @@
-import type { BondListItem, PortfolioBond } from '../types/bond';
+import type { PortfolioBond } from '../types/bond';
 import { fetchBonds } from '../api/bonds';
 import type { BondsListResponse } from '../types/api';
 import type { PortfolioSecidFormat } from './portfolioExport';
@@ -224,7 +224,6 @@ const loadBondsBySecids = async (
     couponType: [],
     ratingMin: null,
     ratingMax: null,
-    status: [],
     tradingStatus: [],
     boardid: [],
     search: '',

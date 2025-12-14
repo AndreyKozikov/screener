@@ -149,6 +149,7 @@ cursor-memory-bank/
 memory_bank/
 .streamlit/
 .continue/
+DEPLOYMENT_GUIDE.md
 
 # IDE and Editor
 *.sublime-project
