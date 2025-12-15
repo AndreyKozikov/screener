@@ -16,6 +16,10 @@ import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import { InstructorPanel } from './InstructorPanel';
 import { SubordinatedBondsModal } from './SubordinatedBondsModal';
+import { DurationModal } from './DurationModal';
+import { CompareDotModal } from './CompareDotModal';
+import { LittleZSpreadModal } from './LittleZSpreadModal';
+import { RuoniaModal } from './RuoniaModal';
 
 interface StepContentProps {
   stepNumber: number;
@@ -56,6 +60,10 @@ export const StepContent: React.FC<StepContentProps> = ({
 }) => {
   const [showDetails, setShowDetails] = useState(false);
   const [isSubordinatedBondsModalOpen, setIsSubordinatedBondsModalOpen] = useState(false);
+  const [isDurationModalOpen, setIsDurationModalOpen] = useState(false);
+  const [isCompareDotModalOpen, setIsCompareDotModalOpen] = useState(false);
+  const [isLittleZSpreadModalOpen, setIsLittleZSpreadModalOpen] = useState(false);
+  const [isRuoniaModalOpen, setIsRuoniaModalOpen] = useState(false);
 
   /**
    * Обработка markdown текста: заменяем ссылки с modal: на span с обработчиком клика
@@ -85,6 +93,14 @@ export const StepContent: React.FC<StepContentProps> = ({
         const modalType = modalLink.getAttribute('data-modal-type');
         if (modalType === 'subordinated-bonds') {
           setIsSubordinatedBondsModalOpen(true);
+        } else if (modalType === 'duration') {
+          setIsDurationModalOpen(true);
+        } else if (modalType === 'comparedot') {
+          setIsCompareDotModalOpen(true);
+        } else if (modalType === 'littlezspread') {
+          setIsLittleZSpreadModalOpen(true);
+        } else if (modalType === 'ruonia') {
+          setIsRuoniaModalOpen(true);
         }
       }
     };
@@ -268,7 +284,7 @@ export const StepContent: React.FC<StepContentProps> = ({
                       <ReactMarkdown 
                         remarkPlugins={[remarkGfm]} 
                         rehypePlugins={[rehypeRaw]}
-                        components={markdownComponents('body2')}
+                        components={markdownComponents('body1')}
                       >
                         {processMarkdownForModals(methodology)}
                       </ReactMarkdown>
@@ -287,7 +303,7 @@ export const StepContent: React.FC<StepContentProps> = ({
                       <ReactMarkdown 
                         remarkPlugins={[remarkGfm]} 
                         rehypePlugins={[rehypeRaw]}
-                        components={markdownComponents('body2')}
+                        components={markdownComponents('body1')}
                       >
                         {processMarkdownForModals(practicalApplication)}
                       </ReactMarkdown>
@@ -304,6 +320,30 @@ export const StepContent: React.FC<StepContentProps> = ({
       <SubordinatedBondsModal
         open={isSubordinatedBondsModalOpen}
         onClose={() => setIsSubordinatedBondsModalOpen(false)}
+      />
+
+      {/* Модальное окно с описанием дюрации облигаций */}
+      <DurationModal
+        open={isDurationModalOpen}
+        onClose={() => setIsDurationModalOpen(false)}
+      />
+
+      {/* Модальное окно с описанием точки сравнения */}
+      <CompareDotModal
+        open={isCompareDotModalOpen}
+        onClose={() => setIsCompareDotModalOpen(false)}
+      />
+
+      {/* Модальное окно с описанием слишком маленького спреда */}
+      <LittleZSpreadModal
+        open={isLittleZSpreadModalOpen}
+        onClose={() => setIsLittleZSpreadModalOpen(false)}
+      />
+
+      {/* Модальное окно с описанием кривой RUONIA */}
+      <RuoniaModal
+        open={isRuoniaModalOpen}
+        onClose={() => setIsRuoniaModalOpen(false)}
       />
     </Box>
   );
