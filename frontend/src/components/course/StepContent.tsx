@@ -20,6 +20,7 @@ import { DurationModal } from './DurationModal';
 import { CompareDotModal } from './CompareDotModal';
 import { LittleZSpreadModal } from './LittleZSpreadModal';
 import { RuoniaModal } from './RuoniaModal';
+import { QuasiModal } from './QuasiModal';
 
 interface StepContentProps {
   stepNumber: number;
@@ -64,6 +65,7 @@ export const StepContent: React.FC<StepContentProps> = ({
   const [isCompareDotModalOpen, setIsCompareDotModalOpen] = useState(false);
   const [isLittleZSpreadModalOpen, setIsLittleZSpreadModalOpen] = useState(false);
   const [isRuoniaModalOpen, setIsRuoniaModalOpen] = useState(false);
+  const [isQuasiModalOpen, setIsQuasiModalOpen] = useState(false);
 
   /**
    * Обработка markdown текста: заменяем ссылки с modal: на span с обработчиком клика
@@ -101,6 +103,8 @@ export const StepContent: React.FC<StepContentProps> = ({
           setIsLittleZSpreadModalOpen(true);
         } else if (modalType === 'ruonia') {
           setIsRuoniaModalOpen(true);
+        } else if (modalType === 'quasi') {
+          setIsQuasiModalOpen(true);
         }
       }
     };
@@ -173,6 +177,81 @@ export const StepContent: React.FC<StepContentProps> = ({
         }}
       >
         {children}
+      </Box>
+    ),
+    table: ({ children }: any) => (
+      <Box
+        component="table"
+        sx={{
+          width: '100%',
+          borderCollapse: 'collapse',
+          mb: 2,
+          mt: 2,
+          border: 1,
+          borderColor: 'divider',
+          borderRadius: 1,
+          overflow: 'hidden',
+        }}
+      >
+        {children}
+      </Box>
+    ),
+    thead: ({ children }: any) => (
+      <Box component="thead" sx={{ bgcolor: 'action.hover' }}>
+        {children}
+      </Box>
+    ),
+    tbody: ({ children }: any) => (
+      <Box component="tbody">{children}</Box>
+    ),
+    tr: ({ children }: any) => (
+      <Box
+        component="tr"
+        sx={{
+          borderBottom: 1,
+          borderColor: 'divider',
+          '&:last-child': {
+            borderBottom: 0,
+          },
+        }}
+      >
+        {children}
+      </Box>
+    ),
+    th: ({ children }: any) => (
+      <Box
+        component="th"
+        sx={{
+          p: 1.5,
+          textAlign: 'left',
+          fontWeight: 600,
+          borderRight: 1,
+          borderColor: 'divider',
+          '&:last-child': {
+            borderRight: 0,
+          },
+        }}
+      >
+        <Typography variant={variant} component="span">
+          {children}
+        </Typography>
+      </Box>
+    ),
+    td: ({ children }: any) => (
+      <Box
+        component="td"
+        sx={{
+          p: 1.5,
+          borderRight: 1,
+          borderColor: 'divider',
+          '&:last-child': {
+            borderRight: 0,
+          },
+        }}
+      >
+        <Typography variant={variant} component="span" color="text.secondary">
+          {children}
+        </Typography>
       </Box>
     ),
   });
@@ -344,6 +423,12 @@ export const StepContent: React.FC<StepContentProps> = ({
       <RuoniaModal
         open={isRuoniaModalOpen}
         onClose={() => setIsRuoniaModalOpen(false)}
+      />
+
+      {/* Модальное окно с описанием квазисуверенных эмитентов */}
+      <QuasiModal
+        open={isQuasiModalOpen}
+        onClose={() => setIsQuasiModalOpen(false)}
       />
     </Box>
   );
