@@ -1,6 +1,7 @@
 import os
 import re
 import asyncio
+import math
 from pathlib import Path
 from datetime import date, datetime, timedelta
 from typing import List, Optional, Dict, Any
@@ -16,9 +17,9 @@ router = APIRouter(prefix="/api/zerocupon", tags=["zerocupon"])
 
 def _get_zerocupon_path() -> Path:
     """Get path to zerocupon.csv file."""
-    # Script is in backend/app/routers/, need to go up to project root
-    project_root = Path(__file__).parent.parent.parent.parent
-    csv_path = project_root / "zerocupon" / "zerocupon.csv"
+    # Script is in backend/app/routers/, data is in backend/app/data/
+    data_dir = Path(__file__).parent.parent / "data"
+    csv_path = data_dir / "zerocupon.csv"
     return csv_path
 
 
@@ -42,8 +43,33 @@ async def get_zerocupon_data(
         # Read CSV with semicolon separator
         df = pd.read_csv(csv_path, sep=";", encoding="utf-8-sig", decimal=".")
         
+        # Check if DataFrame is empty
+        if df.empty:
+            return {
+                "data": [],
+                "count": 0,
+                "date_from": date_from,
+                "date_to": date_to,
+            }
+        
+        # Check if "Дата" column exists
+        if "Дата" not in df.columns:
+            raise HTTPException(status_code=500, detail="CSV file missing 'Дата' column")
+        
         # Parse date column
         df["Дата"] = pd.to_datetime(df["Дата"], dayfirst=True, errors="coerce")
+        
+        # Remove rows with invalid dates
+        df = df[df["Дата"].notna()]
+        
+        # Check if DataFrame is empty after date parsing
+        if df.empty:
+            return {
+                "data": [],
+                "count": 0,
+                "date_from": date_from,
+                "date_to": date_to,
+            }
         
         # Convert all numeric columns (except Дата and Время) to float
         # This ensures proper numeric type handling
@@ -77,18 +103,47 @@ async def get_zerocupon_data(
             one_year_ago = datetime.now() - timedelta(days=365)
             df = df[df["Дата"] >= one_year_ago]
         
+        # Check if DataFrame is empty after date filtering
+        if df.empty:
+            return {
+                "data": [],
+                "count": 0,
+                "date_from": date_from,
+                "date_to": date_to,
+            }
+        
         # Filter out weekends (Saturday=5, Sunday=6)
         # Only keep weekdays (Monday=0 through Friday=4)
         df = df[df["Дата"].dt.weekday < 5]
         
+        # Check if DataFrame is empty after weekend filtering
+        if df.empty:
+            return {
+                "data": [],
+                "count": 0,
+                "date_from": date_from,
+                "date_to": date_to,
+            }
+        
         # Format date back to DD.MM.YYYY for response
         df["Дата"] = df["Дата"].dt.strftime("%d.%m.%Y")
         
-        # Replace NaN with None for proper JSON serialization
-        df = df.where(pd.notnull(df), None)
+        # Exclude 30 years column from display and calculations
+        columns_to_exclude = [col for col in df.columns if "30" in col and "лет" in col]
+        if columns_to_exclude:
+            df = df.drop(columns=columns_to_exclude)
         
         # Convert to records (list of dicts) - use orient='records' for proper JSON
         records = df.to_dict(orient="records")
+        
+        # Replace all NaN, NaT, and inf values with None for proper JSON serialization
+        for record in records:
+            for key, value in record.items():
+                if pd.isna(value):
+                    record[key] = None
+                elif isinstance(value, float):
+                    if math.isnan(value) or math.isinf(value):
+                        record[key] = None
         
         return {
             "data": records,
@@ -97,8 +152,14 @@ async def get_zerocupon_data(
             "date_to": date_to,
         }
     
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error reading zerocupon data: {str(e)}")
+        # Log the full error for debugging
+        import traceback
+        error_detail = f"Error reading zerocupon data: {str(e)}\n{traceback.format_exc()}"
+        raise HTTPException(status_code=500, detail=error_detail)
 
 
 @router.get("/download")
@@ -121,8 +182,23 @@ async def download_zerocupon_json(
         # Read CSV with semicolon separator
         df = pd.read_csv(csv_path, sep=";", encoding="utf-8-sig", decimal=".")
         
+        # Check if DataFrame is empty
+        if df.empty:
+            raise HTTPException(status_code=404, detail="CSV file is empty")
+        
+        # Check if "Дата" column exists
+        if "Дата" not in df.columns:
+            raise HTTPException(status_code=500, detail="CSV file missing 'Дата' column")
+        
         # Parse date column
         df["Дата"] = pd.to_datetime(df["Дата"], dayfirst=True, errors="coerce")
+        
+        # Remove rows with invalid dates
+        df = df[df["Дата"].notna()]
+        
+        # Check if DataFrame is empty after date parsing
+        if df.empty:
+            raise HTTPException(status_code=404, detail="No valid dates found in CSV file")
         
         # Convert all numeric columns (except Дата and Время) to float
         for col in df.columns:
@@ -153,12 +229,25 @@ async def download_zerocupon_json(
             one_year_ago = datetime.now() - timedelta(days=365)
             df = df[df["Дата"] >= one_year_ago]
         
+        # Check if DataFrame is empty after date filtering
+        if df.empty:
+            raise HTTPException(status_code=404, detail="No data found for the specified date range")
+        
         # Filter out weekends (Saturday=5, Sunday=6)
         # Only keep weekdays (Monday=0 through Friday=4)
         df = df[df["Дата"].dt.weekday < 5]
         
+        # Check if DataFrame is empty after weekend filtering
+        if df.empty:
+            raise HTTPException(status_code=404, detail="No weekday data found for the specified date range")
+        
         # Format date back to DD.MM.YYYY for display
         df["Дата"] = df["Дата"].dt.strftime("%d.%m.%Y")
+        
+        # Exclude 30 years column from display and calculations
+        columns_to_exclude = [col for col in df.columns if "30" in col and "лет" in col]
+        if columns_to_exclude:
+            df = df.drop(columns=columns_to_exclude)
         
         # Replace NaN with None for proper JSON serialization
         df = df.where(pd.notnull(df), None)
@@ -193,8 +282,16 @@ async def download_zerocupon_json(
                 period_years = extract_period_years(col)
                 if period_years is not None:
                     value = row[col]
+                    # Check for NaN, None, and inf values
                     if pd.notna(value) and value is not None:
-                        record["yield_curve"][str(period_years)] = float(value)
+                        try:
+                            float_value = float(value)
+                            # Check for NaN and inf
+                            if not (math.isnan(float_value) or math.isinf(float_value)):
+                                record["yield_curve"][str(period_years)] = float_value
+                        except (ValueError, TypeError):
+                            # Skip invalid values
+                            pass
             
             data_records.append(record)
         
@@ -251,8 +348,14 @@ async def download_zerocupon_json(
             },
         )
     
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error generating JSON download: {str(e)}")
+        # Log the full error for debugging
+        import traceback
+        error_detail = f"Error generating JSON download: {str(e)}\n{traceback.format_exc()}"
+        raise HTTPException(status_code=500, detail=error_detail)
 
 
 def _parse_jsonp_response(text: str) -> Dict[str, Any]:
@@ -339,6 +442,7 @@ def _add_data_to_csv(csv_path: Path, date_obj: datetime, time_str: str, yields_d
     Add new row to CSV file with yield curve data.
     """
     # Map period values to column names
+    # Note: 30 years period is excluded from calculations and display
     period_to_column = {
         0.25: "Срок 0.25 лет",
         0.50: "Срок 0.5 лет",
@@ -351,7 +455,7 @@ def _add_data_to_csv(csv_path: Path, date_obj: datetime, time_str: str, yields_d
         10.00: "Срок 10.0 лет",
         15.00: "Срок 15.0 лет",
         20.00: "Срок 20.0 лет",
-        30.00: "Срок 30.0 лет",
+        # 30.00: "Срок 30.0 лет",  # Excluded from calculations and display
     }
     
     # Create row data with all columns initialized

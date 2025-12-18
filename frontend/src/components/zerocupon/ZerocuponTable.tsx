@@ -55,9 +55,10 @@ export const ZerocuponTable: React.FC = () => {
   useEffect(() => {
     const today = dayjs();
     const oneYearAgo = today.subtract(1, 'year');
+    const yesterday = today.subtract(1, 'day');
 
     setDateFrom(oneYearAgo);
-    setDateTo(today);
+    setDateTo(yesterday);
 
     // Load data with default dates
     const loadDefaultData = async () => {
@@ -65,7 +66,7 @@ export const ZerocuponTable: React.FC = () => {
         setIsLoading(true);
         setError(null);
         const fromStr = formatDateToString(oneYearAgo);
-        const toStr = formatDateToString(today);
+        const toStr = formatDateToString(yesterday);
         if (!fromStr || !toStr) return;
         
         const response = await fetchZerocuponData(fromStr, toStr);
