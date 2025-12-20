@@ -258,7 +258,7 @@ export const PremiumBondCard: React.FC<PremiumBondCardProps> = ({ bondDetail, co
               )}
             </Stack>
           </Box>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 3.3 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 3.3, mt: 4 }}>
             {/* Карточка рейтинга */}
             <Card
               elevation={0}

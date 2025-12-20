@@ -152,6 +152,9 @@ export const BondDetails: React.FC = () => {
   // Tab state
   const [activeTab, setActiveTab] = useState(0);
   
+  // Bond card expanded state
+  const [isBondCardExpanded, setIsBondCardExpanded] = useState(true);
+  
   // Track previous coupons count to detect when new data is loaded
   const prevCouponsCountRef = useRef(0);
 
@@ -522,7 +525,62 @@ export const BondDetails: React.FC = () => {
         {bondDetail && !isLoading && !error && (
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, flexGrow: 1, overflow: 'hidden' }}>
             {/* Премиальная карточка облигации */}
-            <PremiumBondCard bondDetail={bondDetail} couponType={couponType} />
+            <Accordion 
+              expanded={isBondCardExpanded}
+              onChange={(_, expanded) => setIsBondCardExpanded(expanded)}
+              sx={{ 
+                boxShadow: isBondCardExpanded ? 'none' : 2,
+                border: isBondCardExpanded ? 'none' : '1px solid',
+                borderColor: isBondCardExpanded ? 'transparent' : 'divider',
+                borderRadius: 2,
+                '&:before': { display: 'none' },
+                transition: 'box-shadow 0.3s ease, border-color 0.3s ease',
+              }}
+            >
+              <AccordionSummary
+                expandIcon={<ExpandMoreIcon />}
+                aria-controls="bond-card-content"
+                id="bond-card-header"
+                sx={{
+                  minHeight: 48,
+                  height: 48,
+                  padding: isBondCardExpanded ? 0 : '0 16px',
+                  '&.Mui-expanded': {
+                    minHeight: 'auto',
+                    height: 'auto',
+                    padding: 0,
+                  },
+                  '&:not(.Mui-expanded)': {
+                    minHeight: 48,
+                    height: 48,
+                    padding: '0 16px',
+                  },
+                  '& .MuiAccordionSummary-content': {
+                    margin: 0,
+                    display: isBondCardExpanded ? 'none' : 'block',
+                    '&.Mui-expanded': {
+                      margin: 0,
+                      display: 'none',
+                    },
+                  },
+                  '& .MuiAccordionSummary-expandIconWrapper': {
+                    position: isBondCardExpanded ? 'absolute' : 'static',
+                    right: isBondCardExpanded ? 16 : 'auto',
+                    top: isBondCardExpanded ? 12 : 'auto',
+                    zIndex: 1,
+                  },
+                }}
+              >
+                {!isBondCardExpanded && (
+                  <Typography variant="subtitle1" fontWeight={600}>
+                    Карточка облигации
+                  </Typography>
+                )}
+              </AccordionSummary>
+              <AccordionDetails sx={{ p: 0 }}>
+                <PremiumBondCard bondDetail={bondDetail} couponType={couponType} />
+              </AccordionDetails>
+            </Accordion>
 
             {/* A. Верхний блок (Header) - оставляем для совместимости, но можно скрыть */}
             <Paper elevation={0} sx={{ p: 0, bgcolor: 'grey.50', borderRadius: 2, mx: -3, px: 3, py: 2.5, display: 'none' }}>

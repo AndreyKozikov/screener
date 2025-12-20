@@ -78,7 +78,10 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
       return;
     }
 
-    await onConfirm(selected);
+    // Close dialog immediately without waiting for server response
+    onClose();
+    // Start refresh in background (fire and forget)
+    void onConfirm(selected);
   };
 
   const handleClose = () => {
