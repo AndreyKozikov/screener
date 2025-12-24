@@ -15,6 +15,7 @@ import {
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import DownloadIcon from '@mui/icons-material/Download';
+import SaveIcon from '@mui/icons-material/Save';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import { useComparisonStore } from '../../stores/comparisonStore';
 import { formatNumber } from '../../utils/formatters';
@@ -29,6 +30,7 @@ import {
 import dayjs from 'dayjs';
 import type { BondListItem } from '../../types/bond';
 import { LoadingSpinner } from '../common/LoadingSpinner';
+import { exportSelectedBonds } from '../../utils/bondExport';
 
 interface ComparisonRow {
   name: string;
@@ -100,24 +102,20 @@ export const ComparisonTable: React.FC = () => {
     }
   };
 
-  // Format maturity date as "ГГГГ (Yг)"
+  // Format maturity date as years to maturity
   const formatMaturity = (matDate: string | null): string => {
     if (!matDate) return '—';
     
     try {
-      const date = new Date(matDate);
-      if (isNaN(date.getTime())) return '—';
-      
-      const year = date.getFullYear();
       const yearsToMaturity = calculateYearsToMaturity(matDate);
       
       if (yearsToMaturity === null) {
-        return `${year}`;
+        return '—';
       }
       
-      // Round to 1 decimal place
+      // Round to 1 decimal place and return only years
       const roundedYears = Math.round(yearsToMaturity * 10) / 10;
-      return `${year} (${roundedYears}г)`;
+      return roundedYears.toFixed(1);
     } catch {
       return '—';
     }
@@ -343,10 +341,10 @@ export const ComparisonTable: React.FC = () => {
     const headers = [
       'Название',
       'Тикер',
-      'Погашение',
-      'Цена (%)',
-      'Доходность к погашению (%)',
+      'Срок до погашения, лет',
       'Доходность купона относительно номинала (%)',
+      'Цена (%)',
+      'Доходность к погашению, YTM (%)',
       'Доходность купона к текущей цене (%)',
       'Дюрация',
       'Модифицированная дюрация',
@@ -362,9 +360,9 @@ export const ComparisonTable: React.FC = () => {
           row.name,
           row.ticker,
           row.maturity,
+          row.coupon,
           row.price,
           row.ytm,
-          row.coupon,
           row.couponToPrice,
           row.regularDuration,
           row.duration,
@@ -422,6 +420,21 @@ export const ComparisonTable: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
+  // Handle save bonds to JSON
+  const handleSaveBonds = async () => {
+    if (comparisonBonds.length === 0) {
+      return;
+    }
+
+    try {
+      const secids = comparisonBonds.map(bond => bond.SECID).filter((secid): secid is string => !!secid);
+      await exportSelectedBonds(secids);
+    } catch (error) {
+      console.error('Failed to export bonds:', error);
+      // You could add a toast notification here if needed
+    }
+  };
+
   // Handle remove bond
   const handleRemoveBond = (secid: string) => {
     removeBondFromComparison(secid);
@@ -442,16 +455,23 @@ export const ComparisonTable: React.FC = () => {
 
   return (
     <Box sx={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
-      {/* Header with download button */}
+      {/* Header with download buttons */}
       <Box sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: 1, borderColor: 'divider' }}>
         <Typography variant="h6">
           Сравнение облигаций ({comparisonBonds.length})
         </Typography>
-        {comparisonData.length > 0 && (
-          <Button startIcon={<DownloadIcon />} onClick={handleDownloadMarkdown} variant="outlined">
-            Сохранить в Markdown
-          </Button>
-        )}
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          {comparisonData.length > 0 && (
+            <>
+              <Button startIcon={<SaveIcon />} onClick={handleSaveBonds} variant="contained" color="primary">
+                Сохранить в JSON
+              </Button>
+              <Button startIcon={<DownloadIcon />} onClick={handleDownloadMarkdown} variant="outlined">
+                Сохранить в Markdown
+              </Button>
+            </>
+          )}
+        </Box>
       </Box>
 
       {/* Table */}
@@ -462,10 +482,10 @@ export const ComparisonTable: React.FC = () => {
               <TableRow>
                 <TableCell align="center" sx={{ fontWeight: 600 }}>Название</TableCell>
                 <TableCell align="center" sx={{ fontWeight: 600 }}>Тикер</TableCell>
-                <TableCell align="center" sx={{ fontWeight: 600 }}>Погашение</TableCell>
-                <TableCell align="center" sx={{ fontWeight: 600 }}>Цена (%)</TableCell>
-                <TableCell align="center" sx={{ fontWeight: 600 }}>Доходность к погашению (%)</TableCell>
+                <TableCell align="center" sx={{ fontWeight: 600 }}>Срок до погашения, лет</TableCell>
                 <TableCell align="center" sx={{ fontWeight: 600 }}>Доходность купона относительно номинала (%)</TableCell>
+                <TableCell align="center" sx={{ fontWeight: 600 }}>Цена (%)</TableCell>
+                <TableCell align="center" sx={{ fontWeight: 600 }}>Доходность к погашению, YTM (%)</TableCell>
                 <TableCell align="center" sx={{ fontWeight: 600 }}>Доходность купона к текущей цене (%)</TableCell>
                 <TableCell align="center" sx={{ fontWeight: 600 }}>Дюрация</TableCell>
                 <TableCell align="center" sx={{ fontWeight: 600 }}>Модифицированная дюрация</TableCell>
@@ -533,14 +553,14 @@ export const ComparisonTable: React.FC = () => {
                   </TableCell>
                 </TableRow>
               ) : (
-                comparisonData.map((row, index) => (
+                comparisonData.map((row) => (
                   <TableRow key={row.secid} hover>
                     <TableCell align="left">{row.name}</TableCell>
                     <TableCell align="center">{row.ticker}</TableCell>
                     <TableCell align="center">{row.maturity}</TableCell>
+                    <TableCell align="center">{row.coupon}</TableCell>
                     <TableCell align="center">{row.price}</TableCell>
                     <TableCell align="center">{row.ytm}</TableCell>
-                    <TableCell align="center">{row.coupon}</TableCell>
                     <TableCell align="center">{row.couponToPrice}</TableCell>
                     <TableCell align="center">{row.regularDuration}</TableCell>
                     <TableCell align="center">{row.duration}</TableCell>

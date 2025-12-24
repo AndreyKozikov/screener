@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useCallback, useState, useRef, useImperativeHandle } from 'react';
+import React, { useEffect, useMemo, useCallback, useState, useRef } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import type { ColDef, RowClickedEvent, CellClickedEvent, ICellRendererParams, IHeaderParams } from 'ag-grid-community';
 import { ModuleRegistry, AllCommunityModule } from 'ag-grid-community';
@@ -11,8 +11,6 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import FullscreenIcon from '@mui/icons-material/Fullscreen';
 import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
 import CloseIcon from '@mui/icons-material/Close';
-import SaveIcon from '@mui/icons-material/Save';
-import InsightsIcon from '@mui/icons-material/Insights';
 
 // Register AG Grid modules
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -33,17 +31,10 @@ import { LoadingSpinner } from '../common/LoadingSpinner';
 import { ErrorMessage } from '../common/ErrorMessage';
 import { EmptyState } from '../common/EmptyState';
 import type { BondListItem } from '../../types/bond';
-import { exportSelectedBonds } from '../../utils/bondExport';
-import { ComparisonAnalysisDialog } from './ComparisonAnalysisDialog';
 import AddToPortfolioRenderer from './AddToPortfolioRenderer';
 import AddToComparisonRenderer from './AddToComparisonRenderer';
 
 type FieldDescriptionMap = Record<string, string>;
-
-// Export selected bonds for use in parent component
-export type BondsTableRef = {
-  getSelectedBonds: () => Set<string>;
-};
 
 export type BondsTableProps = {
   onOpenFilters?: () => void;
@@ -204,7 +195,7 @@ const getRatingColor = (rating: string | null | undefined): { bg: string; color:
  * 
  * Main data table displaying bonds using AG Grid
  */
-export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ onOpenFilters }, ref) => {
+export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
   const { bonds, isLoading, error, setBonds, setLoading, setError } = useBondsStore();
   const { filters } = useFiltersStore();
   const setSelectedBond = useUiStore((state) => state.setSelectedBond);
@@ -215,9 +206,6 @@ export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ on
   const metadataLoadedRef = useRef(false);
   const gridRef = useRef<AgGridReact<BondListItem>>(null);
   const [headerHeight, setHeaderHeight] = useState<number | undefined>(undefined);
-  const [selectedBonds, setSelectedBonds] = useState<Set<string>>(new Set());
-  const [isComparisonDialogOpen, setIsComparisonDialogOpen] = useState(false);
-  const [comparisonDialogKey, setComparisonDialogKey] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isClosed, setIsClosed] = useState(false);
 
@@ -706,18 +694,6 @@ export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ on
     };
 
     return [
-    {
-      field: 'checkbox',
-      headerName: '',
-      checkboxSelection: true,
-      headerCheckboxSelection: false,
-      width: 50,
-      pinned: 'left',
-      sortable: false,
-      filter: false,
-      suppressMenu: true,
-      cellStyle: { textAlign: 'center' } as Record<string, string | number>,
-    },
     createColumnDef('SHORTNAME', 'Название', {
       minWidth: 120,
       pinned: 'left',
@@ -954,15 +930,8 @@ export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ on
     }
   }, []);
 
-  // Handle row click - don't interfere with checkbox selection
+  // Handle row click
   const onRowClicked = useCallback((event: RowClickedEvent) => {
-    // Only open details, don't change checkbox selection
-    // Checkbox selection is handled separately by AG Grid
-    if (event.event && (event.event.target as HTMLElement).closest('.ag-checkbox')) {
-      // If clicking on checkbox, let AG Grid handle it
-      return;
-    }
-    
     // Get the clicked element FIRST - we need it for all checks
     const target = event.event?.target as HTMLElement | null;
     if (!target || !event.event) {
@@ -1016,22 +985,6 @@ export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ on
     setSelectedBond(event.data.SECID);
   }, [setSelectedBond]);
 
-  // Flag to prevent selection updates during data restoration
-  const isRestoringSelectionRef = useRef(false);
-
-  // Handle selection change
-  const onSelectionChanged = useCallback(() => {
-    // Don't update state if we're restoring selection (to prevent loops)
-    if (isRestoringSelectionRef.current) {
-      return;
-    }
-    
-    if (gridRef.current?.api) {
-      const selectedRows = gridRef.current.api.getSelectedRows() as BondListItem[];
-      const selectedSecids = new Set(selectedRows.map(row => row.SECID));
-      setSelectedBonds(selectedSecids);
-    }
-  }, []);
 
   // Calculate dynamic header height based on content
   const calculateHeaderHeight = useCallback(() => {
@@ -1120,39 +1073,8 @@ export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ on
     }
   }, []);
 
-  // Preserve selection when data updates
+  // Track previous bonds for auto-sizing on initial load
   const prevBondsRef = useRef<BondListItem[]>([]);
-  useEffect(() => {
-    if (bonds.length > 0 && gridRef.current?.api) {
-      // Check if data actually changed (not just a re-render)
-      const dataChanged = 
-        prevBondsRef.current.length !== bonds.length ||
-        prevBondsRef.current.some((prevBond, index) => {
-          const currentBond = bonds[index];
-          return !currentBond || prevBond.SECID !== currentBond.SECID;
-        });
-
-      if (dataChanged && selectedBonds.size > 0) {
-        // Restore selection after data update
-        const timeoutId = setTimeout(() => {
-          if (gridRef.current?.api) {
-            // Restore selected rows by SECID
-            selectedBonds.forEach((secid) => {
-              const rowNode = gridRef.current?.api.getRowNode(secid);
-              if (rowNode) {
-                rowNode.setSelected(true, false); // false = don't clear other selections
-              }
-            });
-          }
-        }, 100);
-
-        prevBondsRef.current = bonds;
-        return () => clearTimeout(timeoutId);
-      }
-      
-      prevBondsRef.current = bonds;
-    }
-  }, [bonds, selectedBonds]);
 
   // Filter bonds by search query
   const filteredBonds = useMemo(() => {
@@ -1168,65 +1090,6 @@ export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ on
     });
   }, [bonds, filters.search]);
 
-  // Handle row data update - restore selection after AG Grid updates the model
-  const onRowDataUpdated = useCallback(() => {
-    if (gridRef.current?.api && selectedBonds.size > 0) {
-      // Set flag to prevent onSelectionChanged from updating state
-      isRestoringSelectionRef.current = true;
-      
-      // Use double requestAnimationFrame to ensure AG Grid has fully finished updating
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          if (gridRef.current?.api) {
-            // Restore selected rows by SECID that are present in filtered bonds
-            let restoredCount = 0;
-            selectedBonds.forEach((secid) => {
-              const rowNode = gridRef.current?.api.getRowNode(secid);
-              if (rowNode) {
-                rowNode.setSelected(true, false); // false = don't clear other selections
-                restoredCount++;
-              }
-            });
-            
-            // Reset flag after a short delay to allow selection events to process
-            setTimeout(() => {
-              isRestoringSelectionRef.current = false;
-            }, 100);
-          }
-        });
-      });
-    }
-  }, [selectedBonds]);
-
-  // Also restore selection when filteredBonds changes (search filter)
-  const prevSearchRef = useRef<string>('');
-  useEffect(() => {
-    // Only restore if search filter actually changed
-    if (prevSearchRef.current !== filters.search && gridRef.current?.api && selectedBonds.size > 0) {
-      prevSearchRef.current = filters.search;
-      
-      // Wait for AG Grid to update with new filtered data
-      const timeoutId = setTimeout(() => {
-        if (gridRef.current?.api) {
-          isRestoringSelectionRef.current = true;
-          
-          // Restore selected rows by SECID
-          selectedBonds.forEach((secid) => {
-            const rowNode = gridRef.current?.api.getRowNode(secid);
-            if (rowNode) {
-              rowNode.setSelected(true, false);
-            }
-          });
-          
-          setTimeout(() => {
-            isRestoringSelectionRef.current = false;
-          }, 100);
-        }
-      }, 150);
-      
-      return () => clearTimeout(timeoutId);
-    }
-  }, [filters.search, selectedBonds]);
 
   // Recalculate header height and auto-size columns when data, columns, or window resize
   // Only auto-size on initial load or when columns actually change, not on portfolio updates
@@ -1239,11 +1102,12 @@ export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ on
         if (bonds.length > 0 && prevBondsRef.current.length === 0) {
           gridRef.current?.api.autoSizeAllColumns(false);
         }
+        prevBondsRef.current = bonds;
       }, 500);
 
       return () => clearTimeout(timeoutId);
     }
-  }, [bonds.length, columnDefs, fieldDescriptions, calculateHeaderHeight]);
+  }, [bonds.length, columnDefs, fieldDescriptions, calculateHeaderHeight, bonds]);
 
 
   // Recalculate on window resize
@@ -1278,66 +1142,6 @@ export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ on
   }, [portfolioBonds.length, bonds.length]);
 
   // Expose selected bonds via ref - MUST be before any conditional returns
-  useImperativeHandle(ref, () => ({
-    getSelectedBonds: () => {
-      // Return a copy to prevent external mutations
-      return new Set(selectedBonds);
-    },
-  }), [selectedBonds]);
-
-  const handleExportSelected = async () => {
-    if (selectedBonds.size === 0) {
-      return;
-    }
-
-    try {
-      await exportSelectedBonds(Array.from(selectedBonds));
-    } catch (error) {
-      if (error instanceof Error) {
-        setError(error.message);
-      } else {
-        setError('Не удалось экспортировать облигации');
-      }
-    }
-  };
-
-  const handleComparisonAnalysis = () => {
-    if (selectedBonds.size === 0) {
-      return;
-    }
-    // Force remount by updating key
-    setComparisonDialogKey(prev => prev + 1);
-    setIsComparisonDialogOpen(true);
-  };
-
-  // Get selected bonds data directly from AG Grid to avoid duplicates
-  // This ensures we get the exact rows that are selected in the table (with current filter applied)
-  const selectedBondsData = useMemo(() => {
-    if (!gridRef.current?.api || selectedBonds.size === 0) return [];
-    
-    // Get selected rows directly from AG Grid (respects current filters)
-    const selectedRows = gridRef.current.api.getSelectedRows() as BondListItem[];
-    
-    if (selectedRows.length === 0) return [];
-    
-    // Remove duplicates by SECID (in case AG Grid returns duplicates)
-    const uniqueBonds = new Map<string, BondListItem>();
-    selectedRows.forEach(bond => {
-      if (bond && bond.SECID) {
-        // Keep the bond with more complete data (prefer one with DURATION)
-        const existing = uniqueBonds.get(bond.SECID);
-        if (!existing) {
-          uniqueBonds.set(bond.SECID, bond);
-        } else if (bond.DURATION !== null && bond.DURATION !== undefined && 
-                   (existing.DURATION === null || existing.DURATION === undefined)) {
-          // Replace with bond that has DURATION data
-          uniqueBonds.set(bond.SECID, bond);
-        }
-      }
-    });
-    
-    return Array.from(uniqueBonds.values());
-  }, [selectedBonds]); // Recalculate when selection changes
 
   // Check if component is closed
   if (isClosed) {
@@ -1417,72 +1221,6 @@ export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ on
                 </IconButton>
               </Tooltip>
             )}
-
-            {/* Comparison analysis button */}
-            <Tooltip 
-              title={
-                selectedBonds.size === 0 
-                  ? 'Выберите облигации для сравнения' 
-                  : `Сравнительный анализ (${selectedBonds.size} облигаций)`
-              }
-            >
-              <span>
-                <IconButton
-                  size="small"
-                  onClick={handleComparisonAnalysis}
-                  disabled={selectedBonds.size === 0 || isLoading}
-                  sx={{ 
-                    width: 28, 
-                    height: 28,
-                    padding: '4px',
-                    '&:focus': {
-                      outline: 'none',
-                    },
-                    '&:focus-visible': {
-                      outline: 'none',
-                    },
-                    '&.Mui-disabled': {
-                      color: 'text.disabled',
-                    },
-                  }}
-                >
-                  <InsightsIcon fontSize="small" />
-                </IconButton>
-              </span>
-            </Tooltip>
-
-            {/* Export JSON button */}
-            <Tooltip 
-              title={
-                selectedBonds.size === 0 
-                  ? 'Выберите облигации для сохранения' 
-                  : `Скачать JSON (${selectedBonds.size} облигаций)`
-              }
-            >
-              <span>
-                <IconButton
-                  size="small"
-                  onClick={handleExportSelected}
-                  disabled={selectedBonds.size === 0 || isLoading}
-                  sx={{ 
-                    width: 28, 
-                    height: 28,
-                    padding: '4px',
-                    '&:focus': {
-                      outline: 'none',
-                    },
-                    '&:focus-visible': {
-                      outline: 'none',
-                    },
-                    '&.Mui-disabled': {
-                      color: 'text.disabled',
-                    },
-                  }}
-                >
-                  <SaveIcon fontSize="small" />
-                </IconButton>
-              </span>
-            </Tooltip>
 
             {/* Vertical divider */}
             <Box sx={{ width: '1px', backgroundColor: '#ddd', mx: 1 }} />
@@ -1675,18 +1413,11 @@ export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ on
             '& .ag-header-cell-filtered .ag-header-cell-filter-button': {
               opacity: 1,
             },
-            // Unified font style for cells and headers
+            // Unified font style and styling for cells
             '& .ag-cell': {
               fontFamily: 'Roboto, Helvetica, Arial, sans-serif',
               fontSize: '14px',
               lineHeight: 1.35,
-            },
-            '& .ag-header-cell': {
-              fontFamily: 'Roboto, Helvetica, Arial, sans-serif',
-              fontSize: '12px',
-              lineHeight: 1.35,
-            },
-            '& .ag-cell': {
               // Bootstrap-style borders
               borderRight: '1px solid #dee2e6 !important',
               borderBottom: '1px solid #dee2e6 !important',
@@ -1783,15 +1514,11 @@ export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ on
             onCellClicked={onCellClicked}
             onGridReady={onGridReady}
             onFirstDataRendered={onFirstDataRendered}
-            onRowDataUpdated={onRowDataUpdated}
-            rowSelection="multiple"
-            onSelectionChanged={onSelectionChanged}
             animateRows={true}
             pagination={true}
             paginationPageSize={100}
             paginationPageSizeSelector={[50, 100, 200, 500]}
             enableCellTextSelection={true}
-            suppressRowClickSelection={true}
             headerHeight={headerHeight}
             rowHeight={38}
             autoSizeStrategy={{
@@ -1805,15 +1532,9 @@ export const BondsTable = React.forwardRef<BondsTableRef, BondsTableProps>(({ on
         </Box>
         </Box>
       </CardContent>
-      <ComparisonAnalysisDialog
-        key={comparisonDialogKey}
-        open={isComparisonDialogOpen}
-        onClose={() => setIsComparisonDialogOpen(false)}
-        bonds={selectedBondsData}
-      />
     </Card>
   );
-});
+};
 
 BondsTable.displayName = 'BondsTable';
 

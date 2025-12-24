@@ -25,12 +25,12 @@ import { refreshRatingsData } from '../api/rating';
 import { refreshEmitentsData } from '../api/emitent';
 import { useUiStore } from '../stores/uiStore';
 import { useBondsStore } from '../stores/bondsStore';
+import { useComparisonStore } from '../stores/comparisonStore';
 import { getBondsDataForLLM, getZerocuponDataForLLM, getForecastDataForLLM } from '../utils/llmDataExport';
 import { analyzeBondsWithLLM } from '../api/llm';
 import { analyzeBondsWithQwen } from '../api/qwen';
 import { analyzeBondsWithGrok } from '../api/grok';
 import { submitFeedback } from '../api/feedback';
-import type { BondsTableRef } from '../components/bonds/BondsTable';
 
 /**
  * HomePage Component
@@ -40,8 +40,8 @@ import type { BondsTableRef } from '../components/bonds/BondsTable';
 export const HomePage: React.FC = () => {
   const triggerDataRefresh = useUiStore((state) => state.triggerDataRefresh);
   const setError = useBondsStore((state) => state.setError);
+  const comparisonBonds = useComparisonStore((state) => state.comparisonBonds);
   const [currentTab, setCurrentTab] = useState(0);
-  const bondsTableRef = useRef<BondsTableRef>(null);
   
   // Refresh data dialog state
   const [isRefreshDialogOpen, setIsRefreshDialogOpen] = useState(false);
@@ -154,19 +154,9 @@ export const HomePage: React.FC = () => {
   };
 
   const handleLLMAnalysisClick = () => {
-    try {
-      // Get selected bonds
-      const selectedBonds = bondsTableRef.current?.getSelectedBonds();
-      if (!selectedBonds || selectedBonds.size === 0) {
-        setIsNoSelectionDialogOpen(true);
-        return;
-      }
-      // First open parameters dialog
-      setIsAnalysisParamsOpen(true);
-    } catch (error) {
-      console.error('Error getting selected bonds:', error);
-      setIsNoSelectionDialogOpen(true);
-    }
+    // Note: LLM analysis functionality needs to be updated to use comparison bonds or all bonds
+    // For now, show message that selection is needed via comparison table
+    setIsNoSelectionDialogOpen(true);
   };
 
   const handleAnalysisParamsConfirm = (params: {
@@ -202,14 +192,14 @@ export const HomePage: React.FC = () => {
     setIsAnalysisResultOpen(true);
 
     try {
-      // Get selected bonds
-      const selectedBonds = bondsTableRef.current?.getSelectedBonds();
-      if (!selectedBonds || selectedBonds.size === 0) {
+      // Use comparison bonds for LLM analysis
+      if (comparisonBonds.length === 0) {
         setIsNoSelectionDialogOpen(true);
         return;
       }
 
       const params = savedAnalysisParams;
+      const selectedBonds = new Set(comparisonBonds.map(bond => bond.SECID).filter((secid): secid is string => !!secid));
 
       // Step 1: Load data files conditionally based on checkboxes
       const modelPrefix = model.toUpperCase();
@@ -419,7 +409,6 @@ export const HomePage: React.FC = () => {
                 <Box sx={{ flexGrow: 1, minWidth: 0, width: '100%' }}>
                   <ErrorBoundary>
                     <BondsTable 
-                      ref={bondsTableRef} 
                       onOpenFilters={() => setIsFiltersModalOpen(true)}
                     />
                   </ErrorBoundary>

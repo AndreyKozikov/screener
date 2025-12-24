@@ -10,11 +10,13 @@ import {
   Tooltip,
   Card,
   CardContent,
+  Link,
 } from '@mui/material';
 import {
   Notifications as NotificationsIcon,
   SwapHoriz as SwapHorizIcon,
   Warning as WarningIcon,
+  OpenInNew as OpenInNewIcon,
 } from '@mui/icons-material';
 import type { BondDetail as BondDetailType } from '../../types/bond';
 import { getEmitentBySecid, type EmitentInfo } from '../../api/emitent';
@@ -68,6 +70,7 @@ export const PremiumBondCard: React.FC<PremiumBondCardProps> = ({ bondDetail, co
   }, [securities?.SECID]);
 
   // Extract key values
+  const secid = typeof securities?.SECID === 'string' ? securities.SECID : null;
   const shortName = typeof securities?.SHORTNAME === 'string' ? securities.SHORTNAME : null;
   const secName = typeof securities?.SECNAME === 'string' ? securities.SECNAME : null;
   const isin = typeof securities?.ISIN === 'string' ? securities.ISIN : null;
@@ -225,9 +228,36 @@ export const PremiumBondCard: React.FC<PremiumBondCardProps> = ({ bondDetail, co
           <Box sx={{ flex: 1 }}>
             <Stack spacing={1}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 2.5 }}>
-                <Typography variant="h5" fontWeight={700}>
-                  {shortName || '—'}
-                </Typography>
+                {secid ? (
+                  <Link
+                    href={`https://www.moex.com/ru/issue.aspx?board=TQCB&code=${secid}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    sx={{
+                      textDecoration: 'none',
+                      color: 'primary.main',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 0.5,
+                      '&:hover': {
+                        textDecoration: 'underline',
+                        color: 'primary.dark',
+                      },
+                      '&:visited': {
+                        color: 'primary.main',
+                      },
+                    }}
+                  >
+                    <OpenInNewIcon sx={{ fontSize: 20 }} />
+                    <Typography variant="h5" fontWeight={700} component="span">
+                      {shortName || '—'}
+                    </Typography>
+                  </Link>
+                ) : (
+                  <Typography variant="h5" fontWeight={700}>
+                    {shortName || '—'}
+                  </Typography>
+                )}
                 <Chip
                   label={isActive ? 'Активна' : 'Не торгуется'}
                   color={isActive ? 'success' : 'default'}
