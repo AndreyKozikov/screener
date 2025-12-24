@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { Container, Box, Typography, AppBar, Toolbar, Button, CircularProgress, Tabs, Tab, Dialog, DialogTitle, DialogContent, DialogActions, Alert } from '@mui/material';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -81,7 +81,7 @@ export const HomePage: React.FC = () => {
     setIsRefreshDialogOpen(true);
   };
 
-  const handleRefreshConfirm = async (selectedTasks: string[]) => {
+  const handleRefreshConfirm = async (selectedTasks: string[], forceUpdateRatings?: boolean) => {
     if (selectedTasks.length === 0) {
       return;
     }
@@ -110,7 +110,7 @@ export const HomePage: React.FC = () => {
         triggerDataRefresh();
       },
       ratings: async () => {
-        await refreshRatingsData();
+        await refreshRatingsData(forceUpdateRatings || false);
       },
       emitents: async () => {
         await refreshEmitentsData();

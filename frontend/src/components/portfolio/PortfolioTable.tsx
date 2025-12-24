@@ -970,7 +970,7 @@ export const PortfolioTable: React.FC = () => {
             </Button>
           </Box>
         </Box>
-        <Box sx={{ flexGrow: 1, display: 'flex' }}>
+        <Box sx={{ flexGrow: 1, display: 'flex', px: 2 }}>
         <Box
           className="ag-theme-material"
           sx={{

@@ -12,6 +12,7 @@ import { MaturityDateFilter } from './MaturityDateFilter';
 import { ListLevelFilter } from './ListLevelFilter';
 import { CurrencyFilter } from './CurrencyFilter';
 import { BondTypeFilter } from './BondTypeFilter';
+import { BondType43Filter } from './BondType43Filter';
 import { CouponTypeFilter } from './CouponTypeFilter';
 import { RatingRangeFilter } from './RatingRangeFilter';
 
@@ -135,6 +136,9 @@ export const FiltersPanel: React.FC = () => {
           </Box>
           <Box sx={{ width: '500px', flexShrink: 0 }}>
             <BondTypeFilter />
+          </Box>
+          <Box sx={{ width: '500px', flexShrink: 0 }}>
+            <BondType43Filter />
           </Box>
           <Box sx={{ width: '180px', flexShrink: 0 }}>
             <CouponTypeFilter />

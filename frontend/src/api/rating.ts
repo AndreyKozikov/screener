@@ -21,8 +21,12 @@ export const getBondRating = async (secid: string, boardid: string): Promise<Rat
 /**
  * Refresh ratings data for all bonds
  * Backend will read bonds.json and update ratings for each bond
+ * 
+ * @param forceUpdate - If true, force update all ratings regardless of last_updated date
  */
-export const refreshRatingsData = async (): Promise<void> => {
-  await apiClient.post('/rating/refresh');
+export const refreshRatingsData = async (forceUpdate: boolean = false): Promise<void> => {
+  await apiClient.post('/rating/refresh', null, {
+    params: { force_update: forceUpdate }
+  });
 };
 

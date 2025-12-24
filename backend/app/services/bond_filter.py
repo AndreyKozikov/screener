@@ -113,11 +113,33 @@ def filter_bonds(bonds: List[BondListItem], filters: BondFilters) -> List[BondLi
         print(f"DEBUG filter_bonds: faceunit filter - before={before_count}, after={after_count}, filtering by={filters.faceunit}")
     
     # Bond type filter
+    # Supports all bond types from bonds_emitent.json:
+    # - exchange_bond (Биржевая облигация)
+    # - ofz_bond (ОФЗ - Государственная облигация)
+    # - corporate_bond (Корпоративная облигация)
+    # - municipal_bond (Муниципальная облигация)
+    # - subfederal_bond (Региональная облигация)
     if filters.bondtype:
         before_count = len(filtered)
         filtered = [b for b in filtered if b.BONDTYPE is not None and b.BONDTYPE in filters.bondtype]
         after_count = len(filtered)
         print(f"DEBUG filter_bonds: bondtype filter - before={before_count}, after={after_count}, filtering by={filters.bondtype}")
+    
+    # Bond type 43 filter (вид облигации из bonds.json)
+    # Supports bond types from bonds.json index 43:
+    # - Амортизируемые облигации
+    # - Валютные облигации
+    # - Конвертируемые облигации
+    # - Линкер/облигации с индексируемым
+    # - Структурная облигация
+    # - Фикс с известным купоном
+    # - Фикс с неизвестным купоном
+    # - Флоатер
+    if filters.bondtype43:
+        before_count = len(filtered)
+        filtered = [b for b in filtered if b.BONDTYPE43 is not None and b.BONDTYPE43 in filters.bondtype43]
+        after_count = len(filtered)
+        print(f"DEBUG filter_bonds: bondtype43 filter - before={before_count}, after={after_count}, filtering by={filters.bondtype43}")
     
     # Coupon type filter
     if filters.coupon_type:

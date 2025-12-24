@@ -9,6 +9,8 @@ class BondListItem(BaseModel):
     SECID: str
     BOARDID: str
     SHORTNAME: str
+    SECNAME: Optional[str] = None  # Полное название ценной бумаги
+    ISIN: Optional[str] = None  # ISIN код
     COUPONPERCENT: Optional[float] = None
     MATDATE: Optional[date] = None
     STATUS: Optional[str] = None
@@ -31,6 +33,7 @@ class BondListItem(BaseModel):
     RATING_AGENCY: Optional[str] = None  # Название рейтингового агентства (agency_name_short_ru)
     RATING_LEVEL: Optional[str] = None  # Уровень рейтинга (rating_level_name_short_ru)
     BONDTYPE: Optional[str] = None  # Тип облигации (type из bonds_emitent.json)
+    BONDTYPE43: Optional[str] = None  # Вид облигации (BONDTYPE из bonds.json, индекс 43)
     COUPON_TYPE: Optional[str] = None  # Тип купона (FIX или FLOAT) из coupons_data.json
     
     class Config:

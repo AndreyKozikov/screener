@@ -34,6 +34,10 @@ export const fetchBonds = async (filters: BondFilters): Promise<BondsListRespons
     // FastAPI expects array parameters to be sent as repeated query params: bondtype=exchange_bond&bondtype=corporate_bond
     params.bondtype = filters.bondtype;
   }
+  if (filters.bondtype43 && Array.isArray(filters.bondtype43) && filters.bondtype43.length > 0) {
+    // FastAPI expects array parameters to be sent as repeated query params: bondtype43=value1&bondtype43=value2
+    params.bondtype43 = filters.bondtype43;
+  }
   if (filters.couponType && Array.isArray(filters.couponType) && filters.couponType.length > 0) {
     // FastAPI expects array parameters to be sent as repeated query params: coupon_type=FIX&coupon_type=FLOAT
     params.coupon_type = filters.couponType;
@@ -111,7 +115,12 @@ export const fetchBonds = async (filters: BondFilters): Promise<BondsListRespons
     allBonds = allBonds.filter(bond => {
       const secid = (bond.SECID || '').toLowerCase();
       const shortname = (bond.SHORTNAME || '').toLowerCase();
-      return secid.includes(searchLower) || shortname.includes(searchLower);
+      const secname = (bond.SECNAME || '').toLowerCase();
+      const isin = (bond.ISIN || '').toLowerCase();
+      return secid.includes(searchLower) || 
+             shortname.includes(searchLower) || 
+             secname.includes(searchLower) || 
+             isin.includes(searchLower);
     });
     filteredCount = allBonds.length;
   }

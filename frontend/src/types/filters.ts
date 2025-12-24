@@ -14,6 +14,7 @@ export interface BondFilters {
   listlevel: number[];
   faceunit: string[];
   bondtype: string[];
+  bondtype43: string[];
   couponType: string[];
   ratingMin: string | null;
   ratingMax: string | null;

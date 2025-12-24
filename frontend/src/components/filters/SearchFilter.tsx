@@ -6,7 +6,7 @@ import { useFiltersStore } from '../../stores/filtersStore';
 /**
  * SearchFilter Component
  * 
- * Text input for searching bonds by SECID or SHORTNAME
+ * Text input for searching bonds by SECID, SHORTNAME, SECNAME (название) or ISIN
  */
 export const SearchFilter: React.FC = () => {
   const { filters, setFilter } = useFiltersStore();
@@ -18,7 +18,7 @@ export const SearchFilter: React.FC = () => {
   return (
     <TextField
       size="small"
-      placeholder="Поиск по коду или названию"
+      placeholder="Поиск по коду, названию или ISIN"
       value={filters.search}
       onChange={handleChange}
       sx={{ 

@@ -456,7 +456,6 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
       textRendering="geometricPrecision"
       viewBox="0 0 1706.66 1706.66"
       xmlns="http://www.w3.org/2000/svg"
-      xmlnsXodm="http://www.corel.com/coreldraw/odm/2003"
       style={{
         width: '1.5rem',
         height: '1.5rem',
@@ -1086,7 +1085,12 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
     return bonds.filter(bond => {
       const secid = bond.SECID?.toLowerCase() || '';
       const shortname = bond.SHORTNAME?.toLowerCase() || '';
-      return secid.includes(searchLower) || shortname.includes(searchLower);
+      const secname = bond.SECNAME?.toLowerCase() || '';
+      const isin = bond.ISIN?.toLowerCase() || '';
+      return secid.includes(searchLower) || 
+             shortname.includes(searchLower) || 
+             secname.includes(searchLower) || 
+             isin.includes(searchLower);
     });
   }, [bonds, filters.search]);
 
@@ -1299,6 +1303,7 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
             width: '100%',
             overflow: 'hidden',
           }}>
+        <Box sx={{ px: 2, width: '100%', height: '100%' }}>
         <Box
           className="ag-theme-material"
           sx={{
@@ -1529,6 +1534,7 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
             suppressMenuHide={true}
             getRowId={(params) => params.data.SECID}
           />
+        </Box>
         </Box>
         </Box>
       </CardContent>

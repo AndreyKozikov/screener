@@ -1,11 +1,11 @@
 import React from 'react';
-import { Autocomplete, TextField, Chip } from '@mui/material';
+import { List, ListItem, Checkbox, FormControlLabel } from '@mui/material';
 import { useFiltersStore } from '../../stores/filtersStore';
 
 /**
  * CouponTypeFilter Component
  * 
- * Multi-select filter for coupon type (FIX or FLOAT)
+ * Multi-select filter for coupon type (FIX or FLOAT) with checkboxes
  */
 export const CouponTypeFilter: React.FC = () => {
   const { draftFilters, setDraftFilter } = useFiltersStore();
@@ -15,80 +15,34 @@ export const CouponTypeFilter: React.FC = () => {
     { value: 'FLOAT', label: 'плавающий' },
   ];
 
-  const getLabel = (value: string) => {
-    return couponTypeOptions.find(opt => opt.value === value)?.label || value;
+  const handleToggle = (value: string) => {
+    const currentValues = draftFilters.couponType || [];
+    const newValues = currentValues.includes(value)
+      ? currentValues.filter(v => v !== value)
+      : [...currentValues, value];
+    setDraftFilter('couponType', newValues);
   };
 
-  const handleCouponTypeChange = (_: React.SyntheticEvent<Element, Event>, value: string[]) => {
-    setDraftFilter('couponType', value);
-  };
+  const selectedValues = draftFilters.couponType || [];
 
   return (
-    <Autocomplete
-      multiple
-      size="small"
-      options={couponTypeOptions.map(opt => opt.value)}
-      getOptionLabel={(option) => getLabel(option)}
-      value={draftFilters.couponType || []}
-      onChange={handleCouponTypeChange}
-      sx={{ 
-        width: '100%',
-        '& .MuiAutocomplete-inputRoot': {
-          minHeight: '32px',
-        },
-        '& .MuiAutocomplete-tag': {
-          margin: '2px',
-        },
-      }}
-      renderInput={(params) => (
-        <TextField
-          {...params}
-          placeholder={(!draftFilters.couponType || draftFilters.couponType.length === 0) ? "Тип купона" : ""}
-          sx={{
-            '& .MuiOutlinedInput-root': {
-              paddingRight: '9px !important',
-              minHeight: '32px',
-              height: '32px',
-              '& fieldset': {
-                borderColor: 'rgba(0, 0, 0, 0.23)',
-              },
-              '&:hover fieldset': {
-                borderColor: 'rgba(0, 0, 0, 0.87)',
-              },
-              '&.Mui-focused fieldset': {
-                borderColor: 'primary.main',
-              },
-            },
-            '& .MuiAutocomplete-endAdornment': {
-              right: '9px',
-              '& .MuiSvgIcon-root': {
-                fontSize: '1.25rem',
-                color: 'rgba(0, 0, 0, 0.54)',
-              },
-            },
-            '& .MuiAutocomplete-input': {
-              padding: '4px 4px 4px 14px !important',
-            },
-            '& .MuiInputBase-input::placeholder': {
-              fontSize: '0.75rem',
-            },
-          }}
-        />
-      )}
-      renderTags={(value, getTagProps) =>
-        value.map((option, index) => (
-          <Chip
-            label={getLabel(option)}
-            size="small"
-            {...getTagProps({ index })}
-            key={option}
-            sx={{
-              margin: '2px',
-            }}
+    <List dense sx={{ width: '100%', py: 0 }}>
+      {couponTypeOptions.map((option) => (
+        <ListItem key={option.value} disablePadding sx={{ py: 0.5 }}>
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={selectedValues.includes(option.value)}
+                onChange={() => handleToggle(option.value)}
+                size="small"
+              />
+            }
+            label={option.label}
+            sx={{ m: 0 }}
           />
-        ))
-      }
-    />
+        </ListItem>
+      ))}
+    </List>
   );
 };
 

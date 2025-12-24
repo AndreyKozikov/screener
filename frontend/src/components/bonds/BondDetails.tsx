@@ -725,6 +725,7 @@ export const BondDetails: React.FC = () => {
                       { field: 'ISIN', value: securities?.ISIN ?? null },
                       { field: 'REGNUMBER', value: securities?.REGNUMBER ?? null },
                       { field: 'SECTYPE', value: securities?.SECTYPE ?? null },
+                      { field: 'BONDTYPE43', value: securities?.BONDTYPE43 ?? null, label: 'Вид облигации' },
                     ])}
 
                     {renderSection('Выпуск', [

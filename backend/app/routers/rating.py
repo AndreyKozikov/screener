@@ -81,18 +81,25 @@ async def get_bond_rating(
 
 
 @router.post("/refresh")
-async def refresh_ratings_data():
+async def refresh_ratings_data(
+    force_update: bool = Query(False, description="Force update all ratings regardless of last_updated date")
+):
     """
     Refresh ratings for all bonds from bonds.json file.
     
     Reads SECID and BOARDID from bonds.json and updates ratings for each bond.
     All processing is done on the backend.
     
+    Args:
+        force_update: If True, update all ratings regardless of last_updated date.
+                     If False, only update ratings that are missing or stale (>30 days).
+    
     Returns:
         Dictionary with refresh statistics
     """
     print(f"\n{'='*80}")
     print(f"[RATING REFRESH] Starting ratings refresh for all bonds")
+    print(f"[RATING REFRESH] Force update: {force_update}")
     print(f"{'='*80}")
     
     try:
@@ -123,12 +130,15 @@ async def refresh_ratings_data():
             print(f"[RATING REFRESH] Processing bond {idx + 1}/{bonds_count}: SECID={secid}, BOARDID={boardid}")
             
             try:
-                # Get rating with force_refresh=True to fetch from MOEX
+                # Get rating with force_refresh based on force_update parameter
+                # If force_update=True, always fetch from MOEX regardless of date
+                # If force_update=False, only fetch if missing or stale
                 await asyncio.to_thread(
                     rating_service.get_rating,
                     secid,
                     boardid,
-                    True  # force_refresh=True - fetch from MOEX if missing or stale
+                    True,  # force_refresh=True - fetch from MOEX
+                    force_update  # force_update_all - ignore date check if True
                 )
                 updated_count += 1
                 print(f"[RATING REFRESH] Successfully updated rating for {secid}")

@@ -136,11 +136,16 @@ class DataLoader:
             
             # Create list item (simplified) for table view
             try:
+                # Save BONDTYPE43 from bonds.json (index 43) before it gets overwritten
+                bondtype43_value = bond_dict.get("BONDTYPE")
+                
                 # Extract fields needed for BondListItem
                 list_item_data = {
                     "SECID": bond_dict.get("SECID"),
                     "BOARDID": bond_dict.get("BOARDID"),
                     "SHORTNAME": bond_dict.get("SHORTNAME"),
+                    "SECNAME": bond_dict.get("SECNAME"),
+                    "ISIN": bond_dict.get("ISIN"),
                     "COUPONPERCENT": bond_dict.get("COUPONPERCENT"),
                     "MATDATE": bond_dict.get("MATDATE"),
                     "STATUS": bond_dict.get("STATUS"),
@@ -158,6 +163,7 @@ class DataLoader:
                     "CURRENCYID": bond_dict.get("CURRENCYID"),
                     "FACEUNIT": bond_dict.get("FACEUNIT"),
                     "LISTLEVEL": self._parse_int(bond_dict.get("LISTLEVEL")),
+                    "BONDTYPE43": bondtype43_value,  # Вид облигации из bonds.json
                 }
                 
                 list_item = BondListItem(**list_item_data)
@@ -186,6 +192,11 @@ class DataLoader:
             # Store detailed info (raw dict for flexibility)
             secid = bond_dict.get("SECID")
             if secid:
+                # Save BONDTYPE from bonds.json (index 43) as BONDTYPE43 before it gets overwritten
+                # by value from bonds_emitent.json
+                if "BONDTYPE" in bond_dict:
+                    bond_dict["BONDTYPE43"] = bond_dict.get("BONDTYPE")
+                
                 details_map[secid] = {
                     "securities": bond_dict,
                     "marketdata": {},

@@ -1,12 +1,12 @@
 import React, { useEffect } from 'react';
-import { Autocomplete, TextField, Chip } from '@mui/material';
+import { List, ListItem, Checkbox, FormControlLabel, Box } from '@mui/material';
 import { useFiltersStore } from '../../stores/filtersStore';
 import { fetchFilterOptions } from '../../api/metadata';
 
 /**
  * ListLevelFilter Component
  * 
- * Multi-select filter for list level
+ * Multi-select filter for list level with checkboxes
  */
 export const ListLevelFilter: React.FC = () => {
   const { draftFilters, setDraftFilter, filterOptions, setFilterOptions } = useFiltersStore();
@@ -27,79 +27,39 @@ export const ListLevelFilter: React.FC = () => {
     }
   }, [filterOptions, setFilterOptions]);
 
-  const handleListLevelChange = (_: React.SyntheticEvent<Element, Event>, value: number[]) => {
-    setDraftFilter('listlevel', value);
+  const handleToggle = (value: number) => {
+    const currentValues = draftFilters.listlevel || [];
+    const newValues = currentValues.includes(value)
+      ? currentValues.filter(v => v !== value)
+      : [...currentValues, value];
+    setDraftFilter('listlevel', newValues);
   };
 
   if (!filterOptions) {
-    return null; // Loading...
+    return <Box>Загрузка...</Box>;
   }
 
+  const selectedValues = draftFilters.listlevel || [];
+  const sortedLevels = [...(filterOptions.listlevels || [])].sort((a, b) => a - b);
+
   return (
-    <Autocomplete
-      multiple
-      size="small"
-      options={filterOptions.listlevels || []}
-      value={draftFilters.listlevel || []}
-      onChange={handleListLevelChange}
-      sx={{ 
-        width: '100%',
-        '& .MuiAutocomplete-inputRoot': {
-          minHeight: '32px',
-        },
-        '& .MuiAutocomplete-tag': {
-          margin: '2px',
-        },
-      }}
-      renderInput={(params) => (
-        <TextField
-          {...params}
-          placeholder={(!draftFilters.listlevel || draftFilters.listlevel.length === 0) ? "Уровень листинга" : ""}
-            sx={{
-              '& .MuiOutlinedInput-root': {
-                paddingRight: '9px !important',
-                minHeight: '32px',
-                height: '32px',
-                '& fieldset': {
-                  borderColor: 'rgba(0, 0, 0, 0.23)',
-                },
-                '&:hover fieldset': {
-                  borderColor: 'rgba(0, 0, 0, 0.87)',
-                },
-                '&.Mui-focused fieldset': {
-                  borderColor: 'primary.main',
-                },
-              },
-              '& .MuiAutocomplete-endAdornment': {
-                right: '9px',
-                '& .MuiSvgIcon-root': {
-                  fontSize: '1.25rem',
-                  color: 'rgba(0, 0, 0, 0.54)',
-                },
-              },
-              '& .MuiAutocomplete-input': {
-                padding: '4px 4px 4px 14px !important',
-              },
-              '& .MuiInputBase-input::placeholder': {
-                fontSize: '0.75rem',
-              },
-            }}
+    <List dense sx={{ width: '100%', py: 0 }}>
+      {sortedLevels.map((level) => (
+        <ListItem key={level} disablePadding sx={{ py: 0.5 }}>
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={selectedValues.includes(level)}
+                onChange={() => handleToggle(level)}
+                size="small"
+              />
+            }
+            label={`Уровень ${level}`}
+            sx={{ m: 0 }}
           />
-        )}
-        renderTags={(value, getTagProps) =>
-          value.map((option, index) => (
-            <Chip
-              label={option}
-              size="small"
-              {...getTagProps({ index })}
-              key={option}
-              sx={{
-                margin: '2px',
-              }}
-            />
-          ))
-        }
-      />
+        </ListItem>
+      ))}
+    </List>
   );
 };
 

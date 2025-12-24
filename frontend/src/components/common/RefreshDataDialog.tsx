@@ -24,7 +24,7 @@ export interface RefreshTask {
 interface RefreshDataDialogProps {
   open: boolean;
   onClose: () => void;
-  onConfirm: (selectedTasks: string[]) => Promise<void>;
+  onConfirm: (selectedTasks: string[], forceUpdateRatings?: boolean) => Promise<void>;
   tasks: RefreshTask[];
   isRefreshing: boolean;
   refreshStatus: Record<string, { status: 'idle' | 'loading' | 'success' | 'error'; error?: string }>;
@@ -50,6 +50,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
     });
     return initial;
   });
+  const [forceUpdateRatings, setForceUpdateRatings] = useState(false);
 
   // Reset selected tasks when dialog opens or tasks change
   useEffect(() => {
@@ -59,6 +60,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
         initial[task.id] = task.checked;
       });
       setSelectedTasks(initial);
+      setForceUpdateRatings(false);
     }
   }, [open, tasks]);
 
@@ -81,7 +83,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
     // Close dialog immediately without waiting for server response
     onClose();
     // Start refresh in background (fire and forget)
-    void onConfirm(selected);
+    void onConfirm(selected, forceUpdateRatings);
   };
 
   const handleClose = () => {
@@ -115,6 +117,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
             const isTaskLoading = taskStatus.status === 'loading';
             const isTaskSuccess = taskStatus.status === 'success';
             const isTaskError = taskStatus.status === 'error';
+            const isRatingsTask = task.id === 'ratings';
             
             return (
               <Box key={task.id} sx={{ mb: 2 }}>
@@ -128,6 +131,25 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                   }
                   label={task.label}
                 />
+                {isRatingsTask && selectedTasks[task.id] && (
+                  <Box sx={{ ml: 4, mt: 1 }}>
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={forceUpdateRatings}
+                          onChange={(e) => setForceUpdateRatings(e.target.checked)}
+                          disabled={isRefreshing}
+                          size="small"
+                        />
+                      }
+                      label={
+                        <Typography variant="body2" color="text.secondary">
+                          Принудительно обновить все рейтинги (игнорировать дату последнего обновления)
+                        </Typography>
+                      }
+                    />
+                  </Box>
+                )}
                 {isTaskLoading && (
                   <Box sx={{ mt: 1, ml: 4 }}>
                     <LinearProgress />

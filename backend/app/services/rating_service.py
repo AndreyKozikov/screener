@@ -1,9 +1,7 @@
-import re
 import json
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Any
-from urllib.error import URLError
 
 import orjson
 import requests
@@ -128,53 +126,81 @@ class RatingService:
         self.rating_file.write_bytes(serialized)
         print(f"[RATING SERVICE] File saved successfully, size: {file_size} bytes")
     
-    def _extract_emitent_id_from_html(self, html_content: str) -> Optional[str]:
+    def _extract_emitent_id_from_api(self, secid: str) -> Optional[str]:
         """
-        Extract emitent ID from HTML page by finding emidocs.aspx?id=XXXX link.
+        Extract emitent ID from MOEX API by fetching securities data.
         
         Args:
-            html_content: HTML content from MOEX page
+            secid: Security ID
             
         Returns:
-            Emitent ID (XXXX) or None if not found
+            Emitent ID (as string) or None if not found
         """
-        print(f"[RATING SERVICE] Searching for emitent ID in HTML (emidocs.aspx?id=...)")
+        print(f"[RATING SERVICE] Fetching emitent ID from MOEX API for SECID: {secid}")
         
-        # Pattern to find emidocs.aspx?id=XXXX
-        # This can appear in various formats:
-        # - emidocs.aspx?id=12345
-        # - /ru/emidocs.aspx?id=12345
-        # - https://www.moex.com/ru/emidocs.aspx?id=12345
-        # - href="emidocs.aspx?id=12345"
+        api_url = f"https://iss.moex.com/iss/securities/{secid}.json?iss.json=extended&iss.meta=off"
+        print(f"[RATING SERVICE] API URL: {api_url}")
         
-        patterns = [
-            # Pattern 1: Direct emidocs.aspx?id=XXXX
-            r'emidocs\.aspx\?id=(\d+)',
-            # Pattern 2: In href attribute
-            r'href=["\']([^"\']*emidocs\.aspx\?id=(\d+))["\']',
-            # Pattern 3: Full URL
-            r'https?://[^"\s]+emidocs\.aspx\?id=(\d+)',
-        ]
-        
-        for pattern_idx, pattern in enumerate(patterns):
-            print(f"[RATING SERVICE] Trying pattern {pattern_idx + 1} for emitent ID")
-            matches = list(re.finditer(pattern, html_content, re.IGNORECASE))
+        try:
+            print(f"[RATING SERVICE] Sending HTTP GET request to API...")
+            response = requests.get(
+                api_url,
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
+                timeout=30
+            )
             
-            for match in matches:
-                # Extract ID from match groups
-                emitent_id = None
-                if match.lastindex:
-                    # Use the last group which should be the ID
-                    emitent_id = match.group(match.lastindex)
-                else:
-                    # Single group pattern
-                    emitent_id = match.group(1)
+            print(f"[RATING SERVICE] API response: status_code={response.status_code}")
+            response.raise_for_status()
+            
+            # Parse JSON response
+            try:
+                json_data = response.json()
+                print(f"[RATING SERVICE] JSON parsed successfully, type: {type(json_data).__name__}")
                 
-                if emitent_id and emitent_id.isdigit():
-                    print(f"[RATING SERVICE] Found emitent ID: {emitent_id}")
-                    return emitent_id
+                # Expected format: [{"charsetinfo": {...}}, {"description": [...], "boards": [...]}]
+                if not isinstance(json_data, list) or len(json_data) < 2:
+                    print(f"[RATING SERVICE] ERROR: Unexpected JSON structure - expected list with at least 2 elements")
+                    return None
+                
+                # Find the element with "description" key
+                description_data = None
+                for item in json_data:
+                    if isinstance(item, dict) and "description" in item:
+                        description_data = item["description"]
+                        break
+                
+                if not description_data:
+                    print(f"[RATING SERVICE] ERROR: Could not find 'description' in JSON response")
+                    return None
+                
+                if not isinstance(description_data, list):
+                    print(f"[RATING SERVICE] ERROR: 'description' is not a list")
+                    return None
+                
+                # Find EMITTER_ID in description array
+                print(f"[RATING SERVICE] Searching for EMITTER_ID in description array ({len(description_data)} items)...")
+                for desc_item in description_data:
+                    if isinstance(desc_item, dict) and desc_item.get("name") == "EMITTER_ID":
+                        emitent_id = desc_item.get("value")
+                        if emitent_id is not None:
+                            # Convert to string if it's a number
+                            emitent_id_str = str(emitent_id)
+                            print(f"[RATING SERVICE] Found emitent ID: {emitent_id_str}")
+                            return emitent_id_str
+                
+                print(f"[RATING SERVICE] ERROR: Could not find EMITTER_ID in description array")
+                return None
+                
+            except json.JSONDecodeError as exc:
+                print(f"[RATING SERVICE] ERROR: Failed to parse JSON response - {str(exc)}")
+                raise RuntimeError(f"Invalid JSON response from API: {exc}") from exc
+            
+        except requests.RequestException as exc:
+            error_type = type(exc).__name__
+            print(f"[RATING SERVICE] ERROR: API request failed - {error_type}: {str(exc)}")
+            raise RuntimeError(f"Failed to fetch emitent ID from API for {secid}: {exc}") from exc
         
-        print(f"[RATING SERVICE] ERROR: Could not find emitent ID in HTML")
+        print(f"[RATING SERVICE] ERROR: Could not extract emitent ID from API response")
         return None
     
     def _fetch_rating_via_api(self, secid: str, emitent_id: str) -> Optional[List[Dict[str, Any]]]:
@@ -183,7 +209,7 @@ class RatingService:
         
         Args:
             secid: Security ID
-            emitent_id: Emitent ID extracted from HTML
+            emitent_id: Emitent ID extracted from MOEX API
             
         Returns:
             List of rating dictionaries or None if not found
@@ -333,61 +359,41 @@ class RatingService:
     
     def _fetch_rating_from_moex(self, secid: str, boardid: str) -> Optional[List[Dict[str, Any]]]:
         """
-        Fetch rating data from MOEX website by SECID and BOARDID.
+        Fetch rating data from MOEX by SECID and BOARDID.
         
         Strategy:
-        1. Load HTML page
-        2. Extract emitent ID from HTML (emidocs.aspx?id=XXXX)
+        1. Fetch securities data from MOEX API to get emitent ID
+        2. Extract emitent ID (EMITTER_ID) from JSON response
         3. Fetch rating data via MOEX API using emitent ID
         
         Args:
             secid: Security ID
-            boardid: Board ID
+            boardid: Board ID (not used in new implementation, kept for compatibility)
             
         Returns:
             List of rating dictionaries or None if not found
         """
-        url = f"https://www.moex.com/ru/issue.aspx?board={boardid}&code={secid}"
         print(f"[RATING SERVICE] Fetching rating data from MOEX")
-        print(f"[RATING SERVICE] URL: {url}")
         print(f"[RATING SERVICE] SECID: {secid}, BOARDID: {boardid}")
         
-        # Step 1: Load HTML page
+        # Step 1: Extract emitent ID from MOEX API
+        print(f"[RATING SERVICE] Step 1: Fetching emitent ID from MOEX API...")
         try:
-            print(f"[RATING SERVICE] Step 1: Loading HTML page...")
-            response = requests.get(
-                url,
-                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
-                timeout=30
-            )
-            
-            print(f"[RATING SERVICE] HTML response: status_code={response.status_code}")
-            response.raise_for_status()
-            
-            html_content = response.text
-            html_size = len(html_content)
-            print(f"[RATING SERVICE] HTML content size: {html_size} bytes")
-            
-        except requests.RequestException as exc:
+            emitent_id = self._extract_emitent_id_from_api(secid)
+        except Exception as exc:
             error_type = type(exc).__name__
-            print(f"[RATING SERVICE] ERROR: HTTP request failed - {error_type}: {str(exc)}")
-            raise RuntimeError(f"Failed to download rating data for {secid}: {exc}") from exc
-        except URLError as exc:
-            print(f"[RATING SERVICE] ERROR: URL error - {str(exc)}")
-            raise RuntimeError(f"Failed to download rating data for {secid}: {exc}") from exc
-        
-        # Step 2: Extract emitent ID from HTML
-        print(f"[RATING SERVICE] Step 2: Extracting emitent ID from HTML...")
-        emitent_id = self._extract_emitent_id_from_html(html_content)
+            print(f"[RATING SERVICE] ERROR: Failed to extract emitent ID - {error_type}: {str(exc)}")
+            print(f"[RATING SERVICE] No rating data available for this bond, returning empty rating")
+            return self._create_empty_rating()
         
         if not emitent_id:
-            print(f"[RATING SERVICE] WARNING: Could not find emitent ID in HTML for {secid}")
+            print(f"[RATING SERVICE] WARNING: Could not find emitent ID for {secid}")
             print(f"[RATING SERVICE] No rating data available for this bond, returning empty rating")
             # Return empty rating instead of raising error
             return self._create_empty_rating()
         
-        # Step 3: Fetch rating via API
-        print(f"[RATING SERVICE] Step 3: Fetching rating via API...")
+        # Step 2: Fetch rating via API
+        print(f"[RATING SERVICE] Step 2: Fetching rating via API using emitent ID: {emitent_id}...")
         rating_data = self._fetch_rating_via_api(secid, emitent_id)
         
         if rating_data is None:
@@ -398,7 +404,7 @@ class RatingService:
         print(f"[RATING SERVICE] Successfully fetched rating data via API")
         return rating_data
     
-    def get_rating(self, secid: str, boardid: str, force_refresh: bool = False) -> List[Dict[str, Any]]:
+    def get_rating(self, secid: str, boardid: str, force_refresh: bool = False, force_update_all: bool = False) -> List[Dict[str, Any]]:
         """
         Get rating data for a specific bond by SECID and BOARDID.
         
@@ -410,6 +416,8 @@ class RatingService:
             boardid: Board ID
             force_refresh: If True, fetch from MOEX when data is missing or stale.
                           If False, only return cached data (no network requests).
+            force_update_all: If True, ignore last_updated date and always fetch from MOEX
+                             when force_refresh is True. If False, respect date check.
             
         Returns:
             List of rating dictionaries with keys: agency_id, agency_name_short_ru,
@@ -418,7 +426,7 @@ class RatingService:
         Raises:
             RuntimeError: If data cannot be fetched or parsed (only when force_refresh=True)
         """
-        print(f"[RATING SERVICE] Getting rating for SECID={secid}, BOARDID={boardid}, force_refresh={force_refresh}")
+        print(f"[RATING SERVICE] Getting rating for SECID={secid}, BOARDID={boardid}, force_refresh={force_refresh}, force_update_all={force_update_all}")
         
         rating_data = self._load_rating_data()
         
@@ -435,7 +443,18 @@ class RatingService:
                     print(f"[RATING SERVICE] Found cached data for {secid} with {ratings_count} rating entries (last updated: {last_updated})")
                     
                     # Check if data needs to be refreshed (older than one month)
-                    if last_updated and not self._is_data_stale(last_updated):
+                    # If force_update_all is True, skip date check and always fetch
+                    if force_update_all:
+                        if force_refresh:
+                            print(f"[RATING SERVICE] force_update_all=True, ignoring date check, fetching fresh data from MOEX...")
+                            # Continue to fetch fresh data below
+                        else:
+                            print(f"[RATING SERVICE] force_update_all=True but force_refresh=False, returning cached data")
+                            if not isinstance(ratings_list, list):
+                                print(f"[RATING SERVICE] WARNING: ratings_list is not a list, converting...")
+                                ratings_list = []
+                            return ratings_list
+                    elif last_updated and not self._is_data_stale(last_updated):
                         print(f"[RATING SERVICE] Cached data is fresh, returning cached data (no MOEX fetch needed)")
                         # Ensure we return a list
                         if not isinstance(ratings_list, list):

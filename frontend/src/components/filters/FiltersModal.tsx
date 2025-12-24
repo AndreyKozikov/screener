@@ -24,6 +24,7 @@ import { MaturityDateFilter } from './MaturityDateFilter';
 import { ListLevelFilter } from './ListLevelFilter';
 import { CurrencyFilter } from './CurrencyFilter';
 import { BondTypeFilter } from './BondTypeFilter';
+import { BondType43Filter } from './BondType43Filter';
 import { CouponTypeFilter } from './CouponTypeFilter';
 import { RatingRangeFilter } from './RatingRangeFilter';
 
@@ -51,6 +52,7 @@ export const FiltersModal: React.FC<FiltersModalProps> = ({ open, onClose }) => 
   const [showListLevel, setShowListLevel] = useState(false);
   const [showCurrency, setShowCurrency] = useState(false);
   const [showBondType, setShowBondType] = useState(false);
+  const [showBondType43, setShowBondType43] = useState(false);
   const [showCouponType, setShowCouponType] = useState(false);
   const [showRating, setShowRating] = useState(false);
 
@@ -92,9 +94,9 @@ export const FiltersModal: React.FC<FiltersModalProps> = ({ open, onClose }) => 
 
       <DialogContent dividers sx={{ p: 2 }}>
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-          {/* Доходность купона относительно номинала и Доходность купона к текущей цене в одну строку */}
+          {/* Доходность купона относительно номинала, Доходность купона к текущей цене и Доходность к погашению в одну строку */}
           <Box sx={{ display: 'flex', gap: 1.5, flexDirection: { xs: 'column', md: 'row' }, alignItems: 'flex-start' }}>
-              {/* Доходность купона относительно номинала */}
+            {/* Доходность купона относительно номинала */}
             <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'grey.50', flex: 1 }}>
               <Box display="flex" justifyContent="space-between" alignItems="center">
                 <Typography variant="subtitle1" fontSize="0.85rem">
@@ -122,12 +124,12 @@ export const FiltersModal: React.FC<FiltersModalProps> = ({ open, onClose }) => 
               </Box>
               <Collapse in={showCouponRange}>
                 <Box mt={1.5}>
-                <CouponRangeFilter />
-              </Box>
+                  <CouponRangeFilter />
+                </Box>
               </Collapse>
-              </Box>
+            </Box>
 
-              {/* Доходность купона к текущей цене */}
+            {/* Доходность купона к текущей цене */}
             <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'grey.50', flex: 1 }}>
               <Box display="flex" justifyContent="space-between" alignItems="center">
                 <Typography variant="subtitle1" fontSize="0.85rem">
@@ -155,44 +157,44 @@ export const FiltersModal: React.FC<FiltersModalProps> = ({ open, onClose }) => 
               </Box>
               <Collapse in={showCouponYieldRange}>
                 <Box mt={1.5}>
-                <CouponYieldRangeFilter />
+                  <CouponYieldRangeFilter />
+                </Box>
+              </Collapse>
+            </Box>
+
+            {/* Доходность к погашению */}
+            <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'grey.50', flex: 1 }}>
+              <Box display="flex" justifyContent="space-between" alignItems="center">
+                <Typography variant="subtitle1" fontSize="0.85rem">
+                  Доходность к погашению
+                </Typography>
+                <IconButton 
+                  onClick={() => setShowYieldRange(!showYieldRange)}
+                  sx={{ 
+                    border: 'none !important', 
+                    boxShadow: 'none !important', 
+                    outline: 'none !important',
+                    '&:hover': { bgcolor: 'transparent' },
+                    '&:focus': { outline: 'none !important', border: 'none !important' },
+                    '&:focus-visible': { outline: 'none !important', border: 'none !important' },
+                    '&:active': { outline: 'none !important', boxShadow: 'none !important', border: 'none !important' },
+                    '&::before': { display: 'none' },
+                    '&::after': { display: 'none' }
+                  }}
+                  size="small"
+                  disableRipple
+                  disableFocusRipple
+                >
+                  {showYieldRange ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+                </IconButton>
               </Box>
+              <Collapse in={showYieldRange}>
+                <Box mt={1.5}>
+                  <YieldRangeFilter />
+                </Box>
               </Collapse>
             </Box>
           </Box>
-
-          {/* Доходность к погашению */}
-          <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'grey.50' }}>
-            <Box display="flex" justifyContent="space-between" alignItems="center">
-              <Typography variant="subtitle1" fontSize="0.85rem">
-                Доходность к погашению
-              </Typography>
-              <IconButton 
-                onClick={() => setShowYieldRange(!showYieldRange)}
-                sx={{ 
-                  border: 'none !important', 
-                  boxShadow: 'none !important', 
-                  outline: 'none !important',
-                  '&:hover': { bgcolor: 'transparent' },
-                  '&:focus': { outline: 'none !important', border: 'none !important' },
-                  '&:focus-visible': { outline: 'none !important', border: 'none !important' },
-                  '&:active': { outline: 'none !important', boxShadow: 'none !important', border: 'none !important' },
-                  '&::before': { display: 'none' },
-                  '&::after': { display: 'none' }
-                }}
-                size="small"
-                disableRipple
-                disableFocusRipple
-              >
-                {showYieldRange ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
-              </IconButton>
-            </Box>
-            <Collapse in={showYieldRange}>
-              <Box mt={1.5}>
-                <YieldRangeFilter />
-              </Box>
-            </Collapse>
-            </Box>
 
           {/* Дата погашения */}
           <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'grey.50' }}>
@@ -293,70 +295,106 @@ export const FiltersModal: React.FC<FiltersModalProps> = ({ open, onClose }) => 
             </Collapse>
               </Box>
 
-          {/* Тип облигации */}
-          <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'grey.50' }}>
-            <Box display="flex" justifyContent="space-between" alignItems="center">
-              <Typography variant="subtitle1" fontSize="0.85rem">
-                Тип облигации
-              </Typography>
-              <IconButton 
-                onClick={() => setShowBondType(!showBondType)}
-                sx={{ 
-                  border: 'none !important', 
-                  boxShadow: 'none !important', 
-                  outline: 'none !important',
-                  '&:hover': { bgcolor: 'transparent' },
-                  '&:focus': { outline: 'none !important', border: 'none !important' },
-                  '&:focus-visible': { outline: 'none !important', border: 'none !important' },
-                  '&:active': { outline: 'none !important', boxShadow: 'none !important', border: 'none !important' },
-                  '&::before': { display: 'none' },
-                  '&::after': { display: 'none' }
-                }}
-                size="small"
-                disableRipple
-                disableFocusRipple
-              >
-                {showBondType ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
-              </IconButton>
-            </Box>
-            <Collapse in={showBondType}>
-              <Box mt={1.5}>
-              <BondTypeFilter />
-            </Box>
-            </Collapse>
-          </Box>
-
-          {/* Тип купона */}
-          <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'grey.50' }}>
-            <Box display="flex" justifyContent="space-between" alignItems="center">
-              <Typography variant="subtitle1" fontSize="0.85rem">
-                Тип купона
-              </Typography>
-              <IconButton 
-                onClick={() => setShowCouponType(!showCouponType)}
-                sx={{ 
-                  border: 'none !important', 
-                  boxShadow: 'none !important', 
-                  outline: 'none !important',
-                  '&:hover': { bgcolor: 'transparent' },
-                  '&:focus': { outline: 'none !important', border: 'none !important' },
-                  '&:focus-visible': { outline: 'none !important', border: 'none !important' },
-                  '&:active': { outline: 'none !important', boxShadow: 'none !important', border: 'none !important' },
-                  '&::before': { display: 'none' },
-                  '&::after': { display: 'none' }
-                }}
-                size="small"
-                disableRipple
-                disableFocusRipple
-              >
-                {showCouponType ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
-              </IconButton>
-            </Box>
-            <Collapse in={showCouponType}>
-              <Box mt={1.5}>
-                <CouponTypeFilter />
+          {/* Тип облигации, Вид облигации и Тип купона в одну строку */}
+          <Box sx={{ display: 'flex', gap: 1.5, flexDirection: { xs: 'column', md: 'row' }, alignItems: 'flex-start' }}>
+            {/* Тип облигации */}
+            <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'grey.50', flex: 1 }}>
+              <Box display="flex" justifyContent="space-between" alignItems="center">
+                <Typography variant="subtitle1" fontSize="0.85rem">
+                  Тип облигации
+                </Typography>
+                <IconButton 
+                  onClick={() => setShowBondType(!showBondType)}
+                  sx={{ 
+                    border: 'none !important', 
+                    boxShadow: 'none !important', 
+                    outline: 'none !important',
+                    '&:hover': { bgcolor: 'transparent' },
+                    '&:focus': { outline: 'none !important', border: 'none !important' },
+                    '&:focus-visible': { outline: 'none !important', border: 'none !important' },
+                    '&:active': { outline: 'none !important', boxShadow: 'none !important', border: 'none !important' },
+                    '&::before': { display: 'none' },
+                    '&::after': { display: 'none' }
+                  }}
+                  size="small"
+                  disableRipple
+                  disableFocusRipple
+                >
+                  {showBondType ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+                </IconButton>
               </Box>
-            </Collapse>
+              <Collapse in={showBondType}>
+                <Box mt={1.5}>
+                  <BondTypeFilter />
+                </Box>
+              </Collapse>
+            </Box>
+
+            {/* Вид облигации */}
+            <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'grey.50', flex: 1 }}>
+              <Box display="flex" justifyContent="space-between" alignItems="center">
+                <Typography variant="subtitle1" fontSize="0.85rem">
+                  Вид облигации
+                </Typography>
+                <IconButton 
+                  onClick={() => setShowBondType43(!showBondType43)}
+                  sx={{ 
+                    border: 'none !important', 
+                    boxShadow: 'none !important', 
+                    outline: 'none !important',
+                    '&:hover': { bgcolor: 'transparent' },
+                    '&:focus': { outline: 'none !important', border: 'none !important' },
+                    '&:focus-visible': { outline: 'none !important', border: 'none !important' },
+                    '&:active': { outline: 'none !important', boxShadow: 'none !important', border: 'none !important' },
+                    '&::before': { display: 'none' },
+                    '&::after': { display: 'none' }
+                  }}
+                  size="small"
+                  disableRipple
+                  disableFocusRipple
+                >
+                  {showBondType43 ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+                </IconButton>
+              </Box>
+              <Collapse in={showBondType43}>
+                <Box mt={1.5}>
+                  <BondType43Filter />
+                </Box>
+              </Collapse>
+            </Box>
+
+            {/* Тип купона */}
+            <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'grey.50', flex: 1 }}>
+              <Box display="flex" justifyContent="space-between" alignItems="center">
+                <Typography variant="subtitle1" fontSize="0.85rem">
+                  Тип купона
+                </Typography>
+                <IconButton 
+                  onClick={() => setShowCouponType(!showCouponType)}
+                  sx={{ 
+                    border: 'none !important', 
+                    boxShadow: 'none !important', 
+                    outline: 'none !important',
+                    '&:hover': { bgcolor: 'transparent' },
+                    '&:focus': { outline: 'none !important', border: 'none !important' },
+                    '&:focus-visible': { outline: 'none !important', border: 'none !important' },
+                    '&:active': { outline: 'none !important', boxShadow: 'none !important', border: 'none !important' },
+                    '&::before': { display: 'none' },
+                    '&::after': { display: 'none' }
+                  }}
+                  size="small"
+                  disableRipple
+                  disableFocusRipple
+                >
+                  {showCouponType ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+                </IconButton>
+              </Box>
+              <Collapse in={showCouponType}>
+                <Box mt={1.5}>
+                  <CouponTypeFilter />
+                </Box>
+              </Collapse>
+            </Box>
           </Box>
 
           {/* Рейтинг */}

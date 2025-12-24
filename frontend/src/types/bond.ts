@@ -7,6 +7,8 @@ export interface BondListItem {
   SECID: string;
   BOARDID: string;
   SHORTNAME: string;
+  SECNAME: string | null;  // Полное название ценной бумаги
+  ISIN: string | null;  // ISIN код
   COUPONPERCENT: number | null;
   MATDATE: string | null;  // ISO date string
   STATUS: string | null;
@@ -29,6 +31,7 @@ export interface BondListItem {
   RATING_AGENCY: string | null;  // Название рейтингового агентства
   RATING_LEVEL: string | null;  // Уровень рейтинга
   BONDTYPE: string | null;  // Тип облигации
+  BONDTYPE43: string | null;  // Вид облигации (из bonds.json, индекс 43)
   COUPON_TYPE: string | null;  // Тип купона (FIX или FLOAT)
 }
 

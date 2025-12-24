@@ -12,6 +12,8 @@ import {
   Paper,
   Tooltip,
   Button,
+  Card,
+  CardContent,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import DownloadIcon from '@mui/icons-material/Download';
@@ -442,55 +444,93 @@ export const ComparisonTable: React.FC = () => {
 
   if (comparisonBonds.length === 0) {
     return (
-      <Box sx={{ p: 3, textAlign: 'center' }}>
-        <Typography variant="h6" color="text.secondary">
-          Нет облигаций для сравнения
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-          Добавьте облигации к сравнению, используя столбец "Добавить к сравнению" в таблице скринера облигаций
-        </Typography>
-      </Box>
+      <Card sx={{ 
+        height: '100%', 
+        display: 'flex', 
+        flexDirection: 'column', 
+        width: '100%',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+        borderRadius: '12px',
+      }}>
+        <CardContent sx={{ p: 3, textAlign: 'center', flexGrow: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+          <Typography variant="h6" color="text.secondary">
+            Нет облигаций для сравнения
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+            Добавьте облигации к сравнению, используя столбец "Добавить к сравнению" в таблице скринера облигаций
+          </Typography>
+        </CardContent>
+      </Card>
     );
   }
 
   return (
-    <Box sx={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
-      {/* Header with download buttons */}
-      <Box sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: 1, borderColor: 'divider' }}>
-        <Typography variant="h6">
-          Сравнение облигаций ({comparisonBonds.length})
-        </Typography>
-        <Box sx={{ display: 'flex', gap: 1 }}>
-          {comparisonData.length > 0 && (
-            <>
-              <Button startIcon={<SaveIcon />} onClick={handleSaveBonds} variant="contained" color="primary">
-                Сохранить в JSON
-              </Button>
-              <Button startIcon={<DownloadIcon />} onClick={handleDownloadMarkdown} variant="outlined">
-                Сохранить в Markdown
-              </Button>
-            </>
-          )}
+    <Card sx={{ 
+      height: '100%', 
+      display: 'flex', 
+      flexDirection: 'column', 
+      width: '100%',
+      boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+      borderRadius: '12px',
+    }}>
+      <CardContent sx={{ p: 0, '&:last-child': { pb: 0 }, flexGrow: 1, display: 'flex', flexDirection: 'column', width: '100%' }}>
+        {/* Header with download buttons */}
+        <Box sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: 1, borderColor: 'divider' }}>
+          <Typography variant="h6">
+            Сравнение облигаций ({comparisonBonds.length})
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            {comparisonData.length > 0 && (
+              <>
+                <Button startIcon={<SaveIcon />} onClick={handleSaveBonds} variant="contained" color="primary">
+                  Сохранить в JSON
+                </Button>
+                <Button startIcon={<DownloadIcon />} onClick={handleDownloadMarkdown} variant="outlined">
+                  Сохранить в Markdown
+                </Button>
+              </>
+            )}
+          </Box>
         </Box>
-      </Box>
 
-      {/* Table */}
-      <Box sx={{ flexGrow: 1, overflow: 'auto' }}>
-        <TableContainer component={Paper} sx={{ height: '100%' }}>
-          <Table stickyHeader size="small">
+        {/* Table */}
+        <Box sx={{ flexGrow: 1, overflow: 'auto', px: 2 }}>
+          <TableContainer component={Paper} sx={{ height: '100%', boxShadow: 'none', borderRadius: 0 }}>
+            <Table 
+              stickyHeader 
+              size="small"
+              sx={{
+                borderCollapse: 'collapse',
+                '& .MuiTableCell-root': {
+                  borderRight: '1px solid #dee2e6 !important',
+                  borderBottom: '1px solid #dee2e6 !important',
+                  '&:last-of-type': {
+                    borderRight: 'none !important',
+                  },
+                },
+                '& .MuiTableHead-root .MuiTableCell-root': {
+                  borderBottom: '2px solid #dee2e6 !important',
+                  backgroundColor: '#fafafa !important',
+                  fontWeight: '600 !important',
+                },
+                '& .MuiTableBody-root .MuiTableRow-root:last-child .MuiTableCell-root': {
+                  borderBottom: '1px solid #dee2e6 !important',
+                },
+              }}
+            >
             <TableHead>
               <TableRow>
-                <TableCell align="center" sx={{ fontWeight: 600 }}>Название</TableCell>
-                <TableCell align="center" sx={{ fontWeight: 600 }}>Тикер</TableCell>
-                <TableCell align="center" sx={{ fontWeight: 600 }}>Срок до погашения, лет</TableCell>
-                <TableCell align="center" sx={{ fontWeight: 600 }}>Доходность купона относительно номинала (%)</TableCell>
-                <TableCell align="center" sx={{ fontWeight: 600 }}>Цена (%)</TableCell>
-                <TableCell align="center" sx={{ fontWeight: 600 }}>Доходность к погашению, YTM (%)</TableCell>
-                <TableCell align="center" sx={{ fontWeight: 600 }}>Доходность купона к текущей цене (%)</TableCell>
-                <TableCell align="center" sx={{ fontWeight: 600 }}>Дюрация</TableCell>
-                <TableCell align="center" sx={{ fontWeight: 600 }}>Модифицированная дюрация</TableCell>
-                <TableCell align="center" sx={{ fontWeight: 600 }}>Изменение цены при изменении ставки на 1%</TableCell>
-                <TableCell align="center" sx={{ fontWeight: 600 }}>
+                <TableCell align="center">Название</TableCell>
+                <TableCell align="center">Тикер</TableCell>
+                <TableCell align="center">Срок до погашения, лет</TableCell>
+                <TableCell align="center">Доходность купона относительно номинала (%)</TableCell>
+                <TableCell align="center">Цена (%)</TableCell>
+                <TableCell align="center">Доходность к погашению, YTM (%)</TableCell>
+                <TableCell align="center">Доходность купона к текущей цене (%)</TableCell>
+                <TableCell align="center">Дюрация</TableCell>
+                <TableCell align="center">Модифицированная дюрация</TableCell>
+                <TableCell align="center">Изменение цены при изменении ставки на 1%</TableCell>
+                <TableCell align="center">
                   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5 }}>
                     Премии и отклонения по рынку
                     <Tooltip
@@ -534,7 +574,7 @@ export const ComparisonTable: React.FC = () => {
                     </Tooltip>
                   </Box>
                 </TableCell>
-                <TableCell align="center" sx={{ fontWeight: 600 }}>Действия</TableCell>
+                <TableCell align="center">Действия</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -590,7 +630,8 @@ export const ComparisonTable: React.FC = () => {
           </Table>
         </TableContainer>
       </Box>
-    </Box>
+      </CardContent>
+    </Card>
   );
 };
 
