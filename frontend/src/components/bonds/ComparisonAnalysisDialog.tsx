@@ -15,9 +15,11 @@ import {
   TableHead,
   TableRow,
   Paper,
+  Tooltip,
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import DownloadIcon from '@mui/icons-material/Download';
+import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import type { BondListItem } from '../../types/bond';
 import { formatNumber } from '../../utils/formatters';
 import { fetchZerocuponData, type ZerocuponRecord } from '../../api/zerocupon';
@@ -174,6 +176,42 @@ export const ComparisonAnalysisDialog: React.FC<ComparisonAnalysisDialogProps> =
     const rounded = Math.round(value * 100) / 100;
     const sign = rounded >= 0 ? '+' : '';
     return `${sign}${rounded.toFixed(2)}%`;
+  };
+
+  // Get color for spread value (positive = green, negative = red/gray)
+  const getSpreadColor = (spreadStr: string): string => {
+    if (spreadStr === '—' || spreadStr === '' || !spreadStr) return 'inherit';
+    
+    // Parse spread string (e.g., "+1.23%" or "-1.23%" or "0.00%")
+    const cleaned = spreadStr.replace('%', '').replace('+', '').trim();
+    const numericValue = parseFloat(cleaned);
+    
+    if (isNaN(numericValue)) return 'inherit';
+    
+    // Positive values = green (premium is good for investor)
+    if (numericValue > 0) {
+      return '#4CAF50'; // Green
+    }
+    
+    // Negative values = red (no premium)
+    if (numericValue < 0) {
+      return '#E53935'; // Red
+    }
+    
+    // Zero = default color
+    return 'inherit';
+  };
+
+  // Check if spread value is non-zero and valid
+  const isSpreadNonZero = (spreadStr: string): boolean => {
+    if (spreadStr === '—' || spreadStr === '' || !spreadStr) return false;
+    
+    const cleaned = spreadStr.replace('%', '').replace('+', '').trim();
+    const numericValue = parseFloat(cleaned);
+    
+    if (isNaN(numericValue)) return false;
+    
+    return numericValue !== 0;
   };
 
   // Calculate coupon yield to current price
@@ -426,7 +464,50 @@ export const ComparisonAnalysisDialog: React.FC<ComparisonAnalysisDialogProps> =
                 <TableCell align="center" sx={{ fontWeight: 600 }}>Дюрация</TableCell>
                 <TableCell align="center" sx={{ fontWeight: 600 }}>Модифицированная дюрация</TableCell>
                 <TableCell align="center" sx={{ fontWeight: 600 }}>Изменение цены при изменении ставки на 1%</TableCell>
-                <TableCell align="center" sx={{ fontWeight: 600 }}>Премии и отклонения по рынку</TableCell>
+                <TableCell align="center" sx={{ fontWeight: 600 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5 }}>
+                    Премии и отклонения по рынку
+                    <Tooltip
+                      title={
+                        <Box sx={{ p: 0.5 }}>
+                          <Typography variant="body2" sx={{ mb: 1 }}>
+                            Показывает отклонение доходности облигации от расчетной рыночной доходности сопоставимых выпусков (по сроку до погашения и кредитному качеству).
+                          </Typography>
+                          <Typography variant="body2" sx={{ mb: 1 }}>
+                            <strong>Положительное значение</strong> — облигация предлагает доходность выше рыночной нормы: рынок закладывает дополнительную премию, выпуск выглядит относительно недооценённым.
+                          </Typography>
+                          <Typography variant="body2" sx={{ mb: 1 }}>
+                            <strong>Отрицательное значение</strong> — доходность ниже рыночной нормы: премия отсутствует, выпуск выглядит относительно переоценённым.
+                          </Typography>
+                          <Typography variant="body2">
+                            Используется для оценки относительной привлекательности облигации при сопоставимом риске.
+                          </Typography>
+                        </Box>
+                      }
+                      arrow
+                      placement="top"
+                      enterDelay={300}
+                      leaveDelay={0}
+                      slotProps={{
+                        tooltip: {
+                          sx: {
+                            maxWidth: 400,
+                            bgcolor: 'rgba(255, 255, 255, 0.98)',
+                            color: 'rgba(0, 0, 0, 0.87)',
+                            fontSize: '13px',
+                            lineHeight: 1.5,
+                            padding: '12px 16px',
+                            borderRadius: '8px',
+                            boxShadow: '0px 3px 5px -1px rgba(0, 0, 0, 0.2), 0px 6px 10px 0px rgba(0, 0, 0, 0.14), 0px 1px 18px 0px rgba(0, 0, 0, 0.12)',
+                            border: '1px solid rgba(0, 0, 0, 0.12)',
+                          },
+                        },
+                      }}
+                    >
+                      <HelpOutlineIcon sx={{ fontSize: 16, color: 'text.secondary', cursor: 'help' }} />
+                    </Tooltip>
+                  </Box>
+                </TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -451,7 +532,15 @@ export const ComparisonAnalysisDialog: React.FC<ComparisonAnalysisDialogProps> =
                     <TableCell align="center">{row.regularDuration}</TableCell>
                     <TableCell align="center">{row.duration}</TableCell>
                     <TableCell align="center">{row.priceChange}</TableCell>
-                    <TableCell align="center">{row.spread}</TableCell>
+                    <TableCell 
+                      align="center"
+                      sx={{
+                        color: getSpreadColor(row.spread),
+                        fontWeight: isSpreadNonZero(row.spread) ? 600 : 'inherit',
+                      }}
+                    >
+                      {row.spread}
+                    </TableCell>
                   </TableRow>
                 ))
               )}

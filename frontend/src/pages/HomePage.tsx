@@ -11,6 +11,7 @@ import { BondDetails } from '../components/bonds/BondDetails';
 import { ZerocuponTable } from '../components/zerocupon/ZerocuponTable';
 import { ForecastTable } from '../components/forecast/ForecastTable';
 import { PortfolioTable } from '../components/portfolio/PortfolioTable';
+import { ComparisonTable } from '../components/bonds/ComparisonTable';
 import { AnalysisParamsDialog } from '../components/llm/AnalysisParamsDialog';
 import { AnalysisResultDialog } from '../components/llm/AnalysisResultDialog';
 import { LLMAnalysisModelDialog, type LLMModel } from '../components/llm/LLMAnalysisModelDialog';
@@ -306,6 +307,7 @@ export const HomePage: React.FC = () => {
       'Кривая бескупонной доходности',
       'Среднесрочный прогноз Банка России',
       'Мой портфель',
+      'Сравнение облигаций',
       'Советы по выбору облигаций',
     ];
     return tabNames[currentTab] || 'Неизвестная вкладка';
@@ -377,8 +379,8 @@ export const HomePage: React.FC = () => {
       </AppBar>
 
       {/* Main Content */}
-      <Box sx={{ flexGrow: 1, bgcolor: 'background.default', display: 'flex', flexDirection: 'column', width: '100%', ...(currentTab !== 4 ? { height: 'calc(100vh - 64px)' } : {}) }}>
-        {currentTab === 4 ? (
+      <Box sx={{ flexGrow: 1, bgcolor: 'background.default', display: 'flex', flexDirection: 'column', width: '100%', ...(currentTab !== 5 ? { height: 'calc(100vh - 64px)' } : {}) }}>
+        {currentTab === 5 ? (
           <>
             {/* Tabs for course tab */}
             <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2, px: 2, pt: 2 }}>
@@ -387,6 +389,7 @@ export const HomePage: React.FC = () => {
                 <Tab label="Кривая бескупонной доходности" />
                 <Tab label="Среднесрочный прогноз Банка России" />
                 <Tab label="Мой портфель" />
+                <Tab label="Сравнение облигаций" />
                 <Tab label="Советы по выбору облигаций" />
               </Tabs>
             </Box>
@@ -404,6 +407,7 @@ export const HomePage: React.FC = () => {
                 <Tab label="Кривая бескупонной доходности" />
                 <Tab label="Среднесрочный прогноз Банка России" />
                 <Tab label="Мой портфель" />
+                <Tab label="Сравнение облигаций" />
                 <Tab label="Советы по выбору облигаций" />
               </Tabs>
             </Box>
@@ -438,6 +442,12 @@ export const HomePage: React.FC = () => {
             {currentTab === 3 && (
               <Box sx={{ flexGrow: 1, minHeight: 0 }}>
                 <PortfolioTable />
+              </Box>
+            )}
+
+            {currentTab === 4 && (
+              <Box sx={{ flexGrow: 1, minHeight: 0 }}>
+                <ComparisonTable />
               </Box>
             )}
           </Container>

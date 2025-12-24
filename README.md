@@ -210,44 +210,6 @@ npm run build
 # Output will be in dist/
 ```
 
-## 🐳 Docker Deployment (Recommended)
-
-The easiest way to run the application is using Docker:
-
-### Quick Start with Docker
-
-**Windows:**
-```bash
-start.bat
-```
-
-**Linux/macOS:**
-```bash
-chmod +x start.sh
-./start.sh
-```
-
-**Manual Docker Compose:**
-```bash
-# Build and start
-docker-compose up -d
-
-# View logs
-docker-compose logs -f
-
-# Stop
-docker-compose down
-```
-
-The application will be available at:
-- **Frontend**: http://localhost:80
-- **Backend API**: http://localhost:8000
-- **API Documentation**: http://localhost:8000/docs
-
-### Docker Requirements
-- Docker Desktop (Windows/macOS) or Docker Engine (Linux)
-- Docker Compose v2.0+
-
 ## 🤝 Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
