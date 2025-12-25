@@ -100,14 +100,10 @@ export const HomePage: React.FC = () => {
     const taskHandlers: Record<string, () => Promise<void>> = {
       bonds: async () => {
         await refreshBondsData();
-        // Also refresh zero-coupon yield curve data as part of bonds refresh
-        try {
-          await refreshZerocuponData();
-        } catch (zerocuponError) {
-          console.error('Failed to refresh zerocupon data', zerocuponError);
-          // Don't fail the whole refresh if zerocupon update fails
-        }
         triggerDataRefresh();
+      },
+      zerocupon: async () => {
+        await refreshZerocuponData();
       },
       ratings: async () => {
         await refreshRatingsData(forceUpdateRatings || false);
@@ -465,6 +461,7 @@ export const HomePage: React.FC = () => {
         onConfirm={handleRefreshConfirm}
         tasks={[
           { id: 'bonds', label: 'Обновить данные облигаций', checked: false },
+          { id: 'zerocupon', label: 'Обновление данных кривой бескупонной доходности', checked: false },
           { id: 'ratings', label: 'Обновить рейтинги', checked: false },
           { id: 'emitents', label: 'Обновить эмитентов', checked: false },
           { id: 'coupons', label: 'Обновить купоны', checked: false },

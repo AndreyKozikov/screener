@@ -34,7 +34,7 @@ export const CouponTypeFilter: React.FC = () => {
               <Checkbox
                 checked={selectedValues.includes(option.value)}
                 onChange={() => handleToggle(option.value)}
-                size="small"
+      size="small"
               />
             }
             label={option.label}
