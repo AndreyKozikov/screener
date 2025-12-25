@@ -8,6 +8,7 @@ import orjson
 
 from app.models.bond import BondListItem
 from app.services.coupon_loader import get_coupon_loader
+from app.utils.logger import get_data_update_logger
 
 
 class DataLoader:
@@ -54,17 +55,26 @@ class DataLoader:
         Returns:
             Summary information about the downloaded dataset.
         """
+        logger = get_data_update_logger()
+        logger.info(f"[REFRESH BONDS] Starting bonds dataset refresh from {source_url}")
+        
         request = Request(source_url, headers={"User-Agent": "Mozilla/5.0"})
         
         try:
+            logger.info(f"[REFRESH BONDS] Attempting to download data from {source_url}")
             with urlopen(request, timeout=30) as response:
                 raw_payload = response.read()
+            logger.info(f"[REFRESH BONDS] Successfully downloaded {len(raw_payload)} bytes")
         except URLError as exc:
+            logger.error(f"[REFRESH BONDS] Failed to download bonds data from {source_url}: {exc}")
             raise RuntimeError(f"Failed to download bonds data: {exc}") from exc
         
         try:
+            logger.info("[REFRESH BONDS] Parsing JSON payload")
             payload = orjson.loads(raw_payload)
+            logger.info("[REFRESH BONDS] Successfully parsed JSON payload")
         except orjson.JSONDecodeError as exc:
+            logger.error(f"[REFRESH BONDS] Failed to parse JSON payload: {exc}")
             raise RuntimeError("Received invalid JSON while refreshing bonds data") from exc
         
         serialized = orjson.dumps(
@@ -73,52 +83,76 @@ class DataLoader:
         )
         
         bonds_path = self.data_dir / "bonds.json"
-        bonds_path.write_bytes(serialized)
+        try:
+            logger.info(f"[REFRESH BONDS] Writing data to {bonds_path}")
+            bonds_path.write_bytes(serialized)
+            logger.info(f"[REFRESH BONDS] Successfully wrote data to {bonds_path}")
+        except OSError as exc:
+            logger.error(f"[REFRESH BONDS] Failed to write data to {bonds_path}: {exc}")
+            raise
         
         # Keep root-level bonds.json in sync for auxiliary tools (e.g., Streamlit app)
         root_bonds_path = self.data_dir.parents[2] / "bonds.json"
         try:
+            logger.info(f"[REFRESH BONDS] Writing data to root bonds.json: {root_bonds_path}")
             root_bonds_path.write_bytes(serialized)
-        except OSError:
+            logger.info(f"[REFRESH BONDS] Successfully wrote data to root bonds.json")
+        except OSError as exc:
+            logger.warning(f"[REFRESH BONDS] Failed to write root bonds.json (non-critical): {exc}")
             # If we fail to write the auxiliary file, continue without interrupting the refresh flow
             pass
         
         # Reset caches and reload data from disk
+        logger.info("[REFRESH BONDS] Clearing caches and reloading data")
         self._bonds_cache = None
         self._details_cache = None
         self._load_bonds_data()
+        logger.info("[REFRESH BONDS] Data reloaded successfully")
         
         securities = len(payload.get("securities", {}).get("data", []))
         marketdata = len(payload.get("marketdata", {}).get("data", []))
         yields = len(payload.get("marketdata_yields", {}).get("data", []))
         
-        return {
+        summary = {
             "securities": securities,
             "marketdata": marketdata,
             "marketdata_yields": yields,
         }
+        
+        logger.info(f"[REFRESH BONDS] Refresh completed successfully. Summary: {summary}")
+        return summary
     
     def _load_bonds_data(self):
         """Load bonds.json and parse into structures"""
+        logger = get_data_update_logger()
         bonds_path = self.data_dir / "bonds.json"
         
-        with open(bonds_path, 'rb') as f:
-            data = orjson.loads(f.read())
+        logger.info(f"[LOAD BONDS DATA] Starting to load bonds data from {bonds_path}")
+        try:
+            with open(bonds_path, 'rb') as f:
+                data = orjson.loads(f.read())
+            logger.info(f"[LOAD BONDS DATA] Successfully loaded JSON file from {bonds_path}")
+        except (IOError, orjson.JSONDecodeError) as exc:
+            logger.error(f"[LOAD BONDS DATA] Failed to load bonds.json from {bonds_path}: {type(exc).__name__}: {exc}")
+            raise
         
         # Parse securities section
         securities = data.get("securities", {})
         sec_columns = securities.get("columns", [])
         sec_data = securities.get("data", [])
+        logger.info(f"[LOAD BONDS DATA] Parsed {len(sec_data)} securities records")
         
         # Parse marketdata section
         marketdata = data.get("marketdata", {})
         md_columns = marketdata.get("columns", [])
         md_data = marketdata.get("data", [])
+        logger.info(f"[LOAD BONDS DATA] Parsed {len(md_data)} marketdata records")
         
         # Parse marketdata_yields section
         yields = data.get("marketdata_yields", {})
         yields_columns = yields.get("columns", [])
         yields_data = yields.get("data", [])
+        logger.info(f"[LOAD BONDS DATA] Parsed {len(yields_data)} yields records")
         
         # Build lookup dictionaries
         bonds_list = []
@@ -283,6 +317,7 @@ class DataLoader:
                             break
         
         # Load and add ratings data
+        logger.info("[LOAD BONDS DATA] Loading ratings data")
         ratings_map = self._load_ratings_map()
         self._add_ratings_to_bonds(bonds_list, ratings_map)
         
@@ -294,6 +329,7 @@ class DataLoader:
                 details_map[secid]["securities"]["RATING_LEVEL"] = rating_info["level"]
         
         # Load and add bond types from bonds_emitent.json
+        logger.info("[LOAD BONDS DATA] Loading bond types data")
         bondtype_map = self._load_bondtype_map()
         self._add_bondtypes_to_bonds(bonds_list, bondtype_map)
         
@@ -305,6 +341,8 @@ class DataLoader:
         
         self._bonds_cache = bonds_list
         self._details_cache = details_map
+        
+        logger.info(f"[LOAD BONDS DATA] Successfully loaded {len(bonds_list)} bonds, {len(details_map)} bond details, {len(ratings_map)} ratings, {len(bondtype_map)} bond types")
     
     def _load_column_mapping(self) -> Dict[str, str]:
         """Load columns.json and build field -> display name mapping"""
@@ -349,8 +387,11 @@ class DataLoader:
     
     def clear_metadata_cache(self):
         """Clear metadata cache (columns and descriptions) to force reload"""
+        logger = get_data_update_logger()
+        logger.info("[CLEAR METADATA CACHE] Clearing metadata cache (columns and descriptions)")
         self._columns_cache = None
         self._descriptions_cache = None
+        logger.info("[CLEAR METADATA CACHE] Metadata cache cleared successfully")
     
     @staticmethod
     def _parse_int(value: any) -> Optional[int]:

@@ -12,6 +12,8 @@ import io
 import json
 import httpx
 
+from app.utils.logger import get_data_update_logger
+
 router = APIRouter(prefix="/api/zerocupon", tags=["zerocupon"])
 
 
@@ -499,10 +501,15 @@ def refresh_zerocupon_data() -> Dict[str, Any]:
     Refresh zero-coupon yield curve data from MOEX API.
     Checks last date in CSV and fetches missing data up to yesterday.
     """
+    logger = get_data_update_logger()
+    logger.info("[REFRESH ZEROCOUPON] Starting zerocupon data refresh")
+    
     csv_path = _get_zerocupon_path()
+    logger.info(f"[REFRESH ZEROCOUPON] Using CSV path: {csv_path}")
     
     # Get last date from CSV
     last_date = _get_last_date_from_csv(csv_path)
+    logger.info(f"[REFRESH ZEROCOUPON] Last date in CSV: {last_date.strftime('%Y-%m-%d') if last_date else 'None'}")
     
     # Determine start date (next day after last date, or 30 days ago if no data)
     if last_date:
@@ -514,8 +521,11 @@ def refresh_zerocupon_data() -> Dict[str, Any]:
     # End date is yesterday (don't fetch today as data might not be available)
     end_date = datetime.now() - timedelta(days=1)
     
+    logger.info(f"[REFRESH ZEROCOUPON] Date range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
+    
     # Skip if start_date is after end_date
     if start_date > end_date:
+        logger.info("[REFRESH ZEROCOUPON] Data is up to date, no refresh needed")
         return {
             "status": "ok",
             "message": "Data is up to date",
@@ -543,14 +553,14 @@ def refresh_zerocupon_data() -> Dict[str, Any]:
                 # Add to CSV
                 _add_data_to_csv(csv_path, current_date, time_str, yields_data)
                 dates_fetched += 1
-                print(f"Fetched data for {current_date.strftime('%Y-%m-%d')}")
+                logger.info(f"[REFRESH ZEROCOUPON] Fetched data for {current_date.strftime('%Y-%m-%d')}")
             else:
                 dates_failed += 1
-                print(f"No data available for {current_date.strftime('%Y-%m-%d')}")
+                logger.warning(f"[REFRESH ZEROCOUPON] No data available for {current_date.strftime('%Y-%m-%d')}")
         
         current_date += timedelta(days=1)
     
-    return {
+    result = {
         "status": "ok",
         "message": f"Fetched {dates_fetched} dates, {dates_failed} failed",
         "last_date": last_date.strftime("%d.%m.%Y") if last_date else None,
@@ -559,6 +569,9 @@ def refresh_zerocupon_data() -> Dict[str, Any]:
         "dates_fetched": dates_fetched,
         "dates_failed": dates_failed,
     }
+    
+    logger.info(f"[REFRESH ZEROCOUPON] Refresh completed: {result}")
+    return result
 
 
 @router.post("/refresh")
@@ -567,10 +580,15 @@ async def refresh_zerocupon():
     Refresh zero-coupon yield curve data from MOEX API.
     Fetches missing data from the last date in CSV up to yesterday.
     """
+    logger = get_data_update_logger()
+    logger.info("[API /zerocupon/refresh] Received request to refresh zerocupon data")
+    
     try:
         # Run in thread to avoid blocking
         result = await asyncio.to_thread(refresh_zerocupon_data)
+        logger.info(f"[API /zerocupon/refresh] Refresh completed successfully: {result}")
         return result
     except Exception as e:
+        logger.error(f"[API /zerocupon/refresh] ERROR: {type(e).__name__} - {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error refreshing zerocupon data: {str(e)}")
 

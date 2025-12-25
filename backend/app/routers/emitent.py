@@ -5,6 +5,7 @@ from typing import Optional
 from app.models.emitent import EmitentInfo
 from app.services.emitent_service import get_emitent_service
 from app.services.data_loader import get_data_loader
+from app.utils.logger import get_data_update_logger
 from typing import Dict, Any
 
 router = APIRouter(prefix="/api/emitent", tags=["emitent"])
@@ -72,19 +73,18 @@ async def refresh_emitents_data() -> Dict[str, Any]:
     Returns:
         Dictionary with refresh statistics: total, updated, errors, skipped
     """
-    print(f"\n{'='*80}")
-    print(f"[EMITENT REFRESH] Starting emitents refresh for all bonds")
-    print(f"{'='*80}")
+    logger = get_data_update_logger()
+    logger.info("[API /emitent/refresh] Received request to refresh emitents data")
     
     try:
         emitent_service = get_emitent_service()
         data_loader = get_data_loader()
         
         # Get all bonds details
-        print(f"[EMITENT REFRESH] Loading bonds data...")
+        logger.info("[API /emitent/refresh] Loading bonds data...")
         bonds_details = await data_loader.get_bond_details()
         bonds_count = len(bonds_details)
-        print(f"[EMITENT REFRESH] Found {bonds_count} bonds to process")
+        logger.info(f"[API /emitent/refresh] Found {bonds_count} bonds to process")
         
         # Refresh all emitents (wrap in asyncio.to_thread for I/O operations)
         summary = await asyncio.to_thread(
@@ -92,12 +92,7 @@ async def refresh_emitents_data() -> Dict[str, Any]:
             bonds_details
         )
         
-        print(f"[EMITENT REFRESH] Refresh completed:")
-        print(f"[EMITENT REFRESH]   Total bonds: {summary.get('total', 0)}")
-        print(f"[EMITENT REFRESH]   Updated: {summary.get('updated', 0)}")
-        print(f"[EMITENT REFRESH]   Errors: {summary.get('errors', 0)}")
-        print(f"[EMITENT REFRESH]   Skipped: {summary.get('skipped', 0)}")
-        print(f"{'='*80}\n")
+        logger.info(f"[API /emitent/refresh] Refresh completed: total={summary.get('total', 0)}, updated={summary.get('updated', 0)}, errors={summary.get('errors', 0)}, skipped={summary.get('skipped', 0)}")
         
         return {
             "status": "ok",
@@ -106,8 +101,7 @@ async def refresh_emitents_data() -> Dict[str, Any]:
         
     except Exception as exc:
         error_type = type(exc).__name__
-        print(f"[EMITENT REFRESH] ERROR: {error_type} - {str(exc)}")
-        print(f"{'='*80}\n")
+        logger.error(f"[API /emitent/refresh] ERROR: {error_type} - {str(exc)}")
         raise HTTPException(
             status_code=500,
             detail=f"Failed to refresh emitents: {str(exc)}"

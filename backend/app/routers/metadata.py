@@ -2,6 +2,7 @@ from fastapi import APIRouter
 from typing import Dict, List
 
 from app.services.data_loader import get_data_loader
+from app.utils.logger import get_data_update_logger
 
 router = APIRouter(prefix="/api", tags=["metadata"])
 
@@ -58,9 +59,13 @@ async def refresh_metadata():
     Clear metadata cache (columns and descriptions) to force reload from files.
     Useful when columns.json or describe.json files are updated.
     """
+    logger = get_data_update_logger()
+    logger.info("[API /refresh-metadata] Received request to refresh metadata cache")
+    
     loader = get_data_loader()
     loader.clear_metadata_cache()
     
+    logger.info("[API /refresh-metadata] Metadata cache cleared successfully")
     return {
         "status": "ok",
         "message": "Metadata cache cleared. Columns and descriptions will be reloaded on next request.",

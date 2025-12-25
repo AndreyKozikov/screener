@@ -97,20 +97,18 @@ async def refresh_ratings_data(
     Returns:
         Dictionary with refresh statistics
     """
-    print(f"\n{'='*80}")
-    print(f"[RATING REFRESH] Starting ratings refresh for all bonds")
-    print(f"[RATING REFRESH] Force update: {force_update}")
-    print(f"{'='*80}")
+    logger = get_data_update_logger()
+    logger.info(f"[API /rating/refresh] Received request to refresh ratings data (force_update={force_update})")
     
     try:
         rating_service = get_rating_service()
         data_loader = get_data_loader()
         
         # Get all bonds data
-        print(f"[RATING REFRESH] Loading bonds data...")
+        logger.info("[API /rating/refresh] Loading bonds data...")
         bonds_list = await data_loader.get_bonds()
         bonds_count = len(bonds_list)
-        print(f"[RATING REFRESH] Found {bonds_count} bonds to process")
+        logger.info(f"[API /rating/refresh] Found {bonds_count} bonds to process")
         
         # Statistics
         updated_count = 0
@@ -123,11 +121,12 @@ async def refresh_ratings_data(
             boardid = bond.BOARDID
             
             if not secid or not boardid:
-                print(f"[RATING REFRESH] Bond {idx + 1}/{bonds_count}: Skipping - missing SECID or BOARDID")
+                logger.warning(f"[API /rating/refresh] Bond {idx + 1}/{bonds_count}: Skipping - missing SECID or BOARDID")
                 skipped_count += 1
                 continue
             
-            print(f"[RATING REFRESH] Processing bond {idx + 1}/{bonds_count}: SECID={secid}, BOARDID={boardid}")
+            if (idx + 1) % 100 == 0:
+                logger.info(f"[API /rating/refresh] Processing bond {idx + 1}/{bonds_count}: SECID={secid}, BOARDID={boardid}")
             
             try:
                 # Get rating with force_refresh based on force_update parameter
@@ -141,10 +140,9 @@ async def refresh_ratings_data(
                     force_update  # force_update_all - ignore date check if True
                 )
                 updated_count += 1
-                print(f"[RATING REFRESH] Successfully updated rating for {secid}")
             except Exception as exc:
                 error_type = type(exc).__name__
-                print(f"[RATING REFRESH] ERROR: Failed to update rating for {secid} - {error_type}: {str(exc)}")
+                logger.error(f"[API /rating/refresh] ERROR: Failed to update rating for {secid} - {error_type}: {str(exc)}")
                 error_count += 1
                 # Continue processing other bonds even if one fails
                 continue
@@ -157,19 +155,13 @@ async def refresh_ratings_data(
             "skipped": skipped_count
         }
         
-        print(f"[RATING REFRESH] Refresh completed:")
-        print(f"[RATING REFRESH]   Total bonds: {bonds_count}")
-        print(f"[RATING REFRESH]   Updated: {updated_count}")
-        print(f"[RATING REFRESH]   Errors: {error_count}")
-        print(f"[RATING REFRESH]   Skipped: {skipped_count}")
-        print(f"{'='*80}\n")
+        logger.info(f"[API /rating/refresh] Refresh completed: total={bonds_count}, updated={updated_count}, errors={error_count}, skipped={skipped_count}")
         
         return summary
         
     except Exception as exc:
         error_type = type(exc).__name__
-        print(f"[RATING REFRESH] ERROR: {error_type} - {str(exc)}")
-        print(f"{'='*80}\n")
+        logger.error(f"[API /rating/refresh] ERROR: {error_type} - {str(exc)}")
         raise HTTPException(
             status_code=500,
             detail=f"Failed to refresh ratings: {str(exc)}"
