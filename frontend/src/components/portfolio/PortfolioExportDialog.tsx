@@ -39,7 +39,18 @@ export const PortfolioExportDialog: React.FC<PortfolioExportDialogProps> = ({
   };
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+    <Dialog 
+      open={open} 
+      onClose={onClose} 
+      maxWidth="sm" 
+      fullWidth
+      PaperProps={{
+        sx: {
+          borderRadius: '20px',
+          border: '1px solid #E2E8F0',
+        },
+      }}
+    >
       <DialogTitle>Сохранить портфель</DialogTitle>
       <DialogContent>
         <Box sx={{ mb: 2 }}>

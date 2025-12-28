@@ -1,16 +1,23 @@
 import React, { useState } from 'react';
-import { Container, Box, Typography, AppBar, Toolbar, Button, CircularProgress, Tabs, Tab, Dialog, DialogTitle, DialogContent, DialogActions, Alert } from '@mui/material';
+import { Container, Box, Typography, AppBar, Toolbar, Button, CircularProgress, Dialog, DialogTitle, DialogContent, DialogActions, Alert, IconButton, Card, CardContent, alpha } from '@mui/material';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import PsychologyIcon from '@mui/icons-material/Psychology';
 import FeedbackIcon from '@mui/icons-material/Feedback';
-import { SearchFilter } from '../components/filters/SearchFilter';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import ShowChartIcon from '@mui/icons-material/ShowChart';
+import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
+import TrendingUpIcon from '@mui/icons-material/TrendingUp';
+import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
+import TimelineIcon from '@mui/icons-material/Timeline';
+import AssessmentIcon from '@mui/icons-material/Assessment';
 import { FiltersModal } from '../components/filters/FiltersModal';
 import { BondsTable } from '../components/bonds/BondsTable';
 import { BondDetails } from '../components/bonds/BondDetails';
 import { ZerocuponTable } from '../components/zerocupon/ZerocuponTable';
 import { ForecastTable } from '../components/forecast/ForecastTable';
-import { PortfolioTable } from '../components/portfolio/PortfolioTable';
+import { Workbench } from '../components/portfolio/Workbench';
+import { HubCard } from '../components/portfolio/HubCard';
 import { ComparisonTable } from '../components/bonds/ComparisonTable';
 import { AnalysisParamsDialog } from '../components/llm/AnalysisParamsDialog';
 import { AnalysisResultDialog } from '../components/llm/AnalysisResultDialog';
@@ -37,11 +44,15 @@ import { submitFeedback } from '../api/feedback';
  * 
  * Main page of the application displaying bonds screener
  */
+type ViewMode = 'HUB' | 'TABLE';
+
 export const HomePage: React.FC = () => {
   const triggerDataRefresh = useUiStore((state) => state.triggerDataRefresh);
   const setError = useBondsStore((state) => state.setError);
   const comparisonBonds = useComparisonStore((state) => state.comparisonBonds);
+  const [viewMode, setViewMode] = useState<ViewMode>('HUB');
   const [currentTab, setCurrentTab] = useState(0);
+  const [forecastSubView, setForecastSubView] = useState<'zerocupon' | 'forecast' | null>(null);
   
   // Refresh data dialog state
   const [isRefreshDialogOpen, setIsRefreshDialogOpen] = useState(false);
@@ -294,9 +305,8 @@ export const HomePage: React.FC = () => {
       'Среднесрочный прогноз Банка России',
       'Мой портфель',
       'Сравнение облигаций',
-      'Советы по выбору облигаций',
     ];
-    return tabNames[currentTab] || 'Неизвестная вкладка';
+    return tabNames[currentTab] || 'Центр управления';
   };
 
   const handleFeedbackClick = () => {
@@ -307,101 +317,329 @@ export const HomePage: React.FC = () => {
     await submitFeedback(text, tabName);
   };
 
+  const handleHubCardClick = (tabIndex: number) => {
+    setCurrentTab(tabIndex);
+    setViewMode('TABLE');
+    // Если выбрана карточка "Прогнозы", сбросить подраздел
+    if (tabIndex === 2) {
+      setForecastSubView(null);
+    }
+  };
+
+  const handleBackToHub = () => {
+    setViewMode('HUB');
+  };
+
+  // Hub Cards Configuration
+  const hubCards = [
+    {
+      title: 'Рынок Облигаций',
+      description: 'Поиск и фильтрация активов',
+      icon: <ShowChartIcon sx={{ fontSize: 48 }} />,
+      color: '#1976d2',
+      onClick: () => handleHubCardClick(0),
+    },
+    {
+      title: 'Мой Портфель',
+      description: 'Управление инвестициями',
+      icon: <AccountBalanceWalletIcon sx={{ fontSize: 48 }} />,
+      color: '#4caf50',
+      onClick: () => handleHubCardClick(3),
+    },
+    {
+      title: 'Прогнозы',
+      description: 'Анализ и прогнозирование',
+      icon: <TrendingUpIcon sx={{ fontSize: 48 }} />,
+      color: '#ff9800',
+      onClick: () => handleHubCardClick(2),
+    },
+    {
+      title: 'Сравнение',
+      description: 'Сопоставление облигаций',
+      icon: <CompareArrowsIcon sx={{ fontSize: 48 }} />,
+      color: '#9c27b0',
+      onClick: () => handleHubCardClick(4),
+    },
+  ];
+
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-      {/* App Bar */}
-      <AppBar position="static" elevation={1}>
-        <Toolbar>
-          <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexGrow: 1 }}>
-              <AccountBalanceIcon />
-              <Box>
-                <Typography variant="h6" component="h1" fontWeight={700}>
-                  Скринер облигаций
-                </Typography>
-                <Typography variant="caption" sx={{ opacity: 0.8 }}>
-                  Московская биржа
-                </Typography>
-              </Box>
+    <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', bgcolor: '#F8FAFC' }}>
+      {/* Compact App Bar */}
+      <AppBar 
+        position="static" 
+        elevation={0}
+        sx={{
+          bgcolor: 'transparent',
+          borderBottom: '1px solid',
+          borderColor: 'divider',
+        }}
+      >
+        <Toolbar sx={{ minHeight: '32px !important', py: 1 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', width: '100%', justifyContent: 'space-between' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <AccountBalanceIcon sx={{ fontSize: 20, color: 'text.primary' }} />
+              <Typography 
+                variant="body1" 
+                component="h1" 
+                fontWeight={600}
+                sx={{
+                  fontFamily: '"Inter", "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                  letterSpacing: '-0.01em',
+                  fontSize: '0.875rem',
+                }}
+              >
+                Центр Управления
+              </Typography>
             </Box>
-            <Box sx={{ width: '300px', mr: 2 }}>
-              <SearchFilter />
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <IconButton
+                size="small"
+                onClick={handleRefreshDataClick}
+                disabled={isRefreshing}
+                sx={{ 
+                  color: 'text.primary',
+                  '&:hover': {
+                    bgcolor: 'action.hover',
+                  },
+                }}
+              >
+                {isRefreshing ? (
+                  <CircularProgress size={18} />
+                ) : (
+                  <RefreshIcon sx={{ fontSize: 18 }} />
+                )}
+              </IconButton>
+              <IconButton
+                size="small"
+                onClick={handleLLMAnalysisClick}
+                disabled={isAnalyzing}
+                sx={{ 
+                  color: 'text.primary',
+                  '&:hover': {
+                    bgcolor: 'action.hover',
+                  },
+                }}
+              >
+                {isAnalyzing ? (
+                  <CircularProgress size={18} />
+                ) : (
+                  <PsychologyIcon sx={{ fontSize: 18 }} />
+                )}
+              </IconButton>
+              <IconButton
+                size="small"
+                onClick={handleFeedbackClick}
+                sx={{ 
+                  color: 'text.primary',
+                  '&:hover': {
+                    bgcolor: 'action.hover',
+                  },
+                }}
+              >
+                <FeedbackIcon sx={{ fontSize: 18 }} />
+              </IconButton>
             </Box>
-            <Button
-              variant="outlined"
-              color="inherit"
-              onClick={handleRefreshDataClick}
-              startIcon={
-                isRefreshing ? <CircularProgress size={18} color="inherit" /> : <RefreshIcon />
-              }
-              disabled={isRefreshing}
-              sx={{ mr: 1 }}
-            >
-              Обновить данные
-            </Button>
-            <Button
-              variant="outlined"
-              color="inherit"
-              onClick={handleLLMAnalysisClick}
-              startIcon={
-                isAnalyzing ? <CircularProgress size={18} color="inherit" /> : <PsychologyIcon />
-              }
-              sx={{ mr: 1 }}
-              disabled={isAnalyzing}
-            >
-              Анализ LLM
-            </Button>
-            <Button
-              variant="outlined"
-              color="inherit"
-              onClick={handleFeedbackClick}
-              startIcon={<FeedbackIcon />}
-              sx={{ mr: 1 }}
-            >
-              Предложения
-            </Button>
           </Box>
         </Toolbar>
       </AppBar>
 
       {/* Main Content */}
-      <Box sx={{ flexGrow: 1, bgcolor: 'background.default', display: 'flex', flexDirection: 'column', width: '100%', ...(currentTab !== 5 ? { height: 'calc(100vh - 64px)' } : {}) }}>
-        {currentTab === 5 ? (
+      <Box sx={{ 
+        flexGrow: 1, 
+        bgcolor: '#F8FAFC', 
+        display: 'flex', 
+        flexDirection: 'column', 
+        width: '100%', 
+        ...(viewMode === 'TABLE' ? { height: 'calc(100vh - 32px)' } : {}) 
+      }}>
+        {viewMode === 'HUB' ? (
           <>
-            {/* Tabs for course tab */}
-            <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2, px: 2, pt: 2 }}>
-              <Tabs value={currentTab} onChange={(_, newValue) => setCurrentTab(newValue)}>
-                <Tab label="Скринер облигаций" />
-                <Tab label="Кривая бескупонной доходности" />
-                <Tab label="Среднесрочный прогноз Банка России" />
-                <Tab label="Мой портфель" />
-                <Tab label="Сравнение облигаций" />
-                <Tab label="Советы по выбору облигаций" />
-              </Tabs>
+            {/* Macro Indicators */}
+            <Box
+              sx={{
+                bgcolor: 'background.paper',
+                border: '1px solid #E2E8F0',
+                borderRadius: '16px',
+                px: 3,
+                py: 1.5,
+                mx: 'auto',
+                mt: 4,
+                mb: 3,
+                width: 'fit-content',
+                display: 'flex',
+                gap: 4,
+                alignItems: 'center',
+                boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.05)',
+              }}
+            >
+              <Typography
+                variant="caption"
+                sx={{
+                  fontFamily: '"Inter", "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                  fontSize: '0.75rem',
+                  fontWeight: 500,
+                  color: 'text.primary',
+                }}
+              >
+                Ставка ЦБ: <strong>21%</strong>
+              </Typography>
+              <Box
+                sx={{
+                  width: '1px',
+                  height: '16px',
+                  bgcolor: 'divider',
+                }}
+              />
+              <Typography
+                variant="caption"
+                sx={{
+                  fontFamily: '"Inter", "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                  fontSize: '0.75rem',
+                  fontWeight: 500,
+                  color: 'text.primary',
+                }}
+              >
+                RGBI: <strong>105.2</strong>
+              </Typography>
             </Box>
-            {/* Course content without Container */}
-            <Box sx={{ flexGrow: 1, minHeight: 0, width: '100%' }}>
-              <BondSelectionGuidePage />
+
+            {/* Hub Cards Grid */}
+            <Box
+              sx={{
+                width: '100%',
+                px: 3,
+                mb: 4,
+              }}
+            >
+              <Box
+                sx={{
+                  display: 'flex',
+                  flexDirection: { xs: 'column', sm: 'row' },
+                  gap: 3,
+                  width: '100%',
+                }}
+              >
+                {hubCards.map((card, index) => (
+                  <Card
+                    key={index}
+                    onClick={card.onClick}
+                    sx={{
+                      flex: 1,
+                      minWidth: 0,
+                      height: 220,
+                      borderRadius: '16px',
+                      border: '1px solid #E2E8F0',
+                      bgcolor: 'background.paper',
+                      cursor: 'pointer',
+                      transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                      boxShadow: 'none',
+                      '&:hover': {
+                        transform: 'translateY(-4px)',
+                        boxShadow: '0px 8px 24px rgba(0, 0, 0, 0.08)',
+                        '& .hub-card-icon': {
+                          transform: 'scale(1.1)',
+                        },
+                      },
+                    }}
+                  >
+                    <CardContent
+                      sx={{
+                        height: '100%',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                        p: 3,
+                      }}
+                    >
+                      <Box
+                        className="hub-card-icon"
+                        sx={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          width: 64,
+                          height: 64,
+                          borderRadius: '16px',
+                          bgcolor: alpha(card.color, 0.1),
+                          color: card.color,
+                          mb: 2,
+                          transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                        }}
+                      >
+                        {card.icon}
+                      </Box>
+                      <Box>
+                        <Typography
+                          variant="h6"
+                          sx={{
+                            fontFamily: '"Inter", "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                            fontWeight: 600,
+                            fontSize: '1.25rem',
+                            mb: 1,
+                            letterSpacing: '-0.01em',
+                            color: 'text.primary',
+                          }}
+                        >
+                          {card.title}
+                        </Typography>
+                        <Typography
+                          variant="body2"
+                          sx={{
+                            fontFamily: '"Inter", "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                            color: 'text.secondary',
+                            fontSize: '0.875rem',
+                          }}
+                        >
+                          {card.description}
+                        </Typography>
+                      </Box>
+                    </CardContent>
+                  </Card>
+                ))}
+              </Box>
             </Box>
           </>
         ) : (
-          <Container maxWidth={false} sx={{ px: 2, py: 2, flexGrow: 1, display: 'flex', flexDirection: 'column', width: '100%' }}>
-            {/* Tabs */}
-            <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
-              <Tabs value={currentTab} onChange={(_, newValue) => setCurrentTab(newValue)}>
-                <Tab label="Скринер облигаций" />
-                <Tab label="Кривая бескупонной доходности" />
-                <Tab label="Среднесрочный прогноз Банка России" />
-                <Tab label="Мой портфель" />
-                <Tab label="Сравнение облигаций" />
-                <Tab label="Советы по выбору облигаций" />
-              </Tabs>
+          <Container 
+            maxWidth={false} 
+            sx={{ 
+              px: 2, 
+              py: 3, 
+              flexGrow: 1, 
+              display: 'flex', 
+              flexDirection: 'column', 
+              width: '100%',
+              bgcolor: 'grey.50',
+            }}
+          >
+            {/* Back Button */}
+            <Box sx={{ 
+              display: 'flex',
+              alignItems: 'center',
+              mb: 2,
+            }}>
+              <Button
+                startIcon={<ArrowBackIcon />}
+                onClick={handleBackToHub}
+                variant="text"
+                size="small"
+                sx={{
+                  textTransform: 'none',
+                  fontFamily: '"Inter", "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                  fontSize: '0.875rem',
+                  color: 'text.secondary',
+                  '&:hover': {
+                    bgcolor: 'action.hover',
+                  },
+                }}
+              >
+                Назад в центр управления
+              </Button>
             </Box>
 
             {/* Tab Content */}
             {currentTab === 0 && (
               <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', gap: 2, minHeight: 0, width: '100%' }}>
-                {/* Table - Full Width */}
                 <Box sx={{ flexGrow: 1, minWidth: 0, width: '100%' }}>
                   <ErrorBoundary>
                     <BondsTable 
@@ -419,14 +657,83 @@ export const HomePage: React.FC = () => {
             )}
 
             {currentTab === 2 && (
-              <Box sx={{ flexGrow: 1, minHeight: 0 }}>
-                <ForecastTable />
-              </Box>
+              <>
+                {forecastSubView === null ? (
+                  // Forecast Selection Screen
+                  <Box
+                    sx={{
+                      width: '100%',
+                      p: 3,
+                    }}
+                  >
+                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)' }, gap: 3 }}>
+                      <HubCard
+                        title="Кривая бескупонной доходности"
+                        value="—"
+                        subtitle="Анализ временной структуры процентных ставок на основе данных Мосбиржи"
+                        icon={<TimelineIcon />}
+                        color="#1976d2"
+                        onClick={() => setForecastSubView('zerocupon')}
+                      />
+                      <HubCard
+                        title="Среднесрочный прогноз Банка России"
+                        value="—"
+                        subtitle="Основные показатели денежно-кредитной политики и макроэкономические ожидания регулятора"
+                        icon={<AssessmentIcon />}
+                        color="#ff9800"
+                        onClick={() => setForecastSubView('forecast')}
+                      />
+                    </Box>
+                  </Box>
+                ) : (
+                  // Forecast Content
+                  <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                    {/* Back Button */}
+                    <Box sx={{ 
+                      display: 'flex',
+                      alignItems: 'center',
+                      mb: 2,
+                      px: 2,
+                    }}>
+                      <Button
+                        startIcon={<ArrowBackIcon />}
+                        onClick={() => setForecastSubView(null)}
+                        variant="text"
+                        size="small"
+                        sx={{
+                          textTransform: 'none',
+                          fontFamily: '"Inter", "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                          fontSize: '0.875rem',
+                          color: 'text.secondary',
+                          '&:hover': {
+                            bgcolor: 'action.hover',
+                          },
+                        }}
+                      >
+                        Назад к выбору прогнозов
+                      </Button>
+                    </Box>
+                    
+                    {/* Forecast Content */}
+                    {forecastSubView === 'zerocupon' && (
+                      <Box sx={{ flexGrow: 1, minHeight: 0 }}>
+                        <ZerocuponTable />
+                      </Box>
+                    )}
+                    
+                    {forecastSubView === 'forecast' && (
+                      <Box sx={{ flexGrow: 1, minHeight: 0 }}>
+                        <ForecastTable />
+                      </Box>
+                    )}
+                  </Box>
+                )}
+              </>
             )}
 
             {currentTab === 3 && (
               <Box sx={{ flexGrow: 1, minHeight: 0 }}>
-                <PortfolioTable />
+                <Workbench />
               </Box>
             )}
 
@@ -507,6 +814,12 @@ export const HomePage: React.FC = () => {
         onClose={() => setIsNoSelectionDialogOpen(false)}
         maxWidth="sm"
         fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: '20px',
+            border: '1px solid #E2E8F0',
+          },
+        }}
       >
         <DialogTitle>Не выбраны облигации</DialogTitle>
         <DialogContent>
@@ -516,7 +829,16 @@ export const HomePage: React.FC = () => {
           </Alert>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setIsNoSelectionDialogOpen(false)} variant="contained" autoFocus>
+          <Button 
+            onClick={() => setIsNoSelectionDialogOpen(false)} 
+            variant="contained" 
+            autoFocus
+            sx={{
+              borderRadius: '12px',
+              textTransform: 'none',
+              fontFamily: '"Inter", "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+            }}
+          >
             Понятно
           </Button>
         </DialogActions>
@@ -543,7 +865,14 @@ export const HomePage: React.FC = () => {
         }}
       >
         <Container maxWidth="xl">
-          <Typography variant="body2" color="text.secondary" align="center">
+          <Typography 
+            variant="body2" 
+            color="text.secondary" 
+            align="center"
+            sx={{
+              fontFamily: '"Inter", "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+            }}
+          >
             © 2024 Bonds Screener. Данные предоставлены Московской биржей.
           </Typography>
         </Container>

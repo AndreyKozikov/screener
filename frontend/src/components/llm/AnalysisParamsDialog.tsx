@@ -135,7 +135,18 @@ export const AnalysisParamsDialog: React.FC<AnalysisParamsDialogProps> = ({
   };
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+    <Dialog 
+      open={open} 
+      onClose={onClose} 
+      maxWidth="sm" 
+      fullWidth
+      PaperProps={{
+        sx: {
+          borderRadius: '20px',
+          border: '1px solid #E2E8F0',
+        },
+      }}
+    >
       <DialogTitle>Параметры для анализа LLM</DialogTitle>
       <DialogContent>
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 2 }}>

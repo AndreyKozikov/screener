@@ -55,6 +55,12 @@ export const LLMAnalysisModelDialog: React.FC<LLMAnalysisModelDialogProps> = ({
       maxWidth="sm"
       fullWidth
       aria-labelledby="llm-analysis-model-dialog-title"
+      PaperProps={{
+        sx: {
+          borderRadius: '20px',
+          border: '1px solid #E2E8F0',
+        },
+      }}
     >
       <DialogTitle id="llm-analysis-model-dialog-title">
         Выберите модель для анализа

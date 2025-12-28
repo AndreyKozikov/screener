@@ -102,6 +102,12 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
       maxWidth="sm"
       fullWidth
       aria-labelledby="refresh-data-dialog-title"
+      PaperProps={{
+        sx: {
+          borderRadius: '20px',
+          border: '1px solid #E2E8F0',
+        },
+      }}
     >
       <DialogTitle id="refresh-data-dialog-title">
         Обновить данные

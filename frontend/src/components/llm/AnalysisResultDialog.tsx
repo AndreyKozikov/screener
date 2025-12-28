@@ -113,7 +113,11 @@ export const AnalysisResultDialog: React.FC<AnalysisResultDialogProps> = ({
       maxWidth="lg"
       fullWidth
       PaperProps={{
-        sx: { height: '90vh' },
+        sx: { 
+          height: '90vh',
+          borderRadius: '20px',
+          border: '1px solid #E2E8F0',
+        },
       }}
     >
       <DialogTitle>

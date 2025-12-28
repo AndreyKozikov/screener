@@ -85,6 +85,12 @@ export const FeedbackDialog: React.FC<FeedbackDialogProps> = ({
       maxWidth="md"
       fullWidth
       aria-labelledby="feedback-dialog-title"
+      PaperProps={{
+        sx: {
+          borderRadius: '20px',
+          border: '1px solid #E2E8F0',
+        },
+      }}
     >
       <DialogTitle id="feedback-dialog-title">
         Предложение по улучшению

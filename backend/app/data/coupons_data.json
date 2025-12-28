@@ -612,7 +612,7 @@
       "offers": []
     },
     "SU26248RMFS3": {
-      "last_updated": "2025-12-09",
+      "last_updated": "2025-12-27",
       "amortizations": [
         {
           "isin": "RU000A108EH4",
@@ -1056,7 +1056,7 @@
       "offers": []
     },
     "SU26243RMFS4": {
-      "last_updated": "2025-12-09",
+      "last_updated": "2025-12-27",
       "amortizations": [
         {
           "isin": "RU000A106E90",
@@ -5439,7 +5439,7 @@
       "offers": []
     },
     "SU26250RMFS9": {
-      "last_updated": "2025-12-09",
+      "last_updated": "2025-12-27",
       "amortizations": [
         {
           "isin": "RU000A10BVH7",
@@ -5683,7 +5683,7 @@
       "offers": []
     },
     "SU26247RMFS5": {
-      "last_updated": "2025-12-09",
+      "last_updated": "2025-12-27",
       "amortizations": [
         {
           "isin": "RU000A108EF8",
@@ -6360,7 +6360,7 @@
       "offers": []
     },
     "SU26240RMFS0": {
-      "last_updated": "2025-12-09",
+      "last_updated": "2025-12-27",
       "amortizations": [
         {
           "isin": "RU000A103BR0",
@@ -6848,7 +6848,7 @@
       "offers": []
     },
     "SU26238RMFS4": {
-      "last_updated": "2025-12-09",
+      "last_updated": "2025-12-27",
       "amortizations": [
         {
           "isin": "RU000A1038V6",
@@ -7336,7 +7336,7 @@
       "offers": []
     },
     "SU26244RMFS2": {
-      "last_updated": "2025-12-09",
+      "last_updated": "2025-12-27",
       "amortizations": [
         {
           "isin": "RU000A1074G2",
@@ -7580,7 +7580,7 @@
       "offers": []
     },
     "SU26245RMFS9": {
-      "last_updated": "2025-12-09",
+      "last_updated": "2025-12-27",
       "amortizations": [
         {
           "isin": "RU000A108EG6",
@@ -296811,7 +296811,7 @@
       "offers": []
     },
     "RU000A1071Q7": {
-      "last_updated": "2025-12-09",
+      "last_updated": "2025-12-27",
       "amortizations": [
         {
           "isin": "RU000A1071Q7",
@@ -297074,22 +297074,6 @@
           "value": null,
           "agent": null,
           "offertype": "Оферта",
-          "secid": "RU000A1071Q7",
-          "primary_boardid": "TQCB"
-        },
-        {
-          "isin": "RU000A1071Q7",
-          "name": "МОТОРИКА БO-01",
-          "issuevalue": 300000000,
-          "offerdate": "2026-04-15",
-          "offerdatestart": null,
-          "offerdateend": null,
-          "facevalue": 1000,
-          "faceunit": "RUB",
-          "price": 100,
-          "value": null,
-          "agent": null,
-          "offertype": "Оферта/Погашение",
           "secid": "RU000A1071Q7",
           "primary_boardid": "TQCB"
         },
@@ -365297,7 +365281,7 @@
       "offers": []
     },
     "RU000A108E80": {
-      "last_updated": "2025-12-09",
+      "last_updated": "2025-12-27",
       "amortizations": [
         {
           "isin": "RU000A108E80",
@@ -365494,40 +365478,7 @@
           "value_rub": 49.86
         }
       ],
-      "offers": [
-        {
-          "isin": "RU000A108E80",
-          "name": "ПЛАЗА-ТЕЛЕКОМ БО-02",
-          "issuevalue": 100000000,
-          "offerdate": "2025-11-11",
-          "offerdatestart": null,
-          "offerdateend": null,
-          "facevalue": 1000,
-          "faceunit": "RUB",
-          "price": 100,
-          "value": null,
-          "agent": null,
-          "offertype": "Оферта/Погашение",
-          "secid": "RU000A108E80",
-          "primary_boardid": "TQCB"
-        },
-        {
-          "isin": "RU000A108E80",
-          "name": "ПЛАЗА-ТЕЛЕКОМ БО-02",
-          "issuevalue": 100000000,
-          "offerdate": "2027-05-11",
-          "offerdatestart": null,
-          "offerdateend": null,
-          "facevalue": 1000,
-          "faceunit": "RUB",
-          "price": 100,
-          "value": null,
-          "agent": null,
-          "offertype": "Оферта/Погашение",
-          "secid": "RU000A108E80",
-          "primary_boardid": "TQCB"
-        }
-      ]
+      "offers": []
     },
     "RU000A108E98": {
       "last_updated": "2025-12-09",
@@ -471214,7 +471165,7 @@
       "offers": []
     },
     "RU000A10AZ60": {
-      "last_updated": "2025-12-09",
+      "last_updated": "2025-12-27",
       "amortizations": [
         {
           "isin": "RU000A10AZ60",
@@ -525097,7 +525048,7 @@
       "offers": []
     },
     "RU000A10BSL5": {
-      "last_updated": "2025-12-09",
+      "last_updated": "2025-12-27",
       "amortizations": [
         {
           "isin": "RU000A10BSL5",

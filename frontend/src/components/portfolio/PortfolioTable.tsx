@@ -5,7 +5,7 @@ import { ModuleRegistry, AllCommunityModule } from 'ag-grid-community';
 import 'ag-grid-community/styles/ag-grid.css';
 import 'ag-grid-community/styles/ag-theme-material.css';
 import '../bonds/ag-grid-tooltips.css';
-import { Box, Card, CardContent, Button, Tooltip, IconButton, Alert } from '@mui/material';
+import { Box, Card, CardContent, Button, Tooltip, IconButton, Alert, Toolbar, Divider } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import SaveIcon from '@mui/icons-material/Save';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
@@ -711,6 +711,9 @@ export const PortfolioTable: React.FC = () => {
 
   // Calculate dynamic header height
   const calculateHeaderHeight = useCallback(() => {
+    // Check if grid API is available
+    if (!gridRef.current?.api) return;
+    
     const gridContainer = document.querySelector<HTMLElement>('.ag-theme-material');
     if (!gridContainer) return;
 
@@ -804,7 +807,9 @@ export const PortfolioTable: React.FC = () => {
   useEffect(() => {
     if (portfolioBonds.length > 0 && gridRef.current?.api) {
       const timeoutId = setTimeout(() => {
-        calculateHeaderHeight();
+        if (gridRef.current?.api) {
+          calculateHeaderHeight();
+        }
       }, 500);
 
       return () => clearTimeout(timeoutId);
@@ -814,9 +819,11 @@ export const PortfolioTable: React.FC = () => {
   // Recalculate on window resize
   useEffect(() => {
     const handleResize = () => {
-      if (portfolioBonds.length > 0) {
+      if (portfolioBonds.length > 0 && gridRef.current?.api) {
         setTimeout(() => {
-          calculateHeaderHeight();
+          if (gridRef.current?.api) {
+            calculateHeaderHeight();
+          }
         }, 100);
       }
     };
@@ -870,7 +877,9 @@ export const PortfolioTable: React.FC = () => {
           flexDirection: 'column', 
           width: '100%',
           boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
-          borderRadius: '12px',
+          borderRadius: '20px',
+          border: '1px solid #E2E8F0',
+          bgcolor: '#ffffff',
         }}>
           <CardContent sx={{ p: 0, '&:last-child': { pb: 0 }, flexGrow: 1, display: 'flex', flexDirection: 'column', width: '100%' }}>
             <Box sx={{ p: 1, display: 'flex', justifyContent: 'flex-start', gap: 1, borderBottom: 1, borderColor: 'divider' }}>
@@ -907,34 +916,51 @@ export const PortfolioTable: React.FC = () => {
   }
 
   return (
-    <Card sx={{ 
-      height: '100%', 
+    <Box sx={{ 
       display: 'flex', 
       flexDirection: 'column', 
       width: '100%',
-      boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
-      borderRadius: '12px',
     }}>
-      <CardContent sx={{ p: 0, '&:last-child': { pb: 0 }, flexGrow: 1, display: 'flex', flexDirection: 'column', width: '100%' }}>
-        {exportError && (
-          <Alert severity="error" onClose={() => setExportError(null)} sx={{ m: 1 }}>
-            {exportError}
-          </Alert>
-        )}
-        <Box sx={{ p: 1, display: 'flex', justifyContent: 'space-between', gap: 1, borderBottom: 1, borderColor: 'divider' }}>
-          <Box sx={{ display: 'flex', gap: 1 }}>
+      {/* Bonds Table Section */}
+      <Box sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
+        minHeight: 0,
+      }}>
+        <Card sx={{ 
+          height: '100%',
+          display: 'flex', 
+          flexDirection: 'column', 
+          width: '100%',
+          boxShadow: 2,
+          borderRadius: '20px',
+          border: '1px solid #E2E8F0',
+          overflow: 'hidden',
+          bgcolor: '#ffffff',
+        }}>
+          {exportError && (
+            <Alert severity="error" onClose={() => setExportError(null)} sx={{ m: 2, mb: 0 }}>
+              {exportError}
+            </Alert>
+          )}
+          {/* Toolbar with action buttons */}
+          <Toolbar
+            variant="dense"
+            sx={{
+              minHeight: '56px !important',
+              px: 2,
+              borderBottom: '1px solid rgba(0,0,0,0.08)',
+              bgcolor: 'background.paper',
+              gap: 1,
+            }}
+          >
             <Button
               variant="outlined"
               size="small"
               startIcon={<SaveIcon />}
               onClick={() => setIsExportDialogOpen(true)}
               disabled={portfolioBonds.length === 0}
-              sx={{
-                '&.Mui-disabled': {
-                  color: 'text.disabled',
-                  borderColor: 'action.disabledBackground',
-                },
-              }}
             >
               Сохранить портфель
             </Button>
@@ -943,15 +969,10 @@ export const PortfolioTable: React.FC = () => {
               size="small"
               startIcon={<UploadFileIcon />}
               onClick={() => setIsImportDialogOpen(true)}
-              sx={{
-                '&.Mui-disabled': {
-                  color: 'text.disabled',
-                  borderColor: 'action.disabledBackground',
-                },
-              }}
             >
               Загрузить портфель
             </Button>
+            <Divider orientation="vertical" flexItem sx={{ mx: 1 }} />
             <Button
               variant="outlined"
               size="small"
@@ -959,230 +980,234 @@ export const PortfolioTable: React.FC = () => {
               startIcon={<DeleteIcon />}
               onClick={handleClearPortfolio}
               disabled={portfolioBonds.length === 0}
-              sx={{
-                '&.Mui-disabled': {
-                  color: 'text.disabled',
-                  borderColor: 'action.disabledBackground',
-                },
-              }}
             >
               Очистить портфель
             </Button>
-          </Box>
-        </Box>
-        <Box sx={{ flexGrow: 1, display: 'flex', px: 2 }}>
-        <Box
-          className="ag-theme-material"
-          sx={{
-            height: '100%',
-            width: '100%',
-            ...(headerHeight && {
-              '--ag-header-height': `${headerHeight}px`,
-            }),
-            // External border for table (Bootstrap .table-bordered style)
-            '& .ag-root-wrapper': {
-              border: '1px solid #dee2e6',
-              borderRadius: '4px',
-            },
-            // Header with horizontal line
-            '& .ag-header': {
-              borderBottom: '1px solid #ddd',
-            },
-            '& .ag-header-cell': {
-              display: 'flex',
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '8px 4px',
-              boxSizing: 'border-box',
-              gap: '0px !important',
-              // Bootstrap-style borders
-              borderRight: '1px solid #dee2e6 !important',
-              borderBottom: '1px solid #dee2e6 !important',
-              fontWeight: 600,
-              color: '#444',
-              background: '#fafafa',
-            },
-            '& .ag-header-cell:last-child': {
-              borderRight: 'none !important',
-            },
-            '& .ag-header-cell-label': {
-              fontWeight: 600,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              textAlign: 'center',
-              whiteSpace: 'normal',
-              wordBreak: 'break-word',
-              lineHeight: 1.5,
-              flex: '0 1 auto',
-              minWidth: 0,
-              padding: '4px 0px 4px 8px !important',
-              marginRight: '0px !important',
-              marginLeft: '0px !important',
-              marginTop: '0px !important',
-              marginBottom: '0px !important',
-              overflow: 'visible',
-              boxSizing: 'border-box',
-            },
-            '& .ag-header-cell-text': {
-              whiteSpace: 'normal',
-              wordBreak: 'break-word',
-              lineHeight: 1.5,
-              textAlign: 'center',
-              display: 'block',
-              overflow: 'visible',
-              hyphens: 'auto',
-              marginRight: '0px !important',
-              paddingRight: '0px !important',
-            },
-            '& .ag-header-cell-menu-button': {
-              flexShrink: 0,
-              alignSelf: 'center',
-              marginLeft: '1px !important',
-              marginRight: '0px !important',
-              marginTop: '0px !important',
-              marginBottom: '0px !important',
-              padding: '0px !important',
-              width: 'auto !important',
-              minWidth: 'auto !important',
-            },
-            '& .ag-header-cell-filter-button': {
-              flexShrink: 0,
-              alignSelf: 'center',
-              marginLeft: '1px !important',
-              marginRight: '0px !important',
-              marginTop: '0px !important',
-              marginBottom: '0px !important',
-              padding: '0px !important',
-              width: 'auto !important',
-              minWidth: 'auto !important',
-            },
-            '& .ag-header-cell-label + .ag-header-cell-menu-button': {
-              marginLeft: '1px !important',
-            },
-            '& .ag-header-cell-label + .ag-header-cell-filter-button': {
-              marginLeft: '1px !important',
-            },
-            '& .ag-header-cell-filtered .ag-header-cell-menu-button': {
-              opacity: 1,
-            },
-            '& .ag-header-cell-filtered .ag-header-cell-filter-button': {
-              opacity: 1,
-            },
-            '& .ag-cell': {
-              // Bootstrap-style borders
-              borderRight: '1px solid #dee2e6 !important',
-              borderBottom: '1px solid #dee2e6 !important',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              lineHeight: '1.5 !important',
-              padding: '8px 12px !important',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              maxHeight: '44px !important',
-              height: '44px !important',
-              boxSizing: 'border-box',
-              '& > *': {
-                maxHeight: '36px !important',
+          </Toolbar>
+          <CardContent sx={{ p: 0, '&:last-child': { pb: 0 }, flexGrow: 1, display: 'flex', flexDirection: 'column', width: '100%', minHeight: 0, height: 'calc(100vh - 200px)' }}>
+            <Box sx={{ flexGrow: 1, display: 'flex', px: 2, py: 2, minHeight: 0, overflow: 'hidden', height: 'calc(100vh - 200px)' }}>
+            <Box
+              className="ag-theme-material"
+              sx={{
+                height: 'calc(100vh - 200px)',
+                width: '100%',
+                minHeight: 0,
+              ...(headerHeight && {
+                '--ag-header-height': `${headerHeight}px`,
+              }),
+              // Modern table styling - remove borders, add subtle background
+              '& .ag-root-wrapper': {
+                border: 'none',
+                borderRadius: '12px',
                 overflow: 'hidden',
               },
-            },
-            '& .ag-row .ag-cell:last-child': {
-              borderRight: 'none !important',
-            },
-            '& .ag-cell[col-id="SHORTNAME"]': {
-              justifyContent: 'flex-start',
-              textAlign: 'left !important',
-            },
-            // Ensure numeric columns are centered
-            '& .ag-cell[col-id="PREVPRICE"], & .ag-cell[col-id="COUPON_YIELD_TO_PRICE"], & .ag-cell[col-id="YIELDATPREVWAPRICE"], & .ag-cell[col-id="FACEVALUE"], & .ag-cell[col-id="COUPONPERCENT"], & .ag-cell[col-id="COUPONPERCENT_NOMINAL"], & .ag-cell[col-id="COUPONPERIOD"], & .ag-cell[col-id="ACCRUEDINT"], & .ag-cell[col-id="DURATION_YEARS"], & .ag-cell[col-id="FACEUNIT"], & .ag-cell[col-id="RATING"], & .ag-cell[col-id="quantity"]': {
-              justifyContent: 'center',
-              textAlign: 'center !important',
-            },
-            // Row styling - increased height for better readability
-            '& .ag-row': {
-              cursor: 'pointer',
-              minHeight: '44px !important',
-              maxHeight: '44px !important',
-              height: '44px !important',
-              '& > *': {
-                maxHeight: '44px !important',
+              // Modern header styling
+              '& .ag-header': {
+                borderBottom: 'none',
+                backgroundColor: 'rgba(0, 0, 0, 0.02)',
               },
-            },
-            '& .ag-row-hover': {
-              backgroundColor: '#f7f9fc !important',
-            },
-            // Prevent row click when clicking on portfolio action cell
-            '& .ag-cell.portfolio-action-cell': {
-              pointerEvents: 'auto',
-              '& *': {
+              '& .ag-header-cell': {
+                display: 'flex',
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '12px 8px',
+                boxSizing: 'border-box',
+                gap: '0px !important',
+                borderRight: 'none !important',
+                borderBottom: 'none !important',
+                fontWeight: 600,
+                color: 'text.primary',
+                backgroundColor: 'rgba(0, 0, 0, 0.02)',
+              },
+              '& .ag-header-cell:last-child': {
+                borderRight: 'none !important',
+              },
+              '& .ag-header-cell-label': {
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                textAlign: 'center',
+                whiteSpace: 'normal',
+                wordBreak: 'break-word',
+                lineHeight: 1.5,
+                flex: '0 1 auto',
+                minWidth: 0,
+                padding: '4px 0px 4px 8px !important',
+                marginRight: '0px !important',
+                marginLeft: '0px !important',
+                marginTop: '0px !important',
+                marginBottom: '0px !important',
+                overflow: 'visible',
+                boxSizing: 'border-box',
+              },
+              '& .ag-header-cell-text': {
+                whiteSpace: 'normal',
+                wordBreak: 'break-word',
+                lineHeight: 1.5,
+                textAlign: 'center',
+                display: 'block',
+                overflow: 'visible',
+                hyphens: 'auto',
+                marginRight: '0px !important',
+                paddingRight: '0px !important',
+              },
+              '& .ag-header-cell-menu-button': {
+                flexShrink: 0,
+                alignSelf: 'center',
+                marginLeft: '1px !important',
+                marginRight: '0px !important',
+                marginTop: '0px !important',
+                marginBottom: '0px !important',
+                padding: '0px !important',
+                width: 'auto !important',
+                minWidth: 'auto !important',
+              },
+              '& .ag-header-cell-filter-button': {
+                flexShrink: 0,
+                alignSelf: 'center',
+                marginLeft: '1px !important',
+                marginRight: '0px !important',
+                marginTop: '0px !important',
+                marginBottom: '0px !important',
+                padding: '0px !important',
+                width: 'auto !important',
+                minWidth: 'auto !important',
+              },
+              '& .ag-header-cell-label + .ag-header-cell-menu-button': {
+                marginLeft: '1px !important',
+              },
+              '& .ag-header-cell-label + .ag-header-cell-filter-button': {
+                marginLeft: '1px !important',
+              },
+              '& .ag-header-cell-filtered .ag-header-cell-menu-button': {
+                opacity: 1,
+              },
+              '& .ag-header-cell-filtered .ag-header-cell-filter-button': {
+                opacity: 1,
+              },
+              '& .ag-cell': {
+                // Modern cell styling - no borders between cells
+                borderRight: 'none !important',
+                borderBottom: '1px solid rgba(0,0,0,0.06) !important',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                lineHeight: '1.5 !important',
+                padding: '12px 8px !important',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                maxHeight: '52px !important',
+                height: '52px !important',
+                boxSizing: 'border-box',
+                '& > *': {
+                  maxHeight: '44px !important',
+                  overflow: 'hidden',
+                },
+              },
+              '& .ag-row .ag-cell:last-child': {
+                borderRight: 'none !important',
+              },
+              '& .ag-cell[col-id="SHORTNAME"]': {
+                justifyContent: 'flex-start',
+                textAlign: 'left !important',
+              },
+              // Ensure numeric columns are centered
+              '& .ag-cell[col-id="PREVPRICE"], & .ag-cell[col-id="COUPON_YIELD_TO_PRICE"], & .ag-cell[col-id="YIELDATPREVWAPRICE"], & .ag-cell[col-id="FACEVALUE"], & .ag-cell[col-id="COUPONPERCENT"], & .ag-cell[col-id="COUPONPERCENT_NOMINAL"], & .ag-cell[col-id="COUPONPERIOD"], & .ag-cell[col-id="ACCRUEDINT"], & .ag-cell[col-id="DURATION_YEARS"], & .ag-cell[col-id="FACEUNIT"], & .ag-cell[col-id="RATING"], & .ag-cell[col-id="quantity"]': {
+                justifyContent: 'center',
+                textAlign: 'center !important',
+              },
+              // Modern row styling - increased height, subtle hover
+              '& .ag-row': {
+                cursor: 'pointer',
+                minHeight: '52px !important',
+                maxHeight: '52px !important',
+                height: '52px !important',
+                backgroundColor: 'background.paper',
+                borderBottom: 'none !important',
+                '& > *': {
+                  maxHeight: '52px !important',
+                },
+                '&:hover': {
+                  backgroundColor: 'rgba(0, 0, 0, 0.02) !important',
+                },
+              },
+              '& .ag-row-hover': {
+                backgroundColor: 'rgba(0, 0, 0, 0.02) !important',
+              },
+              // Prevent row click when clicking on portfolio action cell
+              '& .ag-cell.portfolio-action-cell': {
                 pointerEvents: 'auto',
+                '& *': {
+                  pointerEvents: 'auto',
+                },
               },
-            },
-            // Center header class
-            '& .ag-header-center .ag-header-cell-label': {
-              justifyContent: 'center',
-            },
-            // Remove shadow from pinned-right sections to make it look like part of the table
-            '& .ag-pinned-right-header': {
-              boxShadow: 'none !important',
-            },
-            '& .ag-pinned-right-cols-container': {
-              boxShadow: 'none !important',
-            },
-            // Make pinned-right cells look continuous with the rest of the table
-            '& .ag-pinned-right-cols-container .ag-cell': {
-              background: '#fff !important',
-              borderRight: 'none !important',
-            },
-            '& .ag-pinned-right-header .ag-header-cell': {
-              background: '#fafafa !important',
-              borderRight: 'none !important',
-            },
-          }}
-        >
-          <AgGridReact<PortfolioBond>
-            ref={gridRef}
-            rowData={filteredPortfolioBonds}
-            columnDefs={columnDefs}
-            defaultColDef={defaultColDef}
-            onRowClicked={onRowClicked}
-            onCellClicked={onCellClicked}
-            onGridReady={onGridReady}
-            onFirstDataRendered={onFirstDataRendered}
-            animateRows={true}
-            pagination={true}
-            paginationPageSize={100}
-            paginationPageSizeSelector={[50, 100, 200, 500]}
-            enableCellTextSelection={true}
-            suppressRowClickSelection={true}
-            singleClickEdit={true}
-            headerHeight={headerHeight}
-            rowHeight={44}
-            autoSizeStrategy={{
-              type: 'fitGridWidth',
-              defaultMinWidth: 80,
+              // Center header class
+              '& .ag-header-center .ag-header-cell-label': {
+                justifyContent: 'center',
+              },
+              // Remove shadow from pinned-right sections
+              '& .ag-pinned-right-header': {
+                boxShadow: 'none !important',
+                backgroundColor: 'rgba(0, 0, 0, 0.02) !important',
+              },
+              '& .ag-pinned-right-cols-container': {
+                boxShadow: 'none !important',
+              },
+              // Make pinned-right cells look continuous with the rest of the table
+              '& .ag-pinned-right-cols-container .ag-cell': {
+                background: 'background.paper !important',
+                borderRight: 'none !important',
+              },
+              '& .ag-pinned-right-header .ag-header-cell': {
+                background: 'rgba(0, 0, 0, 0.02) !important',
+                borderRight: 'none !important',
+              },
             }}
-            suppressAggFuncInHeader={true}
-            suppressMenuHide={true}
-            getRowId={(params) => params.data.SECID}
-          />
-        </Box>
-        </Box>
-      </CardContent>
-      <PortfolioExportDialog
-        open={isExportDialogOpen}
-        onClose={() => setIsExportDialogOpen(false)}
-        onConfirm={handleExportPortfolio}
-        bondCount={portfolioBonds.length}
-      />
-      <PortfolioImportDialog
-        open={isImportDialogOpen}
-        onClose={() => setIsImportDialogOpen(false)}
-        onImport={handleImportPortfolio}
-      />
-    </Card>
+          >
+            <AgGridReact<PortfolioBond>
+              ref={gridRef}
+              rowData={filteredPortfolioBonds}
+              columnDefs={columnDefs}
+              defaultColDef={defaultColDef}
+              onRowClicked={onRowClicked}
+              onCellClicked={onCellClicked}
+              onGridReady={onGridReady}
+              onFirstDataRendered={onFirstDataRendered}
+              animateRows={true}
+              pagination={true}
+              paginationPageSize={100}
+              paginationPageSizeSelector={[50, 100, 200, 500]}
+              enableCellTextSelection={true}
+              suppressRowClickSelection={true}
+              singleClickEdit={true}
+              headerHeight={headerHeight}
+              rowHeight={52}
+              autoSizeStrategy={{
+                type: 'fitGridWidth',
+                defaultMinWidth: 80,
+              }}
+              suppressAggFuncInHeader={true}
+              suppressMenuHide={true}
+              getRowId={(params) => params.data.SECID}
+            />
+          </Box>
+          </Box>
+        </CardContent>
+        <PortfolioExportDialog
+          open={isExportDialogOpen}
+          onClose={() => setIsExportDialogOpen(false)}
+          onConfirm={handleExportPortfolio}
+          bondCount={portfolioBonds.length}
+        />
+        <PortfolioImportDialog
+          open={isImportDialogOpen}
+          onClose={() => setIsImportDialogOpen(false)}
+          onImport={handleImportPortfolio}
+        />
+      </Card>
+      </Box>
+    </Box>
   );
 };

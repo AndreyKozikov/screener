@@ -96,7 +96,18 @@ export const PortfolioImportDialog: React.FC<PortfolioImportDialogProps> = ({
   };
 
   return (
-    <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
+    <Dialog 
+      open={open} 
+      onClose={handleClose} 
+      maxWidth="sm" 
+      fullWidth
+      PaperProps={{
+        sx: {
+          borderRadius: '20px',
+          border: '1px solid #E2E8F0',
+        },
+      }}
+    >
       <DialogTitle>Загрузить портфель из файла</DialogTitle>
       <DialogContent>
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -109,9 +120,6 @@ export const PortfolioImportDialog: React.FC<PortfolioImportDialogProps> = ({
             </Typography>
             <Typography component="li" variant="body2" color="text.secondary">
               Файл экспорта портфеля (полные данные)
-            </Typography>
-            <Typography component="li" variant="body2" color="text.secondary">
-              Файл экспорта облигаций из скринера
             </Typography>
           </Box>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 1, fontStyle: 'italic' }}>

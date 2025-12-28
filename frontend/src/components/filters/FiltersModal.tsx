@@ -79,6 +79,8 @@ export const FiltersModal: React.FC<FiltersModalProps> = ({ open, onClose }) => 
       PaperProps={{
         sx: {
           maxHeight: '90vh',
+          borderRadius: '20px',
+          border: '1px solid #E2E8F0',
           height: fullScreen ? '100vh' : 'auto',
         },
       }}
