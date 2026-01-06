@@ -11,6 +11,7 @@ import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
 import TimelineIcon from '@mui/icons-material/Timeline';
 import AssessmentIcon from '@mui/icons-material/Assessment';
+import SchoolIcon from '@mui/icons-material/School';
 import { FiltersModal } from '../components/filters/FiltersModal';
 import { BondsTable } from '../components/bonds/BondsTable';
 import { BondDetails } from '../components/bonds/BondDetails';
@@ -25,6 +26,7 @@ import { LLMAnalysisModelDialog, type LLMModel } from '../components/llm/LLMAnal
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
 import { RefreshDataDialog } from '../components/common/RefreshDataDialog';
 import { FeedbackDialog } from '../components/common/FeedbackDialog';
+import { BondSelectionGuidePage } from './BondSelectionGuidePage';
 import { refreshBondsData, refreshCouponsData } from '../api/bonds';
 import { refreshZerocuponData } from '../api/zerocupon';
 import { refreshRatingsData } from '../api/rating';
@@ -390,6 +392,13 @@ export const HomePage: React.FC = () => {
       icon: <CompareArrowsIcon sx={{ fontSize: 48 }} />,
       color: '#9c27b0',
       onClick: () => handleHubCardClick(4),
+    },
+    {
+      title: 'Советы по выбору',
+      description: 'Пошаговое руководство по отбору облигаций',
+      icon: <SchoolIcon sx={{ fontSize: 48 }} />,
+      color: '#00acc1',
+      onClick: () => handleHubCardClick(5),
     },
   ];
 
@@ -790,6 +799,12 @@ export const HomePage: React.FC = () => {
             {currentTab === 4 && (
               <Box sx={{ flexGrow: 1, minHeight: 0 }}>
                 <ComparisonTable />
+              </Box>
+            )}
+
+            {currentTab === 5 && (
+              <Box sx={{ flexGrow: 1, minHeight: 0 }}>
+                <BondSelectionGuidePage />
               </Box>
             )}
           </Container>
