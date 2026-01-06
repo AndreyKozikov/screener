@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { BondFilters, FilterOptions } from '../types/filters';
+import { fetchFilterOptions } from '../api/metadata';
 
 interface FiltersState {
   // Active filters (applied to data)
@@ -11,6 +12,10 @@ interface FiltersState {
   // Available options for dropdowns
   filterOptions: FilterOptions | null;
   
+  // Loading and error states
+  isLoadingFilterOptions: boolean;
+  filterOptionsError: string | null;
+  
   // Actions
   setDraftFilter: <K extends keyof BondFilters>(
     key: K, 
@@ -19,6 +24,9 @@ interface FiltersState {
   applyFilters: () => void;
   resetFilters: () => void;
   setFilterOptions: (options: FilterOptions) => void;
+  setFilterOptionsLoading: (loading: boolean) => void;
+  setFilterOptionsError: (error: string | null) => void;
+  loadFilterOptions: () => Promise<void>;
   
   // Legacy action for backward compatibility
   setFilter: <K extends keyof BondFilters>(
@@ -49,10 +57,12 @@ const initialFilters: BondFilters = {
   limit: 100,
 };
 
-export const useFiltersStore = create<FiltersState>((set) => ({
+export const useFiltersStore = create<FiltersState>((set, get) => ({
   filters: initialFilters,
   draftFilters: initialFilters,
   filterOptions: null,
+  isLoadingFilterOptions: false,
+  filterOptionsError: null,
   
   // Update draft filter (does not trigger data reload)
   setDraftFilter: (key, value) => set((state) => ({
@@ -77,8 +87,44 @@ export const useFiltersStore = create<FiltersState>((set) => ({
   }),
   
   setFilterOptions: (options) => set({ 
-    filterOptions: options 
+    filterOptions: options,
+    filterOptionsError: null,
   }),
+  
+  setFilterOptionsLoading: (loading) => set({ 
+    isLoadingFilterOptions: loading 
+  }),
+  
+  setFilterOptionsError: (error) => set({ 
+    filterOptionsError: error 
+  }),
+  
+  // Load filter options with error handling
+  loadFilterOptions: async () => {
+    const state = get();
+    // Если уже загружаются или уже загружены, не загружаем повторно
+    if (state.isLoadingFilterOptions || state.filterOptions) {
+      return;
+    }
+    
+    set({ isLoadingFilterOptions: true, filterOptionsError: null });
+    
+    try {
+      const options = await fetchFilterOptions();
+      set({ 
+        filterOptions: options,
+        isLoadingFilterOptions: false,
+        filterOptionsError: null,
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Не удалось загрузить опции фильтров';
+      set({ 
+        isLoadingFilterOptions: false,
+        filterOptionsError: errorMessage,
+      });
+      console.error('Failed to load filter options:', error);
+    }
+  },
   
   // Legacy actions for backward compatibility (for search filter)
   setFilter: (key, value) => set((state) => ({

@@ -20,7 +20,8 @@ import dayjs, { type Dayjs } from 'dayjs';
 import 'dayjs/locale/ru';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
 import DownloadIcon from '@mui/icons-material/Download';
-import { fetchZerocuponData, downloadZerocuponJson, type ZerocuponRecord } from '../../api/zerocupon';
+import DescriptionIcon from '@mui/icons-material/Description';
+import { fetchZerocuponData, downloadZerocuponJson, downloadZerocuponMarkdown, type ZerocuponRecord } from '../../api/zerocupon';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { ErrorMessage } from '../common/ErrorMessage';
 import { EmptyState } from '../common/EmptyState';
@@ -126,6 +127,24 @@ export const ZerocuponTable: React.FC = () => {
       if (!fromStr || !toStr) return;
       
       await downloadZerocuponJson(fromStr, toStr);
+    } catch (err) {
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('Не удалось скачать файл');
+      }
+    }
+  }, [dateFrom, dateTo]);
+
+  const handleDownloadMarkdown = useCallback(async () => {
+    if (!dateFrom || !dateTo) return;
+    
+    try {
+      const fromStr = formatDateToString(dateFrom);
+      const toStr = formatDateToString(dateTo);
+      if (!fromStr || !toStr) return;
+      
+      await downloadZerocuponMarkdown(fromStr, toStr);
     } catch (err) {
       if (err instanceof Error) {
         setError(err.message);
@@ -274,6 +293,14 @@ export const ZerocuponTable: React.FC = () => {
             >
               Скачать JSON
             </Button>
+            <Button
+              variant="outlined"
+              startIcon={<DescriptionIcon />}
+              onClick={handleDownloadMarkdown}
+              disabled={isLoading || data.length === 0}
+            >
+              Скачать Markdown
+            </Button>
             {data.length > 0 && (
               <Typography variant="body2" color="text.secondary" sx={{ ml: 'auto' }}>
                 Записей: {data.length}
@@ -305,6 +332,7 @@ export const ZerocuponTable: React.FC = () => {
                 paginationPageSizeSelector={[25, 50, 100, 200]}
                 domLayout="normal"
                 className="ag-theme-material"
+                theme="legacy"
               />
             </Box>
           )}

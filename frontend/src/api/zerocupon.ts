@@ -65,6 +65,43 @@ export const downloadZerocuponJson = async (
   URL.revokeObjectURL(url);
 };
 
+/**
+ * Download zero-coupon yield curve data as Markdown
+ */
+export const downloadZerocuponMarkdown = async (
+  dateFrom?: string | null,
+  dateTo?: string | null
+): Promise<void> => {
+  const params: Record<string, string> = {};
+  if (dateFrom) params.date_from = dateFrom;
+  if (dateTo) params.date_to = dateTo;
+
+  const response = await apiClient.get('/zerocupon/download/markdown', {
+    params,
+    responseType: 'blob',
+  });
+
+  // Create download link
+  const blob = new Blob([response.data], { type: 'text/markdown;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+
+  // Generate filename
+  let filename = 'zerocupon';
+  if (dateFrom || dateTo) {
+    if (dateFrom) filename += `_${dateFrom.replace(/\./g, '-')}`;
+    if (dateTo) filename += `_${dateTo.replace(/\./g, '-')}`;
+  } else {
+    filename += '_last_year';
+  }
+  filename += '.md';
+
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+};
+
 export interface ZerocuponRefreshResponse {
   status: string;
   message: string;

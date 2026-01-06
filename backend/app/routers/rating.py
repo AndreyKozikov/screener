@@ -4,6 +4,7 @@ from typing import List, Dict, Any
 
 from app.services.rating_service import get_rating_service
 from app.services.data_loader import get_data_loader
+from app.utils.logger import get_data_update_logger
 
 router = APIRouter(prefix="/api/rating", tags=["rating"])
 

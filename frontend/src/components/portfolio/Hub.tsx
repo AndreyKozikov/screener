@@ -5,6 +5,7 @@ import CalendarIcon from '@mui/icons-material/Event';
 import AnalyticsIcon from '@mui/icons-material/Analytics';
 import { HubCard } from './HubCard';
 import { usePortfolioStore } from '../../stores/portfolioStore';
+import { formatDate } from '../../utils/formatters';
 import type { WorkbenchModule } from './Workbench';
 
 export interface HubProps {
@@ -19,6 +20,8 @@ export interface HubProps {
  */
 export const Hub: React.FC<HubProps> = ({ onModuleSelect }) => {
   const portfolioBonds = usePortfolioStore((state) => state.portfolioBonds);
+  const couponsBySecid = usePortfolioStore((state) => state.couponsBySecid);
+  const getNextPaymentDate = usePortfolioStore((state) => state.getNextPaymentDate);
 
   // Calculate portfolio statistics for live badges
   const portfolioStats = useMemo(() => {
@@ -33,16 +36,20 @@ export const Hub: React.FC<HubProps> = ({ onModuleSelect }) => {
       return sum + (price * quantity * faceValue / 100);
     }, 0);
 
-    // Find next payment date (simplified - would need coupon data)
-    // For now, just show bond count as badge
-    const nextPaymentDate = null; // Would need to calculate from coupons
+    // Get next payment date from store
+    // Only calculate if we have bonds and at least some coupons loaded
+    const hasCouponsData = portfolioBonds.some(bond => 
+      couponsBySecid[bond.SECID] && couponsBySecid[bond.SECID].length > 0
+    );
+    const nextPaymentDate = bondCount > 0 ? getNextPaymentDate() : null;
 
     return {
       bondCount,
       totalValue,
       nextPaymentDate,
+      hasCouponsData,
     };
-  }, [portfolioBonds]);
+  }, [portfolioBonds, couponsBySecid, getNextPaymentDate]);
 
   // Portfolio card
   const portfolioCard = (
@@ -56,12 +63,37 @@ export const Hub: React.FC<HubProps> = ({ onModuleSelect }) => {
     />
   );
 
-  // Calendar card
+  // Calendar card - format next payment date
+  const nextPaymentDateFormatted = useMemo(() => {
+    if (!portfolioStats.nextPaymentDate) {
+      return "—";
+    }
+    
+    // Format date safely - use local date components to avoid timezone issues
+    try {
+      const date = portfolioStats.nextPaymentDate;
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      const dateStr = `${year}-${month}-${day}`;
+      return formatDate(dateStr);
+    } catch (error) {
+      console.error('Error formatting next payment date:', error);
+      return "—";
+    }
+  }, [portfolioStats.nextPaymentDate]);
+
   const calendarCard = (
     <HubCard
       title="Календарь выплат"
-      value="—"
-      subtitle={portfolioStats.bondCount > 0 ? "График купонных выплат и погашений" : "Добавьте облигации в портфель"}
+      value={nextPaymentDateFormatted}
+      subtitle={portfolioStats.bondCount > 0 
+        ? (portfolioStats.nextPaymentDate 
+          ? "Ближайшая выплата" 
+          : portfolioStats.hasCouponsData
+          ? "Нет будущих выплат"
+          : "Загрузка данных...")
+        : "Добавьте облигации в портфель"}
       icon={<CalendarIcon />}
       color="#4caf50"
       onClick={portfolioStats.bondCount > 0 ? () => onModuleSelect('CALENDAR') : undefined}

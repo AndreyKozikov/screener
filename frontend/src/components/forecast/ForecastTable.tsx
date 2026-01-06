@@ -356,6 +356,7 @@ export const ForecastTable: React.FC = () => {
                   animateRows={true}
                   domLayout="normal"
                   className="ag-theme-material forecast-table"
+                  theme="legacy"
                 />
               </Box>
             </CardContent>
@@ -376,6 +377,7 @@ export const ForecastTable: React.FC = () => {
                   animateRows={true}
                   domLayout="normal"
                   className="ag-theme-material forecast-table"
+                  theme="legacy"
                 />
               </Box>
             </CardContent>

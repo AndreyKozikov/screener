@@ -97,6 +97,22 @@ export const PortfolioExportDialog: React.FC<PortfolioExportDialogProps> = ({
                 </Box>
               }
             />
+            <FormControlLabel
+              value="markdown"
+              control={<Radio />}
+              label={
+                <Box>
+                  <Typography variant="body1" fontWeight={500}>
+                    Подробное описание в Markdown
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Сохраняет подробное описание всех параметров облигаций в формате Markdown 
+                    с описаниями каждого параметра. Включает основную информацию, купонные данные, 
+                    рыночные данные и расчёты доходности. Подходит для документирования и анализа портфеля.
+                  </Typography>
+                </Box>
+              }
+            />
           </RadioGroup>
         </FormControl>
       </DialogContent>

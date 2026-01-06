@@ -30,8 +30,9 @@ class BondListItem(BaseModel):
     CURRENCYID: Optional[str] = None  # Валюта торговли
     FACEUNIT: Optional[str] = None  # Валюта номинала
     LISTLEVEL: Optional[int] = None  # Уровень листинга
-    RATING_AGENCY: Optional[str] = None  # Название рейтингового агентства (agency_name_short_ru)
-    RATING_LEVEL: Optional[str] = None  # Уровень рейтинга (rating_level_name_short_ru)
+    RATING_AGENCY: Optional[str] = None  # Название рейтингового агентства (agency_name_short_ru) - worst rating
+    RATING_LEVEL: Optional[str] = None  # Уровень рейтинга (rating_level_name_short_ru) - worst rating
+    RATINGS: Optional[List[Dict[str, Any]]] = None  # All ratings for the bond
     BONDTYPE: Optional[str] = None  # Тип облигации (type из bonds_emitent.json)
     BONDTYPE43: Optional[str] = None  # Вид облигации (BONDTYPE из bonds.json, индекс 43)
     COUPON_TYPE: Optional[str] = None  # Тип купона (FIX или FLOAT) из coupons_data.json

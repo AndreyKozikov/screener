@@ -28,6 +28,7 @@ import type { BondListItem, PortfolioBond } from '../../types/bond';
 import { PortfolioExportDialog } from './PortfolioExportDialog';
 import { PortfolioImportDialog } from './PortfolioImportDialog';
 import { exportPortfolio } from '../../utils/portfolioExport';
+import { RatingDisplay } from '../bonds/RatingDisplay';
 
 type FieldDescriptionMap = Record<string, string>;
 
@@ -264,13 +265,14 @@ export const PortfolioTable: React.FC = () => {
 
   // Column definitions - same as BondsTable but without "Add to Portfolio" column
   const columnDefs: ColDef[] = useMemo(() => {
-    // Custom cell renderer for SHORTNAME with PUT/CALL superscripts
+    // Custom cell renderer for SHORTNAME with PUT/CALL/AMORT superscripts
     const ShortNameRenderer = (params: ICellRendererParams<BondListItem>) => {
       const bond = params.data;
       if (!bond) return null;
 
       const hasCall = bond.CALLOPTIONDATE != null && bond.CALLOPTIONDATE !== '';
       const hasPut = bond.PUTOPTIONDATE != null && bond.PUTOPTIONDATE !== '';
+      const hasAmort = bond.BONDTYPE43 === 'Амортизируемые облигации';
 
       return (
         <Box
@@ -317,6 +319,21 @@ export const PortfolioTable: React.FC = () => {
               }}
             >
               PUT
+            </Box>
+          )}
+          {hasAmort && (
+            <Box
+              component="span"
+              sx={{
+                fontSize: '0.7em',
+                fontWeight: 700,
+                color: '#9c27b0',
+                ml: (hasCall || hasPut) ? 0.5 : 1,
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
+              }}
+            >
+              amort
             </Box>
           )}
         </Box>
@@ -399,37 +416,12 @@ export const PortfolioTable: React.FC = () => {
     }),
     createColumnDef('RATING', 'Рейтинг', {
       minWidth: 100,
-      valueGetter: (params) => {
+      cellRenderer: (params: ICellRendererParams<BondListItem>) => {
         const bond = params.data;
         if (!bond) {
-          return null;
-        }
-        return bond.RATING_LEVEL || null;
-      },
-      cellRenderer: (params: ICellRendererParams<BondListItem>) => {
-        const rating = params.value;
-        if (!rating) {
           return '—';
         }
-        const { bg, color } = getRatingColor(rating);
-        return (
-          <Box
-            sx={{
-              px: 1,
-              py: 0.5,
-              borderRadius: '6px',
-              fontSize: '12px',
-              backgroundColor: bg,
-              color: color,
-              fontWeight: 600,
-              display: 'inline-block',
-              textAlign: 'center',
-              minWidth: '50px',
-            }}
-          >
-            {rating}
-          </Box>
-        );
+        return <RatingDisplay bond={bond} size="small" />;
       },
       cellStyle: { textAlign: 'center' },
       headerTooltip: 'Рейтинг облигации от рейтинговых агентств',
@@ -853,19 +845,8 @@ export const PortfolioTable: React.FC = () => {
     }
   };
 
-  // Filter portfolio bonds by search query
-  const filteredPortfolioBonds = useMemo(() => {
-    if (!filters.search || filters.search.trim() === '') {
-      return portfolioBonds;
-    }
-    
-    const searchLower = filters.search.toLowerCase().trim();
-    return portfolioBonds.filter(bond => {
-      const secid = bond.SECID?.toLowerCase() || '';
-      const shortname = bond.SHORTNAME?.toLowerCase() || '';
-      return secid.includes(searchLower) || shortname.includes(searchLower);
-    });
-  }, [portfolioBonds, filters.search]);
+  // Don't apply search filter to portfolio - search is only for bonds market
+  const filteredPortfolioBonds = portfolioBonds;
 
   // Empty state
   if (portfolioBonds.length === 0) {
@@ -1191,6 +1172,7 @@ export const PortfolioTable: React.FC = () => {
               suppressAggFuncInHeader={true}
               suppressMenuHide={true}
               getRowId={(params) => params.data.SECID}
+              theme="legacy"
             />
           </Box>
           </Box>

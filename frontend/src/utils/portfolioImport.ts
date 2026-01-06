@@ -239,7 +239,15 @@ const loadBondsBySecids = async (
       quantity: quantities[bond.SECID] ?? 1, // Use saved quantity or default to 1
     }));
 
-  return portfolioBonds;
+  // Remove duplicates by SECID (keep first occurrence)
+  const uniqueBondsMap = new Map<string, PortfolioBond>();
+  for (const bond of portfolioBonds) {
+    if (!uniqueBondsMap.has(bond.SECID)) {
+      uniqueBondsMap.set(bond.SECID, bond);
+    }
+  }
+
+  return Array.from(uniqueBondsMap.values());
 };
 
 /**

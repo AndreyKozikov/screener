@@ -360,6 +360,217 @@ async def download_zerocupon_json(
         raise HTTPException(status_code=500, detail=error_detail)
 
 
+@router.get("/download/markdown")
+async def download_zerocupon_markdown(
+    date_from: Optional[str] = Query(None, description="Start date in DD.MM.YYYY format"),
+    date_to: Optional[str] = Query(None, description="End date in DD.MM.YYYY format"),
+):
+    """
+    Download zero-coupon yield curve data as Markdown file.
+    
+    Returns filtered data as Markdown table with formatted yield curve data.
+    By default returns data for the last year.
+    """
+    csv_path = _get_zerocupon_path()
+    
+    if not csv_path.exists():
+        raise HTTPException(status_code=404, detail="zerocupon.csv file not found")
+    
+    try:
+        # Read CSV with semicolon separator
+        df = pd.read_csv(csv_path, sep=";", encoding="utf-8-sig", decimal=".")
+        
+        # Check if DataFrame is empty
+        if df.empty:
+            raise HTTPException(status_code=404, detail="CSV file is empty")
+        
+        # Check if "Дата" column exists
+        if "Дата" not in df.columns:
+            raise HTTPException(status_code=500, detail="CSV file missing 'Дата' column")
+        
+        # Parse date column
+        df["Дата"] = pd.to_datetime(df["Дата"], dayfirst=True, errors="coerce")
+        
+        # Remove rows with invalid dates
+        df = df[df["Дата"].notna()]
+        
+        # Check if DataFrame is empty after date parsing
+        if df.empty:
+            raise HTTPException(status_code=404, detail="No valid dates found in CSV file")
+        
+        # Convert all numeric columns (except Дата and Время) to float
+        for col in df.columns:
+            if col not in ["Дата", "Время"]:
+                df[col] = pd.to_numeric(
+                    df[col].astype(str).str.replace(",", ".", regex=False),
+                    errors="coerce"
+                )
+        
+        # Filter by date range
+        if date_from:
+            try:
+                date_from_dt = datetime.strptime(date_from, "%d.%m.%Y")
+                df = df[df["Дата"] >= date_from_dt]
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid date_from format. Use DD.MM.YYYY")
+        
+        if date_to:
+            try:
+                date_to_dt = datetime.strptime(date_to, "%d.%m.%Y")
+                date_to_dt = date_to_dt.replace(hour=23, minute=59, second=59)
+                df = df[df["Дата"] <= date_to_dt]
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid date_to format. Use DD.MM.YYYY")
+        
+        # If no dates provided, default to last year
+        if not date_from and not date_to:
+            one_year_ago = datetime.now() - timedelta(days=365)
+            df = df[df["Дата"] >= one_year_ago]
+        
+        # Check if DataFrame is empty after date filtering
+        if df.empty:
+            raise HTTPException(status_code=404, detail="No data found for the specified date range")
+        
+        # Filter out weekends (Saturday=5, Sunday=6)
+        # Only keep weekdays (Monday=0 through Friday=4)
+        df = df[df["Дата"].dt.weekday < 5]
+        
+        # Check if DataFrame is empty after weekend filtering
+        if df.empty:
+            raise HTTPException(status_code=404, detail="No weekday data found for the specified date range")
+        
+        # Format date back to DD.MM.YYYY for display
+        df["Дата"] = df["Дата"].dt.strftime("%d.%m.%Y")
+        
+        # Exclude 30 years column from display and calculations
+        columns_to_exclude = [col for col in df.columns if "30" in col and "лет" in col]
+        if columns_to_exclude:
+            df = df.drop(columns=columns_to_exclude)
+        
+        # Replace NaN with empty string for markdown
+        df = df.fillna("")
+        
+        # Extract period columns (all except Дата and Время)
+        period_columns = [col for col in df.columns if col not in ["Дата", "Время"]]
+        
+        # Sort period columns by numeric value
+        def extract_period_years(col_name: str) -> Optional[float]:
+            """Extract numeric period value from column name like 'Срок 0.25 лет'"""
+            match = re.search(r'(\d+\.?\d*)', col_name)
+            if match:
+                try:
+                    return float(match.group(1))
+                except ValueError:
+                    return None
+            return None
+        
+        # Sort period columns
+        period_columns_sorted = sorted(
+            period_columns,
+            key=lambda x: extract_period_years(x) or 0
+        )
+        
+        # Build markdown content
+        markdown_lines = []
+        
+        # Header
+        markdown_lines.append("# Кривая бескупонной доходности (БКДЦТ)")
+        markdown_lines.append("")
+        
+        # Metadata
+        markdown_lines.append("## Метаданные")
+        markdown_lines.append("")
+        markdown_lines.append(f"- **Период данных:** {date_from or 'автоматически (последний год)'} - {date_to or 'автоматически (сегодня)'}")
+        markdown_lines.append(f"- **Количество записей:** {len(df)}")
+        markdown_lines.append(f"- **Дата экспорта:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        markdown_lines.append("")
+        
+        # Table header
+        markdown_lines.append("## Данные")
+        markdown_lines.append("")
+        
+        # Build table header
+        header_cols = ["Дата", "Время"] + period_columns_sorted
+        markdown_lines.append("| " + " | ".join(header_cols) + " |")
+        
+        # Build table separator
+        separator = "| " + " | ".join(["---"] * len(header_cols)) + " |"
+        markdown_lines.append(separator)
+        
+        # Build table rows
+        for _, row in df.iterrows():
+            row_values = []
+            
+            # Date
+            date_val = str(row["Дата"]) if pd.notna(row["Дата"]) else ""
+            row_values.append(date_val)
+            
+            # Time
+            time_val = str(row["Время"]) if pd.notna(row["Время"]) and row["Время"] != "" else ""
+            row_values.append(time_val)
+            
+            # Period values
+            for col in period_columns_sorted:
+                val = row[col]
+                if pd.notna(val) and val != "":
+                    try:
+                        # Format as number with 4 decimal places
+                        num_val = float(val)
+                        if not (math.isnan(num_val) or math.isinf(num_val)):
+                            row_values.append(f"{num_val:.4f}")
+                        else:
+                            row_values.append("")
+                    except (ValueError, TypeError):
+                        row_values.append("")
+                else:
+                    row_values.append("")
+            
+            markdown_lines.append("| " + " | ".join(row_values) + " |")
+        
+        markdown_lines.append("")
+        
+        # Footer with description
+        markdown_lines.append("## Описание")
+        markdown_lines.append("")
+        markdown_lines.append("Данные кривой бескупонной доходности (БКДЦТ) с различными сроками до погашения.")
+        markdown_lines.append("")
+        markdown_lines.append("- **Дата:** Дата расчета кривой доходности")
+        markdown_lines.append("- **Время:** Время расчета (если доступно)")
+        markdown_lines.append("- **Срок X.Y лет:** Доходность для срока до погашения X.Y лет (в процентах годовых)")
+        markdown_lines.append("")
+        
+        # Convert to string
+        markdown_content = "\n".join(markdown_lines)
+        
+        # Generate filename with date range
+        filename = "zerocupon"
+        if date_from or date_to:
+            if date_from:
+                filename += f"_{date_from.replace('.', '-')}"
+            if date_to:
+                filename += f"_{date_to.replace('.', '-')}"
+        else:
+            filename += "_last_year"
+        filename += ".md"
+        
+        return Response(
+            content=markdown_content,
+            media_type="text/markdown; charset=utf-8",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+            },
+        )
+    
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    except Exception as e:
+        # Log the full error for debugging
+        import traceback
+        error_detail = f"Error generating Markdown download: {str(e)}\n{traceback.format_exc()}"
+        raise HTTPException(status_code=500, detail=error_detail)
+
+
 def _parse_jsonp_response(text: str) -> Dict[str, Any]:
     """
     Parse JSONP response from MOEX API.

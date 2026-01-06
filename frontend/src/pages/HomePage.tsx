@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Container, Box, Typography, AppBar, Toolbar, Button, CircularProgress, Dialog, DialogTitle, DialogContent, DialogActions, Alert, IconButton, Card, CardContent, alpha } from '@mui/material';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -30,6 +30,7 @@ import { refreshBondsData, refreshCouponsData } from '../api/bonds';
 import { refreshZerocuponData } from '../api/zerocupon';
 import { refreshRatingsData } from '../api/rating';
 import { refreshEmitentsData } from '../api/emitent';
+import { getCurrencyRates, refreshCurrencyRates, type CurrencyRatesResponse } from '../api/currency';
 import { useUiStore } from '../stores/uiStore';
 import { useBondsStore } from '../stores/bondsStore';
 import { useComparisonStore } from '../stores/comparisonStore';
@@ -87,6 +88,27 @@ export const HomePage: React.FC = () => {
   const [isNoSelectionDialogOpen, setIsNoSelectionDialogOpen] = useState(false);
   const [isFiltersModalOpen, setIsFiltersModalOpen] = useState(false);
   const [isFeedbackDialogOpen, setIsFeedbackDialogOpen] = useState(false);
+  
+  // Currency rates state
+  const [currencyRates, setCurrencyRates] = useState<CurrencyRatesResponse | null>(null);
+  const [isLoadingCurrencyRates, setIsLoadingCurrencyRates] = useState(false);
+
+  // Load currency rates on mount
+  useEffect(() => {
+    const loadCurrencyRates = async () => {
+      setIsLoadingCurrencyRates(true);
+      try {
+        const rates = await getCurrencyRates();
+        setCurrencyRates(rates);
+      } catch (error) {
+        console.error('Failed to load currency rates:', error);
+      } finally {
+        setIsLoadingCurrencyRates(false);
+      }
+    };
+    
+    loadCurrencyRates();
+  }, []);
 
   const handleRefreshDataClick = () => {
     setIsRefreshDialogOpen(true);
@@ -124,6 +146,16 @@ export const HomePage: React.FC = () => {
       },
       coupons: async () => {
         await refreshCouponsData();
+      },
+      currency: async () => {
+        await refreshCurrencyRates();
+        // Reload currency rates to update display
+        try {
+          const rates = await getCurrencyRates();
+          setCurrencyRates(rates);
+        } catch (error) {
+          console.error('Failed to reload currency rates:', error);
+        }
       },
     };
 
@@ -454,7 +486,7 @@ export const HomePage: React.FC = () => {
       }}>
         {viewMode === 'HUB' ? (
           <>
-            {/* Macro Indicators */}
+            {/* Currency Rates */}
             <Box
               sx={{
                 bgcolor: 'background.paper',
@@ -472,35 +504,54 @@ export const HomePage: React.FC = () => {
                 boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.05)',
               }}
             >
-              <Typography
-                variant="caption"
-                sx={{
-                  fontFamily: '"Inter", "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                  fontSize: '0.75rem',
-                  fontWeight: 500,
-                  color: 'text.primary',
-                }}
-              >
-                Ставка ЦБ: <strong>21%</strong>
-              </Typography>
-              <Box
-                sx={{
-                  width: '1px',
-                  height: '16px',
-                  bgcolor: 'divider',
-                }}
-              />
-              <Typography
-                variant="caption"
-                sx={{
-                  fontFamily: '"Inter", "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                  fontSize: '0.75rem',
-                  fontWeight: 500,
-                  color: 'text.primary',
-                }}
-              >
-                RGBI: <strong>105.2</strong>
-              </Typography>
+              {isLoadingCurrencyRates ? (
+                <CircularProgress size={16} />
+              ) : currencyRates ? (
+                (() => {
+                  const currencies = [
+                    currencyRates.rates.EUR && { code: 'EUR', rate: currencyRates.rates.EUR.rate },
+                    currencyRates.rates.USD && { code: 'USD', rate: currencyRates.rates.USD.rate },
+                    currencyRates.rates.CNY && { code: 'CNY', rate: currencyRates.rates.CNY.rate },
+                  ].filter(Boolean) as Array<{ code: string; rate: number }>;
+                  
+                  return currencies.map((currency, index) => (
+                    <React.Fragment key={currency.code}>
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          fontFamily: '"Inter", "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                          fontSize: '0.75rem',
+                          fontWeight: 500,
+                          color: 'text.primary',
+                        }}
+                      >
+                        {currency.code}: <strong>{currency.rate.toFixed(2)}</strong>
+                      </Typography>
+                      {index < currencies.length - 1 && (
+                        <Box
+                          sx={{
+                            width: '1px',
+                            height: '16px',
+                            bgcolor: 'divider',
+                          }}
+                        />
+                      )}
+                    </React.Fragment>
+                  ));
+                })()
+              ) : (
+                <Typography
+                  variant="caption"
+                  sx={{
+                    fontFamily: '"Inter", "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                    fontSize: '0.75rem',
+                    fontWeight: 500,
+                    color: 'text.secondary',
+                  }}
+                >
+                  Курсы валют не загружены
+                </Typography>
+              )}
             </Box>
 
             {/* Hub Cards Grid */}
@@ -772,6 +823,7 @@ export const HomePage: React.FC = () => {
           { id: 'ratings', label: 'Обновить рейтинги', checked: false },
           { id: 'emitents', label: 'Обновить эмитентов', checked: false },
           { id: 'coupons', label: 'Обновить купоны', checked: false },
+          { id: 'currency', label: 'Обновить курсы валют', checked: false },
         ]}
         isRefreshing={isRefreshing}
         refreshStatus={refreshStatus}
@@ -851,32 +903,6 @@ export const HomePage: React.FC = () => {
         onSend={handleFeedbackSend}
         tabName={getCurrentTabName()}
       />
-
-      {/* Footer */}
-      <Box
-        component="footer"
-        sx={{
-          py: 2,
-          px: 2,
-          mt: 'auto',
-          bgcolor: 'background.paper',
-          borderTop: 1,
-          borderColor: 'divider',
-        }}
-      >
-        <Container maxWidth="xl">
-          <Typography 
-            variant="body2" 
-            color="text.secondary" 
-            align="center"
-            sx={{
-              fontFamily: '"Inter", "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-            }}
-          >
-            © 2024 Bonds Screener. Данные предоставлены Московской биржей.
-          </Typography>
-        </Container>
-      </Box>
     </Box>
   );
 };

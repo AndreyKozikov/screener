@@ -1,9 +1,10 @@
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, List, Any
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 import orjson
+import requests
 
 from app.services.data_loader import get_data_loader
 
@@ -67,13 +68,14 @@ class EmitentService:
             emitent_data: Full MOEX response data
             
         Returns:
-            Dict with keys: is_traded, emitent_title, emitent_inn, type
+            Dict with keys: is_traded, emitent_title, emitent_inn, type, cci_rating_companies
         """
         return {
             "is_traded": emitent_data.get("is_traded"),
             "emitent_title": emitent_data.get("emitent_title"),
             "emitent_inn": emitent_data.get("emitent_inn"),
             "type": emitent_data.get("type"),
+            "cci_rating_companies": emitent_data.get("cci_rating_companies"),
         }
     
     def fetch_emitent_from_moex(self, isin: str) -> Optional[Dict[str, any]]:
@@ -143,6 +145,21 @@ class EmitentService:
         if not secid:
             return None
         
+        # Extract emitent_id from emitent_info to fetch ratings
+        emitent_id = emitent_info.get("emitent_id")
+        if emitent_id is not None:
+            try:
+                emitent_id_int = int(emitent_id)
+                print(f"[EMITENT SERVICE] Fetching ratings for emitent_id={emitent_id_int}")
+                ratings = self._fetch_emitent_ratings(emitent_id_int)
+                if ratings is not None:
+                    emitent_info["cci_rating_companies"] = ratings
+                    print(f"[EMITENT SERVICE] Added {len(ratings)} ratings to emitent data")
+                else:
+                    print(f"[EMITENT SERVICE] No ratings found for emitent_id={emitent_id_int}")
+            except (ValueError, TypeError) as exc:
+                print(f"[EMITENT SERVICE] Invalid emitent_id format: {emitent_id}, error: {exc}")
+        
         # Save full MOEX response to cache and file using SECID as key
         if self._emitent_cache is None:
             self._emitent_cache = {}
@@ -151,6 +168,58 @@ class EmitentService:
         self._save_emitent_data()
         
         return emitent_info
+    
+    def _fetch_emitent_ratings(self, emitent_id: int) -> Optional[List[Dict[str, Any]]]:
+        """
+        Fetch emitent ratings from MOEX API by emitent_id.
+        
+        Args:
+            emitent_id: Emitent ID (integer)
+            
+        Returns:
+            List of rating dictionaries from cci_rating_companies section or None if not found
+        """
+        url = f"https://iss.moex.com/iss/cci/rating/companies/ecbd_{emitent_id}.json?iss.json=extended&iss.meta=off"
+        
+        try:
+            response = requests.get(
+                url,
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
+                timeout=30
+            )
+            response.raise_for_status()
+            
+            json_data = response.json()
+            
+            # Expected format: [{"charsetinfo": {...}}, {"cci_rating_companies": [...], ...}]
+            if not isinstance(json_data, list) or len(json_data) < 2:
+                print(f"[EMITENT SERVICE] Unexpected JSON structure for ratings - expected list with at least 2 elements")
+                return None
+            
+            # Find the element with "cci_rating_companies" key
+            ratings_data = None
+            for item in json_data:
+                if isinstance(item, dict) and "cci_rating_companies" in item:
+                    ratings_data = item["cci_rating_companies"]
+                    break
+            
+            if ratings_data is None:
+                print(f"[EMITENT SERVICE] Could not find 'cci_rating_companies' in JSON response")
+                return None
+            
+            if not isinstance(ratings_data, list):
+                print(f"[EMITENT SERVICE] 'cci_rating_companies' is not a list")
+                return None
+            
+            print(f"[EMITENT SERVICE] Found {len(ratings_data)} rating entries for emitent_id={emitent_id}")
+            return ratings_data
+            
+        except requests.RequestException as exc:
+            print(f"[EMITENT SERVICE] Failed to fetch emitent ratings from MOEX: {exc}")
+            return None
+        except Exception as exc:
+            print(f"[EMITENT SERVICE] Error processing emitent ratings: {exc}")
+            return None
     
     def get_or_fetch_emitent(self, secid: str, isin: str) -> Optional[Dict[str, any]]:
         """
@@ -249,6 +318,21 @@ class EmitentService:
             if idx < len(matching_row):
                 emitent_info[column_name] = matching_row[idx]
         
+        # Extract emitent_id from emitent_info to fetch ratings
+        emitent_id = emitent_info.get("emitent_id")
+        if emitent_id is not None:
+            try:
+                emitent_id_int = int(emitent_id)
+                print(f"[EMITENT SERVICE] Fetching ratings for emitent_id={emitent_id_int}")
+                ratings = self._fetch_emitent_ratings(emitent_id_int)
+                if ratings is not None:
+                    emitent_info["cci_rating_companies"] = ratings
+                    print(f"[EMITENT SERVICE] Added {len(ratings)} ratings to emitent data")
+                else:
+                    print(f"[EMITENT SERVICE] No ratings found for emitent_id={emitent_id_int}")
+            except (ValueError, TypeError) as exc:
+                print(f"[EMITENT SERVICE] Invalid emitent_id format: {emitent_id}, error: {exc}")
+        
         return emitent_info
     
     def refresh_all_emitents(self, bonds_details: Dict[str, Dict]) -> Dict[str, int]:
@@ -286,12 +370,17 @@ class EmitentService:
                 # Fetch emitent data from MOEX (without saving)
                 emitent_data = self._fetch_emitent_from_moex_by_isin(isin)
                 if emitent_data is not None:
+                    # Ratings are already included in emitent_data by _fetch_emitent_from_moex_by_isin
                     # Save data using bond SECID as key (not MOEX SECID)
                     if self._emitent_cache is None:
                         self._emitent_cache = {}
                     self._emitent_cache[secid] = emitent_data
                     updated_count += 1
-                    print(f"[EMITENT REFRESH] Bond {secid}: Successfully updated")
+                    ratings_count = len(emitent_data.get("cci_rating_companies", []))
+                    if ratings_count > 0:
+                        print(f"[EMITENT REFRESH] Bond {secid}: Successfully updated with {ratings_count} ratings")
+                    else:
+                        print(f"[EMITENT REFRESH] Bond {secid}: Successfully updated (no ratings)")
                 else:
                     error_count += 1
                     print(f"[EMITENT REFRESH] Bond {secid}: Failed to fetch from MOEX")

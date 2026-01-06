@@ -1251,6 +1251,7 @@ export const ComparisonTable: React.FC = () => {
               suppressAggFuncInHeader={true}
               suppressMenuHide={true}
               getRowId={(params) => params.data.secid}
+              theme="legacy"
             />
           </Box>
         </Box>

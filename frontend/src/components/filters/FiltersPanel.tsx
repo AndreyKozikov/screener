@@ -5,16 +5,18 @@ import ClearIcon from '@mui/icons-material/Clear';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import { useFiltersStore } from '../../stores/filtersStore';
-import { CouponRangeFilter } from './CouponRangeFilter';
-import { YieldRangeFilter } from './YieldRangeFilter';
-import { CouponYieldRangeFilter } from './CouponYieldRangeFilter';
-import { MaturityDateFilter } from './MaturityDateFilter';
-import { ListLevelFilter } from './ListLevelFilter';
-import { CurrencyFilter } from './CurrencyFilter';
-import { BondTypeFilter } from './BondTypeFilter';
-import { BondType43Filter } from './BondType43Filter';
-import { CouponTypeFilter } from './CouponTypeFilter';
-import { RatingRangeFilter } from './RatingRangeFilter';
+import {
+  CouponRangeFilter,
+  YieldRangeFilter,
+  CouponYieldRangeFilter,
+  MaturityDateFilter,
+  ListLevelFilter,
+  CurrencyFilter,
+  BondTypeFilter,
+  BondType43Filter,
+  CouponTypeFilter,
+  RatingRangeFilter,
+} from './AllFilters';
 
 /**
  * FiltersPanel Component

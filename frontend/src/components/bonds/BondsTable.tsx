@@ -27,12 +27,16 @@ import {
   calculateCouponYieldToPrice,
   calculateCouponFrequency 
 } from '../../utils/formatters';
+import { getWorstRating, getRatingLevel, type Rating } from '../../utils/ratings';
+import { getEmitentBySecid } from '../../api/emitent';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { ErrorMessage } from '../common/ErrorMessage';
 import { EmptyState } from '../common/EmptyState';
 import type { BondListItem } from '../../types/bond';
 import AddToPortfolioRenderer from './AddToPortfolioRenderer';
 import AddToComparisonRenderer from './AddToComparisonRenderer';
+import { RatingDisplay } from './RatingDisplay';
+import { SearchFilter } from '../filters/AllFilters';
 
 type FieldDescriptionMap = Record<string, string>;
 
@@ -121,7 +125,7 @@ const normalizeRating = (rating: string): string => {
  * - CCC, CC, C, D → красный (#E53935)
  * - пустой/неопознанный → серый (#E0E0E0)
  */
-const getRatingColor = (rating: string | null | undefined): { bg: string; color: string } => {
+export const getRatingColor = (rating: string | null | undefined): { bg: string; color: string } => {
   if (!rating || rating.trim() === '' || rating === '—' || rating === '-') {
     return { bg: '#E0E0E0', color: '#666' };
   }
@@ -608,13 +612,14 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
 
   // Column definitions
   const columnDefs: ColDef[] = useMemo(() => {
-    // Custom cell renderer for SHORTNAME with PUT/CALL superscripts
+    // Custom cell renderer for SHORTNAME with PUT/CALL/AMORT superscripts
     const ShortNameRenderer = (params: ICellRendererParams<BondListItem>) => {
       const bond = params.data;
       if (!bond) return null;
 
       const hasCall = bond.CALLOPTIONDATE != null && bond.CALLOPTIONDATE !== '';
       const hasPut = bond.PUTOPTIONDATE != null && bond.PUTOPTIONDATE !== '';
+      const hasAmort = bond.BONDTYPE43 === 'Амортизируемые облигации';
 
       return (
         <Box
@@ -650,6 +655,19 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
               }}
             >
               PUT
+            </Box>
+          )}
+          {hasAmort && (
+            <Box
+              component="span"
+              sx={{
+                fontSize: '0.7em',
+                fontWeight: 700,
+                color: '#9c27b0',
+                ml: (hasCall || hasPut) ? 0.5 : 1,
+              }}
+            >
+              amort
             </Box>
           )}
         </Box>
@@ -703,38 +721,12 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
     }),
     createColumnDef('RATING', 'Рейтинг', {
       minWidth: 100,
-      valueGetter: (params) => {
+      cellRenderer: (params: ICellRendererParams<BondListItem>) => {
         const bond = params.data;
         if (!bond) {
-          return null;
-        }
-        // Use RATING_LEVEL from bond data (loaded from bonds_rating.json)
-        return bond.RATING_LEVEL || null;
-      },
-      cellRenderer: (params: ICellRendererParams<BondListItem>) => {
-        const rating = params.value;
-        if (!rating) {
           return '—';
         }
-        const { bg, color } = getRatingColor(rating);
-        return (
-          <Box
-            sx={{
-              px: 1,
-              py: 0.5,
-              borderRadius: '6px',
-              fontSize: '12px',
-              backgroundColor: bg,
-              color: color,
-              fontWeight: 600,
-              display: 'inline-block',
-              textAlign: 'center',
-              minWidth: '50px',
-            }}
-          >
-            {rating}
-          </Box>
-        );
+        return <RatingDisplay bond={bond} size="small" />;
       },
       cellStyle: { textAlign: 'center' },
       headerTooltip: 'Рейтинг облигации от рейтинговых агентств',
@@ -1152,7 +1144,7 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
     return null;
   }
 
-  // Loading state
+  // Loading state - only show spinner on initial load
   if (isLoading && bonds.length === 0) {
     return <LoadingSpinner message="Загрузка облигаций..." />;
   }
@@ -1162,10 +1154,8 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
     return <ErrorMessage message={error} onRetry={loadBonds} />;
   }
 
-  // Empty state
-  if (bonds.length === 0) {
-    return <EmptyState variant="no-results" />;
-  }
+  // Note: We always render the table, even with empty data
+  // AG Grid will show its overlay for empty results, keeping the table structure visible
 
   return (
     <Card sx={{ 
@@ -1189,7 +1179,7 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
         flexDirection: 'column', 
         '&:last-child': { pb: 0 },
       }}>
-        {/* Header with icon buttons */}
+        {/* Header with search and icon buttons */}
         <Box
           sx={{
             px: 1.5,
@@ -1200,9 +1190,15 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
             borderBottom: '1px solid #e0e0e0',
             backgroundColor: '#fafafa',
             minHeight: '46px',
+            gap: 2,
           }}
         >
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, ml: 'auto' }}>
+          {/* Search field */}
+          <Box sx={{ flex: 1, maxWidth: '400px' }}>
+            <SearchFilter />
+          </Box>
+          
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
             {/* Filter button */}
             {onOpenFilters && (
               <Tooltip title="Фильтры">
@@ -1512,7 +1508,7 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
         >
           <AgGridReact<BondListItem>
             ref={gridRef}
-            rowData={filteredBonds}
+            rowData={bonds.length === 0 ? [] : filteredBonds}
             columnDefs={columnDefs}
             defaultColDef={defaultColDef}
             onRowClicked={onRowClicked}
@@ -1533,6 +1529,14 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
             suppressAggFuncInHeader={true}
             suppressMenuHide={true}
             getRowId={(params) => params.data.SECID}
+            theme="legacy"
+            overlayNoRowsTemplate={
+              '<div style="padding: 20px; text-align: center; color: #666;">' +
+              '<div style="font-size: 48px; margin-bottom: 16px;">🔍</div>' +
+              '<div style="font-size: 18px; font-weight: 500; margin-bottom: 8px;">Ничего не найдено</div>' +
+              '<div style="font-size: 14px; color: #999;">Попробуйте изменить параметры поиска или фильтры</div>' +
+              '</div>'
+            }
           />
         </Box>
         </Box>

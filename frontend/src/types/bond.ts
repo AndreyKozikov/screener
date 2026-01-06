@@ -2,6 +2,8 @@
  * Bond data interfaces matching backend Pydantic models
  */
 
+import type { Rating } from '../utils/ratings';
+
 // Simplified bond for table display
 export interface BondListItem {
   SECID: string;
@@ -28,8 +30,9 @@ export interface BondListItem {
   CURRENCYID: string | null;  // Валюта торговли
   FACEUNIT: string | null;  // Валюта номинала
   LISTLEVEL: number | null;  // Уровень листинга
-  RATING_AGENCY: string | null;  // Название рейтингового агентства
-  RATING_LEVEL: string | null;  // Уровень рейтинга
+  RATING_AGENCY: string | null;  // Название рейтингового агентства (worst rating)
+  RATING_LEVEL: string | null;  // Уровень рейтинга (worst rating)
+  RATINGS?: Rating[] | null;  // All ratings for the bond
   BONDTYPE: string | null;  // Тип облигации
   BONDTYPE43: string | null;  // Вид облигации (из bonds.json, индекс 43)
   COUPON_TYPE: string | null;  // Тип купона (FIX или FLOAT)

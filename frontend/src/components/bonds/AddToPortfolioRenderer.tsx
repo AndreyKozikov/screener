@@ -1,7 +1,7 @@
 import React from 'react';
 import { Box, IconButton } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import RemoveCircleIcon from '@mui/icons-material/RemoveCircle';
 import type { ICellRendererParams } from 'ag-grid-community';
 import type { BondListItem } from '../../types/bond';
 import { usePortfolioStore } from '../../stores/portfolioStore';
@@ -14,16 +14,23 @@ import { usePortfolioStore } from '../../stores/portfolioStore';
  */
 export const AddToPortfolioRenderer: React.FC<ICellRendererParams<BondListItem>> = (params) => {
   const bond = params.data;
-  const { addBondToPortfolio, isInPortfolio } = usePortfolioStore();
+  const { addBondToPortfolio, removeBondFromPortfolio, isInPortfolio } = usePortfolioStore();
   
   if (!bond) return null;
 
   const inPortfolio = isInPortfolio(bond.SECID);
 
-  const handleClick = (e: React.MouseEvent) => {
+  const handleAddClick = (e: React.MouseEvent) => {
     e.stopPropagation(); // Prevent row click
     if (!inPortfolio) {
       addBondToPortfolio(bond);
+    }
+  };
+
+  const handleRemoveClick = (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent row click
+    if (inPortfolio) {
+      removeBondFromPortfolio(bond.SECID);
     }
   };
 
@@ -52,16 +59,23 @@ export const AddToPortfolioRenderer: React.FC<ICellRendererParams<BondListItem>>
       }}
     >
       {inPortfolio ? (
-        <CheckCircleIcon
+        <IconButton
+          size="small"
+          onClick={handleRemoveClick}
           sx={{
-            color: 'success.main',
-            fontSize: '1.5rem',
+            color: 'error.main',
+            '&:hover': {
+              backgroundColor: 'error.light',
+              color: 'error.contrastText',
+            },
           }}
-        />
+        >
+          <RemoveCircleIcon fontSize="small" />
+        </IconButton>
       ) : (
         <IconButton
           size="small"
-          onClick={handleClick}
+          onClick={handleAddClick}
           sx={{
             color: 'primary.main',
             '&:hover': {

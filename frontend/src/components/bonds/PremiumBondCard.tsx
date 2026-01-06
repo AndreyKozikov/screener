@@ -26,6 +26,8 @@ import {
   formatPercent,
   formatBondStatus,
 } from '../../utils/formatters';
+import { getWorstRating, getRatingLevel, getRatingAgency, type Rating } from '../../utils/ratings';
+import { getRatingColor } from './BondsTable';
 
 interface PremiumBondCardProps {
   bondDetail: BondDetailType;
@@ -42,8 +44,8 @@ export const PremiumBondCard: React.FC<PremiumBondCardProps> = ({ bondDetail, co
   const securities = bondDetail?.securities;
   const market = bondDetail?.marketdata;
   const [emitentInfo, setEmitentInfo] = useState<EmitentInfo | null>(null);
-
-  // Fetch emitent info
+  
+  // Fetch emitent info with ratings
   useEffect(() => {
     const secid = typeof securities?.SECID === 'string' ? securities.SECID : null;
     if (!secid) return;
@@ -131,14 +133,38 @@ export const PremiumBondCard: React.FC<PremiumBondCardProps> = ({ bondDetail, co
   const offerDate = typeof securities?.OFFERDATE === 'string' ? securities.OFFERDATE : null;
   const callOptionDate = typeof securities?.CALLOPTIONDATE === 'string' ? securities.CALLOPTIONDATE : null;
   const putOptionDate = typeof securities?.PUTOPTIONDATE === 'string' ? securities.PUTOPTIONDATE : null;
+  const hasAmort = typeof securities?.BONDTYPE43 === 'string' && securities.BONDTYPE43 === 'Амортизируемые облигации';
 
-  // Rating (may not be in detail, try to get from securities)
-  const ratingAgency = securities?.RATING_AGENCY != null 
-    ? String(securities.RATING_AGENCY) 
-    : null;
-  const ratingLevel = securities?.RATING_LEVEL != null 
-    ? String(securities.RATING_LEVEL) 
-    : null;
+  // Rating - get from bond ratings or emitent ratings
+  const bondRatings = useMemo(() => {
+    const ratings = securities?.RATINGS;
+    if (Array.isArray(ratings) && ratings.length > 0) {
+      return ratings as Rating[];
+    }
+    // Fallback: if RATING_LEVEL exists but RATINGS doesn't, create a rating object
+    if (securities?.RATING_LEVEL && securities?.RATING_AGENCY) {
+      return [{
+        rating_level_name_short_ru: String(securities.RATING_LEVEL),
+        agency_name_short_ru: String(securities.RATING_AGENCY),
+      }];
+    }
+    return null;
+  }, [securities?.RATINGS, securities?.RATING_LEVEL, securities?.RATING_AGENCY]);
+
+  const worstBondRating = useMemo(() => {
+    if (!bondRatings) return null;
+    return getWorstRating(bondRatings);
+  }, [bondRatings]);
+
+  const worstEmitentRating = useMemo(() => {
+    if (!emitentInfo?.cci_rating_companies || emitentInfo.cci_rating_companies.length === 0) return null;
+    return getWorstRating(emitentInfo.cci_rating_companies);
+  }, [emitentInfo?.cci_rating_companies]);
+
+  // Select final rating: bond rating first, then emitent rating
+  const finalRating = worstBondRating || worstEmitentRating;
+  const ratingLevel = getRatingLevel(finalRating);
+  const ratingAgency = getRatingAgency(finalRating);
 
   // Calculate coupon progress
   const couponProgress = useMemo(() => {
@@ -305,14 +331,36 @@ export const PremiumBondCard: React.FC<PremiumBondCardProps> = ({ bondDetail, co
                 <Typography variant="caption" color="text.secondary" display="block" gutterBottom sx={{ mb: 0.5 }}>
                   Рейтинг
                 </Typography>
-                <Typography variant="body2" fontWeight={600} sx={{ textAlign: 'center' }}>
-                  {ratingLevel || '—'}
-                  {ratingLevel && ratingAgency && (
-                    <Typography component="span" variant="caption" color="text.secondary" display="block" sx={{ mt: 0.25 }}>
-                      ({ratingAgency})
-                    </Typography>
-                  )}
-                </Typography>
+                {ratingLevel ? (
+                  <Box>
+                    <Box
+                      sx={{
+                        px: 1.5,
+                        py: 0.75,
+                        borderRadius: '6px',
+                        fontSize: '14px',
+                        backgroundColor: getRatingColor(ratingLevel).bg,
+                        color: getRatingColor(ratingLevel).color,
+                        fontWeight: 600,
+                        display: 'inline-block',
+                        textAlign: 'center',
+                        minWidth: '60px',
+                        mb: 0.5,
+                      }}
+                    >
+                      {ratingLevel}
+                    </Box>
+                    {ratingAgency && (
+                      <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+                        ({ratingAgency})
+                      </Typography>
+                    )}
+                  </Box>
+                ) : (
+                  <Typography variant="body2" fontWeight={600} sx={{ textAlign: 'center' }}>
+                    —
+                  </Typography>
+                )}
               </CardContent>
             </Card>
           </Box>
@@ -519,7 +567,7 @@ export const PremiumBondCard: React.FC<PremiumBondCardProps> = ({ bondDetail, co
       </Card>
 
       {/* 5. Индикаторы риска */}
-      {(offerDate || callOptionDate || putOptionDate || !isActive) && (
+      {(offerDate || callOptionDate || putOptionDate || hasAmort || !isActive) && (
         <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
           {offerDate && (
             <Tooltip title={`Оферта: ${formatDate(offerDate)}`} arrow>
@@ -545,6 +593,14 @@ export const PremiumBondCard: React.FC<PremiumBondCardProps> = ({ bondDetail, co
                 variant="outlined"
               />
             </Tooltip>
+          )}
+          {hasAmort && (
+            <Chip
+              label="С амортизацией долга"
+              size="small"
+              color="secondary"
+              variant="outlined"
+            />
           )}
           {!isActive && (
             <Tooltip title={`Статус: ${formatBondStatus(status)}`} arrow>

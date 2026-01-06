@@ -1,6 +1,6 @@
 from datetime import date, datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
@@ -8,6 +8,7 @@ import orjson
 
 from app.models.bond import BondListItem
 from app.services.coupon_loader import get_coupon_loader
+from app.services.bond_filter import get_rating_index
 from app.utils.logger import get_data_update_logger
 
 
@@ -324,9 +325,15 @@ class DataLoader:
         # Also add ratings to details_map for BondDetail
         for secid, rating_info in ratings_map.items():
             if secid in details_map:
-                # Add rating to securities section in details_map
-                details_map[secid]["securities"]["RATING_AGENCY"] = rating_info["agency"]
-                details_map[secid]["securities"]["RATING_LEVEL"] = rating_info["level"]
+                all_ratings = rating_info.get("all_ratings", [])
+                # Store all ratings
+                details_map[secid]["securities"]["RATINGS"] = all_ratings
+                
+                # Get worst rating
+                worst_rating = self._get_worst_rating(all_ratings)
+                if worst_rating:
+                    details_map[secid]["securities"]["RATING_AGENCY"] = worst_rating.get("agency_name_short_ru", "").strip()
+                    details_map[secid]["securities"]["RATING_LEVEL"] = worst_rating.get("rating_level_name_short_ru", "").strip()
         
         # Load and add bond types from bonds_emitent.json
         logger.info("[LOAD BONDS DATA] Loading bond types data")
@@ -410,8 +417,8 @@ class DataLoader:
         except (ValueError, TypeError):
             return None
     
-    def _load_ratings_map(self) -> Dict[str, Dict[str, Optional[str]]]:
-        """Load ratings from bonds_rating.json and return as a map"""
+    def _load_ratings_map(self) -> Dict[str, Dict[str, Any]]:
+        """Load ratings from bonds_rating.json and return as a map with all ratings"""
         ratings_path = self.data_dir / "bonds_rating.json"
         ratings_map = {}
         
@@ -427,46 +434,32 @@ class DataLoader:
             
             # Create a lookup map for quick access
             for secid, rating_entry in ratings_data.items():
+                ratings_list = []
+                
                 if isinstance(rating_entry, dict):
                     # New format: {last_updated: "...", ratings: [...]}
                     if "ratings" in rating_entry:
                         ratings_list = rating_entry["ratings"]
-                        if isinstance(ratings_list, list) and len(ratings_list) > 0:
-                            # Get first rating (most recent or primary)
-                            first_rating = ratings_list[0]
-                            if isinstance(first_rating, dict):
-                                agency_name = first_rating.get("agency_name_short_ru", "")
-                                rating_level = first_rating.get("rating_level_name_short_ru", "")
-                                # Only add if rating is not empty
-                                if agency_name and agency_name.strip():
-                                    ratings_map[secid] = {
-                                        "agency": agency_name.strip(),
-                                        "level": rating_level.strip() if rating_level else None
-                                    }
                     # Old format: {cci_rating_securities: [...]}
                     elif "cci_rating_securities" in rating_entry:
                         ratings_list = rating_entry["cci_rating_securities"]
-                        if isinstance(ratings_list, list) and len(ratings_list) > 0:
-                            first_rating = ratings_list[0]
-                            if isinstance(first_rating, dict):
-                                agency_name = first_rating.get("agency_name_short_ru", "")
-                                rating_level = first_rating.get("rating_level_name_short_ru", "")
-                                if agency_name and agency_name.strip():
-                                    ratings_map[secid] = {
-                                        "agency": agency_name.strip(),
-                                        "level": rating_level.strip() if rating_level else None
-                                    }
                 # Old format: direct array
-                elif isinstance(rating_entry, list) and len(rating_entry) > 0:
-                    first_rating = rating_entry[0]
-                    if isinstance(first_rating, dict):
-                        agency_name = first_rating.get("agency_name_short_ru", "")
-                        rating_level = first_rating.get("rating_level_name_short_ru", "")
-                        if agency_name and agency_name.strip():
-                            ratings_map[secid] = {
-                                "agency": agency_name.strip(),
-                                "level": rating_level.strip() if rating_level else None
-                            }
+                elif isinstance(rating_entry, list):
+                    ratings_list = rating_entry
+                
+                # Store all ratings
+                if isinstance(ratings_list, list) and len(ratings_list) > 0:
+                    # Filter valid ratings (must have agency_name_short_ru)
+                    valid_ratings = [
+                        r for r in ratings_list 
+                        if isinstance(r, dict) and r.get("agency_name_short_ru", "").strip()
+                    ]
+                    
+                    if valid_ratings:
+                        ratings_map[secid] = {
+                            "ratings": valid_ratings,
+                            "all_ratings": valid_ratings  # Keep all for worst rating selection
+                        }
             
         except (orjson.JSONDecodeError, IOError) as exc:
             print(f"[DATA LOADER] ERROR: Failed to load ratings file - {type(exc).__name__}: {str(exc)}")
@@ -474,15 +467,64 @@ class DataLoader:
         
         return ratings_map
     
-    def _add_ratings_to_bonds(self, bonds_list: List[BondListItem], ratings_map: Dict[str, Dict[str, Optional[str]]]):
-        """Add ratings from ratings_map to bonds"""
+    def _get_worst_rating(self, ratings_list: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """
+        Get worst rating from a list of ratings, excluding "Отозван" if other ratings exist.
+        
+        Args:
+            ratings_list: List of rating dictionaries
+            
+        Returns:
+            Worst rating dictionary or None
+        """
+        if not ratings_list:
+            return None
+        
+        # Filter out "Отозван" ratings if other ratings exist
+        non_revoked_ratings = [
+            r for r in ratings_list
+            if isinstance(r, dict) and r.get("rating_level_name_short_ru", "").lower() not in ["отозван", "отозвано"]
+        ]
+        
+        # If we have non-revoked ratings, use them; otherwise use all ratings
+        ratings_to_check = non_revoked_ratings if non_revoked_ratings else ratings_list
+        
+        if not ratings_to_check:
+            return None
+        
+        # Find worst rating (highest index in rating scale)
+        worst_rating = None
+        worst_index = -1
+        
+        for rating in ratings_to_check:
+            rating_level = rating.get("rating_level_name_short_ru", "")
+            if not rating_level:
+                continue
+            
+            rating_index = get_rating_index(rating_level)
+            if rating_index is not None and rating_index > worst_index:
+                worst_index = rating_index
+                worst_rating = rating
+        
+        return worst_rating
+    
+    def _add_ratings_to_bonds(self, bonds_list: List[BondListItem], ratings_map: Dict[str, Dict[str, Any]]):
+        """Add ratings from ratings_map to bonds, selecting worst rating"""
         ratings_added = 0
         for bond in bonds_list:
             if bond.SECID in ratings_map:
                 rating_info = ratings_map[bond.SECID]
-                bond.RATING_AGENCY = rating_info["agency"]
-                bond.RATING_LEVEL = rating_info["level"]
-                ratings_added += 1
+                all_ratings = rating_info.get("all_ratings", [])
+                
+                # Store all ratings
+                bond.RATINGS = all_ratings
+                
+                # Get worst rating
+                worst_rating = self._get_worst_rating(all_ratings)
+                if worst_rating:
+                    bond.RATING_AGENCY = worst_rating.get("agency_name_short_ru", "").strip()
+                    bond.RATING_LEVEL = worst_rating.get("rating_level_name_short_ru", "").strip()
+                    ratings_added += 1
         
         print(f"[DATA LOADER] Added ratings to {ratings_added} bonds")
     

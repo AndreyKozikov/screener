@@ -1,0 +1,26 @@
+[
+  {
+    "date": "2026-01-06",
+    "source_date": "31.12.2025",
+    "rates": {
+      "USD": {
+        "code": "USD",
+        "rate": 78.2267,
+        "nominal": 1,
+        "original_value": "78,2267"
+      },
+      "EUR": {
+        "code": "EUR",
+        "rate": 92.0938,
+        "nominal": 1,
+        "original_value": "92,0938"
+      },
+      "CNY": {
+        "code": "CNY",
+        "rate": 11.1592,
+        "nominal": 1,
+        "original_value": "11,1592"
+      }
+    }
+  }
+]

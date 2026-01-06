@@ -6,6 +6,8 @@ from typing import Dict, List, Optional, Any
 import orjson
 import requests
 
+from app.services.emitent_service import get_emitent_service
+
 
 class RatingService:
     """Service for handling bond rating data from MOEX website"""
@@ -86,6 +88,25 @@ class RatingService:
             }
         ]
     
+    def _create_ofz_aaa_rating(self) -> List[Dict[str, Any]]:
+        """
+        Create AAA rating for OFZ (Government bonds) with emitent_id = 1228.
+        
+        OFZ bonds are automatically assigned AAA rating without API request.
+        
+        Returns:
+            List with one AAA rating dictionary
+        """
+        return [
+            {
+                "agency_id": 0,
+                "agency_name_short_ru": "Автоматический",
+                "rating_level_id": 0,
+                "rating_date": "",
+                "rating_level_name_short_ru": "AAA"
+            }
+        ]
+    
     def _is_data_stale(self, last_updated: str) -> bool:
         """
         Check if data is older than one month.
@@ -125,6 +146,38 @@ class RatingService:
         file_size = len(serialized)
         self.rating_file.write_bytes(serialized)
         print(f"[RATING SERVICE] File saved successfully, size: {file_size} bytes")
+    
+    def _get_emitent_id_from_cache(self, secid: str) -> Optional[str]:
+        """
+        Get emitent ID from cached emitent data (bonds_emitent.json).
+        
+        Args:
+            secid: Security ID
+            
+        Returns:
+            Emitent ID (as string) or None if not found in cache
+        """
+        try:
+            emitent_service = get_emitent_service()
+            emitent_data = emitent_service.get_emitent_by_secid(secid)
+            
+            if emitent_data is None:
+                print(f"[RATING SERVICE] Emitent data not found in cache for SECID: {secid}")
+                return None
+            
+            emitent_id = emitent_data.get("emitent_id")
+            if emitent_id is not None:
+                emitent_id_str = str(emitent_id)
+                print(f"[RATING SERVICE] Found emitent ID in cache: {emitent_id_str} for SECID: {secid}")
+                return emitent_id_str
+            
+            print(f"[RATING SERVICE] Emitent ID not found in cached data for SECID: {secid}")
+            return None
+            
+        except Exception as exc:
+            error_type = type(exc).__name__
+            print(f"[RATING SERVICE] ERROR: Failed to get emitent ID from cache - {error_type}: {str(exc)}")
+            return None
     
     def _extract_emitent_id_from_api(self, secid: str) -> Optional[str]:
         """
@@ -362,9 +415,10 @@ class RatingService:
         Fetch rating data from MOEX by SECID and BOARDID.
         
         Strategy:
-        1. Fetch securities data from MOEX API to get emitent ID
-        2. Extract emitent ID (EMITTER_ID) from JSON response
-        3. Fetch rating data via MOEX API using emitent ID
+        1. First, try to get emitent ID from cached emitent data (bonds_emitent.json)
+        2. If not found in cache, fetch from MOEX API
+        3. If emitent_id = 1228 (OFZ), automatically assign AAA rating without API request
+        4. Otherwise, fetch rating data via MOEX API using emitent ID
         
         Args:
             secid: Security ID
@@ -376,15 +430,20 @@ class RatingService:
         print(f"[RATING SERVICE] Fetching rating data from MOEX")
         print(f"[RATING SERVICE] SECID: {secid}, BOARDID: {boardid}")
         
-        # Step 1: Extract emitent ID from MOEX API
-        print(f"[RATING SERVICE] Step 1: Fetching emitent ID from MOEX API...")
-        try:
-            emitent_id = self._extract_emitent_id_from_api(secid)
-        except Exception as exc:
-            error_type = type(exc).__name__
-            print(f"[RATING SERVICE] ERROR: Failed to extract emitent ID - {error_type}: {str(exc)}")
-            print(f"[RATING SERVICE] No rating data available for this bond, returning empty rating")
-            return self._create_empty_rating()
+        # Step 1: Try to get emitent ID from cache first
+        print(f"[RATING SERVICE] Step 1: Checking emitent ID in cache...")
+        emitent_id = self._get_emitent_id_from_cache(secid)
+        
+        # Step 2: If not in cache, fetch from MOEX API
+        if not emitent_id:
+            print(f"[RATING SERVICE] Step 2: Emitent ID not in cache, fetching from MOEX API...")
+            try:
+                emitent_id = self._extract_emitent_id_from_api(secid)
+            except Exception as exc:
+                error_type = type(exc).__name__
+                print(f"[RATING SERVICE] ERROR: Failed to extract emitent ID from API - {error_type}: {str(exc)}")
+                print(f"[RATING SERVICE] No rating data available for this bond, returning empty rating")
+                return self._create_empty_rating()
         
         if not emitent_id:
             print(f"[RATING SERVICE] WARNING: Could not find emitent ID for {secid}")
@@ -392,8 +451,19 @@ class RatingService:
             # Return empty rating instead of raising error
             return self._create_empty_rating()
         
-        # Step 2: Fetch rating via API
-        print(f"[RATING SERVICE] Step 2: Fetching rating via API using emitent ID: {emitent_id}...")
+        # Step 2.5: Check if this is OFZ (emitent_id = 1228) - assign AAA rating automatically
+        emitent_id_int = None
+        try:
+            emitent_id_int = int(emitent_id)
+        except (ValueError, TypeError):
+            pass
+        
+        if emitent_id_int == 1228:
+            print(f"[RATING SERVICE] OFZ bond detected (emitent_id=1228), automatically assigning AAA rating")
+            return self._create_ofz_aaa_rating()
+        
+        # Step 3: Fetch rating via API using emitent ID
+        print(f"[RATING SERVICE] Step 3: Fetching rating via API using emitent ID: {emitent_id}...")
         rating_data = self._fetch_rating_via_api(secid, emitent_id)
         
         if rating_data is None:

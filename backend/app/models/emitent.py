@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field
 
 
@@ -8,4 +8,5 @@ class EmitentInfo(BaseModel):
     emitent_title: Optional[str] = Field(None, description="Emitent title/name")
     emitent_inn: Optional[str] = Field(None, description="Emitent INN (tax ID)")
     type: Optional[str] = Field(None, description="Security type")
+    cci_rating_companies: Optional[List[Dict[str, Any]]] = Field(None, description="Emitent ratings from MOEX API")
 

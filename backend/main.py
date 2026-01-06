@@ -4,11 +4,12 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import bonds, metadata, zerocupon, forecast, llm, qwen, grok, emitent, rating, feedback
+from app.routers import bonds, metadata, zerocupon, forecast, llm, qwen, grok, emitent, rating, feedback, currency
 from app.services.data_loader import init_data_loader
 from app.services.coupon_loader import init_coupon_loader
 from app.services.emitent_service import init_emitent_service
 from app.services.rating_service import init_rating_service
+from app.services.currency_service import init_currency_service
 from app.config import settings
 
 
@@ -21,6 +22,7 @@ async def lifespan(app: FastAPI):
     init_coupon_loader(data_dir)
     init_emitent_service(data_dir)
     init_rating_service(data_dir)
+    init_currency_service(data_dir)
     yield
     # Shutdown: cleanup if needed
     # (currently no cleanup required)
@@ -56,6 +58,7 @@ app.include_router(grok.router)
 app.include_router(emitent.router)
 app.include_router(rating.router)
 app.include_router(feedback.router)
+app.include_router(currency.router)
 
 # Root endpoint
 @app.get("/")
@@ -85,9 +88,21 @@ async def health_check():
 
 if __name__ == "__main__":
     import uvicorn
+    import multiprocessing
+    
+    # Для production используйте Gunicorn с несколькими workers:
+    # gunicorn -c gunicorn_config.py main:app
+    #
+    # Для разработки можно использовать uvicorn напрямую,
+    # но лучше указать workers для тестирования параллельной обработки
+    workers = multiprocessing.cpu_count() * 2 + 1
+    
     uvicorn.run(
         "main:app",
         host="0.0.0.0",  # Listen on all interfaces for external access
         port=8000,
-        reload=True,
+        reload=True,  # Только для разработки
+        workers=1,  # В режиме reload workers должен быть 1
+        # Для production без reload используйте:
+        # workers=workers,
     )

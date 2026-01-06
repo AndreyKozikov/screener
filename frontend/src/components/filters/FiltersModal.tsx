@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -7,447 +7,544 @@ import {
   Button,
   Box,
   Typography,
-  Collapse,
-  IconButton,
-  useTheme,
-  useMediaQuery,
+  Tabs,
+  Tab,
+  Chip,
+  Divider,
+  Stack,
+  CircularProgress,
+  Alert,
 } from '@mui/material';
 import FilterAltIcon from '@mui/icons-material/FilterAlt';
 import ClearIcon from '@mui/icons-material/Clear';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import { useFiltersStore } from '../../stores/filtersStore';
-import { CouponRangeFilter } from './CouponRangeFilter';
-import { YieldRangeFilter } from './YieldRangeFilter';
-import { CouponYieldRangeFilter } from './CouponYieldRangeFilter';
-import { MaturityDateFilter } from './MaturityDateFilter';
-import { ListLevelFilter } from './ListLevelFilter';
-import { CurrencyFilter } from './CurrencyFilter';
-import { BondTypeFilter } from './BondTypeFilter';
-import { BondType43Filter } from './BondType43Filter';
-import { CouponTypeFilter } from './CouponTypeFilter';
-import { RatingRangeFilter } from './RatingRangeFilter';
+import { useBondsStore } from '../../stores/bondsStore';
+import {
+  CouponRangeFilter,
+  YieldRangeFilter,
+  CouponYieldRangeFilter,
+  MaturityDateFilter,
+  ListLevelFilter,
+  CurrencyFilter,
+  BondTypeFilter,
+  BondType43Filter,
+  CouponTypeFilter,
+  RatingRangeFilter,
+} from './AllFilters';
 
+/**
+ * Пропсы для компонента модального окна фильтров
+ */
 interface FiltersModalProps {
-  open: boolean;
-  onClose: () => void;
+  open: boolean;      // Открыто ли модальное окно
+  onClose: () => void; // Функция закрытия модального окна
 }
 
 /**
- * FiltersModal Component
+ * Пропсы для компонента панели вкладки
+ */
+interface TabPanelProps {
+  children?: React.ReactNode; // Содержимое панели (фильтры)
+  index: number;              // Индекс этой панели (0, 1, 2, 3)
+  value: number;              // Индекс активной панели
+}
+
+/**
+ * Компонент панели вкладки
+ * Отображает содержимое только для активной вкладки
  * 
- * Modal dialog containing all bond filtering controls
- * Each filter is in its own collapsible section with independent expand/collapse state
+ * Параметры sx:
+ * - height: '100%' - занимает всю доступную высоту родителя
+ * - width: '100%' - занимает всю доступную ширину родителя
+ * - display: flex/none - показывается только если это активная вкладка
+ * - flexDirection: 'column' - элементы располагаются вертикально
+ * - minHeight: 0 - позволяет сжиматься при необходимости
+ * - overflow: 'hidden' - скрывает переполнение контента
+ */
+function TabPanel(props: TabPanelProps) {
+  const { children, value, index, ...other } = props;
+
+  return (
+    <Box
+      role="tabpanel"
+      hidden={value !== index}  // Скрывает панель, если она не активна
+      id={`filter-tabpanel-${index}`}
+      aria-labelledby={`filter-tab-${index}`}
+      sx={{
+        height: '100%',         // Занимает всю высоту контейнера
+        width: '100%',          // Занимает всю ширину контейнера
+        display: value === index ? 'flex' : 'none', // Показывается только активная панель
+        flexDirection: 'column', // Вертикальное расположение элементов
+        minHeight: 0,           // Минимальная высота для корректной работы flex
+        overflow: 'hidden',     // Скрывает переполнение
+      }}
+      {...other}
+    >
+      {/* Рендерит содержимое только для активной вкладки */}
+      {value === index && children}
+    </Box>
+  );
+}
+
+/**
+ * Компонент модального окна фильтров
+ * 
+ * Структура модального окна:
+ * - Левая колонка (25% ширины): вертикальные вкладки для навигации по группам фильтров
+ * - Правая колонка (75% ширины): область с фильтрами выбранной группы
+ * 
+ * Группы фильтров:
+ * 0. Доходность - фильтры по доходности купона и к погашению
+ * 1. Даты - фильтры по датам погашения
+ * 2. Категории - фильтры по типам, валютам, уровню листинга
+ * 3. Рейтинг - фильтры по рейтингам облигаций
  */
 export const FiltersModal: React.FC<FiltersModalProps> = ({ open, onClose }) => {
-  const { resetFilters, applyFilters } = useFiltersStore();
-  const theme = useTheme();
-  const fullScreen = useMediaQuery(theme.breakpoints.down('md'));
+  // Получаем функции и состояние из хранилища фильтров
+  const { 
+    resetFilters,           // Функция сброса всех фильтров
+    applyFilters,           // Функция применения фильтров к данным
+    loadFilterOptions,      // Функция загрузки доступных опций для фильтров
+    isLoadingFilterOptions, // Статус загрузки опций (true/false)
+    filterOptionsError,     // Ошибка при загрузке опций (если есть)
+  } = useFiltersStore();
+  
+  // Получаем количество отфильтрованных облигаций для отображения
+  const { filteredCount } = useBondsStore();
 
-  // State for each filter's expand/collapse
-  const [showCouponRange, setShowCouponRange] = useState(false);
-  const [showYieldRange, setShowYieldRange] = useState(false);
-  const [showCouponYieldRange, setShowCouponYieldRange] = useState(false);
-  const [showMaturityDate, setShowMaturityDate] = useState(false);
-  const [showListLevel, setShowListLevel] = useState(false);
-  const [showCurrency, setShowCurrency] = useState(false);
-  const [showBondType, setShowBondType] = useState(false);
-  const [showBondType43, setShowBondType43] = useState(false);
-  const [showCouponType, setShowCouponType] = useState(false);
-  const [showRating, setShowRating] = useState(false);
+  // Состояние активной вкладки (0 = Доходность, 1 = Даты, 2 = Категории, 3 = Рейтинг)
+  const [activeTab, setActiveTab] = useState(0);
 
+  /**
+   * Эффект: предзагрузка данных фильтров при открытии модального окна
+   * Загружает доступные опции для фильтров (валюты, типы облигаций и т.д.)
+   */
+  useEffect(() => {
+    if (open) {
+      loadFilterOptions();
+    }
+  }, [open, loadFilterOptions]);
+
+  /**
+   * Обработчик смены вкладки
+   * @param newValue - индекс новой активной вкладки (0-3)
+   */
+  const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
+    setActiveTab(newValue);
+  };
+
+  /**
+   * Обработчик применения фильтров
+   * Применяет выбранные фильтры к данным и закрывает модальное окно
+   */
   const handleApply = () => {
     applyFilters();
     onClose();
   };
 
+  /**
+   * Обработчик сброса фильтров
+   * Сбрасывает все фильтры к значениям по умолчанию
+   */
   const handleReset = () => {
     resetFilters();
   };
 
+  /**
+   * Обработчик отмены
+   * Закрывает модальное окно без применения фильтров
+   */
   const handleCancel = () => {
     onClose();
   };
 
+  /**
+   * Массив групп фильтров для навигации
+   * Каждая группа соответствует одной вкладке
+   */
+  const filterGroups = [
+    { label: 'Доходность', id: 'yield' },      // Индекс 0
+    { label: 'Даты', id: 'dates' },            // Индекс 1
+    { label: 'Категории', id: 'categories' },  // Индекс 2
+    { label: 'Рейтинг', id: 'rating' },        // Индекс 3
+  ];
+
   return (
+    /**
+     * Основной компонент диалогового окна
+     * 
+     * Параметры Dialog:
+     * - open: открыто/закрыто модальное окно
+     * - onClose: функция закрытия при клике вне окна или на ESC
+     * - maxWidth="md": максимальная ширина (600px в Material-UI)
+     * - fullWidth: занимает всю доступную ширину до maxWidth
+     * 
+     * PaperProps.sx - стили для контейнера диалога:
+     * - maxHeight: '90vh' - максимальная высота 90% от высоты экрана
+     * - borderRadius: '24px' - скругление углов
+     * - border: рамка вокруг модального окна
+     * - overflow: 'hidden' - скрывает переполнение (для скругленных углов)
+     */
     <Dialog
       open={open}
       onClose={handleCancel}
-      maxWidth="lg"
+      maxWidth="md"
       fullWidth
-      fullScreen={fullScreen}
       PaperProps={{
         sx: {
-          maxHeight: '90vh',
-          borderRadius: '20px',
-          border: '1px solid #E2E8F0',
-          height: fullScreen ? '100vh' : 'auto',
+          maxHeight: '90vh',        // Максимальная высота 90% экрана
+          borderRadius: '24px',     // Скругление углов
+          border: '1px solid #E2E8F0', // Рамка светло-серого цвета
+          overflow: 'hidden',       // Скрывает содержимое за границами
         },
       }}
     >
-      <DialogTitle>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <FilterAltIcon color="primary" />
-          <Typography variant="h6" component="span" fontWeight={600}>
-            ФИЛЬТРЫ
-          </Typography>
+      {/* Заголовок модального окна с иконкой и счетчиком найденных облигаций */}
+      <DialogTitle
+        sx={{
+          pb: 2,                    // Отступ снизу (padding-bottom)
+          pt: 3,                    // Отступ сверху (padding-top)
+          px: 3,                    // Отступы слева и справа (padding-x)
+          borderBottom: '1px solid', // Разделительная линия снизу
+          borderColor: 'divider',   // Цвет разделителя (тема Material-UI)
+        }}
+      >
+        {/* Контейнер заголовка: иконка с текстом слева, счетчик справа */}
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          {/* Левая часть: иконка фильтра и заголовок */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            {/* Иконка фильтра в цветном квадрате */}
+            <Box
+              sx={{
+                p: 1,                        // Отступ внутри (padding)
+                borderRadius: '12px',        // Скругление углов
+                backgroundColor: 'primary.main', // Фон основного цвета темы
+                color: 'white',              // Белый цвет иконки
+                display: 'flex',
+                alignItems: 'center',        // Вертикальное выравнивание по центру
+                justifyContent: 'center',    // Горизонтальное выравнивание по центру
+              }}
+            >
+              <FilterAltIcon />
+            </Box>
+            {/* Заголовок "ФИЛЬТРЫ" */}
+            <Typography variant="h5" component="span" fontWeight={700}>
+              ФИЛЬТРЫ
+            </Typography>
+          </Box>
+          {/* Правая часть: счетчик найденных облигаций */}
+          <Chip
+            label={`Найдено: ${filteredCount.toLocaleString()}`} // Форматирует число с разделителями тысяч
+            color="primary"
+            sx={{
+              fontWeight: 600,              // Жирный шрифт
+              fontSize: '0.875rem',         // Размер шрифта (14px)
+              height: '36px',               // Высота чипа
+              px: 2,                        // Отступы слева и справа
+            }}
+          />
         </Box>
       </DialogTitle>
 
-      <DialogContent dividers sx={{ p: 2 }}>
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-          {/* Доходность купона относительно номинала, Доходность купона к текущей цене и Доходность к погашению в одну строку */}
-          <Box sx={{ display: 'flex', gap: 1.5, flexDirection: { xs: 'column', md: 'row' }, alignItems: 'flex-start' }}>
-            {/* Доходность купона относительно номинала */}
-            <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'grey.50', flex: 1 }}>
-              <Box display="flex" justifyContent="space-between" alignItems="center">
-                <Typography variant="subtitle1" fontSize="0.85rem">
-                  Доходность купона относительно номинала
-                </Typography>
-                <IconButton 
-                  onClick={() => setShowCouponRange(!showCouponRange)}
-                  sx={{ 
-                    border: 'none !important', 
-                    boxShadow: 'none !important', 
-                    outline: 'none !important',
-                    '&:hover': { bgcolor: 'transparent' },
-                    '&:focus': { outline: 'none !important', border: 'none !important' },
-                    '&:focus-visible': { outline: 'none !important', border: 'none !important' },
-                    '&:active': { outline: 'none !important', boxShadow: 'none !important', border: 'none !important' },
-                    '&::before': { display: 'none' },
-                    '&::after': { display: 'none' }
-                  }}
-                  size="small"
-                  disableRipple
-                  disableFocusRipple
-                >
-                  {showCouponRange ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
-                </IconButton>
-              </Box>
-              <Collapse in={showCouponRange}>
-                <Box mt={1.5}>
+      {/* Основная область контента с фильтрами */}
+      {/* 
+        Параметры DialogContent:
+        - dividers: показывает разделители между секциями
+        - height: '650px' - фиксированная высота контентной области
+        - display: 'flex', flexDirection: 'column' - вертикальная flex-структура
+        - overflow: 'hidden' - скрывает переполнение
+        - p: 0 - убирает внутренние отступы (padding)
+      */}
+      <DialogContent dividers sx={{ p: 0, overflow: 'hidden', height: '650px', display: 'flex', flexDirection: 'column' }}>
+        {/* 
+          Гибкая flex-структура вместо Grid:
+          - display: 'flex' - горизонтальное расположение колонок
+          - height: '100%' - занимает всю доступную высоту
+          - minHeight: 0 - позволяет корректно работать flex-элементам
+        */}
+        <Box sx={{ display: 'flex', height: '100%', minHeight: 0 }}>
+          {/* 
+            Левая колонка навигации - фиксированная ширина
+            - width: 260px - фиксированная ширина (можно настроить: 240-280px)
+            - minWidth: 260px - минимальная ширина для предотвращения сжатия
+            - borderRight - разделительная линия справа
+            - backgroundColor: 'grey.50' - светло-серый фон
+            - display: 'flex', flexDirection: 'column' - вертикальное расположение вкладок
+          */}
+          <Box
+            sx={{
+              width: 260,                    // Фиксированная ширина левой колонки
+              minWidth: 260,                // Минимальная ширина (предотвращает сжатие)
+              borderRight: '1px solid',      // Разделительная линия справа
+              borderColor: 'divider',        // Цвет разделителя
+              backgroundColor: 'grey.50',    // Светло-серый фон
+              display: 'flex',
+              flexDirection: 'column',       // Вертикальное расположение вкладок
+            }}
+          >
+            {/* 
+              Вертикальные вкладки для навигации по группам фильтров
+              
+              Параметры Tabs:
+              - orientation="vertical" - вертикальное расположение вкладок
+              - value={activeTab} - индекс активной вкладки (0-3)
+              - onChange={handleTabChange} - обработчик смены вкладки
+              - variant="scrollable" - вкладки можно прокручивать при необходимости
+              - scrollButtons="auto" - кнопки прокрутки показываются автоматически
+              
+              Стили (.MuiTabs-indicator) - убирает стандартный индикатор активной вкладки
+              
+              Стили (.MuiTab-root) - стили для всех вкладок:
+                - minHeight: '60px' - минимальная высота вкладки (увеличено для лучшей читаемости)
+                - fontWeight: 500 - обычная толщина шрифта
+                - textTransform: 'none' - не преобразует текст в верхний регистр
+                - fontSize: '0.925rem' - размер шрифта (14.8px)
+                - alignItems: 'flex-start' - выравнивание по левому краю
+                - justifyContent: 'flex-start' - выравнивание по верхнему краю
+                - pl: 3, pr: 4 - отступы слева и справа
+              
+              Стили (.Mui-selected) - стили для активной вкладки:
+                - fontWeight: 700 - жирный шрифт
+                - backgroundColor: 'background.paper' - белый фон
+                - borderRight: '4px solid' - синяя полоска справа (4px, увеличено)
+              
+              Стили (:hover) - стили при наведении:
+                - backgroundColor: 'action.hover' - светло-серый фон
+            */}
+            <Tabs
+              orientation="vertical"
+              value={activeTab}
+              onChange={handleTabChange}
+              variant="scrollable"
+              scrollButtons="auto"
+              sx={{
+                '& .MuiTabs-indicator': {
+                  display: 'none',           // Скрывает стандартный индикатор вкладки
+                },
+                '& .MuiTab-root': {
+                  minHeight: '60px',          // Минимальная высота каждой вкладки (увеличено)
+                  fontWeight: 500,            // Обычная толщина шрифта
+                  textTransform: 'none',      // Не преобразует текст в заглавные буквы
+                  fontSize: '0.925rem',       // Размер шрифта (14.8px)
+                  alignItems: 'flex-start',   // Выравнивание содержимого по левому краю
+                  justifyContent: 'flex-start', // Выравнивание по верхнему краю
+                  pl: 3,                      // Отступ слева (24px)
+                  pr: 4,                     // Отступ справа (32px)
+                  '&.Mui-selected': {         // Стили для активной (выбранной) вкладки
+                    fontWeight: 700,          // Жирный шрифт для активной вкладки
+                    backgroundColor: 'background.paper', // Белый фон
+                    borderRight: '4px solid',            // Синяя полоска справа (4px, увеличено)
+                    borderRightColor: 'primary.main',    // Цвет полоски - основной цвет темы
+                  },
+                  '&:hover': {                // Стили при наведении курсора
+                    backgroundColor: 'action.hover', // Светло-серый фон
+                  },
+                },
+              }}
+            >
+              {filterGroups.map((group, index) => (
+                <Tab
+                  key={group.id}
+                  label={group.label}
+                  id={`filter-tab-${index}`}
+                  aria-controls={`filter-tabpanel-${index}`}
+                />
+              ))}
+            </Tabs>
+          </Box>
+
+          {/* 
+            Правая колонка с содержимым фильтров - занимает всё оставшееся место
+            - flex: 1 - растягивается на всю оставшуюся ширину
+            - display: 'flex', flexDirection: 'column' - вертикальное расположение содержимого
+            - overflow: 'hidden' - скрывает переполнение
+          */}
+          <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            {/* Панель "Доходность" (index 0) - фильтры по доходности облигаций */}
+            <TabPanel value={activeTab} index={0}>
+              {/* 
+                Контейнер с прокруткой для содержимого панели
+                - height: '100%' - занимает всю доступную высоту
+                - overflowY: 'auto' - вертикальная прокрутка при переполнении
+                - overflowX: 'hidden' - скрывает горизонтальную прокрутку
+                - p: 3 - внутренние отступы (24px со всех сторон)
+              */}
+              <Box sx={{ height: '100%', overflowY: 'auto', overflowX: 'hidden', p: 3 }}>
+                {/* Вертикальный стек с отступами между элементами (spacing={4} = 32px) */}
+                <Stack spacing={4} sx={{ width: '100%' }}>
+                {/* Блок фильтра: Доходность купона относительно номинала */}
+                <Box sx={{ width: '100%' }}>
+                  <Typography variant="subtitle1" fontWeight={600} gutterBottom>
+                    Доходность купона относительно номинала
+                  </Typography>
                   <CouponRangeFilter />
                 </Box>
-              </Collapse>
-            </Box>
-
-            {/* Доходность купона к текущей цене */}
-            <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'grey.50', flex: 1 }}>
-              <Box display="flex" justifyContent="space-between" alignItems="center">
-                <Typography variant="subtitle1" fontSize="0.85rem">
-                  Доходность купона к текущей цене
-                </Typography>
-                <IconButton 
-                  onClick={() => setShowCouponYieldRange(!showCouponYieldRange)}
-                  sx={{ 
-                    border: 'none !important', 
-                    boxShadow: 'none !important', 
-                    outline: 'none !important',
-                    '&:hover': { bgcolor: 'transparent' },
-                    '&:focus': { outline: 'none !important', border: 'none !important' },
-                    '&:focus-visible': { outline: 'none !important', border: 'none !important' },
-                    '&:active': { outline: 'none !important', boxShadow: 'none !important', border: 'none !important' },
-                    '&::before': { display: 'none' },
-                    '&::after': { display: 'none' }
-                  }}
-                  size="small"
-                  disableRipple
-                  disableFocusRipple
-                >
-                  {showCouponYieldRange ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
-                </IconButton>
-              </Box>
-              <Collapse in={showCouponYieldRange}>
-                <Box mt={1.5}>
-                  <CouponYieldRangeFilter />
-                </Box>
-              </Collapse>
-            </Box>
-
-            {/* Доходность к погашению */}
-            <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'grey.50', flex: 1 }}>
-              <Box display="flex" justifyContent="space-between" alignItems="center">
-                <Typography variant="subtitle1" fontSize="0.85rem">
-                  Доходность к погашению
-                </Typography>
-                <IconButton 
-                  onClick={() => setShowYieldRange(!showYieldRange)}
-                  sx={{ 
-                    border: 'none !important', 
-                    boxShadow: 'none !important', 
-                    outline: 'none !important',
-                    '&:hover': { bgcolor: 'transparent' },
-                    '&:focus': { outline: 'none !important', border: 'none !important' },
-                    '&:focus-visible': { outline: 'none !important', border: 'none !important' },
-                    '&:active': { outline: 'none !important', boxShadow: 'none !important', border: 'none !important' },
-                    '&::before': { display: 'none' },
-                    '&::after': { display: 'none' }
-                  }}
-                  size="small"
-                  disableRipple
-                  disableFocusRipple
-                >
-                  {showYieldRange ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
-                </IconButton>
-              </Box>
-              <Collapse in={showYieldRange}>
-                <Box mt={1.5}>
+                <Divider />  {/* Разделительная линия между фильтрами */}
+                {/* Блок фильтра: Доходность к погашению */}
+                <Box sx={{ width: '100%' }}>
+                  <Typography variant="subtitle1" fontWeight={600} gutterBottom>
+                    Доходность к погашению
+                  </Typography>
                   <YieldRangeFilter />
                 </Box>
-              </Collapse>
-            </Box>
-          </Box>
+                <Divider />
+                {/* Блок фильтра: Доходность купона к текущей цене */}
+                <Box sx={{ width: '100%' }}>
+                  <Typography variant="subtitle1" fontWeight={600} gutterBottom>
+                    Доходность купона к текущей цене
+                  </Typography>
+                  <CouponYieldRangeFilter />
+                </Box>
+              </Stack>
+              </Box>
+            </TabPanel>
 
-          {/* Дата погашения */}
-          <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'grey.50' }}>
-            <Box display="flex" justifyContent="space-between" alignItems="center">
-              <Typography variant="subtitle1" fontSize="0.85rem">
-              Дата погашения
-            </Typography>
-              <IconButton 
-                onClick={() => setShowMaturityDate(!showMaturityDate)}
-                sx={{ 
-                  border: 'none !important', 
-                  boxShadow: 'none !important', 
-                  outline: 'none !important',
-                  '&:hover': { bgcolor: 'transparent' },
-                  '&:focus': { outline: 'none !important', border: 'none !important' },
-                  '&:focus-visible': { outline: 'none !important', border: 'none !important' },
-                  '&:active': { outline: 'none !important', boxShadow: 'none !important', border: 'none !important' },
-                  '&::before': { display: 'none' },
-                  '&::after': { display: 'none' }
-                }}
-                size="small"
-                disableRipple
-                disableFocusRipple
-              >
-                {showMaturityDate ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
-              </IconButton>
-            </Box>
-            <Collapse in={showMaturityDate}>
-              <Box mt={1.5}>
-            <MaturityDateFilter />
+            {/* Панель "Даты" (index 1) - фильтры по датам погашения */}
+            <TabPanel value={activeTab} index={1}>
+              <Box sx={{ height: '100%', overflowY: 'auto', overflowX: 'hidden', p: 3 }}>
+                <Stack spacing={4} sx={{ width: '100%' }}>
+                {/* Блок фильтра: Дата погашения облигации */}
+                <Box sx={{ width: '100%' }}>
+                  <Typography variant="subtitle1" fontWeight={600} gutterBottom>
+                    Дата погашения
+                  </Typography>
+                  <MaturityDateFilter />
+                </Box>
+              </Stack>
               </Box>
-            </Collapse>
-          </Box>
+            </TabPanel>
 
-          {/* Уровень листинга */}
-          <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'grey.50' }}>
-            <Box display="flex" justifyContent="space-between" alignItems="center">
-              <Typography variant="subtitle1" fontSize="0.85rem">
-                Уровень листинга
-            </Typography>
-              <IconButton 
-                onClick={() => setShowListLevel(!showListLevel)}
-                sx={{ 
-                  border: 'none !important', 
-                  boxShadow: 'none !important', 
-                  outline: 'none !important',
-                  '&:hover': { bgcolor: 'transparent' },
-                  '&:focus': { outline: 'none !important', border: 'none !important' },
-                  '&:focus-visible': { outline: 'none !important', border: 'none !important' },
-                  '&:active': { outline: 'none !important', boxShadow: 'none !important', border: 'none !important' },
-                  '&::before': { display: 'none' },
-                  '&::after': { display: 'none' }
-                }}
-                size="small"
-                disableRipple
-                disableFocusRipple
-              >
-                {showListLevel ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
-              </IconButton>
-            </Box>
-            <Collapse in={showListLevel}>
-              <Box mt={1.5}>
-                <ListLevelFilter />
-              </Box>
-            </Collapse>
-          </Box>
-
-          {/* Валюта */}
-          <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'grey.50' }}>
-            <Box display="flex" justifyContent="space-between" alignItems="center">
-              <Typography variant="subtitle1" fontSize="0.85rem">
-                Валюта
-              </Typography>
-              <IconButton 
-                onClick={() => setShowCurrency(!showCurrency)}
-                sx={{ 
-                  border: 'none !important', 
-                  boxShadow: 'none !important', 
-                  outline: 'none !important',
-                  '&:hover': { bgcolor: 'transparent' },
-                  '&:focus': { outline: 'none !important', border: 'none !important' },
-                  '&:focus-visible': { outline: 'none !important', border: 'none !important' },
-                  '&:active': { outline: 'none !important', boxShadow: 'none !important', border: 'none !important' },
-                  '&::before': { display: 'none' },
-                  '&::after': { display: 'none' }
-                }}
-                size="small"
-                disableRipple
-                disableFocusRipple
-              >
-                {showCurrency ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
-              </IconButton>
-            </Box>
-            <Collapse in={showCurrency}>
-              <Box mt={1.5}>
-                <CurrencyFilter />
-              </Box>
-            </Collapse>
-              </Box>
-
-          {/* Тип облигации, Вид облигации и Тип купона в одну строку */}
-          <Box sx={{ display: 'flex', gap: 1.5, flexDirection: { xs: 'column', md: 'row' }, alignItems: 'flex-start' }}>
-            {/* Тип облигации */}
-            <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'grey.50', flex: 1 }}>
-              <Box display="flex" justifyContent="space-between" alignItems="center">
-                <Typography variant="subtitle1" fontSize="0.85rem">
-                  Тип облигации
-                </Typography>
-                <IconButton 
-                  onClick={() => setShowBondType(!showBondType)}
-                  sx={{ 
-                    border: 'none !important', 
-                    boxShadow: 'none !important', 
-                    outline: 'none !important',
-                    '&:hover': { bgcolor: 'transparent' },
-                    '&:focus': { outline: 'none !important', border: 'none !important' },
-                    '&:focus-visible': { outline: 'none !important', border: 'none !important' },
-                    '&:active': { outline: 'none !important', boxShadow: 'none !important', border: 'none !important' },
-                    '&::before': { display: 'none' },
-                    '&::after': { display: 'none' }
-                  }}
-                  size="small"
-                  disableRipple
-                  disableFocusRipple
-                >
-                  {showBondType ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
-                </IconButton>
-              </Box>
-              <Collapse in={showBondType}>
-                <Box mt={1.5}>
+            {/* 
+              Панель "Категории" (index 2) - фильтры по типам, валютам, уровням листинга
+              Эта панель требует загрузки данных с сервера, поэтому показываются состояния загрузки и ошибок
+            */}
+            <TabPanel value={activeTab} index={2}>
+              <Box sx={{ height: '100%', overflowY: 'auto', overflowX: 'hidden', p: 3 }}>
+                {/* Сообщение об ошибке при загрузке опций фильтров */}
+                {filterOptionsError && (
+                  <Alert severity="error" sx={{ mb: 3 }}>
+                    {filterOptionsError}
+                  </Alert>
+                )}
+                {/* Индикатор загрузки опций фильтров */}
+                {isLoadingFilterOptions && (
+                  <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 4 }}>
+                    <CircularProgress size={40} />  {/* Круговой индикатор загрузки */}
+                    <Typography variant="body2" sx={{ ml: 2 }}>
+                      Загрузка опций фильтров...
+                    </Typography>
+                  </Box>
+                )}
+                <Stack spacing={4} sx={{ width: '100%' }}>
+                {/* Блок фильтра: Уровень листинга на бирже (1, 2, 3 и т.д.) */}
+                <Box sx={{ width: '100%' }}>
+                  <Typography variant="subtitle1" fontWeight={600} gutterBottom>
+                    Уровень листинга
+                  </Typography>
+                  <ListLevelFilter />
+                </Box>
+                <Divider />
+                {/* Блок фильтра: Валюта номинала облигации (RUB, USD, EUR и т.д.) */}
+                <Box sx={{ width: '100%' }}>
+                  <Typography variant="subtitle1" fontWeight={600} gutterBottom>
+                    Валюта
+                  </Typography>
+                  <CurrencyFilter />
+                </Box>
+                <Divider />
+                {/* Блок фильтра: Тип облигации (ОФЗ, корпоративная, муниципальная и т.д.) */}
+                <Box sx={{ width: '100%' }}>
+                  <Typography variant="subtitle1" fontWeight={600} gutterBottom>
+                    Тип облигации
+                  </Typography>
                   <BondTypeFilter />
                 </Box>
-              </Collapse>
-            </Box>
-
-            {/* Вид облигации */}
-            <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'grey.50', flex: 1 }}>
-              <Box display="flex" justifyContent="space-between" alignItems="center">
-                <Typography variant="subtitle1" fontSize="0.85rem">
-                  Вид облигации
-                </Typography>
-                <IconButton 
-                  onClick={() => setShowBondType43(!showBondType43)}
-                  sx={{ 
-                    border: 'none !important', 
-                    boxShadow: 'none !important', 
-                    outline: 'none !important',
-                    '&:hover': { bgcolor: 'transparent' },
-                    '&:focus': { outline: 'none !important', border: 'none !important' },
-                    '&:focus-visible': { outline: 'none !important', border: 'none !important' },
-                    '&:active': { outline: 'none !important', boxShadow: 'none !important', border: 'none !important' },
-                    '&::before': { display: 'none' },
-                    '&::after': { display: 'none' }
-                  }}
-                  size="small"
-                  disableRipple
-                  disableFocusRipple
-                >
-                  {showBondType43 ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
-                </IconButton>
-              </Box>
-              <Collapse in={showBondType43}>
-                <Box mt={1.5}>
+                <Divider />
+                {/* Блок фильтра: Вид облигации (фикс, флоатер, амортизируемая и т.д.) */}
+                <Box sx={{ width: '100%' }}>
+                  <Typography variant="subtitle1" fontWeight={600} gutterBottom>
+                    Вид облигации
+                  </Typography>
                   <BondType43Filter />
                 </Box>
-              </Collapse>
-            </Box>
-
-            {/* Тип купона */}
-            <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'grey.50', flex: 1 }}>
-              <Box display="flex" justifyContent="space-between" alignItems="center">
-                <Typography variant="subtitle1" fontSize="0.85rem">
-                  Тип купона
-                </Typography>
-                <IconButton 
-                  onClick={() => setShowCouponType(!showCouponType)}
-                  sx={{ 
-                    border: 'none !important', 
-                    boxShadow: 'none !important', 
-                    outline: 'none !important',
-                    '&:hover': { bgcolor: 'transparent' },
-                    '&:focus': { outline: 'none !important', border: 'none !important' },
-                    '&:focus-visible': { outline: 'none !important', border: 'none !important' },
-                    '&:active': { outline: 'none !important', boxShadow: 'none !important', border: 'none !important' },
-                    '&::before': { display: 'none' },
-                    '&::after': { display: 'none' }
-                  }}
-                  size="small"
-                  disableRipple
-                  disableFocusRipple
-                >
-                  {showCouponType ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
-                </IconButton>
-              </Box>
-              <Collapse in={showCouponType}>
-                <Box mt={1.5}>
+                <Divider />
+                {/* Блок фильтра: Тип купона (постоянный или плавающий) */}
+                <Box sx={{ width: '100%' }}>
+                  <Typography variant="subtitle1" fontWeight={600} gutterBottom>
+                    Тип купона
+                  </Typography>
                   <CouponTypeFilter />
                 </Box>
-              </Collapse>
-            </Box>
-          </Box>
-
-          {/* Рейтинг */}
-          <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'grey.50' }}>
-            <Box display="flex" justifyContent="space-between" alignItems="center">
-              <Typography variant="subtitle1" fontSize="0.85rem">
-              Рейтинг
-            </Typography>
-              <IconButton 
-                onClick={() => setShowRating(!showRating)}
-                sx={{ 
-                  border: 'none !important', 
-                  boxShadow: 'none !important', 
-                  outline: 'none !important',
-                  '&:hover': { bgcolor: 'transparent' },
-                  '&:focus': { outline: 'none !important', border: 'none !important' },
-                  '&:focus-visible': { outline: 'none !important', border: 'none !important' },
-                  '&:active': { outline: 'none !important', boxShadow: 'none !important', border: 'none !important' },
-                  '&::before': { display: 'none' },
-                  '&::after': { display: 'none' }
-                }}
-                size="small"
-                disableRipple
-                disableFocusRipple
-              >
-                {showRating ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
-              </IconButton>
-            </Box>
-            <Collapse in={showRating}>
-              <Box mt={1.5}>
-            <RatingRangeFilter />
+              </Stack>
               </Box>
-            </Collapse>
+            </TabPanel>
+
+            {/* Панель "Рейтинг" (index 3) - фильтры по рейтингам облигаций */}
+            <TabPanel value={activeTab} index={3}>
+              <Box sx={{ height: '100%', overflowY: 'auto', overflowX: 'hidden', p: 3 }}>
+                <Stack spacing={4} sx={{ width: '100%' }}>
+                {/* Блок фильтра: Рейтинг облигации (AAA, AA+, AA, A и т.д.) */}
+                <Box sx={{ width: '100%' }}>
+                  <Typography variant="subtitle1" fontWeight={600} gutterBottom>
+                    Рейтинг
+                  </Typography>
+                  <RatingRangeFilter />
+                </Box>
+              </Stack>
+              </Box>
+            </TabPanel>
           </Box>
         </Box>
       </DialogContent>
 
-      <DialogActions sx={{ p: 2, gap: 1 }}>
+      {/* Нижняя панель с кнопками действий */}
+      {/* 
+        Параметры DialogActions:
+        - p: 3 - внутренние отступы (24px)
+        - gap: 2 - расстояние между элементами (16px)
+        - borderTop - разделительная линия сверху
+      */}
+      <DialogActions
+        sx={{
+          p: 3,                      // Внутренние отступы со всех сторон
+          gap: 2,                    // Расстояние между кнопками
+          borderTop: '1px solid',    // Разделительная линия сверху
+          borderColor: 'divider',    // Цвет разделителя
+        }}
+      >
+        {/* Кнопка "Сбросить" - сбрасывает все фильтры к значениям по умолчанию */}
         <Button
           onClick={handleReset}
-          startIcon={<ClearIcon />}
-          variant="outlined"
-          color="secondary"
+          startIcon={<ClearIcon />}  // Иконка крестика слева от текста
+          variant="outlined"          // Контурный стиль кнопки
+          color="secondary"           // Вторичный цвет темы
+          sx={{ borderRadius: '12px' }} // Скругление углов
         >
           Сбросить
         </Button>
+        {/* Растягивающийся элемент для выравнивания кнопок справа */}
         <Box sx={{ flexGrow: 1 }} />
-        <Button onClick={handleCancel} variant="outlined">
+        {/* Кнопка "Отмена" - закрывает модальное окно без применения фильтров */}
+        <Button
+          onClick={handleCancel}
+          variant="outlined"          // Контурный стиль
+          sx={{ borderRadius: '12px' }}
+        >
           Отмена
         </Button>
-        <Button onClick={handleApply} variant="contained" color="primary">
+        {/* Кнопка "Применить" - применяет фильтры и закрывает модальное окно */}
+        <Button
+          onClick={handleApply}
+          variant="contained"         // Заполненный стиль (основная кнопка)
+          color="primary"             // Основной цвет темы
+          sx={{
+            borderRadius: '12px',     // Скругление углов
+            minWidth: '180px',        // Минимальная ширина кнопки
+            py: 1.5,                  // Вертикальные отступы (12px)
+            fontWeight: 600,          // Жирный шрифт
+            fontSize: '1rem',         // Размер шрифта (16px)
+          }}
+        >
           Применить
         </Button>
       </DialogActions>

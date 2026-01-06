@@ -2,12 +2,6 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   Box,
   Typography,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
   IconButton,
   useMediaQuery,
   List,
@@ -22,7 +16,7 @@ import {
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import { usePortfolioStore } from '../../stores/portfolioStore';
-import { fetchBondCoupons } from '../../api/bonds';
+import { getCurrencyRates, type CurrencyRatesResponse } from '../../api/currency';
 import { formatNumber } from '../../utils/formatters';
 
 /**
@@ -38,13 +32,13 @@ interface PaymentEvent {
 }
 
 /**
- * Month summary data
+ * Month summary data with amounts grouped by currency
  */
 interface MonthSummary {
   year: number;
   month: number; // 0-11
-  totalAmount: number;
-  currency: string;
+  amountsByCurrency: { [currency: string]: number }; // Суммы по каждой валюте отдельно
+  totalInRubles: number; // Итоговая сумма всех выплат в рублях
 }
 
 /**
@@ -56,6 +50,7 @@ interface MonthSummary {
  */
 export const PaymentCalendar: React.FC = () => {
   const portfolioBonds = usePortfolioStore((state) => state.portfolioBonds);
+  const couponsBySecid = usePortfolioStore((state) => state.couponsBySecid);
   const muiTheme = useTheme();
   const isMobile = useMediaQuery(muiTheme.breakpoints.down('md'));
 
@@ -65,102 +60,139 @@ export const PaymentCalendar: React.FC = () => {
     return new Date(now.getFullYear(), now.getMonth(), 1);
   });
 
-  // Loading and error states
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Currency rates for conversion to rubles
+  const [currencyRates, setCurrencyRates] = useState<CurrencyRatesResponse | null>(null);
 
-  // All payment events
-  const [paymentEvents, setPaymentEvents] = useState<PaymentEvent[]>([]);
+  // Calculate payment events from store data
+  const paymentEvents = useMemo(() => {
+    if (portfolioBonds.length === 0) {
+      return [];
+    }
 
-  // Load coupons for all portfolio bonds
-  useEffect(() => {
-    const loadCoupons = async () => {
-      if (portfolioBonds.length === 0) {
-        setPaymentEvents([]);
-        return;
-      }
+    const allPayments: PaymentEvent[] = [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
-      setIsLoading(true);
-      setError(null);
+    // Process all bonds in portfolio
+    for (const bond of portfolioBonds) {
+      const coupons = couponsBySecid[bond.SECID] || [];
+      const bondPayments: PaymentEvent[] = [];
 
-      try {
-        const allPayments: PaymentEvent[] = [];
+      // Process all coupons for this bond
+      for (const coupon of coupons) {
+        if (coupon.coupondate) {
+          const couponDate = new Date(coupon.coupondate);
+          couponDate.setHours(0, 0, 0, 0);
 
-        // Load coupons for each bond in portfolio
-        for (const bond of portfolioBonds) {
-          try {
-            const couponsResponse = await fetchBondCoupons(bond.SECID);
-            const coupons = couponsResponse.coupons || [];
+          // Only include future coupons
+          if (couponDate >= today) {
+            const quantity = bond.quantity || 1;
+            const couponValue = coupon.value || 0;
+            const totalAmount = couponValue * quantity;
+            
+            // Используем валюту из купона, если она есть, иначе из облигации
+            const currency = coupon.faceunit || bond.FACEUNIT || 'RUB';
 
-            // Process coupons
-            for (const coupon of coupons) {
-              if (coupon.coupondate) {
-                const couponDate = new Date(coupon.coupondate);
-                const today = new Date();
-                today.setHours(0, 0, 0, 0);
-
-                // Only include future coupons
-                if (couponDate >= today) {
-                  const quantity = bond.quantity || 1;
-                  const couponValue = coupon.value || 0;
-                  const totalAmount = couponValue * quantity;
-
-                  allPayments.push({
-                    date: couponDate,
-                    bondShortName: bond.SHORTNAME || bond.SECID,
-                    bondSecid: bond.SECID,
-                    amount: totalAmount,
-                    currency: coupon.faceunit || bond.FACEUNIT || 'RUB',
-                    type: 'coupon',
-                  });
-                }
-              }
-            }
-
-            // Check for maturity date
-            if (bond.MATDATE) {
-              const matDate = new Date(bond.MATDATE);
-              const today = new Date();
-              today.setHours(0, 0, 0, 0);
-
-              // Only include future maturity
-              if (matDate >= today) {
-                const quantity = bond.quantity || 1;
-                const faceValue = bond.FACEVALUE || 0;
-                const totalAmount = faceValue * quantity;
-
-                allPayments.push({
-                  date: matDate,
-                  bondShortName: bond.SHORTNAME || bond.SECID,
-                  bondSecid: bond.SECID,
-                  amount: totalAmount,
-                  currency: bond.FACEUNIT || 'RUB',
-                  type: 'maturity',
-                });
-              }
-            }
-          } catch (err) {
-            console.error(`Failed to load coupons for ${bond.SECID}:`, err);
-            // Continue loading other bonds even if one fails
+            bondPayments.push({
+              date: couponDate,
+              bondShortName: bond.SHORTNAME || bond.SECID,
+              bondSecid: bond.SECID,
+              amount: totalAmount,
+              currency: currency,
+              type: 'coupon',
+            });
           }
         }
+      }
 
-        // Sort by date
-        allPayments.sort((a, b) => a.date.getTime() - b.date.getTime());
+      // Check for maturity date
+      if (bond.MATDATE) {
+        const matDate = new Date(bond.MATDATE);
+        matDate.setHours(0, 0, 0, 0);
 
-        setPaymentEvents(allPayments);
+        // Only include future maturity
+        if (matDate >= today) {
+          const quantity = bond.quantity || 1;
+          const faceValue = bond.FACEVALUE || 0;
+          const totalAmount = faceValue * quantity;
+
+          bondPayments.push({
+            date: matDate,
+            bondShortName: bond.SHORTNAME || bond.SECID,
+            bondSecid: bond.SECID,
+            amount: totalAmount,
+            currency: bond.FACEUNIT || 'RUB',
+            type: 'maturity',
+          });
+        }
+      }
+
+      allPayments.push(...bondPayments);
+    }
+
+    // Deduplicate payments by date, SECID, and type to avoid duplicates
+    const paymentMap = new Map<string, PaymentEvent>();
+    for (const payment of allPayments) {
+      // Create unique key: date + SECID + type
+      const dateStr = payment.date.toISOString().split('T')[0];
+      const key = `${dateStr}-${payment.bondSecid}-${payment.type}`;
+      
+      if (paymentMap.has(key)) {
+        // If duplicate found, sum the amounts
+        const existing = paymentMap.get(key)!;
+        existing.amount += payment.amount;
+        // If bond names differ, combine them
+        if (existing.bondShortName !== payment.bondShortName) {
+          existing.bondShortName = `${existing.bondShortName}, ${payment.bondShortName}`;
+        }
+      } else {
+        paymentMap.set(key, { ...payment });
+      }
+    }
+
+    // Convert map back to array and sort by date
+    const uniquePayments = Array.from(paymentMap.values());
+    uniquePayments.sort((a, b) => a.date.getTime() - b.date.getTime());
+
+    return uniquePayments;
+  }, [portfolioBonds, couponsBySecid]);
+
+  // Load currency rates
+  useEffect(() => {
+    const loadCurrencyRates = async () => {
+      try {
+        const rates = await getCurrencyRates();
+        setCurrencyRates(rates);
       } catch (err) {
-        console.error('Failed to load payment calendar:', err);
-        setError(err instanceof Error ? err.message : 'Не удалось загрузить календарь выплат');
-      } finally {
-        setIsLoading(false);
+        console.error('Failed to load currency rates:', err);
+        // Don't set error state - currency conversion is optional
       }
     };
 
-    void loadCoupons();
-  }, [portfolioBonds]);
+    void loadCurrencyRates();
+  }, []);
 
-  // Calculate month summaries
+  // Helper function to convert amount to rubles
+  const convertToRubles = (amount: number, currency: string): number => {
+    if (currency === 'RUB') {
+      return amount;
+    }
+
+    if (!currencyRates || !currencyRates.rates) {
+      return 0; // Can't convert without rates
+    }
+
+    const rate = currencyRates.rates[currency];
+    if (!rate) {
+      return 0; // Unknown currency
+    }
+
+    // rate.rate is the exchange rate for rate.nominal units
+    // So 1 unit of currency = rate.rate / rate.nominal rubles
+    return amount * (rate.rate / rate.nominal);
+  };
+
+  // Calculate month summaries grouped by currency
   const monthSummaries = useMemo(() => {
     const summaries = new Map<string, MonthSummary>();
 
@@ -173,16 +205,22 @@ export const PaymentCalendar: React.FC = () => {
         summaries.set(key, {
           year,
           month,
-          totalAmount: 0,
-          currency: payment.currency,
+          amountsByCurrency: {},
+          totalInRubles: 0,
         });
       }
 
       const summary = summaries.get(key)!;
-      // Sum amounts in the same currency
-      if (summary.currency === payment.currency) {
-        summary.totalAmount += payment.amount;
+      const currency = payment.currency || 'RUB';
+      
+      // Sum amounts by currency separately
+      if (!summary.amountsByCurrency[currency]) {
+        summary.amountsByCurrency[currency] = 0;
       }
+      summary.amountsByCurrency[currency] += payment.amount;
+
+      // Add to total in rubles
+      summary.totalInRubles += convertToRubles(payment.amount, currency);
     });
 
     // Convert to array and sort by date
@@ -190,7 +228,7 @@ export const PaymentCalendar: React.FC = () => {
       if (a.year !== b.year) return a.year - b.year;
       return a.month - b.month;
     });
-  }, [paymentEvents]);
+  }, [paymentEvents, currencyRates]);
 
   // Get payments for selected month
   const selectedMonthPayments = useMemo(() => {
@@ -303,23 +341,6 @@ export const PaymentCalendar: React.FC = () => {
 
   return (
     <Box sx={{ p: 3 }}>
-      {isLoading && (
-        <Box sx={{ py: 4, textAlign: 'center' }}>
-          <Typography variant="body2" color="text.secondary">
-            Загрузка данных о выплатах...
-          </Typography>
-        </Box>
-      )}
-
-      {error && (
-        <Box sx={{ py: 2 }}>
-          <Typography variant="body2" color="error">
-            {error}
-          </Typography>
-        </Box>
-      )}
-
-      {!isLoading && !error && (
         <Box
           sx={{
             display: 'flex',
@@ -415,16 +436,32 @@ export const PaymentCalendar: React.FC = () => {
                               </Typography>
                             }
                             secondary={
-                              <Typography
-                                variant="body2"
-                                sx={{
-                                  fontWeight: 600,
-                                  color: 'text.primary',
-                                  mt: 0.5,
-                                }}
-                              >
-                                {formatNumber(summary.totalAmount, 0)} {summary.currency}
-                              </Typography>
+                              <Box sx={{ mt: 0.5 }}>
+                                {Object.entries(summary.amountsByCurrency).map(([currency, amount]) => (
+                                  <Typography
+                                    key={currency}
+                                    variant="body2"
+                                    sx={{
+                                      fontWeight: 600,
+                                      color: 'text.primary',
+                                    }}
+                                  >
+                                    {formatNumber(amount, 2)} {currency}
+                                  </Typography>
+                                ))}
+                                {summary.totalInRubles > 0 && (
+                                  <Typography
+                                    variant="body2"
+                                    sx={{
+                                      fontWeight: 700,
+                                      color: 'primary.main',
+                                      mt: 0.5,
+                                    }}
+                                  >
+                                    Итого: {formatNumber(summary.totalInRubles, 2)} RUB
+                                  </Typography>
+                                )}
+                              </Box>
                             }
                           />
                         </ListItem>
@@ -601,7 +638,7 @@ export const PaymentCalendar: React.FC = () => {
                                 key={paymentIndex}
                                 label={`${payment.bondShortName}: ${formatNumber(
                                   payment.amount,
-                                  0
+                                  2
                                 )} ${payment.currency}${payment.type === 'maturity' ? ' (погашение)' : ''}`}
                                 size="small"
                                 sx={{
@@ -626,7 +663,7 @@ export const PaymentCalendar: React.FC = () => {
                                 }}
                                 title={`${payment.bondShortName}: ${formatNumber(
                                   payment.amount,
-                                  0
+                                  2
                                 )} ${payment.currency}`}
                               />
                             ))}
@@ -649,28 +686,44 @@ export const PaymentCalendar: React.FC = () => {
                     border: '1px solid rgba(0,0,0,0.08)',
                   }}
                 >
-                  <Typography variant="body2" color="text.secondary">
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
                     Всего выплат в {formatMonthName(
                       currentMonthSummary.year,
                       currentMonthSummary.month
-                    )}:{' '}
-                    <Typography
-                      component="span"
-                      sx={{ fontWeight: 600, color: 'text.primary' }}
-                    >
-                      {formatNumber(
-                        currentMonthSummary.totalAmount,
-                        0
-                      )}{' '}
-                      {currentMonthSummary.currency}
-                    </Typography>
+                    )}:
                   </Typography>
+                  {Object.entries(currentMonthSummary.amountsByCurrency).map(([currency, amount]) => (
+                    <Typography
+                      key={currency}
+                      variant="body2"
+                      sx={{
+                        fontWeight: 600,
+                        color: 'text.primary',
+                        mb: 0.5,
+                      }}
+                    >
+                      {formatNumber(amount, 2)} {currency}
+                    </Typography>
+                  ))}
+                  {currentMonthSummary.totalInRubles > 0 && (
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        fontWeight: 700,
+                        color: 'primary.main',
+                        mt: 1,
+                        pt: 1,
+                        borderTop: '1px solid rgba(0,0,0,0.1)',
+                      }}
+                    >
+                      Итого: {formatNumber(currentMonthSummary.totalInRubles, 2)} RUB
+                    </Typography>
+                  )}
                 </Box>
               )}
             </Box>
           </Card>
         </Box>
-      )}
     </Box>
   );
 };
