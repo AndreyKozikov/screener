@@ -14,7 +14,6 @@ import UploadFileIcon from '@mui/icons-material/UploadFile';
 ModuleRegistry.registerModules([AllCommunityModule]);
 import { usePortfolioStore } from '../../stores/portfolioStore';
 import { useUiStore } from '../../stores/uiStore';
-import { useFiltersStore } from '../../stores/filtersStore';
 import { fetchDescriptions } from '../../api/metadata';
 import type { DescriptionsResponse } from '../../api/metadata';
 import { 
@@ -27,7 +26,7 @@ import { EmptyState } from '../common/EmptyState';
 import type { BondListItem, PortfolioBond } from '../../types/bond';
 import { PortfolioExportDialog } from './PortfolioExportDialog';
 import { PortfolioImportDialog } from './PortfolioImportDialog';
-import { exportPortfolio } from '../../utils/portfolioExport';
+import { exportPortfolio, type PortfolioExportFormat } from '../../utils/portfolioExport';
 import { RatingDisplay } from '../bonds/RatingDisplay';
 
 type FieldDescriptionMap = Record<string, string>;
@@ -49,81 +48,6 @@ const flattenDescriptions = (descriptions: DescriptionsResponse): FieldDescripti
 };
 
 /**
- * Нормализует рейтинг, удаляя префиксы, суффиксы и локальные индикаторы
- * Оставляет только основную буквенную часть: AAA, AA, A, BBB, BB, B, CCC, CC, C, D
- */
-const normalizeRating = (rating: string): string => {
-  if (!rating || rating.trim() === '' || rating === '—' || rating === '-') {
-    return '';
-  }
-  
-  let normalized = rating.toUpperCase().trim();
-  normalized = normalized.replace(/^RU\s*/i, '');
-  normalized = normalized.replace(/^\(RU\)\s*/i, '');
-  normalized = normalized.replace(/\([^)]*\)/g, '');
-  normalized = normalized.replace(/[.\-]?SF$/i, '');
-  normalized = normalized.replace(/\.sf$/i, '');
-  normalized = normalized.replace(/[+\-]+$/, '');
-  normalized = normalized.replace(/[.\-]/g, '');
-  const letterMatch = normalized.match(/^(AAA|AA|A|BBB|BB|B|CCC|CC|C|D)/);
-  if (letterMatch) {
-    return letterMatch[1];
-  }
-  const lettersOnly = normalized.replace(/[^A-Z]/g, '');
-  const patternMatch = lettersOnly.match(/^(AAA|AA|A|BBB|BB|B|CCC|CC|C|D)/);
-  if (patternMatch) {
-    return patternMatch[1];
-  }
-  return '';
-};
-
-/**
- * Определяет цвет рейтинга на основе нормализованного значения
- */
-const getRatingColor = (rating: string | null | undefined): { bg: string; color: string } => {
-  if (!rating || rating.trim() === '' || rating === '—' || rating === '-') {
-    return { bg: '#E0E0E0', color: '#666' };
-  }
-  
-  const normalized = normalizeRating(rating);
-  if (!normalized) {
-    return { bg: '#E0E0E0', color: '#666' };
-  }
-  
-  if (normalized.startsWith('AAA')) {
-    return { bg: '#4CAF50', color: '#fff' };
-  }
-  if (normalized.startsWith('AA')) {
-    return { bg: '#4CAF50', color: '#fff' };
-  }
-  if (normalized.startsWith('BBB')) {
-    return { bg: '#FFB300', color: '#000' };
-  }
-  if (normalized.startsWith('CCC')) {
-    return { bg: '#E53935', color: '#fff' };
-  }
-  if (normalized.startsWith('CC')) {
-    return { bg: '#E53935', color: '#fff' };
-  }
-  if (normalized.startsWith('BB')) {
-    return { bg: '#FB8C00', color: '#fff' };
-  }
-  if (normalized === 'A') {
-    return { bg: '#4CAF50', color: '#fff' };
-  }
-  if (normalized === 'B') {
-    return { bg: '#FB8C00', color: '#fff' };
-  }
-  if (normalized === 'C') {
-    return { bg: '#E53935', color: '#fff' };
-  }
-  if (normalized === 'D') {
-    return { bg: '#E53935', color: '#fff' };
-  }
-  return { bg: '#E0E0E0', color: '#666' };
-};
-
-/**
  * PortfolioTable Component
  * 
  * Displays portfolio bonds using AG Grid with same columns as BondsTable
@@ -136,7 +60,6 @@ export const PortfolioTable: React.FC = () => {
   const clearPortfolio = usePortfolioStore((state) => state.clearPortfolio);
   const updateBondQuantity = usePortfolioStore((state) => state.updateBondQuantity);
   const setSelectedBond = useUiStore((state) => state.setSelectedBond);
-  const { filters } = useFiltersStore();
   const [fieldDescriptions, setFieldDescriptions] = useState<FieldDescriptionMap>({});
   const metadataLoadedRef = useRef(false);
   const gridRef = useRef<AgGridReact<PortfolioBond>>(null);
@@ -824,7 +747,7 @@ export const PortfolioTable: React.FC = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, [portfolioBonds.length, calculateHeaderHeight]);
 
-  const handleExportPortfolio = async (format: 'full' | 'secid-only') => {
+  const handleExportPortfolio = async (format: PortfolioExportFormat) => {
     try {
       setExportError(null);
       await exportPortfolio(portfolioBonds, format);

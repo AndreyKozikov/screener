@@ -27,11 +27,8 @@ import {
   calculateCouponYieldToPrice,
   calculateCouponFrequency 
 } from '../../utils/formatters';
-import { getWorstRating, getRatingLevel, type Rating } from '../../utils/ratings';
-import { getEmitentBySecid } from '../../api/emitent';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { ErrorMessage } from '../common/ErrorMessage';
-import { EmptyState } from '../common/EmptyState';
 import type { BondListItem } from '../../types/bond';
 import AddToPortfolioRenderer from './AddToPortfolioRenderer';
 import AddToComparisonRenderer from './AddToComparisonRenderer';

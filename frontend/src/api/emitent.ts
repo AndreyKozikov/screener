@@ -1,10 +1,13 @@
 import { apiClient } from './client';
 
+import type { Rating } from '../utils/ratings';
+
 export interface EmitentInfo {
   is_traded?: number | null;
   emitent_title?: string | null;
   emitent_inn?: string | null;
   type?: string | null;
+  cci_rating_companies?: Rating[] | null;
 }
 
 /**
