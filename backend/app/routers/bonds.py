@@ -11,6 +11,7 @@ from app.models.coupons import BondCouponsResponse, CouponsListResponse
 from app.services.data_loader import get_data_loader
 from app.services.bond_filter import filter_bonds
 from app.services.coupon_service import get_coupon_service
+from app.services.emitent_service import get_emitent_service
 from app.config import settings
 from app.utils.logger import get_data_update_logger
 
@@ -34,6 +35,7 @@ async def list_bonds(
     coupon_type: Optional[List[str]] = Query(None),
     rating_min: Optional[str] = Query(None),
     rating_max: Optional[str] = Query(None),
+    emitent_title: Optional[str] = Query(None, description="Filter by emitent title"),
 ):
     """
     Get filtered list of bonds.
@@ -86,6 +88,13 @@ async def list_bonds(
     
     # Apply filters (this returns ALL filtered bonds, no pagination)
     filtered = filter_bonds(all_bonds, filters)
+    
+    # Filter by emitent_title if provided
+    if emitent_title:
+        emitent_service = get_emitent_service()
+        secid_to_emitent_index = emitent_service.get_secid_to_emitent_title_index()
+        filtered = [bond for bond in filtered if secid_to_emitent_index.get(bond.SECID) == emitent_title.strip()]
+    
     total_filtered = len(filtered)
     
     # CRITICAL: Return ALL filtered data - NO pagination, NO limit, NO slicing
@@ -159,18 +168,27 @@ async def get_bond_detail(secid: str):
 
 
 @router.post("/refresh-coupons")
-async def refresh_coupons_data():
+async def refresh_coupons_data(force_refresh: bool = Query(False, description="Force refresh all coupons, ignoring cache (last_updated date)")):
     """
     Refresh coupons data for all bonds from bonds.json file.
     
     Reads SECID from bonds.json and updates coupon data for each bond
     by fetching from MOEX API. All processing is done on the backend.
     
+    Args:
+        force_refresh: If True, force refresh all coupons regardless of cache (ignore last_updated date).
+                      If False, only refresh coupons that are stale (older than 14 days).
+    
     Returns:
         Dictionary with refresh statistics: total, updated, errors, skipped
     """
     logger = get_data_update_logger()
-    logger.info("[API /bonds/refresh-coupons] Received request to refresh coupons data")
+    if force_refresh:
+        logger.info("[API /bonds/refresh-coupons] Received request to refresh coupons data (FORCE REFRESH - ignoring cache)")
+        print(f"[КУПОНЫ] Начало принудительного обновления купонов для всех облигаций (игнорируется кэш)")
+    else:
+        logger.info("[API /bonds/refresh-coupons] Received request to refresh coupons data (only stale data will be refreshed)")
+        print(f"[КУПОНЫ] Начало обновления купонов для всех облигаций (только устаревшие данные)")
     
     try:
         coupon_service = get_coupon_service()
@@ -178,9 +196,11 @@ async def refresh_coupons_data():
         
         # Get all bonds data
         logger.info("[API /bonds/refresh-coupons] Loading bonds data...")
+        print(f"[КУПОНЫ] Загрузка списка облигаций...")
         bonds_list = await data_loader.get_bonds()
         bonds_count = len(bonds_list)
         logger.info(f"[API /bonds/refresh-coupons] Found {bonds_count} bonds to process")
+        print(f"[КУПОНЫ] Найдено облигаций для обработки: {bonds_count}")
         
         # Statistics
         updated_count = 0
@@ -188,32 +208,47 @@ async def refresh_coupons_data():
         skipped_count = 0
         
         # Process each bond
+        print(f"[КУПОНЫ] Начало обработки облигаций...")
+        print(f"{'='*80}")
+        
         for idx, bond in enumerate(bonds_list):
             secid = bond.SECID
             
             if not secid:
                 logger.warning(f"[API /bonds/refresh-coupons] Bond {idx + 1}/{bonds_count}: Skipping - missing SECID")
+                print(f"[КУПОНЫ] [{idx + 1}/{bonds_count}] ПРОПУЩЕНО: отсутствует SECID")
                 skipped_count += 1
                 continue
             
+            # Log progress for every bond
+            progress_percent = ((idx + 1) / bonds_count) * 100
+            print(f"[КУПОНЫ] [{idx + 1}/{bonds_count}] ({progress_percent:.1f}%) Обработка облигации: SECID={secid}")
+            
             if (idx + 1) % 100 == 0:
                 logger.info(f"[API /bonds/refresh-coupons] Processing bond {idx + 1}/{bonds_count}: SECID={secid}")
+                print(f"[КУПОНЫ] Прогресс: обработано {idx + 1} из {bonds_count} облигаций")
             
             try:
-                # Get coupons with force_refresh=True to fetch from MOEX
+                # Get coupons with force_refresh parameter
+                # If force_refresh=True, always fetch from MOEX
+                # If force_refresh=False, get_coupons will check if data is stale (older than 14 days)
                 await asyncio.to_thread(
                     coupon_service.get_coupons,
                     secid,
-                    True  # force_refresh=True - fetch from MOEX
+                    force_refresh  # Use the parameter from request
                 )
                 updated_count += 1
+                print(f"[КУПОНЫ] [{idx + 1}/{bonds_count}] ✓ Успешно обновлено: SECID={secid}")
             except Exception as exc:
                 error_type = type(exc).__name__
-                logger.error(f"[API /bonds/refresh-coupons] ERROR: Failed to update coupons for {secid} - {error_type}: {str(exc)}")
+                error_msg = str(exc)
+                logger.error(f"[API /bonds/refresh-coupons] ERROR: Failed to update coupons for {secid} - {error_type}: {error_msg}")
+                print(f"[КУПОНЫ] [{idx + 1}/{bonds_count}] ✗ ОШИБКА при обновлении SECID={secid}: {error_type} - {error_msg}")
                 error_count += 1
                 # Continue processing other bonds even if one fails
                 continue
         
+        print(f"{'='*80}")
         summary = {
             "status": "ok",
             "total_bonds": bonds_count,
@@ -223,16 +258,24 @@ async def refresh_coupons_data():
         }
         
         logger.info(f"[API /bonds/refresh-coupons] Refresh completed: total={bonds_count}, updated={updated_count}, errors={error_count}, skipped={skipped_count}")
+        print(f"[КУПОНЫ] Обновление завершено!")
+        print(f"[КУПОНЫ] Всего облигаций: {bonds_count}")
+        print(f"[КУПОНЫ] Успешно обновлено: {updated_count}")
+        print(f"[КУПОНЫ] Ошибок: {error_count}")
+        print(f"[КУПОНЫ] Пропущено: {skipped_count}")
         print(f"{'='*80}\n")
         
         return summary
         
     except Exception as exc:
         error_type = type(exc).__name__
-        logger.error(f"[API /bonds/refresh-coupons] ERROR: {error_type} - {str(exc)}")
+        error_msg = str(exc)
+        logger.error(f"[API /bonds/refresh-coupons] ERROR: {error_type} - {error_msg}")
+        print(f"[КУПОНЫ] КРИТИЧЕСКАЯ ОШИБКА: {error_type} - {error_msg}")
+        print(f"{'='*80}\n")
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to refresh coupons: {str(exc)}"
+            detail=f"Failed to refresh coupons: {error_msg}"
         ) from exc
 
 

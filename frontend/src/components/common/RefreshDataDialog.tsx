@@ -24,7 +24,7 @@ export interface RefreshTask {
 interface RefreshDataDialogProps {
   open: boolean;
   onClose: () => void;
-  onConfirm: (selectedTasks: string[], forceUpdateRatings?: boolean) => Promise<void>;
+  onConfirm: (selectedTasks: string[], forceUpdateRatings?: boolean, forceRefreshCoupons?: boolean) => Promise<void>;
   tasks: RefreshTask[];
   isRefreshing: boolean;
   refreshStatus: Record<string, { status: 'idle' | 'loading' | 'success' | 'error'; error?: string }>;
@@ -51,6 +51,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
     return initial;
   });
   const [forceUpdateRatings, setForceUpdateRatings] = useState(false);
+  const [forceRefreshCoupons, setForceRefreshCoupons] = useState(false);
 
   // Reset selected tasks when dialog opens or tasks change
   useEffect(() => {
@@ -61,6 +62,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
       });
       setSelectedTasks(initial);
       setForceUpdateRatings(false);
+      setForceRefreshCoupons(false);
     }
   }, [open, tasks]);
 
@@ -83,7 +85,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
     // Close dialog immediately without waiting for server response
     onClose();
     // Start refresh in background (fire and forget)
-    void onConfirm(selected, forceUpdateRatings);
+    void onConfirm(selected, forceUpdateRatings, forceRefreshCoupons);
   };
 
   const handleClose = () => {
@@ -124,6 +126,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
             const isTaskSuccess = taskStatus.status === 'success';
             const isTaskError = taskStatus.status === 'error';
             const isRatingsTask = task.id === 'ratings';
+            const isCouponsTask = task.id === 'coupons';
             
             return (
               <Box key={task.id} sx={{ mb: 2 }}>
@@ -151,6 +154,25 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                       label={
                         <Typography variant="body2" color="text.secondary">
                           Принудительно обновить все рейтинги (игнорировать дату последнего обновления)
+                        </Typography>
+                      }
+                    />
+                  </Box>
+                )}
+                {isCouponsTask && selectedTasks[task.id] && (
+                  <Box sx={{ ml: 4, mt: 1 }}>
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={forceRefreshCoupons}
+                          onChange={(e) => setForceRefreshCoupons(e.target.checked)}
+                          disabled={isRefreshing}
+                          size="small"
+                        />
+                      }
+                      label={
+                        <Typography variant="body2" color="text.secondary">
+                          Принудительно обновить купоны (игнорировать кэш, обновить все данные с MOEX API)
                         </Typography>
                       }
                     />

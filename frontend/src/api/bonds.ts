@@ -9,7 +9,7 @@ import type { CouponsListResponse } from '../types/coupon';
  * Loads ALL filtered data in one request for client-side pagination and search
  * Search filtering is done on client side, not sent to server
  */
-export const fetchBonds = async (filters: BondFilters): Promise<BondsListResponse> => {
+export const fetchBonds = async (filters: BondFilters, emitentTitle?: string): Promise<BondsListResponse> => {
   const params: Record<string, string | number | (string | number)[] | null> = {};
   
   // Build query parameters (exclude search and skip/limit for client-side operations)
@@ -21,6 +21,7 @@ export const fetchBonds = async (filters: BondFilters): Promise<BondsListRespons
   if (filters.couponYieldMax !== null) params.coupon_yield_max = filters.couponYieldMax;
   if (filters.matdateFrom) params.matdate_from = filters.matdateFrom;
   if (filters.matdateTo) params.matdate_to = filters.matdateTo;
+  if (emitentTitle) params.emitent_title = emitentTitle;
   if (filters.listlevel && Array.isArray(filters.listlevel) && filters.listlevel.length > 0) {
     // FastAPI expects array parameters to be sent as repeated query params: listlevel=1&listlevel=2
     // Convert numbers to strings for URL serialization
@@ -167,9 +168,14 @@ export const refreshBondsData = async (): Promise<void> => {
 
 /**
  * Request coupons data refresh for all bonds from the backend
+ * @param forceRefresh If true, force refresh all coupons regardless of cache (ignore last_updated date)
  */
-export const refreshCouponsData = async (): Promise<void> => {
-  await apiClient.post('/bonds/refresh-coupons');
+export const refreshCouponsData = async (forceRefresh: boolean = false): Promise<void> => {
+  const params: Record<string, boolean> = {};
+  if (forceRefresh) {
+    params.force_refresh = true;
+  }
+  await apiClient.post('/bonds/refresh-coupons', null, { params });
 };
 
 /**

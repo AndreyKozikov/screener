@@ -12,6 +12,7 @@ import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
 import TimelineIcon from '@mui/icons-material/Timeline';
 import AssessmentIcon from '@mui/icons-material/Assessment';
 import SchoolIcon from '@mui/icons-material/School';
+import AnalyticsIcon from '@mui/icons-material/Analytics';
 import { FiltersModal } from '../components/filters/FiltersModal';
 import { BondsTable } from '../components/bonds/BondsTable';
 import { BondDetails } from '../components/bonds/BondDetails';
@@ -20,6 +21,7 @@ import { ForecastTable } from '../components/forecast/ForecastTable';
 import { Workbench } from '../components/portfolio/Workbench';
 import { HubCard } from '../components/portfolio/HubCard';
 import { ComparisonTable } from '../components/bonds/ComparisonTable';
+import { SpreadAnalysis } from '../components/bonds/SpreadAnalysis';
 import { AnalysisParamsDialog } from '../components/llm/AnalysisParamsDialog';
 import { AnalysisResultDialog } from '../components/llm/AnalysisResultDialog';
 import { LLMAnalysisModelDialog, type LLMModel } from '../components/llm/LLMAnalysisModelDialog';
@@ -55,6 +57,7 @@ export const HomePage: React.FC = () => {
   const [viewMode, setViewMode] = useState<ViewMode>('HUB');
   const [currentTab, setCurrentTab] = useState(0);
   const [forecastSubView, setForecastSubView] = useState<'zerocupon' | 'forecast' | null>(null);
+  const [comparisonSubView, setComparisonSubView] = useState<'comparison' | 'spread-analysis' | null>(null);
   
   // Refresh data dialog state
   const [isRefreshDialogOpen, setIsRefreshDialogOpen] = useState(false);
@@ -115,7 +118,7 @@ export const HomePage: React.FC = () => {
     setIsRefreshDialogOpen(true);
   };
 
-  const handleRefreshConfirm = async (selectedTasks: string[], forceUpdateRatings?: boolean) => {
+  const handleRefreshConfirm = async (selectedTasks: string[], forceUpdateRatings?: boolean, forceRefreshCoupons?: boolean) => {
     if (selectedTasks.length === 0) {
       return;
     }
@@ -146,7 +149,7 @@ export const HomePage: React.FC = () => {
         await refreshEmitentsData();
       },
       coupons: async () => {
-        await refreshCouponsData();
+        await refreshCouponsData(forceRefreshCoupons || false);
       },
       currency: async () => {
         await refreshCurrencyRates();
@@ -356,6 +359,10 @@ export const HomePage: React.FC = () => {
     // Если выбрана карточка "Прогнозы", сбросить подраздел
     if (tabIndex === 2) {
       setForecastSubView(null);
+    }
+    // Если выбрана карточка "Сравнение", сбросить подраздел
+    if (tabIndex === 4) {
+      setComparisonSubView(null);
     }
   };
 
@@ -797,9 +804,78 @@ export const HomePage: React.FC = () => {
             )}
 
             {currentTab === 4 && (
-              <Box sx={{ flexGrow: 1, minHeight: 0 }}>
-                <ComparisonTable />
-              </Box>
+              <>
+                {comparisonSubView === null ? (
+                  // Comparison Selection Screen
+                  <Box
+                    sx={{
+                      width: '100%',
+                      p: 3,
+                    }}
+                  >
+                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)' }, gap: 3 }}>
+                      <HubCard
+                        title="Сравнение облигаций"
+                        value="—"
+                        subtitle="Сопоставление облигаций по ключевым метрикам"
+                        icon={<AnalyticsIcon />}
+                        color="#1976d2"
+                        onClick={() => setComparisonSubView('comparison')}
+                      />
+                      <HubCard
+                        title="Анализ кривой спредов"
+                        value="—"
+                        subtitle="Анализ спредов по эмитентам"
+                        icon={<TimelineIcon />}
+                        color="#ff9800"
+                        onClick={() => setComparisonSubView('spread-analysis')}
+                      />
+                    </Box>
+                  </Box>
+                ) : (
+                  // Comparison Content
+                  <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                    {/* Back Button */}
+                    <Box sx={{ 
+                      display: 'flex',
+                      alignItems: 'center',
+                      mb: 2,
+                      px: 2,
+                    }}>
+                      <Button
+                        startIcon={<ArrowBackIcon />}
+                        onClick={() => setComparisonSubView(null)}
+                        variant="text"
+                        size="small"
+                        sx={{
+                          textTransform: 'none',
+                          fontFamily: '"Inter", "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                          fontSize: '0.875rem',
+                          color: 'text.secondary',
+                          '&:hover': {
+                            bgcolor: 'action.hover',
+                          },
+                        }}
+                      >
+                        Назад к выбору разделов
+                      </Button>
+                    </Box>
+                    
+                    {/* Comparison Content */}
+                    {comparisonSubView === 'comparison' && (
+                      <Box sx={{ flexGrow: 1, minHeight: 0 }}>
+                        <ComparisonTable />
+                      </Box>
+                    )}
+                    
+                    {comparisonSubView === 'spread-analysis' && (
+                      <Box sx={{ flexGrow: 1, minHeight: 0 }}>
+                        <SpreadAnalysis />
+                      </Box>
+                    )}
+                  </Box>
+                )}
+              </>
             )}
 
             {currentTab === 5 && (

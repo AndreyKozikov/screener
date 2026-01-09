@@ -1,6 +1,6 @@
 import asyncio
-from fastapi import APIRouter, HTTPException
-from typing import Optional
+from fastapi import APIRouter, HTTPException, Query
+from typing import Optional, List
 
 from app.models.emitent import EmitentInfo
 from app.services.emitent_service import get_emitent_service
@@ -9,6 +9,50 @@ from app.utils.logger import get_data_update_logger
 from typing import Dict, Any
 
 router = APIRouter(prefix="/api/emitent", tags=["emitent"])
+
+
+@router.get("/list")
+async def list_emitents() -> Dict[str, List[str]]:
+    """
+    Get list of all unique emitent titles.
+    
+    Returns dictionary with list of unique emitent titles sorted alphabetically.
+    """
+    try:
+        emitent_service = get_emitent_service()
+        data_loader = get_data_loader()
+        
+        # Get all bonds
+        all_bonds = await data_loader.get_bonds()
+        
+        # Collect unique emitent titles
+        emitent_titles_set = set()
+        # Access emitent data through public method (wrap in asyncio.to_thread for I/O operations)
+        emitent_data_cache = await asyncio.to_thread(emitent_service._load_emitent_data)
+        
+        # For each bond, try to get emitent title from cache
+        for bond in all_bonds:
+            secid = bond.SECID
+            if secid in emitent_data_cache:
+                emitent_info = emitent_data_cache[secid]
+                emitent_title = emitent_info.get("emitent_title")
+                if emitent_title and emitent_title.strip():
+                    emitent_titles_set.add(emitent_title.strip())
+        
+        # Sort and return
+        emitent_titles = sorted(list(emitent_titles_set))
+        
+        return {
+            "emitents": emitent_titles
+        }
+        
+    except Exception as exc:
+        logger = get_data_update_logger()
+        logger.error(f"[API /emitent/list] ERROR: {type(exc).__name__} - {str(exc)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get emitent list: {str(exc)}"
+        ) from exc
 
 
 @router.get("/{secid}", response_model=EmitentInfo)

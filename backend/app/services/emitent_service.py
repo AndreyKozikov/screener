@@ -38,6 +38,21 @@ class EmitentService:
         
         return self._emitent_cache
     
+    def get_secid_to_emitent_title_index(self) -> Dict[str, str]:
+        """
+        Get index mapping SECID to emitent_title.
+        
+        Returns:
+            Dictionary with SECID as key and emitent_title as value
+        """
+        emitent_data = self._load_emitent_data()
+        index = {}
+        for secid, emitent_info in emitent_data.items():
+            emitent_title = emitent_info.get("emitent_title")
+            if emitent_title and emitent_title.strip():
+                index[secid] = emitent_title.strip()
+        return index
+    
     def _save_emitent_data(self):
         """Save emitent data to JSON file"""
         if self._emitent_cache is None:

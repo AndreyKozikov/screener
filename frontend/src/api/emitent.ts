@@ -26,3 +26,15 @@ export const refreshEmitentsData = async (): Promise<void> => {
   await apiClient.post('/emitent/refresh');
 };
 
+/**
+ * Get list of all unique emitent titles
+ */
+export interface EmitentListResponse {
+  emitents: string[];
+}
+
+export const getEmitentList = async (): Promise<EmitentListResponse> => {
+  const response = await apiClient.get<EmitentListResponse>('/emitent/list');
+  return response.data;
+};
+
