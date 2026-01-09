@@ -33,10 +33,20 @@ export const usePortfolioStore = create<PortfolioState>()(
 
       addBondToPortfolio: (bond) => {
         set((state) => {
-          // Check if bond already exists in portfolio
+          // Check if bond already exists in portfolio by SECID
           if (state.portfolioBonds.some(b => b.SECID === bond.SECID)) {
             return state;
           }
+          
+          // Check if bond already exists by ISIN (if ISIN exists)
+          // Some bonds like OFZ may have multiple SECIDs but same ISIN
+          if (bond.ISIN && bond.ISIN.trim() !== '') {
+            const isin = bond.ISIN.trim();
+            if (state.portfolioBonds.some(b => b.ISIN && b.ISIN.trim() === isin)) {
+              return state;
+            }
+          }
+          
           // Add bond with default quantity of 1
           const portfolioBond: PortfolioBond = {
             ...bond,
@@ -82,12 +92,60 @@ export const usePortfolioStore = create<PortfolioState>()(
 
       loadBondsToPortfolio: (bonds) => {
         set((state) => {
-          // Create a map of existing bonds by SECID
-          const existingBondsMap = new Map(state.portfolioBonds.map(b => [b.SECID, b]));
+          // Create maps of existing bonds by SECID and ISIN
+          const existingBondsBySecid = new Map(state.portfolioBonds.map(b => [b.SECID, b]));
+          const existingBondsByIsin = new Map<string, PortfolioBond>();
           
-          // Add new bonds, avoiding duplicates, with default quantity of 1
-          const newBonds: PortfolioBond[] = bonds
-            .filter(bond => !existingBondsMap.has(bond.SECID))
+          // Build ISIN map for existing bonds (only for bonds with ISIN)
+          for (const bond of state.portfolioBonds) {
+            if (bond.ISIN && bond.ISIN.trim() !== '') {
+              const isin = bond.ISIN.trim();
+              if (!existingBondsByIsin.has(isin)) {
+                existingBondsByIsin.set(isin, bond);
+              }
+            }
+          }
+          
+          // Remove duplicates from incoming bonds array by ISIN (if ISIN exists)
+          // Some bonds like OFZ may have multiple SECIDs but same ISIN
+          const uniqueBondsMap = new Map<string, BondListItem>();
+          const seenIsins = new Set<string>();
+          
+          for (const bond of bonds) {
+            // If bond has ISIN, use it for deduplication
+            if (bond.ISIN && bond.ISIN.trim() !== '') {
+              const isin = bond.ISIN.trim();
+              if (!seenIsins.has(isin)) {
+                seenIsins.add(isin);
+                uniqueBondsMap.set(bond.SECID, bond);
+              }
+              // If ISIN already seen, skip this bond (it's a duplicate)
+            } else {
+              // If no ISIN, use SECID for deduplication (fallback)
+              if (!uniqueBondsMap.has(bond.SECID)) {
+                uniqueBondsMap.set(bond.SECID, bond);
+              }
+            }
+          }
+          
+          // Add new bonds, avoiding duplicates with existing portfolio (by SECID or ISIN), with default quantity of 1
+          const newBonds: PortfolioBond[] = Array.from(uniqueBondsMap.values())
+            .filter(bond => {
+              // Check by SECID first
+              if (existingBondsBySecid.has(bond.SECID)) {
+                return false;
+              }
+              
+              // Check by ISIN if ISIN exists
+              if (bond.ISIN && bond.ISIN.trim() !== '') {
+                const isin = bond.ISIN.trim();
+                if (existingBondsByIsin.has(isin)) {
+                  return false;
+                }
+              }
+              
+              return true;
+            })
             .map(bond => ({
               ...bond,
               quantity: 1,
@@ -101,20 +159,60 @@ export const usePortfolioStore = create<PortfolioState>()(
 
       loadPortfolioBonds: (bonds) => {
         set((state) => {
-          // Create a map of existing bonds by SECID
-          const existingBondsMap = new Map(state.portfolioBonds.map(b => [b.SECID, b]));
+          // Create maps of existing bonds by SECID and ISIN
+          const existingBondsBySecid = new Map(state.portfolioBonds.map(b => [b.SECID, b]));
+          const existingBondsByIsin = new Map<string, PortfolioBond>();
           
-          // Remove duplicates from incoming bonds array (keep first occurrence)
-          const uniqueBondsMap = new Map<string, PortfolioBond>();
-          for (const bond of bonds) {
-            if (!uniqueBondsMap.has(bond.SECID)) {
-              uniqueBondsMap.set(bond.SECID, bond);
+          // Build ISIN map for existing bonds (only for bonds with ISIN)
+          for (const bond of state.portfolioBonds) {
+            if (bond.ISIN && bond.ISIN.trim() !== '') {
+              const isin = bond.ISIN.trim();
+              if (!existingBondsByIsin.has(isin)) {
+                existingBondsByIsin.set(isin, bond);
+              }
             }
           }
           
-          // Add new bonds, avoiding duplicates with existing portfolio, preserving quantities from import
+          // Remove duplicates from incoming bonds array by ISIN (if ISIN exists)
+          // Some bonds like OFZ may have multiple SECIDs but same ISIN
+          const uniqueBondsMap = new Map<string, PortfolioBond>();
+          const seenIsins = new Set<string>();
+          
+          for (const bond of bonds) {
+            // If bond has ISIN, use it for deduplication
+            if (bond.ISIN && bond.ISIN.trim() !== '') {
+              const isin = bond.ISIN.trim();
+              if (!seenIsins.has(isin)) {
+                seenIsins.add(isin);
+                uniqueBondsMap.set(bond.SECID, bond);
+              }
+              // If ISIN already seen, skip this bond (it's a duplicate)
+            } else {
+              // If no ISIN, use SECID for deduplication (fallback)
+              if (!uniqueBondsMap.has(bond.SECID)) {
+                uniqueBondsMap.set(bond.SECID, bond);
+              }
+            }
+          }
+          
+          // Add new bonds, avoiding duplicates with existing portfolio (by SECID or ISIN), preserving quantities from import
           const newBonds: PortfolioBond[] = Array.from(uniqueBondsMap.values())
-            .filter(bond => !existingBondsMap.has(bond.SECID))
+            .filter(bond => {
+              // Check by SECID first
+              if (existingBondsBySecid.has(bond.SECID)) {
+                return false;
+              }
+              
+              // Check by ISIN if ISIN exists
+              if (bond.ISIN && bond.ISIN.trim() !== '') {
+                const isin = bond.ISIN.trim();
+                if (existingBondsByIsin.has(isin)) {
+                  return false;
+                }
+              }
+              
+              return true;
+            })
             .map(bond => ({
               ...bond,
               quantity: bond.quantity ?? 1, // Preserve quantity from import or default to 1

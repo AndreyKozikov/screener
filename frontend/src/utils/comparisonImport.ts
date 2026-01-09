@@ -208,9 +208,31 @@ const loadBondsBySecids = async (secids: string[]): Promise<BondListItem[]> => {
 
   // Filter bonds by SECIDs
   const secidSet = new Set(secids);
-  const bonds: BondListItem[] = response.bonds.filter(bond => secidSet.has(bond.SECID));
+  const filteredBonds: BondListItem[] = response.bonds.filter(bond => secidSet.has(bond.SECID));
 
-  return bonds;
+  // Remove duplicates by ISIN (if ISIN exists)
+  // Some bonds like OFZ may have multiple SECIDs but same ISIN
+  const bondsMap = new Map<string, BondListItem>();
+  const seenIsins = new Set<string>();
+  
+  for (const bond of filteredBonds) {
+    // If bond has ISIN, use it for deduplication
+    if (bond.ISIN && bond.ISIN.trim() !== '') {
+      const isin = bond.ISIN.trim();
+      if (!seenIsins.has(isin)) {
+        seenIsins.add(isin);
+        bondsMap.set(bond.SECID, bond);
+      }
+      // If ISIN already seen, skip this bond (it's a duplicate)
+    } else {
+      // If no ISIN, use SECID for deduplication (fallback)
+      if (!bondsMap.has(bond.SECID)) {
+        bondsMap.set(bond.SECID, bond);
+      }
+    }
+  }
+
+  return Array.from(bondsMap.values());
 };
 
 /**

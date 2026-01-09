@@ -158,9 +158,16 @@ class DataLoader:
         # Build lookup dictionaries
         bonds_list = []
         details_map = {}
+        skipped_spob_count = 0
         
         for row in sec_data:
             bond_dict = dict(zip(sec_columns, row))
+            
+            # Skip bonds with trading mode "SPOB" (режим торгов SPOB)
+            boardid = bond_dict.get("BOARDID")
+            if boardid and boardid.strip().upper() == "SPOB":
+                skipped_spob_count += 1
+                continue
             
             # Convert date strings to date objects
             for date_field in ["NEXTCOUPON", "MATDATE", "BUYBACKDATE", "PREVDATE", 
@@ -350,6 +357,8 @@ class DataLoader:
         self._details_cache = details_map
         
         logger.info(f"[LOAD BONDS DATA] Successfully loaded {len(bonds_list)} bonds, {len(details_map)} bond details, {len(ratings_map)} ratings, {len(bondtype_map)} bond types")
+        if skipped_spob_count > 0:
+            logger.info(f"[LOAD BONDS DATA] Skipped {skipped_spob_count} bonds with trading mode SPOB")
     
     def _load_column_mapping(self) -> Dict[str, str]:
         """Load columns.json and build field -> display name mapping"""

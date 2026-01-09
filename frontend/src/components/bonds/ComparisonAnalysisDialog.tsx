@@ -317,7 +317,9 @@ export const ComparisonAnalysisDialog: React.FC<ComparisonAnalysisDialogProps> =
       const priceChange = formatPriceChange(calculatePriceChange(bond));
 
       // Calculate spread
-      const horizon = calculateYearsToMaturity(bond.MATDATE);
+      // Используем дюрацию Маколея вместо срока до погашения для более точного сравнения
+      // с доходностью КБД, так как "вес" денежных потоков распределен по всему периоду
+      const horizon = calculateRegularDuration(bond); // Используем дюрацию Маколея вместо срока до погашения
       let spreadStr = '—';
       
       if (horizon !== null && horizon > 0) {
@@ -471,7 +473,7 @@ export const ComparisonAnalysisDialog: React.FC<ComparisonAnalysisDialogProps> =
                       title={
                         <Box sx={{ p: 0.5 }}>
                           <Typography variant="body2" sx={{ mb: 1 }}>
-                            Показывает отклонение доходности облигации от расчетной рыночной доходности сопоставимых выпусков (по сроку до погашения и кредитному качеству).
+                            Показывает отклонение доходности облигации от расчетной рыночной доходности сопоставимых выпусков (по дюрации Маколея и кредитному качеству). Использование дюрации вместо срока до погашения обеспечивает более точное сравнение, так как учитывает распределение "веса" денежных потоков по всему периоду.
                           </Typography>
                           <Typography variant="body2" sx={{ mb: 1 }}>
                             <strong>Положительное значение</strong> — облигация предлагает доходность выше рыночной нормы: рынок закладывает дополнительную премию, выпуск выглядит относительно недооценённым.

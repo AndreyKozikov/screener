@@ -232,18 +232,32 @@ const loadBondsBySecids = async (
 
   // Filter bonds by SECIDs and convert to PortfolioBond with quantities
   const secidSet = new Set(secids);
-  const portfolioBonds: PortfolioBond[] = response.bonds
+  const filteredBonds: PortfolioBond[] = response.bonds
     .filter(bond => secidSet.has(bond.SECID))
     .map(bond => ({
       ...bond,
       quantity: quantities[bond.SECID] ?? 1, // Use saved quantity or default to 1
     }));
 
-  // Remove duplicates by SECID (keep first occurrence)
+  // Remove duplicates by ISIN (if ISIN exists), otherwise by SECID
+  // Some bonds like OFZ may have multiple SECIDs but same ISIN
   const uniqueBondsMap = new Map<string, PortfolioBond>();
-  for (const bond of portfolioBonds) {
-    if (!uniqueBondsMap.has(bond.SECID)) {
-      uniqueBondsMap.set(bond.SECID, bond);
+  const seenIsins = new Set<string>();
+  
+  for (const bond of filteredBonds) {
+    // If bond has ISIN, use it for deduplication
+    if (bond.ISIN && bond.ISIN.trim() !== '') {
+      const isin = bond.ISIN.trim();
+      if (!seenIsins.has(isin)) {
+        seenIsins.add(isin);
+        uniqueBondsMap.set(bond.SECID, bond);
+      }
+      // If ISIN already seen, skip this bond (it's a duplicate)
+    } else {
+      // If no ISIN, use SECID for deduplication (fallback)
+      if (!uniqueBondsMap.has(bond.SECID)) {
+        uniqueBondsMap.set(bond.SECID, bond);
+      }
     }
   }
 

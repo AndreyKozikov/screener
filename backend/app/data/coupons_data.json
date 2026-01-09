@@ -8068,7 +8068,7 @@
       "offers": []
     },
     "SU26246RMFS7": {
-      "last_updated": "2025-12-24",
+      "last_updated": "2026-01-09",
       "amortizations": [
         {
           "isin": "RU000A108EE1",
@@ -10247,7 +10247,7 @@
       "offers": []
     },
     "SU26253RMFS3": {
-      "last_updated": "2025-12-24",
+      "last_updated": "2026-01-09",
       "amortizations": [
         {
           "isin": "RU000A10D517",
@@ -167948,7 +167948,7 @@
       "offers": []
     },
     "RU000A1033Z8": {
-      "last_updated": "2025-12-24",
+      "last_updated": "2026-01-09",
       "amortizations": [
         {
           "isin": "RU000A1033Z8",
@@ -277902,7 +277902,7 @@
       "offers": []
     },
     "RU000A106P06": {
-      "last_updated": "2025-12-24",
+      "last_updated": "2026-01-09",
       "amortizations": [
         {
           "isin": "RU000A106P06",
@@ -338571,7 +338571,7 @@
       ]
     },
     "RU000A107TH4": {
-      "last_updated": "2025-12-24",
+      "last_updated": "2026-01-09",
       "amortizations": [
         {
           "isin": "RU000A107TH4",
@@ -481250,7 +481250,7 @@
       "offers": []
     },
     "RU000A10B2T8": {
-      "last_updated": "2025-12-24",
+      "last_updated": "2026-01-09",
       "amortizations": [
         {
           "isin": "RU000A10B2T8",
@@ -482344,7 +482344,7 @@
       ]
     },
     "RU000A10B347": {
-      "last_updated": "2025-12-24",
+      "last_updated": "2026-01-09",
       "amortizations": [
         {
           "isin": "RU000A10B347",
@@ -482356,7 +482356,7 @@
           "faceunit": "CNY",
           "valueprc": 30,
           "value": 300,
-          "value_rub": 3344.91,
+          "value_rub": 3347.76,
           "data_source": "amortization",
           "secid": "RU000A10B347",
           "primary_boardid": "TQCB",
@@ -482372,7 +482372,7 @@
           "faceunit": "CNY",
           "valueprc": 30,
           "value": 300,
-          "value_rub": 3344.91,
+          "value_rub": 3347.76,
           "data_source": "amortization",
           "secid": "RU000A10B347",
           "primary_boardid": "TQCB",
@@ -482388,7 +482388,7 @@
           "faceunit": "CNY",
           "valueprc": 40,
           "value": 400,
-          "value_rub": 4459.88,
+          "value_rub": 4463.68,
           "data_source": "amortization",
           "secid": "RU000A10B347",
           "primary_boardid": "TQCB",
@@ -482504,7 +482504,7 @@
           "faceunit": "CNY",
           "value": 8.63,
           "valueprc": 10.5,
-          "value_rub": 96.22
+          "value_rub": 96.3
         },
         {
           "coupondate": "2026-02-07",
@@ -482515,7 +482515,7 @@
           "faceunit": "CNY",
           "value": 8.63,
           "valueprc": 10.5,
-          "value_rub": 96.22
+          "value_rub": 96.3
         },
         {
           "coupondate": "2026-03-09",
@@ -482526,7 +482526,7 @@
           "faceunit": "CNY",
           "value": 8.63,
           "valueprc": 10.5,
-          "value_rub": 96.22
+          "value_rub": 96.3
         },
         {
           "coupondate": "2026-04-08",
@@ -482537,7 +482537,7 @@
           "faceunit": "CNY",
           "value": 8.63,
           "valueprc": 10.5,
-          "value_rub": 96.22
+          "value_rub": 96.3
         },
         {
           "coupondate": "2026-05-08",
@@ -482548,7 +482548,7 @@
           "faceunit": "CNY",
           "value": 8.63,
           "valueprc": 10.5,
-          "value_rub": 96.22
+          "value_rub": 96.3
         },
         {
           "coupondate": "2026-06-07",
@@ -482559,7 +482559,7 @@
           "faceunit": "CNY",
           "value": 8.63,
           "valueprc": 10.5,
-          "value_rub": 96.22
+          "value_rub": 96.3
         },
         {
           "coupondate": "2026-07-07",
@@ -482570,7 +482570,7 @@
           "faceunit": "CNY",
           "value": 8.63,
           "valueprc": 10.5,
-          "value_rub": 96.22
+          "value_rub": 96.3
         },
         {
           "coupondate": "2026-08-06",
@@ -482581,7 +482581,7 @@
           "faceunit": "CNY",
           "value": 8.63,
           "valueprc": 10.5,
-          "value_rub": 96.22
+          "value_rub": 96.3
         },
         {
           "coupondate": "2026-09-05",
@@ -482592,7 +482592,7 @@
           "faceunit": "CNY",
           "value": 6.04,
           "valueprc": 10.5,
-          "value_rub": 67.34
+          "value_rub": 67.4
         },
         {
           "coupondate": "2026-10-05",
@@ -482603,7 +482603,7 @@
           "faceunit": "CNY",
           "value": 6.04,
           "valueprc": 10.5,
-          "value_rub": 67.34
+          "value_rub": 67.4
         },
         {
           "coupondate": "2026-11-04",
@@ -482614,7 +482614,7 @@
           "faceunit": "CNY",
           "value": 6.04,
           "valueprc": 10.5,
-          "value_rub": 67.34
+          "value_rub": 67.4
         }
       ],
       "offers": [
@@ -517720,7 +517720,7 @@
       "offers": []
     },
     "RU000A10BPQ0": {
-      "last_updated": "2025-12-24",
+      "last_updated": "2026-01-09",
       "amortizations": [
         {
           "isin": "RU000A10BPQ0",
@@ -523472,7 +523472,7 @@
       "offers": []
     },
     "RU000A10BRM5": {
-      "last_updated": "2025-12-24",
+      "last_updated": "2026-01-09",
       "amortizations": [
         {
           "isin": "RU000A10BRM5",
@@ -523484,7 +523484,7 @@
           "faceunit": "USD",
           "valueprc": 12.5,
           "value": 125,
-          "value_rub": 9823.12,
+          "value_rub": 9778.34,
           "data_source": "amortization",
           "secid": "RU000A10BRM5",
           "primary_boardid": "TQCB",
@@ -523500,7 +523500,7 @@
           "faceunit": "USD",
           "valueprc": 12.5,
           "value": 125,
-          "value_rub": 9823.12,
+          "value_rub": 9778.34,
           "data_source": "amortization",
           "secid": "RU000A10BRM5",
           "primary_boardid": "TQCB",
@@ -523516,7 +523516,7 @@
           "faceunit": "USD",
           "valueprc": 12.5,
           "value": 125,
-          "value_rub": 9823.12,
+          "value_rub": 9778.34,
           "data_source": "amortization",
           "secid": "RU000A10BRM5",
           "primary_boardid": "TQCB",
@@ -523532,7 +523532,7 @@
           "faceunit": "USD",
           "valueprc": 12.5,
           "value": 125,
-          "value_rub": 9823.12,
+          "value_rub": 9778.34,
           "data_source": "amortization",
           "secid": "RU000A10BRM5",
           "primary_boardid": "TQCB",
@@ -523548,7 +523548,7 @@
           "faceunit": "USD",
           "valueprc": 12.5,
           "value": 125,
-          "value_rub": 9823.12,
+          "value_rub": 9778.34,
           "data_source": "amortization",
           "secid": "RU000A10BRM5",
           "primary_boardid": "TQCB",
@@ -523564,7 +523564,7 @@
           "faceunit": "USD",
           "valueprc": 12.5,
           "value": 125,
-          "value_rub": 9823.12,
+          "value_rub": 9778.34,
           "data_source": "amortization",
           "secid": "RU000A10BRM5",
           "primary_boardid": "TQCB",
@@ -523580,7 +523580,7 @@
           "faceunit": "USD",
           "valueprc": 12.5,
           "value": 125,
-          "value_rub": 9823.12,
+          "value_rub": 9778.34,
           "data_source": "amortization",
           "secid": "RU000A10BRM5",
           "primary_boardid": "TQCB",
@@ -523596,7 +523596,7 @@
           "faceunit": "USD",
           "valueprc": 12.5,
           "value": 125,
-          "value_rub": 9823.12,
+          "value_rub": 9778.34,
           "data_source": "amortization",
           "secid": "RU000A10BRM5",
           "primary_boardid": "TQCB",
@@ -523679,7 +523679,7 @@
           "faceunit": "USD",
           "value": 6.37,
           "valueprc": 7.75,
-          "value_rub": 500.59
+          "value_rub": 498.3
         },
         {
           "coupondate": "2026-02-01",
@@ -523690,7 +523690,7 @@
           "faceunit": "USD",
           "value": 6.37,
           "valueprc": 7.75,
-          "value_rub": 500.59
+          "value_rub": 498.3
         },
         {
           "coupondate": "2026-03-03",
@@ -523701,7 +523701,7 @@
           "faceunit": "USD",
           "value": 6.37,
           "valueprc": 7.75,
-          "value_rub": 500.59
+          "value_rub": 498.3
         },
         {
           "coupondate": "2026-04-02",
@@ -523712,7 +523712,7 @@
           "faceunit": "USD",
           "value": 6.37,
           "valueprc": 7.75,
-          "value_rub": 500.59
+          "value_rub": 498.3
         },
         {
           "coupondate": "2026-05-02",
@@ -523723,7 +523723,7 @@
           "faceunit": "USD",
           "value": 6.37,
           "valueprc": 7.75,
-          "value_rub": 500.59
+          "value_rub": 498.3
         },
         {
           "coupondate": "2026-06-01",
@@ -523734,7 +523734,7 @@
           "faceunit": "USD",
           "value": 6.37,
           "valueprc": 7.75,
-          "value_rub": 500.59
+          "value_rub": 498.3
         },
         {
           "coupondate": "2026-07-01",
@@ -523745,7 +523745,7 @@
           "faceunit": "USD",
           "value": 6.37,
           "valueprc": 7.75,
-          "value_rub": 500.59
+          "value_rub": 498.3
         },
         {
           "coupondate": "2026-07-31",
@@ -523756,7 +523756,7 @@
           "faceunit": "USD",
           "value": 6.37,
           "valueprc": 7.75,
-          "value_rub": 500.59
+          "value_rub": 498.3
         },
         {
           "coupondate": "2026-08-30",
@@ -523767,7 +523767,7 @@
           "faceunit": "USD",
           "value": 6.37,
           "valueprc": 7.75,
-          "value_rub": 500.59
+          "value_rub": 498.3
         },
         {
           "coupondate": "2026-09-29",
@@ -523778,7 +523778,7 @@
           "faceunit": "USD",
           "value": 6.37,
           "valueprc": 7.75,
-          "value_rub": 500.59
+          "value_rub": 498.3
         },
         {
           "coupondate": "2026-10-29",
@@ -523789,7 +523789,7 @@
           "faceunit": "USD",
           "value": 6.37,
           "valueprc": 7.75,
-          "value_rub": 500.59
+          "value_rub": 498.3
         },
         {
           "coupondate": "2026-11-28",
@@ -523800,7 +523800,7 @@
           "faceunit": "USD",
           "value": 6.37,
           "valueprc": 7.75,
-          "value_rub": 500.59
+          "value_rub": 498.3
         },
         {
           "coupondate": "2026-12-28",
@@ -523811,7 +523811,7 @@
           "faceunit": "USD",
           "value": 6.37,
           "valueprc": 7.75,
-          "value_rub": 500.59
+          "value_rub": 498.3
         },
         {
           "coupondate": "2027-01-27",
@@ -523822,7 +523822,7 @@
           "faceunit": "USD",
           "value": 6.37,
           "valueprc": 7.75,
-          "value_rub": 500.59
+          "value_rub": 498.3
         }
       ],
       "offers": []
@@ -528600,7 +528600,7 @@
       ]
     },
     "RU000A10BU31": {
-      "last_updated": "2025-12-24",
+      "last_updated": "2026-01-09",
       "amortizations": [
         {
           "isin": "RU000A10BU31",
@@ -555755,7 +555755,7 @@
       "offers": []
     },
     "RU000A10C8T4": {
-      "last_updated": "2025-12-24",
+      "last_updated": "2026-01-09",
       "amortizations": [
         {
           "isin": "RU000A10C8T4",
@@ -647573,7 +647573,7 @@
       "offers": []
     },
     "RU000A10DQ68": {
-      "last_updated": "2025-12-24",
+      "last_updated": "2026-01-09",
       "amortizations": [
         {
           "isin": "RU000A10DQ68",

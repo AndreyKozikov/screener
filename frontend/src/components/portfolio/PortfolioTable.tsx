@@ -376,7 +376,13 @@ export const PortfolioTable: React.FC = () => {
       minWidth: 140,
       valueFormatter: (params) => formatPercent(params.value),
       type: 'numericColumn',
-      headerTooltip: getFieldDescription('YIELDATPREVWAPRICE'),
+      headerTooltip: (() => {
+        const existingDescription = getFieldDescription('YIELDATPREVWAPRICE');
+        const additionalText = 'Это «обещанная» доходность, которая станет реальной только при условии владения бумагой до конца и реинвестирования всех купонов под ту же ставку.';
+        return existingDescription 
+          ? `${existingDescription} ${additionalText}`
+          : additionalText;
+      })(),
       autoHeaderHeight: true,
     }),
     createColumnDef('FACEVALUE', 'Номинальная стоимость', {

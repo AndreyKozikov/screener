@@ -22,10 +22,20 @@ export const useComparisonStore = create<ComparisonState>()(
 
       addBondToComparison: (bond) => {
         set((state) => {
-          // Check if bond already exists in comparison
+          // Check if bond already exists in comparison by SECID
           if (state.comparisonBonds.some(b => b.SECID === bond.SECID)) {
             return state;
           }
+          
+          // Check if bond already exists by ISIN (if ISIN exists)
+          // Some bonds like OFZ may have multiple SECIDs but same ISIN
+          if (bond.ISIN && bond.ISIN.trim() !== '') {
+            const isin = bond.ISIN.trim();
+            if (state.comparisonBonds.some(b => b.ISIN && b.ISIN.trim() === isin)) {
+              return state;
+            }
+          }
+          
           // Add bond to comparison
           return {
             comparisonBonds: [...state.comparisonBonds, bond],
@@ -55,11 +65,59 @@ export const useComparisonStore = create<ComparisonState>()(
 
       loadBondsToComparison: (bonds) => {
         set((state) => {
-          // Create a map of existing bonds by SECID
-          const existingBondsMap = new Map(state.comparisonBonds.map(b => [b.SECID, b]));
+          // Create maps of existing bonds by SECID and ISIN
+          const existingBondsBySecid = new Map(state.comparisonBonds.map(b => [b.SECID, b]));
+          const existingBondsByIsin = new Map<string, BondListItem>();
           
-          // Add new bonds, avoiding duplicates
-          const newBonds = bonds.filter(bond => !existingBondsMap.has(bond.SECID));
+          // Build ISIN map for existing bonds (only for bonds with ISIN)
+          for (const bond of state.comparisonBonds) {
+            if (bond.ISIN && bond.ISIN.trim() !== '') {
+              const isin = bond.ISIN.trim();
+              if (!existingBondsByIsin.has(isin)) {
+                existingBondsByIsin.set(isin, bond);
+              }
+            }
+          }
+          
+          // Remove duplicates from incoming bonds array by ISIN (if ISIN exists)
+          // Some bonds like OFZ may have multiple SECIDs but same ISIN
+          const uniqueBondsMap = new Map<string, BondListItem>();
+          const seenIsins = new Set<string>();
+          
+          for (const bond of bonds) {
+            // If bond has ISIN, use it for deduplication
+            if (bond.ISIN && bond.ISIN.trim() !== '') {
+              const isin = bond.ISIN.trim();
+              if (!seenIsins.has(isin)) {
+                seenIsins.add(isin);
+                uniqueBondsMap.set(bond.SECID, bond);
+              }
+              // If ISIN already seen, skip this bond (it's a duplicate)
+            } else {
+              // If no ISIN, use SECID for deduplication (fallback)
+              if (!uniqueBondsMap.has(bond.SECID)) {
+                uniqueBondsMap.set(bond.SECID, bond);
+              }
+            }
+          }
+          
+          // Filter out bonds that already exist (by SECID or ISIN)
+          const newBonds = Array.from(uniqueBondsMap.values()).filter(bond => {
+            // Check by SECID first
+            if (existingBondsBySecid.has(bond.SECID)) {
+              return false;
+            }
+            
+            // Check by ISIN if ISIN exists
+            if (bond.ISIN && bond.ISIN.trim() !== '') {
+              const isin = bond.ISIN.trim();
+              if (existingBondsByIsin.has(isin)) {
+                return false;
+              }
+            }
+            
+            return true;
+          });
           
           return {
             comparisonBonds: [...state.comparisonBonds, ...newBonds],

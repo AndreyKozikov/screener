@@ -20,7 +20,7 @@ import UploadFileIcon from '@mui/icons-material/UploadFile';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import { useComparisonStore } from '../../stores/comparisonStore';
 import { ComparisonImportDialog } from './ComparisonImportDialog';
-import { formatNumber } from '../../utils/formatters';
+import { formatNumber, calculateCouponFrequency } from '../../utils/formatters';
 import { fetchZerocuponData, type ZerocuponRecord } from '../../api/zerocupon';
 import {
   getLatestZerocuponRecord,
@@ -29,6 +29,9 @@ import {
   calculateSpread,
   formatSpread,
 } from '../../utils/zerocuponInterpolation';
+import { calculateZSpread, formatZSpread } from '../../utils/zSpreadCalculation';
+import { fetchBondCoupons } from '../../api/bonds';
+import type { Coupon } from '../../types/coupon';
 import dayjs from 'dayjs';
 import type { BondListItem } from '../../types/bond';
 import { LoadingSpinner } from '../common/LoadingSpinner';
@@ -46,8 +49,10 @@ interface ComparisonRow {
   couponToPrice: string;
   regularDuration: string;
   duration: string;
+  convexity: string;
   priceChange: string;
   spread: string;
+  zSpread: string;
   secid: string;
 }
 
@@ -60,6 +65,8 @@ export const ComparisonTable: React.FC = () => {
   const { comparisonBonds, removeBondFromComparison, loadBondsToComparison, clearComparison } = useComparisonStore();
   const [zerocuponData, setZerocuponData] = useState<ZerocuponRecord[]>([]);
   const [isLoadingZerocupon, setIsLoadingZerocupon] = useState(false);
+  const [couponsData, setCouponsData] = useState<Map<string, Coupon[]>>(new Map());
+  const [isLoadingCoupons, setIsLoadingCoupons] = useState(false);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const gridRef = useRef<AgGridReact<ComparisonRow>>(null);
   const [headerHeight, setHeaderHeight] = useState<number | undefined>(undefined);
@@ -90,6 +97,45 @@ export const ComparisonTable: React.FC = () => {
 
     void loadZerocuponData();
   }, [comparisonBonds.length]);
+
+  // Load coupons data for fixed coupon bonds
+  useEffect(() => {
+    if (comparisonBonds.length === 0) return;
+
+    const loadCouponsData = async () => {
+      try {
+        setIsLoadingCoupons(true);
+        const couponsMap = new Map<string, Coupon[]>();
+
+        // Load coupons only for fixed coupon bonds
+        const fixedCouponBonds = comparisonBonds.filter(
+          bond => bond.BONDTYPE43 === 'Фикс с известным купоном'
+        );
+
+        // Load coupons in parallel
+        const couponPromises = fixedCouponBonds.map(async (bond) => {
+          try {
+            const response = await fetchBondCoupons(bond.SECID, false);
+            if (response.coupons && response.coupons.length > 0) {
+              couponsMap.set(bond.SECID, response.coupons);
+            }
+          } catch (error) {
+            console.error(`Error loading coupons for ${bond.SECID}:`, error);
+          }
+        });
+
+        await Promise.all(couponPromises);
+        setCouponsData(couponsMap);
+      } catch (error) {
+        console.error('Error loading coupons data:', error);
+        setCouponsData(new Map());
+      } finally {
+        setIsLoadingCoupons(false);
+      }
+    };
+
+    void loadCouponsData();
+  }, [comparisonBonds]);
 
   // Calculate years until maturity
   const calculateYearsToMaturity = (matDate: string | null): number | null => {
@@ -128,6 +174,29 @@ export const ComparisonTable: React.FC = () => {
     }
   };
 
+  // Check if modified duration is applicable for this bond
+  // Modified duration is only applicable for:
+  // 1. Fixed coupon bonds with known coupon rate (BONDTYPE43 === "Фикс с известным купоном")
+  // 2. Bonds without embedded options (no call or put options)
+  const isModifiedDurationApplicable = (bond: BondListItem): boolean => {
+    // Check if bond type is "Фикс с известным купоном"
+    if (bond.BONDTYPE43 !== 'Фикс с известным купоном') {
+      return false;
+    }
+    
+    // Check if bond has call or put options (embedded options)
+    // If either CALLOPTIONDATE or PUTOPTIONDATE is not null, bond has embedded options
+    if (bond.CALLOPTIONDATE !== null && bond.CALLOPTIONDATE !== undefined) {
+      return false;
+    }
+    
+    if (bond.PUTOPTIONDATE !== null && bond.PUTOPTIONDATE !== undefined) {
+      return false;
+    }
+    
+    return true;
+  };
+
   // Calculate regular duration in years
   const calculateRegularDuration = (bond: BondListItem): number | null => {
     if (bond.DURATION === null || bond.DURATION === undefined || bond.DURATION === 0) {
@@ -139,7 +208,15 @@ export const ComparisonTable: React.FC = () => {
   };
 
   // Calculate modified duration in years
+  // Modified Duration is only applicable for fixed coupon bonds without embedded options
+  // According to financial theory, modified duration directly estimates percentage price change
+  // per 100 basis points change in yield, but only for bonds without embedded options
   const calculateModifiedDuration = (bond: BondListItem): number | null => {
+    // Check if modified duration is applicable for this bond type
+    if (!isModifiedDurationApplicable(bond)) {
+      return null;
+    }
+    
     if (bond.DURATION === null || bond.DURATION === undefined || bond.DURATION === 0) {
       return null;
     }
@@ -148,6 +225,7 @@ export const ComparisonTable: React.FC = () => {
     const durationYears = bond.DURATION / 365;
     
     // Modified Duration = D / (1 + YTM/100)
+    // Where D is Macaulay duration in years
     if (bond.YIELDATPREVWAPRICE === null || bond.YIELDATPREVWAPRICE === undefined) {
       return durationYears;
     }
@@ -158,22 +236,152 @@ export const ComparisonTable: React.FC = () => {
     return modifiedDuration;
   };
 
-  // Calculate price change for -1% rate change
-  const calculatePriceChange = (bond: BondListItem): number | null => {
+  // Calculate convexity for fixed coupon bonds
+  // Convexity measures the sensitivity of duration to changes in yield
+  // Only applicable for fixed coupon bonds without embedded options
+  const calculateConvexity = (bond: BondListItem): number | null => {
+    // Check if convexity is applicable for this bond type
+    if (!isModifiedDurationApplicable(bond)) {
+      return null;
+    }
+
+    // Required inputs
+    const faceValue = bond.FACEVALUE;
+    const marketPricePct = bond.PREVPRICE;
+    const couponRate = bond.COUPONPERCENT;
+    const yearsToMaturity = calculateYearsToMaturity(bond.MATDATE);
+    const frequency = calculateCouponFrequency(bond.COUPONPERIOD);
+    const ytmAnnual = bond.YIELDATPREVWAPRICE;
+    const accruedInterest = bond.ACCRUEDINT ?? 0;
+
+    // Validate required inputs
+    if (
+      faceValue === null || faceValue <= 0 ||
+      marketPricePct === null || marketPricePct <= 0 ||
+      couponRate === null || couponRate < 0 ||
+      yearsToMaturity === null || yearsToMaturity <= 0 ||
+      frequency === null || frequency <= 0 ||
+      ytmAnnual === null || ytmAnnual < 0
+    ) {
+      return null;
+    }
+
+    // Step 1: Calculate Dirty Price
+    // Dirty_Price = (face_value * market_price_pct / 100) + accrued_interest
+    const dirtyPrice = (faceValue * marketPricePct / 100) + accruedInterest;
+
+    if (dirtyPrice <= 0) {
+      return null;
+    }
+
+    // Step 2: Calculate rate per period
+    // Ставка за период (y) = ytm_annual / frequency
+    const ytmDecimal = ytmAnnual / 100;
+    const y = ytmDecimal / frequency;
+
+    // Step 3: Calculate total number of periods
+    // Общее количество периодов (n) = years_to_maturity * frequency
+    const n = Math.ceil(yearsToMaturity * frequency); // Round up to include all periods
+
+    // Step 4: Calculate coupon payment per period
+    // Размер купона = (face_value * coupon_rate) / frequency
+    const couponRateDecimal = couponRate / 100;
+    const couponPayment = (faceValue * couponRateDecimal) / frequency;
+
+    // Step 5: Loop through all coupon periods and calculate convexity sum
+    let sum = 0;
+    for (let t = 1; t <= n; t++) {
+      // Calculate Cash Flow (CF)
+      // CF последнего периода = Купон + Номинал. Остальные CF = только Купон
+      const cf = t === n ? couponPayment + faceValue : couponPayment;
+
+      // Calculate discount factor: (1 + y)^t
+      const discountFactor = Math.pow(1 + y, t);
+
+      // Calculate term: (CF / (1 + y)^t) * (t^2 + t)
+      const term = (cf / discountFactor) * (t * t + t);
+      sum += term;
+    }
+
+    // Step 6: Calculate final Convexity
+    // Convexity = (Сумма слагаемых) / (Dirty_Price * (1 + y)^2 * frequency^2)
+    const convexity = sum / (dirtyPrice * Math.pow(1 + y, 2) * frequency * frequency);
+
+    return convexity;
+  };
+
+  // Calculate price change for two scenarios: up_shock (+1%) and down_shock (-1%)
+  // Formula: ΔP% = -(MD × dy) + (0.5 × Convexity × dy²)
+  // Returns an object with upShock (for +1% rate change) and downShock (for -1% rate change)
+  // This calculation is only valid for bonds where modified duration is applicable
+  // (fixed coupon bonds without embedded options)
+  const calculatePriceChange = (bond: BondListItem): { upShock: number; downShock: number } | null => {
+    // Check if modified duration is applicable for this bond type
+    if (!isModifiedDurationApplicable(bond)) {
+      return null;
+    }
+    
     const md = calculateModifiedDuration(bond);
     if (md === null) return null;
     
-    // PriceChangePercent = MD * 1 (where 1 = 1% change)
-    return md * 1;
+    // Get convexity value
+    const convexity = calculateConvexity(bond);
+    if (convexity === null) {
+      // If convexity cannot be calculated, fall back to duration-only approximation
+      // For up_shock (dy = 0.01): -(MD * 0.01) = -MD * 0.01
+      // For down_shock (dy = -0.01): -(MD * -0.01) = MD * 0.01
+      const upShock = -md * 0.01 * 100;  // Negative (loss) when rates increase
+      const downShock = md * 0.01 * 100; // Positive (gain) when rates decrease
+      return { upShock, downShock };
+    }
+    
+    // Calculate price change for up_shock: dy = 0.01 (+1% rate change)
+    // Formula: -(MD × 0.01) + (0.5 × Convexity × (0.01)²)
+    const dyUp = 0.01;
+    const linearPartUp = -(md * dyUp);
+    const convexityAdjustmentUp = 0.5 * convexity * (dyUp * dyUp);
+    const upShock = (linearPartUp + convexityAdjustmentUp) * 100; // Negative (loss)
+    
+    // Calculate price change for down_shock: dy = -0.01 (-1% rate change)
+    // Formula: -(MD × -0.01) + (0.5 × Convexity × (-0.01)²) = (MD × 0.01) + (0.5 × Convexity × 0.0001)
+    const dyDown = -0.01;
+    const linearPartDown = -(md * dyDown);
+    const convexityAdjustmentDown = 0.5 * convexity * (dyDown * dyDown);
+    const downShock = (linearPartDown + convexityAdjustmentDown) * 100; // Positive (gain)
+    
+    return { upShock, downShock };
   };
 
-  // Format price change as "+X,XX%"
-  const formatPriceChange = (value: number | null): string => {
+  // Format convexity value
+  const formatConvexity = (value: number | null): string => {
     if (value === null || value === undefined || isNaN(value)) return '—';
     
-    const rounded = Math.round(value * 100) / 100;
-    const sign = rounded >= 0 ? '+' : '';
-    return `${sign}${rounded.toFixed(2)}%`;
+    // Round to 2 decimal places
+    return value.toFixed(2);
+  };
+
+  // Format price change as "{убыток}% / {прибыль}%"
+  // Shows two scenarios: up_shock (loss when rates increase) and down_shock (gain when rates decrease)
+  const formatPriceChange = (value: { upShock: number; downShock: number } | null): string => {
+    if (value === null || value === undefined) return '—';
+    
+    // Round both values to 2 decimal places
+    const upShockRounded = Math.round(value.upShock * 100) / 100;
+    const downShockRounded = Math.round(value.downShock * 100) / 100;
+    
+    // Format upShock (should be negative - loss when rates increase)
+    // Always show with minus sign (if somehow positive, show as negative)
+    const upShockStr = upShockRounded < 0 
+      ? `${upShockRounded.toFixed(2)}%` 
+      : `-${Math.abs(upShockRounded).toFixed(2)}%`;
+    
+    // Format downShock (should be positive - gain when rates decrease)
+    // Always show with plus sign if positive
+    const downShockStr = downShockRounded > 0 
+      ? `+${downShockRounded.toFixed(2)}%` 
+      : `${downShockRounded.toFixed(2)}%`;
+    
+    return `${upShockStr} / ${downShockStr}`;
   };
 
   // Get color for spread value (positive = green, negative = red/gray)
@@ -262,6 +470,8 @@ export const ComparisonTable: React.FC = () => {
           ? formatNumber(duration, 2)
           : '—';
         
+        const convexity = formatConvexity(calculateConvexity(bond));
+        
         const priceChange = formatPriceChange(calculatePriceChange(bond));
         
         return {
@@ -274,8 +484,10 @@ export const ComparisonTable: React.FC = () => {
           couponToPrice: couponToPriceStr,
           regularDuration: regularDurationStr,
           duration: durationStr,
+          convexity,
           priceChange,
           spread: '—',
+          zSpread: '—',
           secid: bond.SECID,
         };
       });
@@ -312,17 +524,33 @@ export const ComparisonTable: React.FC = () => {
         ? formatNumber(duration, 2)
         : '—';
       
+      const convexity = formatConvexity(calculateConvexity(bond));
+      
       const priceChange = formatPriceChange(calculatePriceChange(bond));
 
-      // Calculate spread
-      const horizon = calculateYearsToMaturity(bond.MATDATE);
+      // Calculate spread (only for fixed coupon bonds)
+      // Используем дюрацию Маколея вместо срока до погашения для более точного сравнения
+      // с доходностью КБД, так как "вес" денежных потоков распределен по всему периоду
       let spreadStr = '—';
-      
-      if (horizon !== null && horizon > 0) {
-        const zeroCurveYield = interpolateZeroCurveYield(yieldCurveMap, horizon);
-        if (zeroCurveYield !== null) {
-          const spread = calculateSpread(bond.YIELDATPREVWAPRICE, zeroCurveYield);
-          spreadStr = formatSpread(spread);
+      if (bond.BONDTYPE43 === 'Фикс с известным купоном') {
+        const horizon = calculateRegularDuration(bond); // Используем дюрацию Маколея вместо срока до погашения
+        
+        if (horizon !== null && horizon > 0) {
+          const zeroCurveYield = interpolateZeroCurveYield(yieldCurveMap, horizon);
+          if (zeroCurveYield !== null) {
+            const spread = calculateSpread(bond.YIELDATPREVWAPRICE, zeroCurveYield);
+            spreadStr = formatSpread(spread);
+          }
+        }
+      }
+
+      // Calculate Z-spread (zero-coupon spread) for fixed coupon bonds
+      let zSpreadStr = '—';
+      if (bond.BONDTYPE43 === 'Фикс с известным купоном') {
+        const coupons = couponsData.get(bond.SECID);
+        if (coupons && coupons.length > 0) {
+          const zSpread = calculateZSpread(bond, coupons, zerocuponData);
+          zSpreadStr = formatZSpread(zSpread);
         }
       }
       
@@ -336,12 +564,14 @@ export const ComparisonTable: React.FC = () => {
         couponToPrice: couponToPriceStr,
         regularDuration: regularDurationStr,
         duration: durationStr,
+        convexity,
         priceChange,
         spread: spreadStr,
+        zSpread: zSpreadStr,
         secid: bond.SECID,
       };
     });
-  }, [comparisonBonds, zerocuponData]);
+  }, [comparisonBonds, zerocuponData, couponsData]);
 
   // Custom header component with Material-UI Tooltip (same as PortfolioTable)
   const CustomHeaderWithTooltip = React.memo((params: IHeaderParams) => {
@@ -417,13 +647,13 @@ export const ComparisonTable: React.FC = () => {
       <Tooltip
         title={
           <Box sx={{ p: 0.5 }}>
-            <Typography variant="body2" sx={{ mb: 1 }}>
-              Показывает отклонение доходности облигации от расчетной рыночной доходности сопоставимых выпусков (по сроку до погашения и кредитному качеству).
+            <Typography variant="body2">
+              Показывает отклонение доходности облигации от расчетной рыночной доходности сопоставимых выпусков (по дюрации Маколея и кредитному качеству). Использование дюрации вместо срока до погашения обеспечивает более точное сравнение, так как учитывает распределение "веса" денежных потоков по всему периоду.
             </Typography>
-            <Typography variant="body2" sx={{ mb: 1 }}>
+            <Typography variant="body2">
               <strong>Положительное значение</strong> — облигация предлагает доходность выше рыночной нормы: рынок закладывает дополнительную премию, выпуск выглядит относительно недооценённым.
             </Typography>
-            <Typography variant="body2" sx={{ mb: 1 }}>
+            <Typography variant="body2">
               <strong>Отрицательное значение</strong> — доходность ниже рыночной нормы: премия отсутствует, выпуск выглядит относительно переоценённым.
             </Typography>
             <Typography variant="body2">
@@ -471,6 +701,415 @@ export const ComparisonTable: React.FC = () => {
   });
 
   SpreadHeaderWithTooltip.displayName = 'SpreadHeaderWithTooltip';
+
+  // Custom header component with tooltip for Z-spread column (with special content)
+  const ZSpreadHeaderWithTooltip = React.memo((_params: IHeaderParams) => {
+    return (
+      <Tooltip
+        title={
+          <Box sx={{ p: 0.5 }}>
+            <Typography variant="body2">
+              Этот показатель показывает, насколько доходность облигации выше или ниже рыночной нормы для её сроков выплат.
+            </Typography>
+            <Typography variant="body2">
+              <strong>Как это считается:</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              Все купоны и номинал облигации сравниваются с доходностями по кривой бескупонной доходности.
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              Разница отражает премию за риск и ликвидность.
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 1 }}>
+              <strong>🔍 Как интерпретировать значение</strong>
+            </Typography>
+            <Typography variant="body2">
+              <strong>Положительное значение</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              Облигация даёт доходность выше рыночной нормы.
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              Возможна недооценка, инвестор получает дополнительную премию.
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 1 }}>
+              <strong>Отрицательное значение</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              Облигация торгуется дороже рынка.
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              Обычно это надёжные или высоколиквидные бумаги.
+            </Typography>
+            <Typography variant="body2">
+              <strong>Около нуля</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              Цена близка к справедливой рыночной оценке.
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 1 }}>
+              <strong>✅ Как выбирать облигации</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              Сравнивайте облигации одного типа (сектор, надёжность, срок).
+            </Typography>
+            <Typography variant="body2">
+              <strong>При прочих равных:</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              • чем выше спред — тем лучше;
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              • одинаковый спред при большем сроке — предпочтительнее.
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              Очень высокий спред может означать повышенный риск — его нужно проверять.
+            </Typography>
+            <Typography variant="body2">
+              <strong>Практическое правило:</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              Предпочтение стоит отдавать облигациям с устойчивым положительным спредом по сравнению с аналогами.
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 1, pt: 1, borderTop: '1px solid rgba(0, 0, 0, 0.12)' }}>
+              <strong>⚠️ Важно:</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              В то время как «Премия по рынку» оценивает выгоду облигации «на глазок» только по дате её финала, «Спред на основе кривой бескупонной доходности» проводит детальную проверку каждой купонной выплаты, показывая максимально точную и честную доходность, очищенную от рыночных искажений.
+            </Typography>
+          </Box>
+        }
+        arrow
+        placement="top"
+        enterDelay={300}
+        leaveDelay={0}
+        slotProps={{
+          tooltip: {
+            sx: {
+              maxWidth: 500,
+              bgcolor: 'rgba(255, 255, 255, 0.98)',
+              color: 'rgba(0, 0, 0, 0.87)',
+              fontSize: '13px',
+              lineHeight: 1.5,
+              padding: '12px 16px',
+              borderRadius: '8px',
+              boxShadow: '0px 3px 5px -1px rgba(0, 0, 0, 0.2), 0px 6px 10px 0px rgba(0, 0, 0, 0.14), 0px 1px 18px 0px rgba(0, 0, 0, 0.12)',
+              border: '1px solid rgba(0, 0, 0, 0.12)',
+            },
+          },
+        }}
+      >
+        <div 
+          className="ag-header-cell-label" 
+          style={{ 
+            width: '100%', 
+            height: '100%', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center',
+            cursor: 'help',
+            gap: '4px',
+          }}
+        >
+          <span>Спред доходности на основе кривой бескупонной доходности</span>
+          <HelpOutlineIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+        </div>
+      </Tooltip>
+    );
+  });
+
+  ZSpreadHeaderWithTooltip.displayName = 'ZSpreadHeaderWithTooltip';
+
+  // Custom header component with tooltip for modified duration column (with special content)
+  const ModifiedDurationHeaderWithTooltip = React.memo((_params: IHeaderParams) => {
+    return (
+      <Tooltip
+        title={
+          <Box sx={{ p: 0.5 }}>
+            <Typography variant="body2">
+              Показывает, насколько изменится цена облигации при изменении рыночной ставки.
+            </Typography>
+            <Typography variant="body2">
+              <strong>Проще:</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              если ставки вырастут или снизятся на 1%, цена облигации изменится примерно на значение дюрации в процентах.
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 1 }}>
+              <strong>🔍 Как интерпретировать</strong>
+            </Typography>
+            <Typography variant="body2">
+              <strong>Дюрация 1,5</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              → при изменении ставки на 1% цена изменится примерно на 1,5%.
+            </Typography>
+            <Typography variant="body2">
+              <strong>Чем выше дюрация, тем:</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              • сильнее колеблется цена;
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              • выше процентный риск.
+            </Typography>
+            <Typography variant="body2">
+              <strong>Чем ниже дюрация, тем:</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              • стабильнее цена;
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              • ниже чувствительность к ставкам.
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 1 }}>
+              <strong>✅ Как использовать</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              • Для консервативных инвестиций выбирают облигации с низкой дюрацией.
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              • Для поиска повышенной доходности допустима более высокая дюрация.
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              • При сравнении облигаций одинаковый спред при меньшей дюрации — предпочтительнее.
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 1 }}>
+              <strong>Важно:</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              Модифицированная дюрация учитывает только изменение ставок и не отражает кредитный риск эмитента.
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 1, pt: 1, borderTop: '1px solid rgba(0, 0, 0, 0.12)' }}>
+              Модифицированная дюрация рассчитывается только для облигаций с фиксированным купоном (тип "Фикс с известным купоном") без встроенных опционов (колл и пут опционов). Для других типов облигаций значение не рассчитывается и отображается как "—".
+            </Typography>
+          </Box>
+        }
+        arrow
+        placement="top"
+        enterDelay={300}
+        leaveDelay={0}
+        slotProps={{
+          tooltip: {
+            sx: {
+              maxWidth: 500,
+              bgcolor: 'rgba(255, 255, 255, 0.98)',
+              color: 'rgba(0, 0, 0, 0.87)',
+              fontSize: '13px',
+              lineHeight: 1.5,
+              padding: '12px 16px',
+              borderRadius: '8px',
+              boxShadow: '0px 3px 5px -1px rgba(0, 0, 0, 0.2), 0px 6px 10px 0px rgba(0, 0, 0, 0.14), 0px 1px 18px 0px rgba(0, 0, 0, 0.12)',
+              border: '1px solid rgba(0, 0, 0, 0.12)',
+            },
+          },
+        }}
+      >
+        <div 
+          className="ag-header-cell-label" 
+          style={{ 
+            width: '100%', 
+            height: '100%', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center',
+            cursor: 'help',
+            gap: '4px',
+          }}
+        >
+          <span>Модифицированная дюрация</span>
+          <HelpOutlineIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+        </div>
+      </Tooltip>
+    );
+  });
+
+  ModifiedDurationHeaderWithTooltip.displayName = 'ModifiedDurationHeaderWithTooltip';
+
+  // Custom header component with tooltip for price change column (with special content)
+  const PriceChangeHeaderWithTooltip = React.memo((_params: IHeaderParams) => {
+    return (
+      <Tooltip
+        title={
+          <Box sx={{ p: 0.5 }}>
+            <Typography variant="body2">
+              <strong>О чем говорит этот показатель?</strong> Этот столбец моделирует «стресс-тест» для вашей облигации. Он показывает, как изменится рыночная цена бумаги, если Центральный Банк или рынок изменят процентные ставки ровно на 1% (100 базисных пунктов) в ту или иную сторону.
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 1 }}>
+              <strong>В чем секрет «двойного» значения (Эффект выпуклости):</strong> Если бы мы использовали только обычную дюрацию, цена при росте ставки падала бы ровно на столько же, на сколько росла бы при ее падении (например, -5.00% / +5.00%). Но реальные облигации ведут себя иначе — их график цены напоминает дугу, а не прямую линию.
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 1 }}>
+              Этот эффект называется выпуклостью (Convexity). Он создает полезную для инвестора асимметрию:
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 1 }}>
+              <strong>При росте ставок (Первое число):</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              Выпуклость работает как «подушка безопасности». Она замедляет падение цены, делая ваш убыток меньше, чем предсказывает простая математика дюрации.
+            </Typography>
+            <Typography variant="body2">
+              <strong>При падении ставок (Второе число):</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              Выпуклость работает как «ускоритель». Она подталкивает цену вверх сильнее, позволяя вам заработать больше.
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 1 }}>
+              <strong>✅ Как анализировать эти данные при выборе облигаций:</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 1 }}>
+              <strong>🔍 Сравните разницу:</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              Посмотрите на разрыв между падением и ростом. Например, если у одной облигации прогноз -4.90% / +5.10%, а у другой -4.70% / +5.30%, то вторая облигация лучше. Она более «гибкая»: меньше теряет в плохие времена и больше приносит в хорошие.
+            </Typography>
+            <Typography variant="body2">
+              <strong>⚠️ Оценивайте риск:</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              Первое число (отрицательное) — это ваш риск «здесь и сейчас». Если вы ждете повышения ставки ЦБ, выбирайте бумаги, где это число минимально.
+            </Typography>
+            <Typography variant="body2">
+              <strong>💰 Ищите «бонус»:</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              Разница между этими числами — это ваша бесплатная страховка. Чем выше выпуклость облигации, тем больше этот «бонус» за лояльность к риску.
+            </Typography>
+          </Box>
+        }
+        arrow
+        placement="top"
+        enterDelay={300}
+        leaveDelay={0}
+        slotProps={{
+          tooltip: {
+            sx: {
+              maxWidth: 550,
+              bgcolor: 'rgba(255, 255, 255, 0.98)',
+              color: 'rgba(0, 0, 0, 0.87)',
+              fontSize: '13px',
+              lineHeight: 1.5,
+              padding: '12px 16px',
+              borderRadius: '8px',
+              boxShadow: '0px 3px 5px -1px rgba(0, 0, 0, 0.2), 0px 6px 10px 0px rgba(0, 0, 0, 0.14), 0px 1px 18px 0px rgba(0, 0, 0, 0.12)',
+              border: '1px solid rgba(0, 0, 0, 0.12)',
+            },
+          },
+        }}
+      >
+        <div 
+          className="ag-header-cell-label" 
+          style={{ 
+            width: '100%', 
+            height: '100%', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center',
+            cursor: 'help',
+            gap: '4px',
+          }}
+        >
+          <span>Изменение цены при росте / снижении ставки на 1%</span>
+          <HelpOutlineIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+        </div>
+      </Tooltip>
+    );
+  });
+
+  PriceChangeHeaderWithTooltip.displayName = 'PriceChangeHeaderWithTooltip';
+
+  // Custom header component with tooltip for convexity column (with special content)
+  const ConvexityHeaderWithTooltip = React.memo((_params: IHeaderParams) => {
+    return (
+      <Tooltip
+        title={
+          <Box sx={{ p: 0.5 }}>
+            <Typography variant="body2">
+              Выпуклость (Convexity) измеряет нелинейность изменения цены облигации при изменении доходности.
+            </Typography>
+            <Typography variant="body2">
+              <strong>Проще:</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              Выпуклость показывает, насколько точна оценка изменения цены, рассчитанная с помощью модифицированной дюрации.
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 1 }}>
+              <strong>🔍 Как интерпретировать</strong>
+            </Typography>
+            <Typography variant="body2">
+              <strong>Положительная выпуклость</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              При снижении ставок цена растет больше, чем предсказывает дюрация. При росте ставок цена падает меньше, чем предсказывает дюрация. Это выгодно для инвестора.
+            </Typography>
+            <Typography variant="body2">
+              <strong>Чем выше выпуклость, тем:</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              • больше "защита" от роста ставок (цена падает медленнее);
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              • больше выгода от снижения ставок (цена растет быстрее).
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 1 }}>
+              <strong>✅ Как использовать</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              • При сравнении облигаций с одинаковой дюрацией, выше выпуклость — лучше.
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              • Выпуклость особенно важна при высокой волатильности процентных ставок.
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              • Выпуклость учитывается вместе с модифицированной дюрацией для более точной оценки риска.
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 1 }}>
+              <strong>Важно:</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              Выпуклость рассчитывается только для облигаций с фиксированным купоном (тип "Фикс с известным купоном") без встроенных опционов. Для других типов облигаций значение не рассчитывается и отображается как "—".
+            </Typography>
+          </Box>
+        }
+        arrow
+        placement="top"
+        enterDelay={300}
+        leaveDelay={0}
+        slotProps={{
+          tooltip: {
+            sx: {
+              maxWidth: 500,
+              bgcolor: 'rgba(255, 255, 255, 0.98)',
+              color: 'rgba(0, 0, 0, 0.87)',
+              fontSize: '13px',
+              lineHeight: 1.5,
+              padding: '12px 16px',
+              borderRadius: '8px',
+              boxShadow: '0px 3px 5px -1px rgba(0, 0, 0, 0.2), 0px 6px 10px 0px rgba(0, 0, 0, 0.14), 0px 1px 18px 0px rgba(0, 0, 0, 0.12)',
+              border: '1px solid rgba(0, 0, 0, 0.12)',
+            },
+          },
+        }}
+      >
+        <div 
+          className="ag-header-cell-label" 
+          style={{ 
+            width: '100%', 
+            height: '100%', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center',
+            cursor: 'help',
+            gap: '4px',
+          }}
+        >
+          <span>Выпуклость</span>
+          <HelpOutlineIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+        </div>
+      </Tooltip>
+    );
+  });
+
+  ConvexityHeaderWithTooltip.displayName = 'ConvexityHeaderWithTooltip';
 
   // Column definitions for AG Grid
   const columnDefs: ColDef[] = useMemo(() => {
@@ -535,6 +1174,83 @@ export const ComparisonTable: React.FC = () => {
           }}
         >
           {spread}
+        </Box>
+      );
+    };
+
+    // Price change cell renderer with color highlighting
+    // First number (loss when rates increase) - pale red, second number (gain when rates decrease) - bright green
+    const PriceChangeCellRenderer = (params: ICellRendererParams<ComparisonRow>) => {
+      const priceChange = params.value || '—';
+      
+      if (priceChange === '—' || !priceChange.includes('/')) {
+        return (
+          <Box
+            sx={{
+              width: '100%',
+              textAlign: 'center',
+            }}
+          >
+            {priceChange}
+          </Box>
+        );
+      }
+      
+      // Parse the string format: "-X.XX% / +Y.YY%"
+      const parts = priceChange.split(' / ');
+      if (parts.length !== 2) {
+        return (
+          <Box
+            sx={{
+              width: '100%',
+              textAlign: 'center',
+            }}
+          >
+            {priceChange}
+          </Box>
+        );
+      }
+      
+      const firstPart = parts[0].trim(); // Loss (negative) - pale red
+      const secondPart = parts[1].trim(); // Gain (positive) - bright green
+      
+      return (
+        <Box
+          sx={{
+            width: '100%',
+            textAlign: 'center',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '4px',
+          }}
+        >
+          <Box
+            component="span"
+            sx={{
+              color: '#F44336', // Bright red (ярко-красный)
+              fontWeight: 500,
+            }}
+          >
+            {firstPart}
+          </Box>
+          <Box
+            component="span"
+            sx={{
+              color: 'text.secondary',
+            }}
+          >
+            /
+          </Box>
+          <Box
+            component="span"
+            sx={{
+              color: '#4CAF50', // Bright green (ярко-зеленый)
+              fontWeight: 600,
+            }}
+          >
+            {secondPart}
+          </Box>
         </Box>
       );
     };
@@ -618,16 +1334,26 @@ export const ComparisonTable: React.FC = () => {
         minWidth: 130,
         cellStyle: { textAlign: 'center' },
         headerClass: 'ag-header-center',
-        headerComponent: CustomHeaderWithTooltip,
+        headerComponent: ModifiedDurationHeaderWithTooltip,
+        autoHeaderHeight: true,
+      },
+      {
+        field: 'convexity',
+        headerName: 'Выпуклость',
+        minWidth: 120,
+        cellStyle: { textAlign: 'center' },
+        headerClass: 'ag-header-center',
+        headerComponent: ConvexityHeaderWithTooltip,
         autoHeaderHeight: true,
       },
       {
         field: 'priceChange',
-        headerName: 'Изменение цены при изменении ставки на 1%',
-        minWidth: 180,
+        headerName: 'Изменение цены при росте / снижении ставки на 1%',
+        minWidth: 240,
+        cellRenderer: PriceChangeCellRenderer,
         cellStyle: { textAlign: 'center' },
         headerClass: 'ag-header-center',
-        headerComponent: CustomHeaderWithTooltip,
+        headerComponent: PriceChangeHeaderWithTooltip,
         autoHeaderHeight: true,
       },
       {
@@ -637,6 +1363,18 @@ export const ComparisonTable: React.FC = () => {
         cellRenderer: SpreadCellRenderer,
         cellStyle: { textAlign: 'center' },
         headerComponent: SpreadHeaderWithTooltip,
+        headerClass: 'ag-header-center',
+        autoHeaderHeight: true,
+        sortable: false,
+        filter: false,
+      },
+      {
+        field: 'zSpread',
+        headerName: 'Спред доходности на основе кривой бескупонной доходности',
+        minWidth: 200,
+        cellRenderer: SpreadCellRenderer,
+        cellStyle: { textAlign: 'center' },
+        headerComponent: ZSpreadHeaderWithTooltip,
         headerClass: 'ag-header-center',
         autoHeaderHeight: true,
         sortable: false,
@@ -766,8 +1504,10 @@ export const ComparisonTable: React.FC = () => {
       'Доходность купона к текущей цене (%)',
       'Дюрация',
       'Модифицированная дюрация',
-      'Изменение цены при изменении ставки на 1%',
+      'Выпуклость',
+      'Изменение цены при росте / снижении ставки на 1%',
       'Премии и отклонения по рынку',
+      'Спред доходности на основе кривой бескупонной доходности',
     ];
     
     // Calculate column widths for alignment
@@ -784,8 +1524,10 @@ export const ComparisonTable: React.FC = () => {
           row.couponToPrice,
           row.regularDuration,
           row.duration,
+          row.convexity,
           row.priceChange,
           row.spread,
+          row.zSpread,
         ];
         const cellValue = values[colIndex] || '';
         if (cellValue.length > maxWidth) {
@@ -815,8 +1557,10 @@ export const ComparisonTable: React.FC = () => {
         row.couponToPrice, // Доходность купона к текущей цене (%)
         row.regularDuration, // Дюрация
         row.duration, // Модифицированная дюрация
-        row.priceChange, // Изменение цены при изменении ставки на 1%
+        row.convexity, // Выпуклость
+        row.priceChange, // Изменение цены при росте / снижении ставки на 1%
         row.spread, // Премии и отклонения по рынку
+        row.zSpread, // Спред доходности на основе кривой бескупонной доходности
       ];
       return '| ' + values
         .map((value, i) => (value || '—').padEnd(colWidths[i]))
@@ -871,8 +1615,10 @@ export const ComparisonTable: React.FC = () => {
       'Доходность купона к текущей цене (%)',
       'Дюрация',
       'Модифицированная дюрация',
-      'Изменение цены при изменении ставки на 1%',
+      'Выпуклость',
+      'Изменение цены при росте / снижении ставки на 1%',
       'Премии и отклонения по рынку',
+      'Спред доходности на основе кривой бескупонной доходности',
     ];
 
     // Create CSV rows
@@ -888,8 +1634,10 @@ export const ComparisonTable: React.FC = () => {
         escapeCsvValue(row.couponToPrice),
         escapeCsvValue(row.regularDuration),
         escapeCsvValue(row.duration),
+        escapeCsvValue(row.convexity),
         escapeCsvValue(row.priceChange),
         escapeCsvValue(row.spread),
+        escapeCsvValue(row.zSpread),
       ].join(';')),
     ];
 
@@ -966,7 +1714,7 @@ export const ComparisonTable: React.FC = () => {
     );
   }
 
-  if (isLoadingZerocupon) {
+  if (isLoadingZerocupon || isLoadingCoupons) {
     return (
       <Card sx={{ 
         height: '100%', 
@@ -978,7 +1726,7 @@ export const ComparisonTable: React.FC = () => {
       }}>
         <CardContent sx={{ p: 0, '&:last-child': { pb: 0 }, flexGrow: 1, display: 'flex', flexDirection: 'column', width: '100%' }}>
           <Box sx={{ flexGrow: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <LoadingSpinner message="Загрузка данных кривой бескупонной доходности..." />
+            <LoadingSpinner message={isLoadingZerocupon ? "Загрузка данных кривой бескупонной доходности..." : "Загрузка данных о купонах..."} />
           </Box>
         </CardContent>
       </Card>
@@ -1191,7 +1939,7 @@ export const ComparisonTable: React.FC = () => {
                 textAlign: 'left !important',
               },
               // Ensure numeric columns are centered
-              '& .ag-cell[col-id="ticker"], & .ag-cell[col-id="maturity"], & .ag-cell[col-id="coupon"], & .ag-cell[col-id="price"], & .ag-cell[col-id="ytm"], & .ag-cell[col-id="couponToPrice"], & .ag-cell[col-id="regularDuration"], & .ag-cell[col-id="duration"], & .ag-cell[col-id="priceChange"], & .ag-cell[col-id="spread"], & .ag-cell[col-id="actions"]': {
+              '& .ag-cell[col-id="ticker"], & .ag-cell[col-id="maturity"], & .ag-cell[col-id="coupon"], & .ag-cell[col-id="price"], & .ag-cell[col-id="ytm"], & .ag-cell[col-id="couponToPrice"], & .ag-cell[col-id="regularDuration"], & .ag-cell[col-id="duration"], & .ag-cell[col-id="convexity"], & .ag-cell[col-id="priceChange"], & .ag-cell[col-id="spread"], & .ag-cell[col-id="zSpread"], & .ag-cell[col-id="actions"]': {
                 justifyContent: 'center',
                 textAlign: 'center !important',
               },
