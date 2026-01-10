@@ -18,9 +18,17 @@ import {
  * where:
  * - CF_i is coupon payment at period i
  * - z_i is spot rate for period i
- * - t_i is time to payment i in years
+ * - t_i is time to payment i in years (calculated as days difference / 365)
  * - M is principal (face value)
  * 
+ * Only future coupon payments are included (coupondate > currentDate).
+ * Past coupons are completely excluded from calculation.
+ * Face value is added only to the last future payment.
+ * 
+ * @param coupons - Array of coupon payments
+ * @param faceValue - Face value of the bond
+ * @param currentDate - Current date (analysis date)
+ * @param yieldCurveMap - Yield curve map for zero-coupon rates
  * @returns Theoretical clean price (without accrued interest) in absolute value
  */
 export const calculateTheoreticalBondPrice = (
@@ -31,17 +39,38 @@ export const calculateTheoreticalBondPrice = (
 ): number | null => {
   if (coupons.length === 0 || faceValue <= 0) return null;
 
+  // Normalize current date to start of day for accurate comparison
+  const currentDateNormalized = new Date(currentDate);
+  currentDateNormalized.setHours(0, 0, 0, 0);
+
+  // Filter coupons: only include future payments (date > currentDate)
+  const futureCoupons = coupons.filter(coupon => {
+    if (!coupon.coupondate) return false;
+    const couponDate = new Date(coupon.coupondate);
+    couponDate.setHours(0, 0, 0, 0);
+    return couponDate > currentDateNormalized;
+  });
+
+  if (futureCoupons.length === 0) return null;
+
+  // Sort future coupons by date to find the last one
+  const sortedFutureCoupons = [...futureCoupons].sort((a, b) => {
+    if (!a.coupondate || !b.coupondate) return 0;
+    return new Date(a.coupondate).getTime() - new Date(b.coupondate).getTime();
+  });
+
   let theoreticalPrice = 0;
 
-  // Process each coupon payment
-  for (const coupon of coupons) {
+  // Process each future coupon payment
+  for (let i = 0; i < sortedFutureCoupons.length; i++) {
+    const coupon = sortedFutureCoupons[i];
     if (!coupon.coupondate) continue;
 
     const couponDate = new Date(coupon.coupondate);
-    if (couponDate <= currentDate) continue; // Skip past coupons
+    couponDate.setHours(0, 0, 0, 0);
 
-    // Calculate time to coupon payment in years
-    const daysToCoupon = (couponDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24);
+    // Calculate time to coupon payment in years: difference in days / 365
+    const daysToCoupon = (couponDate.getTime() - currentDateNormalized.getTime()) / (1000 * 60 * 60 * 24);
     const yearsToCoupon = daysToCoupon / 365;
 
     if (yearsToCoupon <= 0) continue;
@@ -54,34 +83,15 @@ export const calculateTheoreticalBondPrice = (
     const couponValue = coupon.value_rub ?? coupon.value ?? 0;
     if (couponValue <= 0) continue;
 
+    // Check if this is the last future payment - add face value to it
+    const isLastPayment = i === sortedFutureCoupons.length - 1;
+    const totalPayment = couponValue + (isLastPayment ? faceValue : 0);
+
     // Discount coupon payment: CF / (1 + z)^t
     // Convert spot rate from percentage to decimal
     const spotRateDecimal = spotRate / 100;
-    const discountedCoupon = couponValue / Math.pow(1 + spotRateDecimal, yearsToCoupon);
-    theoreticalPrice += discountedCoupon;
-  }
-
-  // Add principal payment at maturity (use the last coupon date as maturity date)
-  // Sort coupons by date to find the last one
-  const sortedCoupons = [...coupons].sort((a, b) => {
-    if (!a.coupondate || !b.coupondate) return 0;
-    return new Date(a.coupondate).getTime() - new Date(b.coupondate).getTime();
-  });
-  
-  const lastCoupon = sortedCoupons[sortedCoupons.length - 1];
-  if (lastCoupon?.coupondate) {
-    const maturityDate = new Date(lastCoupon.coupondate);
-    const daysToMaturity = (maturityDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24);
-    const yearsToMaturity = daysToMaturity / 365;
-
-    if (yearsToMaturity > 0) {
-      const spotRate = interpolateZeroCurveYield(yieldCurveMap, yearsToMaturity);
-      if (spotRate === null) return null;
-
-      const spotRateDecimal = spotRate / 100;
-      const discountedPrincipal = faceValue / Math.pow(1 + spotRateDecimal, yearsToMaturity);
-      theoreticalPrice += discountedPrincipal;
-    }
+    const discountedPayment = totalPayment / Math.pow(1 + spotRateDecimal, yearsToCoupon);
+    theoreticalPrice += discountedPayment;
   }
 
   return theoreticalPrice;
@@ -96,10 +106,15 @@ export const calculateTheoreticalBondPrice = (
  * When using dirty price, all coupon payments are discounted in full.
  * The accrued interest is already included in the dirty price.
  * 
+ * Only future coupon payments are included (coupondate > currentDate).
+ * Past coupons are completely excluded from calculation.
+ * Face value is added only to the last future payment.
+ * Time to payment is calculated as (days difference) / 365.
+ * 
  * @param coupons - List of coupon payments
  * @param faceValue - Face value of the bond
  * @param currentPrice - Current bond price (dirty price including accrued interest)
- * @param currentDate - Current date
+ * @param currentDate - Current date (analysis date)
  * @param accruedInterest - Accrued interest (НКД) - used for reference only, not subtracted from coupons
  * @param initialGuess - Initial guess for YTM (default 5%)
  */
@@ -113,30 +128,44 @@ const calculateYTMFromPrice = (
 ): number | null => {
   if (coupons.length === 0 || faceValue <= 0 || currentPrice <= 0) return null;
 
-  const maxIterations = 100;
-  const tolerance = 1e-6;
-  let ytm = initialGuess;
+  // Normalize current date to start of day for accurate comparison
+  const currentDateNormalized = new Date(currentDate);
+  currentDateNormalized.setHours(0, 0, 0, 0);
 
-  // Sort coupons by date
-  const sortedCoupons = [...coupons].sort((a, b) => {
+  // Filter coupons: only include future payments (date > currentDate)
+  const futureCoupons = coupons.filter(coupon => {
+    if (!coupon.coupondate) return false;
+    const couponDate = new Date(coupon.coupondate);
+    couponDate.setHours(0, 0, 0, 0);
+    return couponDate > currentDateNormalized;
+  });
+
+  if (futureCoupons.length === 0) return null;
+
+  // Sort future coupons by date
+  const sortedFutureCoupons = [...futureCoupons].sort((a, b) => {
     if (!a.coupondate || !b.coupondate) return 0;
     return new Date(a.coupondate).getTime() - new Date(b.coupondate).getTime();
   });
+
+  const maxIterations = 100;
+  const tolerance = 1e-6;
+  let ytm = initialGuess;
 
   for (let i = 0; i < maxIterations; i++) {
     let price = 0;
     let priceDerivative = 0;
 
-    // Calculate price and its derivative
-    // When using dirty price, all coupon payments are discounted in full
-    // The buyer pays accrued interest upfront and receives full coupons later
-    for (const coupon of sortedCoupons) {
+    // Calculate price and its derivative using only future coupons
+    for (let j = 0; j < sortedFutureCoupons.length; j++) {
+      const coupon = sortedFutureCoupons[j];
       if (!coupon.coupondate) continue;
 
       const couponDate = new Date(coupon.coupondate);
-      if (couponDate <= currentDate) continue;
+      couponDate.setHours(0, 0, 0, 0);
 
-      const daysToCoupon = (couponDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24);
+      // Calculate time to coupon payment in years: difference in days / 365
+      const daysToCoupon = (couponDate.getTime() - currentDateNormalized.getTime()) / (1000 * 60 * 60 * 24);
       const yearsToCoupon = daysToCoupon / 365;
 
       if (yearsToCoupon <= 0) continue;
@@ -144,23 +173,13 @@ const calculateYTMFromPrice = (
       const couponValue = coupon.value_rub ?? coupon.value ?? 0;
       if (couponValue <= 0) continue;
 
+      // Check if this is the last future payment - add face value to it
+      const isLastPayment = j === sortedFutureCoupons.length - 1;
+      const totalPayment = couponValue + (isLastPayment ? faceValue : 0);
+
       const discountFactor = Math.pow(1 + ytm, yearsToCoupon);
-      price += couponValue / discountFactor;
-      priceDerivative -= (couponValue * yearsToCoupon) / (discountFactor * (1 + ytm));
-    }
-
-    // Add principal
-    const lastCoupon = sortedCoupons[sortedCoupons.length - 1];
-    if (lastCoupon?.coupondate) {
-      const maturityDate = new Date(lastCoupon.coupondate);
-      const daysToMaturity = (maturityDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24);
-      const yearsToMaturity = daysToMaturity / 365;
-
-      if (yearsToMaturity > 0) {
-        const discountFactor = Math.pow(1 + ytm, yearsToMaturity);
-        price += faceValue / discountFactor;
-        priceDerivative -= (faceValue * yearsToMaturity) / (discountFactor * (1 + ytm));
-      }
+      price += totalPayment / discountFactor;
+      priceDerivative -= (totalPayment * yearsToCoupon) / (discountFactor * (1 + ytm));
     }
 
     // Newton-Raphson iteration
@@ -191,14 +210,23 @@ const calculateYTMFromPrice = (
  * and compares it with the actual YTM
  * 
  * Both theoretical and market prices use dirty price (clean price + accrued interest)
- * to ensure consistent comparison
+ * to ensure consistent comparison.
  * 
- * Returns: Actual YTM - Theoretical YTM (in percentage points)
+ * Only future coupon payments are included in calculation (coupondate > currentDate).
+ * Past coupons are completely excluded. Face value is added only to the last future payment.
+ * Time to payment is calculated as (days difference) / 365.
+ * 
+ * @param bond - Bond data
+ * @param coupons - Array of coupon payments
+ * @param zerocuponData - Zero-coupon yield curve data
+ * @param currentDate - Current date (analysis date). If not provided, uses current date.
+ * @returns Actual YTM - Theoretical YTM (in percentage points)
  */
 export const calculateZSpread = (
   bond: BondListItem,
   coupons: Coupon[],
-  zerocuponData: ZerocuponRecord[]
+  zerocuponData: ZerocuponRecord[],
+  currentDate: Date = new Date()
 ): number | null => {
   // Only calculate for fixed coupon bonds
   if (bond.BONDTYPE43 !== 'Фикс с известным купоном') {
@@ -236,7 +264,7 @@ export const calculateZSpread = (
   const accruedInterest = bond.ACCRUEDINT ?? 0;
   
   // Calculate theoretical clean price using zero-coupon curve
-  const currentDate = new Date();
+  // Only future coupons are included (coupondate > currentDate)
   const theoreticalCleanPrice = calculateTheoreticalBondPrice(
     coupons,
     bond.FACEVALUE,
@@ -254,6 +282,7 @@ export const calculateZSpread = (
 
   // Calculate theoretical YTM from theoretical dirty price
   // The dirty price already includes accrued interest, so all coupons are discounted in full
+  // Only future coupons are included in calculation
   const theoreticalYTM = calculateYTMFromPrice(
     coupons,
     bond.FACEVALUE,

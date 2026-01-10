@@ -549,7 +549,9 @@ export const ComparisonTable: React.FC = () => {
       if (bond.BONDTYPE43 === 'Фикс с известным купоном') {
         const coupons = couponsData.get(bond.SECID);
         if (coupons && coupons.length > 0) {
-          const zSpread = calculateZSpread(bond, coupons, zerocuponData);
+          // Use current date as analysis date (only future coupons will be included)
+          const currentDate = new Date();
+          const zSpread = calculateZSpread(bond, coupons, zerocuponData, currentDate);
           zSpreadStr = formatZSpread(zSpread);
         }
       }

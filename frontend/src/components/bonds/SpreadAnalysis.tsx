@@ -15,6 +15,8 @@ import {
   MenuItem,
   FormControl,
   InputLabel,
+  Tabs,
+  Tab,
 } from '@mui/material';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import { fetchBonds } from '../../api/bonds';
@@ -35,6 +37,22 @@ import dayjs from 'dayjs';
 import type { BondListItem } from '../../types/bond';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { useFiltersStore } from '../../stores/filtersStore';
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Legend,
+  Tooltip as RechartsTooltip,
+  ScatterChart,
+  Scatter,
+  Cell,
+  LabelList,
+} from 'recharts';
+import { CHART_CONFIG } from '../../utils/constants';
+import * as regression from 'regression';
 
 // Register AG Grid modules
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -74,6 +92,7 @@ export const SpreadAnalysis: React.FC = () => {
   const gridRef = useRef<AgGridReact<ComparisonRow>>(null);
   const [headerHeight, setHeaderHeight] = useState<number | undefined>(undefined);
   const filters = useFiltersStore((state) => state.filters);
+  const [currentTab, setCurrentTab] = useState(0);
 
   // Load emitent list on mount
   useEffect(() => {
@@ -210,12 +229,21 @@ export const SpreadAnalysis: React.FC = () => {
     }
   };
 
+  // Check if bond has call or put options
+  // Bonds with options should be excluded from metric calculations
+  const hasOptions = (bond: BondListItem): boolean => {
+    // Check if bond has call option date or put option date
+    return (bond.CALLOPTIONDATE !== null && bond.CALLOPTIONDATE !== undefined && bond.CALLOPTIONDATE !== '') ||
+           (bond.PUTOPTIONDATE !== null && bond.PUTOPTIONDATE !== undefined && bond.PUTOPTIONDATE !== '');
+  };
+
   // Check if metrics are applicable for this bond
   // Metrics (modified duration, convexity, price change, spread, z-spread) are only applicable for:
   // Fixed coupon bonds with known coupon rate (BONDTYPE43 === "Фикс с известным купоном")
+  // AND without call or put options
   const isFixedCouponBond = (bond: BondListItem): boolean => {
-    // Check if bond type is "Фикс с известным купоном"
-    return bond.BONDTYPE43 === 'Фикс с известным купоном';
+    // Check if bond type is "Фикс с известным купоном" and has no options
+    return bond.BONDTYPE43 === 'Фикс с известным купоном' && !hasOptions(bond);
   };
 
   // Calculate regular duration in years
@@ -548,11 +576,11 @@ export const SpreadAnalysis: React.FC = () => {
       
       const priceChange = formatPriceChange(calculatePriceChange(bond));
 
-      // Calculate spread (only for fixed coupon bonds)
+      // Calculate spread (only for fixed coupon bonds without options)
       // Используем дюрацию Маколея вместо срока до погашения для более точного сравнения
       // с доходностью КБД, так как "вес" денежных потоков распределен по всему периоду
       let spreadStr = '—';
-      if (bond.BONDTYPE43 === 'Фикс с известным купоном') {
+      if (isFixedCouponBond(bond)) {
         const horizon = calculateRegularDuration(bond); // Используем дюрацию Маколея вместо срока до погашения
         
         if (horizon !== null && horizon > 0) {
@@ -564,12 +592,14 @@ export const SpreadAnalysis: React.FC = () => {
         }
       }
 
-      // Calculate Z-spread (zero-coupon spread) for fixed coupon bonds
+      // Calculate Z-spread (zero-coupon spread) for fixed coupon bonds without options
       let zSpreadStr = '—';
-      if (bond.BONDTYPE43 === 'Фикс с известным купоном') {
+      if (isFixedCouponBond(bond)) {
         const coupons = couponsData.get(bond.SECID);
         if (coupons && coupons.length > 0) {
-          const zSpread = calculateZSpread(bond, coupons, zerocuponData);
+          // Use current date as analysis date (only future coupons will be included)
+          const currentDate = new Date();
+          const zSpread = calculateZSpread(bond, coupons, zerocuponData, currentDate);
           zSpreadStr = formatZSpread(zSpread);
         }
       }
@@ -593,6 +623,94 @@ export const SpreadAnalysis: React.FC = () => {
     });
   }, [bonds, zerocuponData, couponsData]);
 
+  // Prepare chart data for spread curve with z-spread in basis points
+  const chartData = useMemo(() => {
+    if (comparisonData.length === 0) return [];
+
+    // Filter and prepare data: only bonds with valid z-spread and duration
+    const points = comparisonData
+      .filter(row => {
+        const duration = parseFloat(row.regularDuration);
+        const hasZSpread = row.zSpread && row.zSpread !== '—';
+        return hasZSpread && !isNaN(duration) && duration > 0;
+      })
+      .map(row => {
+        // Parse z-spread value (e.g., "+1.23%" or "-1.23%")
+        const zSpreadStr = row.zSpread.replace('%', '').replace('+', '').trim();
+        const zSpreadPercent = parseFloat(zSpreadStr);
+        
+        if (isNaN(zSpreadPercent)) {
+          return null;
+        }
+
+        // Convert z-spread from percentage to basis points (1% = 100 bps)
+        const zSpreadBps = zSpreadPercent * 100;
+        
+        const duration = parseFloat(row.regularDuration);
+
+        return {
+          duration,
+          zSpreadBps,
+          zSpreadPercent,
+          ticker: row.ticker,
+          name: row.name,
+          secid: row.secid,
+        };
+      })
+      .filter((point): point is NonNullable<typeof point> => point !== null)
+      .sort((a, b) => a.duration - b.duration); // Sort by duration
+
+    if (points.length === 0) return { points: [], trendLine: [], outliers: [] };
+
+    // Calculate trend line using polynomial regression (degree 2)
+    const regressionData = points.map(p => [p.duration, p.zSpreadBps] as [number, number]);
+    const result = regression.polynomial(regressionData, { order: 2 });
+
+    // Generate trend line points for visualization
+    const minDuration = Math.min(...points.map(p => p.duration));
+    const maxDuration = Math.max(...points.map(p => p.duration));
+    const step = (maxDuration - minDuration) / 100; // 100 points for smooth curve
+    
+    const trendLine = [];
+    for (let x = minDuration; x <= maxDuration; x += step) {
+      const y = result.predict(x)[1];
+      trendLine.push({ duration: x, zSpreadBps: y });
+    }
+
+    // Calculate outliers (points significantly above or below trend line)
+    const OUTLIER_THRESHOLD_BPS = 15; // 15 basis points threshold
+    const OUTLIER_THRESHOLD_PERCENT = 0.15; // 15% threshold (alternative)
+    
+    const outliers = points.map(point => {
+      const predictedBps = result.predict(point.duration)[1];
+      const residual = point.zSpreadBps - predictedBps;
+      const residualPercent = predictedBps !== 0 ? Math.abs(residual / predictedBps) : 0;
+      
+      // Outlier if residual > 15 bps OR > 15% of predicted value
+      const isPositiveOutlier = residual > OUTLIER_THRESHOLD_BPS || 
+                                (residualPercent > OUTLIER_THRESHOLD_PERCENT && residual > 0);
+      const isNegativeOutlier = residual < -OUTLIER_THRESHOLD_BPS || 
+                                (residualPercent > OUTLIER_THRESHOLD_PERCENT && residual < 0);
+      
+      return {
+        ...point,
+        predictedBps,
+        residual,
+        isPositiveOutlier,
+        isNegativeOutlier,
+        color: isPositiveOutlier ? CHART_CONFIG.COLORS.SUCCESS : // Green for undervalued
+               isNegativeOutlier ? CHART_CONFIG.COLORS.ERROR : // Red for overvalued
+               CHART_CONFIG.COLORS.PRIMARY, // Blue for normal
+      };
+    });
+
+    return {
+      points: outliers,
+      trendLine,
+      regression: result,
+    };
+  }, [comparisonData]);
+
   // Header components (same as ComparisonTable - simplified version)
   const CustomHeaderWithTooltip = React.memo((params: IHeaderParams) => {
     const displayName = params.displayName || '';
@@ -611,7 +729,7 @@ export const SpreadAnalysis: React.FC = () => {
 
   // Simplified header components (full versions would be same as ComparisonTable)
   const SpreadHeaderWithTooltip = React.memo((_params: IHeaderParams) => (
-    <Tooltip title="Премии и отклонения по рынку. Рассчитывается только для облигаций типа «Фикс с известным купоном» на основе кривой бескупонной доходности. Для остальных видов облигаций значение не рассчитывается и отображается как «—»." arrow placement="top" enterDelay={300} leaveDelay={0}
+    <Tooltip title="Премии и отклонения по рынку. Рассчитывается только для облигаций типа «Фикс с известным купоном» без колл или пут опционов на основе кривой бескупонной доходности. Для облигаций с опционами и остальных видов облигаций значение не рассчитывается и отображается как «—»." arrow placement="top" enterDelay={300} leaveDelay={0}
       slotProps={{ tooltip: { sx: { maxWidth: 400, bgcolor: 'rgba(255, 255, 255, 0.98)', color: 'rgba(0, 0, 0, 0.87)', fontSize: '13px', padding: '12px 16px', borderRadius: '8px' } } }}>
       <div className="ag-header-cell-label" style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'help', gap: '4px' }}>
         <span>Премии и отклонения по рынку</span>
@@ -622,7 +740,7 @@ export const SpreadAnalysis: React.FC = () => {
   SpreadHeaderWithTooltip.displayName = 'SpreadHeaderWithTooltip';
 
   const ZSpreadHeaderWithTooltip = React.memo((_params: IHeaderParams) => (
-    <Tooltip title="Спред доходности на основе кривой бескупонной доходности (Z-Spread). Рассчитывается только для облигаций типа «Фикс с известным купоном». Для остальных видов облигаций значение не рассчитывается и отображается как «—»." arrow placement="top" enterDelay={300} leaveDelay={0}
+    <Tooltip title="Спред доходности на основе кривой бескупонной доходности (Z-Spread). Рассчитывается только для облигаций типа «Фикс с известным купоном» без колл или пут опционов. Для облигаций с опционами и остальных видов облигаций значение не рассчитывается и отображается как «—»." arrow placement="top" enterDelay={300} leaveDelay={0}
       slotProps={{ tooltip: { sx: { maxWidth: 500, bgcolor: 'rgba(255, 255, 255, 0.98)', fontSize: '13px', padding: '12px 16px', borderRadius: '8px' } } }}>
       <div className="ag-header-cell-label" style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'help', gap: '4px' }}>
         <span>Спред доходности на основе кривой бескупонной доходности</span>
@@ -633,7 +751,7 @@ export const SpreadAnalysis: React.FC = () => {
   ZSpreadHeaderWithTooltip.displayName = 'ZSpreadHeaderWithTooltip';
 
   const ModifiedDurationHeaderWithTooltip = React.memo((_params: IHeaderParams) => (
-    <Tooltip title="Модифицированная дюрация. Рассчитывается только для облигаций типа «Фикс с известным купоном». Для остальных видов облигаций значение не рассчитывается и отображается как «—»." arrow placement="top" enterDelay={300} leaveDelay={0}
+    <Tooltip title="Модифицированная дюрация. Рассчитывается только для облигаций типа «Фикс с известным купоном» без колл или пут опционов. Для облигаций с опционами и остальных видов облигаций значение не рассчитывается и отображается как «—»." arrow placement="top" enterDelay={300} leaveDelay={0}
       slotProps={{ tooltip: { sx: { maxWidth: 500, bgcolor: 'rgba(255, 255, 255, 0.98)', fontSize: '13px', padding: '12px 16px', borderRadius: '8px' } } }}>
       <div className="ag-header-cell-label" style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'help', gap: '4px' }}>
         <span>Модифицированная дюрация</span>
@@ -644,7 +762,7 @@ export const SpreadAnalysis: React.FC = () => {
   ModifiedDurationHeaderWithTooltip.displayName = 'ModifiedDurationHeaderWithTooltip';
 
   const PriceChangeHeaderWithTooltip = React.memo((_params: IHeaderParams) => (
-    <Tooltip title="Изменение цены при изменении ставки на 1%. Рассчитывается только для облигаций типа «Фикс с известным купоном». Показывает изменение цены при росте ставки (убыток, красный) и при снижении ставки (прибыль, зеленый). Для остальных видов облигаций значение не рассчитывается и отображается как «—»." arrow placement="top" enterDelay={300} leaveDelay={0}
+    <Tooltip title="Изменение цены при изменении ставки на 1%. Рассчитывается только для облигаций типа «Фикс с известным купоном» без колл или пут опционов. Показывает изменение цены при росте ставки (убыток, красный) и при снижении ставки (прибыль, зеленый). Для облигаций с опционами и остальных видов облигаций значение не рассчитывается и отображается как «—»." arrow placement="top" enterDelay={300} leaveDelay={0}
       slotProps={{ tooltip: { sx: { maxWidth: 550, bgcolor: 'rgba(255, 255, 255, 0.98)', fontSize: '13px', padding: '12px 16px', borderRadius: '8px' } } }}>
       <div className="ag-header-cell-label" style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'help', gap: '4px' }}>
         <span>Изменение цены при росте / снижении ставки на 1%</span>
@@ -655,7 +773,7 @@ export const SpreadAnalysis: React.FC = () => {
   PriceChangeHeaderWithTooltip.displayName = 'PriceChangeHeaderWithTooltip';
 
   const ConvexityHeaderWithTooltip = React.memo((_params: IHeaderParams) => (
-    <Tooltip title="Выпуклость. Рассчитывается только для облигаций типа «Фикс с известным купоном». Для остальных видов облигаций значение не рассчитывается и отображается как «—»." arrow placement="top" enterDelay={300} leaveDelay={0}
+    <Tooltip title="Выпуклость. Рассчитывается только для облигаций типа «Фикс с известным купоном» без колл или пут опционов. Для облигаций с опционами и остальных видов облигаций значение не рассчитывается и отображается как «—»." arrow placement="top" enterDelay={300} leaveDelay={0}
       slotProps={{ tooltip: { sx: { maxWidth: 500, bgcolor: 'rgba(255, 255, 255, 0.98)', fontSize: '13px', padding: '12px 16px', borderRadius: '8px' } } }}>
       <div className="ag-header-cell-label" style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'help', gap: '4px' }}>
         <span>Выпуклость</span>
@@ -787,7 +905,7 @@ export const SpreadAnalysis: React.FC = () => {
           </FormControl>
         </Box>
 
-        {/* Table Section */}
+        {/* Tabs Section */}
         <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden', height: '100%' }}>
           {isLoadingBonds || isLoadingZerocupon || isLoadingCoupons ? (
             <Box sx={{ flexGrow: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 0 }}>
@@ -800,54 +918,190 @@ export const SpreadAnalysis: React.FC = () => {
               </Typography>
             </Box>
           ) : (
-            <Box sx={{ flex: 1, display: 'flex', px: 2, py: 2, minHeight: 0, overflow: 'hidden', height: '100%' }}>
-              <Box className="ag-theme-material" sx={{ flex: 1, height: '100%', width: '100%', display: 'flex', flexDirection: 'column', ...(headerHeight && { '--ag-header-height': `${headerHeight}px` }),
-                '& .ag-root-wrapper': { border: '1px solid #dee2e6', borderRadius: '4px', height: '100%', display: 'flex', flexDirection: 'column', flex: 1 },
-                '& .ag-body': { flex: 1, minHeight: 0, overflow: 'auto' },
-                '& .ag-body-viewport-wrapper': { flex: 1, minHeight: 0, overflow: 'auto' },
-                '& .ag-body-viewport': { height: '100%' },
-                '& .ag-center-cols-viewport': { height: '100%' },
-                '& .ag-header': { borderBottom: '1px solid #ddd' },
-                '& .ag-header-cell': { display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: '8px 4px', boxSizing: 'border-box', gap: '0px !important', borderRight: '1px solid #dee2e6 !important', borderBottom: '1px solid #dee2e6 !important', fontWeight: 600, color: '#444', background: '#fafafa' },
-                '& .ag-header-cell:last-child': { borderRight: 'none !important' },
-                '& .ag-header-cell-label': { fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.5, flex: '0 1 auto', minWidth: 0, padding: '4px 0px 4px 8px !important', marginRight: '0px !important', marginLeft: '0px !important', marginTop: '0px !important', marginBottom: '0px !important', overflow: 'visible', boxSizing: 'border-box' },
-                '& .ag-header-cell-text': { whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.5, textAlign: 'center', display: 'block', overflow: 'visible', hyphens: 'auto', marginRight: '0px !important', paddingRight: '0px !important' },
-                '& .ag-header-cell-menu-button': { flexShrink: 0, alignSelf: 'center', marginLeft: '1px !important', marginRight: '0px !important', marginTop: '0px !important', marginBottom: '0px !important', padding: '0px !important', width: 'auto !important', minWidth: 'auto !important' },
-                '& .ag-header-cell-filter-button': { flexShrink: 0, alignSelf: 'center', marginLeft: '1px !important', marginRight: '0px !important', marginTop: '0px !important', marginBottom: '0px !important', padding: '0px !important', width: 'auto !important', minWidth: 'auto !important' },
-                '& .ag-header-cell-label + .ag-header-cell-menu-button': { marginLeft: '1px !important' },
-                '& .ag-header-cell-label + .ag-header-cell-filter-button': { marginLeft: '1px !important' },
-                '& .ag-header-cell-filtered .ag-header-cell-menu-button': { opacity: 1 },
-                '& .ag-header-cell-filtered .ag-header-cell-filter-button': { opacity: 1 },
-                '& .ag-cell': { borderRight: '1px solid #dee2e6 !important', borderBottom: '1px solid #dee2e6 !important', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: '1.5 !important', padding: '8px 12px !important', overflow: 'hidden', textOverflow: 'ellipsis', maxHeight: '44px !important', height: '44px !important', boxSizing: 'border-box', '& > *': { maxHeight: '36px !important', overflow: 'hidden' } },
-                '& .ag-row .ag-cell:last-child': { borderRight: 'none !important' },
-                '& .ag-cell[col-id="name"]': { justifyContent: 'flex-start', textAlign: 'left !important' },
-                '& .ag-cell[col-id="ticker"], & .ag-cell[col-id="maturity"], & .ag-cell[col-id="coupon"], & .ag-cell[col-id="price"], & .ag-cell[col-id="ytm"], & .ag-cell[col-id="couponToPrice"], & .ag-cell[col-id="regularDuration"], & .ag-cell[col-id="duration"], & .ag-cell[col-id="convexity"], & .ag-cell[col-id="priceChange"], & .ag-cell[col-id="spread"], & .ag-cell[col-id="zSpread"]': { justifyContent: 'center', textAlign: 'center !important' },
-                '& .ag-row': { cursor: 'default', minHeight: '44px !important', maxHeight: '44px !important', height: '44px !important', '& > *': { maxHeight: '44px !important' } },
-                '& .ag-row-hover': { backgroundColor: '#f7f9fc !important' },
-                '& .ag-header-center .ag-header-cell-label': { justifyContent: 'center' },
-              }}>
-                <AgGridReact<ComparisonRow>
-                  ref={gridRef}
-                  rowData={comparisonData}
-                  columnDefs={columnDefs}
-                  defaultColDef={defaultColDef}
-                  onGridReady={onGridReady}
-                  animateRows={true}
-                  pagination={true}
-                  paginationPageSize={100}
-                  paginationPageSizeSelector={[50, 100, 200, 500]}
-                  enableCellTextSelection={true}
-                  suppressRowClickSelection={true}
-                  headerHeight={headerHeight}
-                  rowHeight={44}
-                  autoSizeStrategy={{ type: 'fitGridWidth', defaultMinWidth: 80 }}
-                  suppressAggFuncInHeader={true}
-                  suppressMenuHide={true}
-                  getRowId={(params) => params.data.secid}
-                  theme="legacy"
-                />
+            <>
+              {/* Tabs Navigation */}
+              <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
+                <Tabs value={currentTab} onChange={(_, newValue) => setCurrentTab(newValue)}>
+                  <Tab label="Список облигаций" />
+                  <Tab label="График кривой спредов" />
+                </Tabs>
               </Box>
-            </Box>
+
+              {/* Tab Content */}
+              <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden', height: '100%' }}>
+                {currentTab === 0 && (
+                  <Box sx={{ flex: 1, display: 'flex', px: 2, py: 2, minHeight: 0, overflow: 'hidden', height: '100%' }}>
+                    <Box className="ag-theme-material" sx={{ flex: 1, height: '100%', width: '100%', display: 'flex', flexDirection: 'column', ...(headerHeight && { '--ag-header-height': `${headerHeight}px` }),
+                      '& .ag-root-wrapper': { border: '1px solid #dee2e6', borderRadius: '4px', height: '100%', display: 'flex', flexDirection: 'column', flex: 1 },
+                      '& .ag-body': { flex: 1, minHeight: 0, overflow: 'auto' },
+                      '& .ag-body-viewport-wrapper': { flex: 1, minHeight: 0, overflow: 'auto' },
+                      '& .ag-body-viewport': { height: '100%' },
+                      '& .ag-center-cols-viewport': { height: '100%' },
+                      '& .ag-header': { borderBottom: '1px solid #ddd' },
+                      '& .ag-header-cell': { display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: '8px 4px', boxSizing: 'border-box', gap: '0px !important', borderRight: '1px solid #dee2e6 !important', borderBottom: '1px solid #dee2e6 !important', fontWeight: 600, color: '#444', background: '#fafafa' },
+                      '& .ag-header-cell:last-child': { borderRight: 'none !important' },
+                      '& .ag-header-cell-label': { fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.5, flex: '0 1 auto', minWidth: 0, padding: '4px 0px 4px 8px !important', marginRight: '0px !important', marginLeft: '0px !important', marginTop: '0px !important', marginBottom: '0px !important', overflow: 'visible', boxSizing: 'border-box' },
+                      '& .ag-header-cell-text': { whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.5, textAlign: 'center', display: 'block', overflow: 'visible', hyphens: 'auto', marginRight: '0px !important', paddingRight: '0px !important' },
+                      '& .ag-header-cell-menu-button': { flexShrink: 0, alignSelf: 'center', marginLeft: '1px !important', marginRight: '0px !important', marginTop: '0px !important', marginBottom: '0px !important', padding: '0px !important', width: 'auto !important', minWidth: 'auto !important' },
+                      '& .ag-header-cell-filter-button': { flexShrink: 0, alignSelf: 'center', marginLeft: '1px !important', marginRight: '0px !important', marginTop: '0px !important', marginBottom: '0px !important', padding: '0px !important', width: 'auto !important', minWidth: 'auto !important' },
+                      '& .ag-header-cell-label + .ag-header-cell-menu-button': { marginLeft: '1px !important' },
+                      '& .ag-header-cell-label + .ag-header-cell-filter-button': { marginLeft: '1px !important' },
+                      '& .ag-header-cell-filtered .ag-header-cell-menu-button': { opacity: 1 },
+                      '& .ag-header-cell-filtered .ag-header-cell-filter-button': { opacity: 1 },
+                      '& .ag-cell': { borderRight: '1px solid #dee2e6 !important', borderBottom: '1px solid #dee2e6 !important', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: '1.5 !important', padding: '8px 12px !important', overflow: 'hidden', textOverflow: 'ellipsis', maxHeight: '44px !important', height: '44px !important', boxSizing: 'border-box', '& > *': { maxHeight: '36px !important', overflow: 'hidden' } },
+                      '& .ag-row .ag-cell:last-child': { borderRight: 'none !important' },
+                      '& .ag-cell[col-id="name"]': { justifyContent: 'flex-start', textAlign: 'left !important' },
+                      '& .ag-cell[col-id="ticker"], & .ag-cell[col-id="maturity"], & .ag-cell[col-id="coupon"], & .ag-cell[col-id="price"], & .ag-cell[col-id="ytm"], & .ag-cell[col-id="couponToPrice"], & .ag-cell[col-id="regularDuration"], & .ag-cell[col-id="duration"], & .ag-cell[col-id="convexity"], & .ag-cell[col-id="priceChange"], & .ag-cell[col-id="spread"], & .ag-cell[col-id="zSpread"]': { justifyContent: 'center', textAlign: 'center !important' },
+                      '& .ag-row': { cursor: 'default', minHeight: '44px !important', maxHeight: '44px !important', height: '44px !important', '& > *': { maxHeight: '44px !important' } },
+                      '& .ag-row-hover': { backgroundColor: '#f7f9fc !important' },
+                      '& .ag-header-center .ag-header-cell-label': { justifyContent: 'center' },
+                    }}>
+                      <AgGridReact<ComparisonRow>
+                        ref={gridRef}
+                        rowData={comparisonData}
+                        columnDefs={columnDefs}
+                        defaultColDef={defaultColDef}
+                        onGridReady={onGridReady}
+                        animateRows={true}
+                        pagination={true}
+                        paginationPageSize={100}
+                        paginationPageSizeSelector={[50, 100, 200, 500]}
+                        enableCellTextSelection={true}
+                        suppressRowClickSelection={true}
+                        headerHeight={headerHeight}
+                        rowHeight={44}
+                        autoSizeStrategy={{ type: 'fitGridWidth', defaultMinWidth: 80 }}
+                        suppressAggFuncInHeader={true}
+                        suppressMenuHide={true}
+                        getRowId={(params) => params.data.secid}
+                        theme="legacy"
+                      />
+                    </Box>
+                  </Box>
+                )}
+
+                {currentTab === 1 && (
+                  <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', p: 3, minHeight: 0, overflow: 'hidden' }}>
+                    {!chartData.points || chartData.points.length === 0 ? (
+                      <Box sx={{ flexGrow: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Typography variant="body2" color="text.secondary">
+                          Нет данных для построения графика. Выберите эмитента с облигациями типа «Фикс с известным купоном» без опционов, имеющими рассчитанные Z-спреды.
+                        </Typography>
+                      </Box>
+                    ) : (
+                      <>
+                        <Typography variant="h6" sx={{ mb: 1, flexShrink: 0, fontWeight: 600 }}>
+                          Кривая Z-спредов эмитента {selectedEmitent || '—'}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2, flexShrink: 0 }}>
+                          График показывает зависимость Z-спредов (в базисных пунктах) от срока до погашения. Зеленые точки — потенциально недооцененные облигации (выше линии тренда на 15+ б.п.), красные — переоцененные (ниже линии тренда на 15+ б.п.).
+                        </Typography>
+                        <Box sx={{ flex: 1, width: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                          <ResponsiveContainer width="100%" height="100%">
+                            <ScatterChart
+                              margin={{ top: 20, right: 30, left: 80, bottom: 80 }}
+                            >
+                              <CartesianGrid strokeDasharray="3 3" stroke={CHART_CONFIG.COLORS.GRID} />
+                              <XAxis
+                                type="number"
+                                dataKey="duration"
+                                name="Срок до погашения"
+                                label={{ value: 'Срок до погашения (лет)', position: 'insideBottom', offset: -10 }}
+                                tick={{ fontSize: 12 }}
+                                domain={['dataMin - 0.5', 'dataMax + 0.5']}
+                              />
+                              <YAxis
+                                type="number"
+                                dataKey="zSpreadBps"
+                                name="Z-спред"
+                                label={{ value: 'Z-спред (б.п.)', angle: -90, position: 'insideLeft' }}
+                                tick={{ fontSize: 12 }}
+                                domain={['dataMin - 20', 'dataMax + 20']}
+                              />
+                              <RechartsTooltip
+                                cursor={{ strokeDasharray: '3 3' }}
+                                content={({ active, payload }) => {
+                                  if (active && payload && payload.length) {
+                                    const data = payload[0].payload as typeof chartData.points[0];
+                                    return (
+                                      <Box
+                                        sx={{
+                                          backgroundColor: 'white',
+                                          border: '1px solid #e0e0e0',
+                                          borderRadius: '8px',
+                                          padding: '12px',
+                                          boxShadow: '0px 3px 5px -1px rgba(0, 0, 0, 0.2)',
+                                        }}
+                                      >
+                                        <Typography variant="body2" sx={{ fontWeight: 600, mb: 1 }}>
+                                          {data.name}
+                                        </Typography>
+                                        <Typography variant="body2" color="text.secondary">
+                                          Тикер: {data.ticker}
+                                        </Typography>
+                                        <Typography variant="body2" color="text.secondary">
+                                          Срок до погашения: {data.duration.toFixed(2)} лет
+                                        </Typography>
+                                        <Typography variant="body2" color="text.secondary">
+                                          Z-Спред: {data.zSpreadBps > 0 ? '+' : ''}{data.zSpreadBps.toFixed(1)} б.п.
+                                        </Typography>
+                                        <Typography variant="body2" color="text.secondary">
+                                          Прогноз по тренду: {data.predictedBps.toFixed(1)} б.п.
+                                        </Typography>
+                                        <Typography 
+                                          variant="body2" 
+                                          color={data.isPositiveOutlier ? CHART_CONFIG.COLORS.SUCCESS : 
+                                                 data.isNegativeOutlier ? CHART_CONFIG.COLORS.ERROR : 
+                                                 'text.secondary'}
+                                          sx={{ fontWeight: data.isPositiveOutlier || data.isNegativeOutlier ? 600 : 'normal' }}
+                                        >
+                                          Остаток: {data.residual > 0 ? '+' : ''}{data.residual.toFixed(1)} б.п.
+                                          {data.isPositiveOutlier && ' (Недооценена)'}
+                                          {data.isNegativeOutlier && ' (Переоценена)'}
+                                        </Typography>
+                                      </Box>
+                                    );
+                                  }
+                                  return null;
+                                }}
+                              />
+                              <Legend />
+                              {/* Trend line */}
+                              <Line
+                                type="monotone"
+                                data={chartData.trendLine}
+                                dataKey="zSpreadBps"
+                                name="Линия тренда"
+                                stroke={CHART_CONFIG.COLORS.SECONDARY}
+                                strokeWidth={2}
+                                dot={false}
+                                activeDot={false}
+                              />
+                              {/* Scatter points with colored outliers */}
+                              <Scatter
+                                name="Z-спред облигаций"
+                                data={chartData.points}
+                                fill={CHART_CONFIG.COLORS.PRIMARY}
+                              >
+                                {chartData.points.map((entry, index) => (
+                                  <Cell key={`cell-${index}`} fill={entry.color} />
+                                ))}
+                                <LabelList
+                                  dataKey="ticker"
+                                  position="right"
+                                  offset={5}
+                                  style={{ fontSize: 11, fill: '#666' }}
+                                />
+                              </Scatter>
+                            </ScatterChart>
+                          </ResponsiveContainer>
+                        </Box>
+                      </>
+                    )}
+                  </Box>
+                )}
+              </Box>
+            </>
           )}
         </Box>
 

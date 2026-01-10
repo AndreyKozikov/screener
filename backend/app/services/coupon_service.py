@@ -141,8 +141,13 @@ class CouponService:
             
         Returns:
             Dictionary with coupons, amortizations, and offers data
+            
+        Note:
+            New API format returns array: [{"charsetinfo": {...}}, {"coupons": [...]}]
+            Only coupons are returned, amortizations and offers are empty.
+            A minimal amortization entry is created from the first coupon to store coupon_type.
         """
-        url = f"https://iss.moex.com/iss/securities/{secid}/bondization.json"
+        url = f"https://iss.moex.com/iss/securities/{secid}/bondization.json?iss.json=extended&iss.meta=off&iss.only=coupons&lang=ru&limit=unlimited"
         request = Request(url, headers={"User-Agent": "Mozilla/5.0"})
         
         try:
@@ -163,41 +168,49 @@ class CouponService:
             "offers": []
         }
         
-        # Parse amortizations
-        amortizations = payload.get("amortizations", {})
-        amort_columns = amortizations.get("columns", [])
-        amort_data = amortizations.get("data", [])
+        # New API format: payload is an array, second element contains coupons
+        # Format: [{"charsetinfo": {"name": "utf-8"}}, {"coupons": [...]}]
+        if not isinstance(payload, list) or len(payload) < 2:
+            raise RuntimeError(f"Unexpected API response format for {secid}: expected array with at least 2 elements")
         
-        for row in amort_data:
-            if len(row) == len(amort_columns):
-                amort_dict = dict(zip(amort_columns, row))
-                # Clean string values to ensure valid UTF-8
-                amort_dict = self._clean_string_value(amort_dict)
-                result["amortizations"].append(amort_dict)
+        # Get coupons array from second element
+        coupons_data = payload[1].get("coupons", [])
+        if not isinstance(coupons_data, list):
+            raise RuntimeError(f"Unexpected coupons format for {secid}: expected array, got {type(coupons_data).__name__}")
         
-        # Parse coupons
-        coupons = payload.get("coupons", {})
-        coupon_columns = coupons.get("columns", [])
-        coupon_data = coupons.get("data", [])
+        # Parse coupons - they come as objects already in new API format
+        first_coupon_raw = None
+        for coupon_dict in coupons_data:
+            # Create a copy to avoid modifying original data, then clean string values
+            coupon_dict_copy = coupon_dict.copy() if isinstance(coupon_dict, dict) else coupon_dict
+            coupon_dict_cleaned = self._clean_string_value(coupon_dict_copy)
+            result["coupons"].append(coupon_dict_cleaned)
+            # Save first coupon raw data (before cleaning duplicate fields) for amortization creation
+            if first_coupon_raw is None:
+                first_coupon_raw = coupon_dict_cleaned
         
-        for row in coupon_data:
-            if len(row) == len(coupon_columns):
-                coupon_dict = dict(zip(coupon_columns, row))
-                # Clean string values to ensure valid UTF-8
-                coupon_dict = self._clean_string_value(coupon_dict)
-                result["coupons"].append(coupon_dict)
+        # Create a minimal amortization entry from first coupon data to store coupon_type
+        # This is needed because coupon_type is expected to be in amortizations section
+        # coupon_type will be calculated and added later in get_coupons() method
+        # Use first coupon raw data (already cleaned for UTF-8, but before removing duplicate fields)
+        if first_coupon_raw is not None:
+            # Create amortization entry with common fields from coupon
+            amort_entry = {
+                "isin": first_coupon_raw.get("isin"),
+                "name": first_coupon_raw.get("name"),
+                "issuevalue": first_coupon_raw.get("issuevalue"),
+                "secid": first_coupon_raw.get("secid") or secid,
+                "primary_boardid": first_coupon_raw.get("primary_boardid"),
+                "facevalue": first_coupon_raw.get("facevalue"),
+                "initialfacevalue": first_coupon_raw.get("initialfacevalue"),
+                "faceunit": first_coupon_raw.get("faceunit"),
+                # coupon_type will be added later in get_coupons() method
+            }
+            # Clean and add to result (already cleaned, but double-check)
+            amort_entry = self._clean_string_value(amort_entry)
+            result["amortizations"].append(amort_entry)
         
-        # Parse offers
-        offers = payload.get("offers", {})
-        offer_columns = offers.get("columns", [])
-        offer_data = offers.get("data", [])
-        
-        for row in offer_data:
-            if len(row) == len(offer_columns):
-                offer_dict = dict(zip(offer_columns, row))
-                # Clean string values to ensure valid UTF-8
-                offer_dict = self._clean_string_value(offer_dict)
-                result["offers"].append(offer_dict)
+        # Offers are not returned by new API, leaving empty array
         
         return result
     
