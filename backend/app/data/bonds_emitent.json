@@ -97904,5 +97904,41 @@
         "rating_level_name_short_ru": "AAA.ru"
       }
     ]
+  },
+  "RU000A10DZW3": {
+    "secid": "RU000A10DZW3",
+    "shortname": "РЖД 1Р-50R",
+    "regnumber": "4B02-50-65045-D-001P",
+    "name": "РЖД БО 001P-50R",
+    "isin": "RU000A10DZW3",
+    "is_traded": 1,
+    "emitent_id": 712,
+    "emitent_title": "открытое акционерное общество \"Российские железные дороги\"",
+    "emitent_inn": "7708503727",
+    "emitent_okpo": "00083262",
+    "type": "exchange_bond",
+    "group": "stock_bonds",
+    "primary_boardid": "TQCB",
+    "marketprice_boardid": "TQCB",
+    "cci_rating_companies": [
+      {
+        "agency_id": 3,
+        "agency_name_short_ru": "АКРА",
+        "rating_book_id": 1,
+        "rating_level_id": 1,
+        "rating_date": "2025-06-30 00:00:00",
+        "rating_publicate_date": "2025-06-30 00:00:00",
+        "rating_level_name_short_ru": "AAA(RU)"
+      },
+      {
+        "agency_id": 4,
+        "agency_name_short_ru": "Эксперт РА",
+        "rating_book_id": 18,
+        "rating_level_id": 233,
+        "rating_date": "2025-07-01 00:00:00",
+        "rating_publicate_date": "2025-07-01 00:00:00",
+        "rating_level_name_short_ru": "ruAAA"
+      }
+    ]
   }
 }

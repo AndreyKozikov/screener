@@ -46,5 +46,53 @@
         "original_value": "11,1592"
       }
     }
+  },
+  {
+    "date": "2026-01-12",
+    "source_date": "31.12.2025",
+    "rates": {
+      "USD": {
+        "code": "USD",
+        "rate": 78.2267,
+        "nominal": 1,
+        "original_value": "78,2267"
+      },
+      "EUR": {
+        "code": "EUR",
+        "rate": 92.0938,
+        "nominal": 1,
+        "original_value": "92,0938"
+      },
+      "CNY": {
+        "code": "CNY",
+        "rate": 11.1592,
+        "nominal": 1,
+        "original_value": "11,1592"
+      }
+    }
+  },
+  {
+    "date": "2026-01-13",
+    "source_date": "13.01.2026",
+    "rates": {
+      "USD": {
+        "code": "USD",
+        "rate": 78.7913,
+        "nominal": 1,
+        "original_value": "78,7913"
+      },
+      "EUR": {
+        "code": "EUR",
+        "rate": 91.9668,
+        "nominal": 1,
+        "original_value": "91,9668"
+      },
+      "CNY": {
+        "code": "CNY",
+        "rate": 11.2856,
+        "nominal": 1,
+        "original_value": "11,2856"
+      }
+    }
   }
 ]

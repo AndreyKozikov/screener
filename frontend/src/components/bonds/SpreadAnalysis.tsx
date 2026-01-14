@@ -30,7 +30,7 @@ import {
   calculateSpread,
   formatSpread,
 } from '../../utils/zerocuponInterpolation';
-import { calculateZSpread, formatZSpread } from '../../utils/zSpreadCalculation';
+import { calculateGSpread, formatGSpread, calculateZSpread } from '../../utils/SpreadCalculation';
 import { fetchBondCoupons } from '../../api/bonds';
 import type { Coupon } from '../../types/coupon';
 import dayjs from 'dayjs';
@@ -39,7 +39,6 @@ import { LoadingSpinner } from '../common/LoadingSpinner';
 import { useFiltersStore } from '../../stores/filtersStore';
 import {
   ResponsiveContainer,
-  LineChart,
   Line,
   XAxis,
   YAxis,
@@ -70,6 +69,7 @@ interface ComparisonRow {
   convexity: string;
   priceChange: string;
   spread: string;
+  gSpread: string;
   zSpread: string;
   secid: string;
 }
@@ -238,7 +238,7 @@ export const SpreadAnalysis: React.FC = () => {
   };
 
   // Check if metrics are applicable for this bond
-  // Metrics (modified duration, convexity, price change, spread, z-spread) are only applicable for:
+  // Metrics (modified duration, convexity, price change, spread, g-spread) are only applicable for:
   // Fixed coupon bonds with known coupon rate (BONDTYPE43 === "Фикс с известным купоном")
   // AND without call or put options
   const isFixedCouponBond = (bond: BondListItem): boolean => {
@@ -535,6 +535,7 @@ export const SpreadAnalysis: React.FC = () => {
           convexity,
           priceChange,
           spread: '—',
+          gSpread: '—',
           zSpread: '—',
           secid: bond.SECID,
         };
@@ -592,7 +593,21 @@ export const SpreadAnalysis: React.FC = () => {
         }
       }
 
-      // Calculate Z-spread (zero-coupon spread) for fixed coupon bonds without options
+      // Calculate G-spread for fixed coupon bonds without options
+      // G-spread = Actual YTM - Theoretical YTM (where Theoretical YTM is derived from KBD)
+      let gSpreadStr = '—';
+      if (isFixedCouponBond(bond)) {
+        const coupons = couponsData.get(bond.SECID);
+        if (coupons && coupons.length > 0) {
+          // Use current date as analysis date (only future coupons will be included)
+          const currentDate = new Date();
+          const gSpread = calculateGSpread(bond, coupons, zerocuponData, currentDate);
+          gSpreadStr = formatGSpread(gSpread);
+        }
+      }
+
+      // Calculate Z-spread for fixed coupon bonds without embedded options
+      // Z-spread is calculated only for bonds that meet the criteria
       let zSpreadStr = '—';
       if (isFixedCouponBond(bond)) {
         const coupons = couponsData.get(bond.SECID);
@@ -600,7 +615,7 @@ export const SpreadAnalysis: React.FC = () => {
           // Use current date as analysis date (only future coupons will be included)
           const currentDate = new Date();
           const zSpread = calculateZSpread(bond, coupons, zerocuponData, currentDate);
-          zSpreadStr = formatZSpread(zSpread);
+          zSpreadStr = formatGSpread(zSpread); // Use same formatting function as G-spread
         }
       }
       
@@ -617,17 +632,18 @@ export const SpreadAnalysis: React.FC = () => {
         convexity,
         priceChange,
         spread: spreadStr,
+        gSpread: gSpreadStr,
         zSpread: zSpreadStr,
         secid: bond.SECID,
       };
     });
   }, [bonds, zerocuponData, couponsData]);
 
-  // Prepare chart data for spread curve with z-spread in basis points
+  // Prepare chart data for spread curve with Z-spread in basis points
   const chartData = useMemo(() => {
-    if (comparisonData.length === 0) return [];
+    if (comparisonData.length === 0) return { points: [], trendLine: [], outliers: [] };
 
-    // Filter and prepare data: only bonds with valid z-spread and duration
+    // Filter and prepare data: only bonds with valid Z-spread and duration
     const points = comparisonData
       .filter(row => {
         const duration = parseFloat(row.regularDuration);
@@ -635,7 +651,7 @@ export const SpreadAnalysis: React.FC = () => {
         return hasZSpread && !isNaN(duration) && duration > 0;
       })
       .map(row => {
-        // Parse z-spread value (e.g., "+1.23%" or "-1.23%")
+        // Parse Z-spread value (e.g., "+1.23%" or "-1.23%")
         const zSpreadStr = row.zSpread.replace('%', '').replace('+', '').trim();
         const zSpreadPercent = parseFloat(zSpreadStr);
         
@@ -643,15 +659,15 @@ export const SpreadAnalysis: React.FC = () => {
           return null;
         }
 
-        // Convert z-spread from percentage to basis points (1% = 100 bps)
+        // Convert Z-spread from percentage to basis points (1% = 100 bps)
         const zSpreadBps = zSpreadPercent * 100;
         
         const duration = parseFloat(row.regularDuration);
 
         return {
           duration,
-          zSpreadBps,
-          zSpreadPercent,
+          zSpreadBps, // Z-spread in basis points
+          zSpreadPercent, // Z-spread in percentage
           ticker: row.ticker,
           name: row.name,
           secid: row.secid,
@@ -663,6 +679,7 @@ export const SpreadAnalysis: React.FC = () => {
     if (points.length === 0) return { points: [], trendLine: [], outliers: [] };
 
     // Calculate trend line using polynomial regression (degree 2)
+    // Regression is performed on Z-spread values
     const regressionData = points.map(p => [p.duration, p.zSpreadBps] as [number, number]);
     const result = regression.polynomial(regressionData, { order: 2 });
 
@@ -673,17 +690,18 @@ export const SpreadAnalysis: React.FC = () => {
     
     const trendLine = [];
     for (let x = minDuration; x <= maxDuration; x += step) {
-      const y = result.predict(x)[1];
+      const y = result.predict(x)[1]; // Predicted Z-spread in basis points
       trendLine.push({ duration: x, zSpreadBps: y });
     }
 
     // Calculate outliers (points significantly above or below trend line)
+    // Outliers are identified based on Z-spread residuals from the trend line
     const OUTLIER_THRESHOLD_BPS = 15; // 15 basis points threshold
     const OUTLIER_THRESHOLD_PERCENT = 0.15; // 15% threshold (alternative)
     
     const outliers = points.map(point => {
-      const predictedBps = result.predict(point.duration)[1];
-      const residual = point.zSpreadBps - predictedBps;
+      const predictedBps = result.predict(point.duration)[1]; // Predicted Z-spread in bps
+      const residual = point.zSpreadBps - predictedBps; // Z-spread residual
       const residualPercent = predictedBps !== 0 ? Math.abs(residual / predictedBps) : 0;
       
       // Outlier if residual > 15 bps OR > 15% of predicted value
@@ -739,11 +757,22 @@ export const SpreadAnalysis: React.FC = () => {
   ));
   SpreadHeaderWithTooltip.displayName = 'SpreadHeaderWithTooltip';
 
-  const ZSpreadHeaderWithTooltip = React.memo((_params: IHeaderParams) => (
-    <Tooltip title="Спред доходности на основе кривой бескупонной доходности (Z-Spread). Рассчитывается только для облигаций типа «Фикс с известным купоном» без колл или пут опционов. Для облигаций с опционами и остальных видов облигаций значение не рассчитывается и отображается как «—»." arrow placement="top" enterDelay={300} leaveDelay={0}
-      slotProps={{ tooltip: { sx: { maxWidth: 500, bgcolor: 'rgba(255, 255, 255, 0.98)', fontSize: '13px', padding: '12px 16px', borderRadius: '8px' } } }}>
+  const GSpreadHeaderWithTooltip = React.memo((_params: IHeaderParams) => (
+    <Tooltip title="G-спред (Government Spread) — разница между фактической доходностью к погашению (YTM) облигации и теоретической доходностью, рассчитанной на основе кривой бескупонной доходности (КБД). Формула: G-спред = YTM_фактическая - YTM_теоретическая, где YTM_теоретическая вычисляется из теоретической цены облигации, полученной дисконтированием всех будущих купонных платежей и номинала по спот-ставкам КБД. Рассчитывается только для облигаций типа «Фикс с известным купоном» без колл или пут опционов. Положительное значение означает премию за кредитный риск, отрицательное — дисконт." arrow placement="top" enterDelay={300} leaveDelay={0}
+      slotProps={{ tooltip: { sx: { maxWidth: 600, bgcolor: 'rgba(255, 255, 255, 0.98)', fontSize: '13px', padding: '12px 16px', borderRadius: '8px' } } }}>
       <div className="ag-header-cell-label" style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'help', gap: '4px' }}>
-        <span>Спред доходности на основе кривой бескупонной доходности</span>
+        <span>G-спред (на основе кривой бескупонной доходности)</span>
+        <HelpOutlineIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+      </div>
+    </Tooltip>
+  ));
+  GSpreadHeaderWithTooltip.displayName = 'GSpreadHeaderWithTooltip';
+
+  const ZSpreadHeaderWithTooltip = React.memo((_params: IHeaderParams) => (
+    <Tooltip title="Z-спред (Zero-Volatility Spread) — постоянная надбавка (в процентных пунктах), которую необходимо добавить ко всем спот-ставкам кривой бескупонной доходности (КБД), чтобы теоретическая цена облигации равнялась её текущей рыночной цене. Формула: Рыночная_Грязная_Цена = Σ(Будущий_Платеж / (1 + (Спот_Ставка + Z) / Частота_Выплат) ^ (Время_в_годах * Частота_Выплат)). Z-спред считается более точным показателем премии за риск, чем G-спред, потому что учитывает всю форму кривой доходности и структуру купонных выплат. Рассчитывается только для облигаций типа «Фикс с известным купоном» без встроенных опционов. Положительное значение означает премию за кредитный риск и неликвидность, отрицательное — дисконт." arrow placement="top" enterDelay={300} leaveDelay={0}
+      slotProps={{ tooltip: { sx: { maxWidth: 650, bgcolor: 'rgba(255, 255, 255, 0.98)', fontSize: '13px', padding: '12px 16px', borderRadius: '8px' } } }}>
+      <div className="ag-header-cell-label" style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'help', gap: '4px' }}>
+        <span>Z-спред (Zero-Volatility Spread)</span>
         <HelpOutlineIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
       </div>
     </Tooltip>
@@ -825,7 +854,8 @@ export const SpreadAnalysis: React.FC = () => {
     { field: 'convexity', headerName: 'Выпуклость', minWidth: 120, cellStyle: { textAlign: 'center' }, headerClass: 'ag-header-center', headerComponent: ConvexityHeaderWithTooltip, autoHeaderHeight: true },
     { field: 'priceChange', headerName: 'Изменение цены при росте / снижении ставки на 1%', minWidth: 240, cellRenderer: PriceChangeCellRenderer, cellStyle: { textAlign: 'center' }, headerClass: 'ag-header-center', headerComponent: PriceChangeHeaderWithTooltip, autoHeaderHeight: true },
     { field: 'spread', headerName: 'Премии и отклонения по рынку', minWidth: 160, cellRenderer: SpreadCellRenderer, cellStyle: { textAlign: 'center' }, headerComponent: SpreadHeaderWithTooltip, headerClass: 'ag-header-center', autoHeaderHeight: true, sortable: false, filter: false },
-    { field: 'zSpread', headerName: 'Спред доходности на основе кривой бескупонной доходности', minWidth: 200, cellRenderer: SpreadCellRenderer, cellStyle: { textAlign: 'center' }, headerComponent: ZSpreadHeaderWithTooltip, headerClass: 'ag-header-center', autoHeaderHeight: true, sortable: false, filter: false },
+    { field: 'gSpread', headerName: 'G-спред (на основе кривой бескупонной доходности)', minWidth: 200, cellRenderer: SpreadCellRenderer, cellStyle: { textAlign: 'center' }, headerComponent: GSpreadHeaderWithTooltip, headerClass: 'ag-header-center', autoHeaderHeight: true, sortable: false, filter: false },
+    { field: 'zSpread', headerName: 'Z-спред (Zero-Volatility Spread)', minWidth: 200, cellRenderer: SpreadCellRenderer, cellStyle: { textAlign: 'center' }, headerComponent: ZSpreadHeaderWithTooltip, headerClass: 'ag-header-center', autoHeaderHeight: true, sortable: false, filter: false },
   ] as ColDef[], []);
 
   const defaultColDef: ColDef = useMemo(() => ({
@@ -951,7 +981,7 @@ export const SpreadAnalysis: React.FC = () => {
                       '& .ag-cell': { borderRight: '1px solid #dee2e6 !important', borderBottom: '1px solid #dee2e6 !important', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: '1.5 !important', padding: '8px 12px !important', overflow: 'hidden', textOverflow: 'ellipsis', maxHeight: '44px !important', height: '44px !important', boxSizing: 'border-box', '& > *': { maxHeight: '36px !important', overflow: 'hidden' } },
                       '& .ag-row .ag-cell:last-child': { borderRight: 'none !important' },
                       '& .ag-cell[col-id="name"]': { justifyContent: 'flex-start', textAlign: 'left !important' },
-                      '& .ag-cell[col-id="ticker"], & .ag-cell[col-id="maturity"], & .ag-cell[col-id="coupon"], & .ag-cell[col-id="price"], & .ag-cell[col-id="ytm"], & .ag-cell[col-id="couponToPrice"], & .ag-cell[col-id="regularDuration"], & .ag-cell[col-id="duration"], & .ag-cell[col-id="convexity"], & .ag-cell[col-id="priceChange"], & .ag-cell[col-id="spread"], & .ag-cell[col-id="zSpread"]': { justifyContent: 'center', textAlign: 'center !important' },
+                      '& .ag-cell[col-id="ticker"], & .ag-cell[col-id="maturity"], & .ag-cell[col-id="coupon"], & .ag-cell[col-id="price"], & .ag-cell[col-id="ytm"], & .ag-cell[col-id="couponToPrice"], & .ag-cell[col-id="regularDuration"], & .ag-cell[col-id="duration"], & .ag-cell[col-id="convexity"], & .ag-cell[col-id="priceChange"], & .ag-cell[col-id="spread"], & .ag-cell[col-id="gSpread"], & .ag-cell[col-id="zSpread"]': { justifyContent: 'center', textAlign: 'center !important' },
                       '& .ag-row': { cursor: 'default', minHeight: '44px !important', maxHeight: '44px !important', height: '44px !important', '& > *': { maxHeight: '44px !important' } },
                       '& .ag-row-hover': { backgroundColor: '#f7f9fc !important' },
                       '& .ag-header-center .ag-header-cell-label': { justifyContent: 'center' },
@@ -982,7 +1012,7 @@ export const SpreadAnalysis: React.FC = () => {
 
                 {currentTab === 1 && (
                   <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', p: 3, minHeight: 0, overflow: 'hidden' }}>
-                    {!chartData.points || chartData.points.length === 0 ? (
+                    {!chartData?.points || chartData.points.length === 0 ? (
                       <Box sx={{ flexGrow: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <Typography variant="body2" color="text.secondary">
                           Нет данных для построения графика. Выберите эмитента с облигациями типа «Фикс с известным купоном» без опционов, имеющими рассчитанные Z-спреды.
@@ -994,7 +1024,7 @@ export const SpreadAnalysis: React.FC = () => {
                           Кривая Z-спредов эмитента {selectedEmitent || '—'}
                         </Typography>
                         <Typography variant="body2" color="text.secondary" sx={{ mb: 2, flexShrink: 0 }}>
-                          График показывает зависимость Z-спредов (в базисных пунктах) от срока до погашения. Зеленые точки — потенциально недооцененные облигации (выше линии тренда на 15+ б.п.), красные — переоцененные (ниже линии тренда на 15+ б.п.).
+                          График показывает зависимость Z-спредов (в базисных пунктах) от дюрации. Z-спред — это постоянная надбавка, которую необходимо добавить ко всем спот-ставкам кривой бескупонной доходности, чтобы теоретическая цена облигации равнялась рыночной цене. Зеленые точки — потенциально недооцененные облигации (выше линии тренда на 15+ б.п.), красные — переоцененные (ниже линии тренда на 15+ б.п.).
                         </Typography>
                         <Box sx={{ flex: 1, width: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                           <ResponsiveContainer width="100%" height="100%">
@@ -1022,7 +1052,7 @@ export const SpreadAnalysis: React.FC = () => {
                                 cursor={{ strokeDasharray: '3 3' }}
                                 content={({ active, payload }) => {
                                   if (active && payload && payload.length) {
-                                    const data = payload[0].payload as typeof chartData.points[0];
+                                    const data = payload[0].payload as { duration: number; zSpreadBps: number; zSpreadPercent: number; ticker: string; name: string; secid: string; predictedBps: number; residual: number; isPositiveOutlier: boolean; isNegativeOutlier: boolean; color: string };
                                     return (
                                       <Box
                                         sx={{
@@ -1069,7 +1099,7 @@ export const SpreadAnalysis: React.FC = () => {
                               {/* Trend line */}
                               <Line
                                 type="monotone"
-                                data={chartData.trendLine}
+                                data={chartData?.trendLine || []}
                                 dataKey="zSpreadBps"
                                 name="Линия тренда"
                                 stroke={CHART_CONFIG.COLORS.SECONDARY}
@@ -1080,10 +1110,10 @@ export const SpreadAnalysis: React.FC = () => {
                               {/* Scatter points with colored outliers */}
                               <Scatter
                                 name="Z-спред облигаций"
-                                data={chartData.points}
+                                data={chartData?.points || []}
                                 fill={CHART_CONFIG.COLORS.PRIMARY}
                               >
-                                {chartData.points.map((entry, index) => (
+                                {(chartData?.points || []).map((entry: any, index: number) => (
                                   <Cell key={`cell-${index}`} fill={entry.color} />
                                 ))}
                                 <LabelList

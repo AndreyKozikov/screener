@@ -29,7 +29,7 @@ import {
   calculateSpread,
   formatSpread,
 } from '../../utils/zerocuponInterpolation';
-import { calculateZSpread, formatZSpread } from '../../utils/zSpreadCalculation';
+import { calculateGSpread, formatGSpread, calculateZSpread } from '../../utils/SpreadCalculation';
 import { fetchBondCoupons } from '../../api/bonds';
 import type { Coupon } from '../../types/coupon';
 import dayjs from 'dayjs';
@@ -52,6 +52,7 @@ interface ComparisonRow {
   convexity: string;
   priceChange: string;
   spread: string;
+  gSpread: string;
   zSpread: string;
   secid: string;
 }
@@ -487,6 +488,7 @@ export const ComparisonTable: React.FC = () => {
           convexity,
           priceChange,
           spread: '—',
+          gSpread: '—',
           zSpread: '—',
           secid: bond.SECID,
         };
@@ -544,15 +546,29 @@ export const ComparisonTable: React.FC = () => {
         }
       }
 
-      // Calculate Z-spread (zero-coupon spread) for fixed coupon bonds
-      let zSpreadStr = '—';
+      // Calculate G-spread for fixed coupon bonds
+      // G-spread = Actual YTM - Theoretical YTM (where Theoretical YTM is derived from KBD)
+      let gSpreadStr = '—';
       if (bond.BONDTYPE43 === 'Фикс с известным купоном') {
         const coupons = couponsData.get(bond.SECID);
         if (coupons && coupons.length > 0) {
           // Use current date as analysis date (only future coupons will be included)
           const currentDate = new Date();
+          const gSpread = calculateGSpread(bond, coupons, zerocuponData, currentDate);
+          gSpreadStr = formatGSpread(gSpread);
+        }
+      }
+
+      // Calculate Z-spread for fixed coupon bonds without embedded options
+      // Z-spread is calculated only for bonds that meet the criteria
+      let zSpreadStr = '—';
+      if (isModifiedDurationApplicable(bond)) {
+        const coupons = couponsData.get(bond.SECID);
+        if (coupons && coupons.length > 0) {
+          // Use current date as analysis date (only future coupons will be included)
+          const currentDate = new Date();
           const zSpread = calculateZSpread(bond, coupons, zerocuponData, currentDate);
-          zSpreadStr = formatZSpread(zSpread);
+          zSpreadStr = formatGSpread(zSpread); // Use same formatting function as G-spread
         }
       }
       
@@ -569,6 +585,7 @@ export const ComparisonTable: React.FC = () => {
         convexity,
         priceChange,
         spread: spreadStr,
+        gSpread: gSpreadStr,
         zSpread: zSpreadStr,
         secid: bond.SECID,
       };
@@ -704,23 +721,32 @@ export const ComparisonTable: React.FC = () => {
 
   SpreadHeaderWithTooltip.displayName = 'SpreadHeaderWithTooltip';
 
-  // Custom header component with tooltip for Z-spread column (with special content)
-  const ZSpreadHeaderWithTooltip = React.memo((_params: IHeaderParams) => {
+  // Custom header component with tooltip for G-spread column (with special content)
+  const GSpreadHeaderWithTooltip = React.memo((_params: IHeaderParams) => {
     return (
       <Tooltip
         title={
           <Box sx={{ p: 0.5 }}>
             <Typography variant="body2">
-              Этот показатель показывает, насколько доходность облигации выше или ниже рыночной нормы для её сроков выплат.
+              <strong>G-спред (Government Spread)</strong> — разница между фактической доходностью к погашению (YTM) облигации и теоретической доходностью, рассчитанной на основе кривой бескупонной доходности (КБД).
             </Typography>
             <Typography variant="body2">
+              <strong>Формула:</strong> G-спред = YTM_фактическая - YTM_теоретическая
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 1 }}>
               <strong>Как это считается:</strong>
             </Typography>
             <Typography variant="body2" sx={{ pl: 2 }}>
-              Все купоны и номинал облигации сравниваются с доходностями по кривой бескупонной доходности.
+              1. Все будущие купоны и номинал облигации дисконтируются по спот-ставкам из кривой бескупонной доходности (КБД) для соответствующих сроков.
             </Typography>
             <Typography variant="body2" sx={{ pl: 2 }}>
-              Разница отражает премию за риск и ликвидность.
+              2. Из полученной теоретической цены вычисляется теоретическая YTM.
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              3. G-спред = Фактическая YTM (рыночная) - Теоретическая YTM (из КБД).
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2, mt: 0.5 }}>
+              Положительное значение означает премию за кредитный риск и риск ликвидности. Отрицательное — дисконт (облигация торгуется дешевле теоретической цены).
             </Typography>
             <Typography variant="body2" sx={{ mt: 1 }}>
               <strong>🔍 Как интерпретировать значение</strong>
@@ -777,7 +803,7 @@ export const ComparisonTable: React.FC = () => {
               <strong>⚠️ Важно:</strong>
             </Typography>
             <Typography variant="body2" sx={{ pl: 2 }}>
-              В то время как «Премия по рынку» оценивает выгоду облигации «на глазок» только по дате её финала, «Спред на основе кривой бескупонной доходности» проводит детальную проверку каждой купонной выплаты, показывая максимально точную и честную доходность, очищенную от рыночных искажений.
+              В то время как «Премия по рынку» оценивает выгоду облигации «на глазок» только по дате её финала (используя дюрацию), G-спред проводит детальную проверку каждой купонной выплаты через кривую бескупонной доходности, показывая точную разницу между рыночной и теоретической доходностью. G-спред отличается от Z-спреда: Z-спред — это постоянная надбавка, которую нужно добавить ко всем спот-ставкам КБД, чтобы теоретическая цена равнялась рыночной цене.
             </Typography>
           </Box>
         }
@@ -813,7 +839,104 @@ export const ComparisonTable: React.FC = () => {
             gap: '4px',
           }}
         >
-          <span>Спред доходности на основе кривой бескупонной доходности</span>
+          <span>G-спред (на основе кривой бескупонной доходности)</span>
+          <HelpOutlineIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+        </div>
+      </Tooltip>
+    );
+  });
+
+  GSpreadHeaderWithTooltip.displayName = 'GSpreadHeaderWithTooltip';
+
+  // Custom header component with tooltip for Z-spread column (with special content)
+  const ZSpreadHeaderWithTooltip = React.memo((_params: IHeaderParams) => {
+    return (
+      <Tooltip
+        title={
+          <Box sx={{ p: 0.5 }}>
+            <Typography variant="body2">
+              <strong>Z-спред (Zero-Volatility Spread)</strong> — постоянная надбавка (в процентных пунктах), которую необходимо добавить ко всем спот-ставкам кривой бескупонной доходности (КБД), чтобы теоретическая цена облигации равнялась её текущей рыночной цене.
+            </Typography>
+            <Typography variant="body2">
+              <strong>Формула:</strong> Рыночная_Грязная_Цена = Σ(Будущий_Платеж / (1 + (Спот_Ставка + Z) / Частота_Выплат) ^ (Время_в_годах * Частота_Выплат))
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 1 }}>
+              <strong>Как это считается:</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              1. Для каждого будущего купонного платежа берется соответствующая спот-ставка из КБД (с интерполяцией при необходимости).
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              2. К каждой спот-ставке добавляется одна и та же константа Z (Z-spread).
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              3. Методом бисекции находится такое значение Z, при котором сумма дисконтированных платежей равна рыночной грязной цене (чистая цена + НКД).
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2, mt: 0.5 }}>
+              Z-спред считается более точным показателем премии за риск, чем G-спред, потому что учитывает всю форму кривой доходности и структуру купонных выплат, что позволяет более точно сопоставлять облигации с различными сроками и купонными структурами.
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 1 }}>
+              <strong>🔍 Как интерпретировать значение</strong>
+            </Typography>
+            <Typography variant="body2">
+              <strong>Положительное значение</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              Облигация требует дополнительной премии за риск и неликвидность сверх безрисковой ставки. Чем выше Z-спред, тем больше риск или требуемая инвесторами компенсация.
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 1 }}>
+              <strong>Отрицательное значение</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              Облигация торгуется дороже, чем должна стоить по безрисковой кривой. Обычно это очень надежные или высоколиквидные бумаги.
+            </Typography>
+            <Typography variant="body2">
+              <strong>Около нуля</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              Облигация справедливо оценена рынком относительно безрисковой кривой доходности.
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 1, pt: 1, borderTop: '1px solid rgba(0, 0, 0, 0.12)' }}>
+              <strong>⚠️ Важно:</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              Z-спред рассчитывается только для облигаций типа «Фикс с известным купоном» без встроенных опционов (колл или пут). Для облигаций с опционами и остальных видов облигаций значение не рассчитывается и отображается как «—». Z-спред отличается от G-спреда: G-спред — это разница между фактической и теоретической YTM, а Z-спред — это константа, добавляемая ко всем спот-ставкам для точного совпадения цен.
+            </Typography>
+          </Box>
+        }
+        arrow
+        placement="top"
+        enterDelay={300}
+        leaveDelay={0}
+        slotProps={{
+          tooltip: {
+            sx: {
+              maxWidth: 550,
+              bgcolor: 'rgba(255, 255, 255, 0.98)',
+              color: 'rgba(0, 0, 0, 0.87)',
+              fontSize: '13px',
+              lineHeight: 1.5,
+              padding: '12px 16px',
+              borderRadius: '8px',
+              boxShadow: '0px 3px 5px -1px rgba(0, 0, 0, 0.2), 0px 6px 10px 0px rgba(0, 0, 0, 0.14), 0px 1px 18px 0px rgba(0, 0, 0, 0.12)',
+              border: '1px solid rgba(0, 0, 0, 0.12)',
+            },
+          },
+        }}
+      >
+        <div 
+          className="ag-header-cell-label" 
+          style={{ 
+            width: '100%', 
+            height: '100%', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center',
+            cursor: 'help',
+            gap: '4px',
+          }}
+        >
+          <span>Z-спред (Zero-Volatility Spread)</span>
           <HelpOutlineIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
         </div>
       </Tooltip>
@@ -1371,8 +1494,20 @@ export const ComparisonTable: React.FC = () => {
         filter: false,
       },
       {
+        field: 'gSpread',
+        headerName: 'G-спред (на основе кривой бескупонной доходности)',
+        minWidth: 200,
+        cellRenderer: SpreadCellRenderer,
+        cellStyle: { textAlign: 'center' },
+        headerComponent: GSpreadHeaderWithTooltip,
+        headerClass: 'ag-header-center',
+        autoHeaderHeight: true,
+        sortable: false,
+        filter: false,
+      },
+      {
         field: 'zSpread',
-        headerName: 'Спред доходности на основе кривой бескупонной доходности',
+        headerName: 'Z-спред (Zero-Volatility Spread)',
         minWidth: 200,
         cellRenderer: SpreadCellRenderer,
         cellStyle: { textAlign: 'center' },
@@ -1509,7 +1644,8 @@ export const ComparisonTable: React.FC = () => {
       'Выпуклость',
       'Изменение цены при росте / снижении ставки на 1%',
       'Премии и отклонения по рынку',
-      'Спред доходности на основе кривой бескупонной доходности',
+      'G-спред (на основе кривой бескупонной доходности)',
+      'Z-спред (Zero-Volatility Spread)',
     ];
     
     // Calculate column widths for alignment
@@ -1529,6 +1665,7 @@ export const ComparisonTable: React.FC = () => {
           row.convexity,
           row.priceChange,
           row.spread,
+          row.gSpread,
           row.zSpread,
         ];
         const cellValue = values[colIndex] || '';
@@ -1562,7 +1699,8 @@ export const ComparisonTable: React.FC = () => {
         row.convexity, // Выпуклость
         row.priceChange, // Изменение цены при росте / снижении ставки на 1%
         row.spread, // Премии и отклонения по рынку
-        row.zSpread, // Спред доходности на основе кривой бескупонной доходности
+        row.gSpread, // G-спред (на основе кривой бескупонной доходности) = YTM_фактическая - YTM_теоретическая
+        row.zSpread, // Z-спред (Zero-Volatility Spread) = постоянная надбавка к спот-ставкам КБД для совпадения цен
       ];
       return '| ' + values
         .map((value, i) => (value || '—').padEnd(colWidths[i]))
@@ -1620,7 +1758,8 @@ export const ComparisonTable: React.FC = () => {
       'Выпуклость',
       'Изменение цены при росте / снижении ставки на 1%',
       'Премии и отклонения по рынку',
-      'Спред доходности на основе кривой бескупонной доходности',
+      'G-спред (на основе кривой бескупонной доходности)',
+      'Z-спред (Zero-Volatility Spread)',
     ];
 
     // Create CSV rows
@@ -1639,6 +1778,7 @@ export const ComparisonTable: React.FC = () => {
         escapeCsvValue(row.convexity),
         escapeCsvValue(row.priceChange),
         escapeCsvValue(row.spread),
+        escapeCsvValue(row.gSpread),
         escapeCsvValue(row.zSpread),
       ].join(';')),
     ];
@@ -1941,7 +2081,7 @@ export const ComparisonTable: React.FC = () => {
                 textAlign: 'left !important',
               },
               // Ensure numeric columns are centered
-              '& .ag-cell[col-id="ticker"], & .ag-cell[col-id="maturity"], & .ag-cell[col-id="coupon"], & .ag-cell[col-id="price"], & .ag-cell[col-id="ytm"], & .ag-cell[col-id="couponToPrice"], & .ag-cell[col-id="regularDuration"], & .ag-cell[col-id="duration"], & .ag-cell[col-id="convexity"], & .ag-cell[col-id="priceChange"], & .ag-cell[col-id="spread"], & .ag-cell[col-id="zSpread"], & .ag-cell[col-id="actions"]': {
+              '& .ag-cell[col-id="ticker"], & .ag-cell[col-id="maturity"], & .ag-cell[col-id="coupon"], & .ag-cell[col-id="price"], & .ag-cell[col-id="ytm"], & .ag-cell[col-id="couponToPrice"], & .ag-cell[col-id="regularDuration"], & .ag-cell[col-id="duration"], & .ag-cell[col-id="convexity"], & .ag-cell[col-id="priceChange"], & .ag-cell[col-id="spread"], & .ag-cell[col-id="gSpread"], & .ag-cell[col-id="zSpread"], & .ag-cell[col-id="actions"]': {
                 justifyContent: 'center',
                 textAlign: 'center !important',
               },

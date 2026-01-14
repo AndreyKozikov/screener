@@ -37,7 +37,8 @@ export default defineConfig({
             if (errorCode) {
               console.error('[Vite Proxy] Error code:', errorCode);
             }
-            if (res && !res.headersSent) {
+            // Type guard: check if res is a ServerResponse
+            if (res && 'headersSent' in res && 'writeHead' in res && !res.headersSent) {
               res.writeHead(500, {
                 'Content-Type': 'text/plain',
               });
