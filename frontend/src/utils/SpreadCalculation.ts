@@ -349,23 +349,34 @@ export const formatGSpread = (spread: number | null): string => {
 /**
  * Calculate theoretical bond price with Z-spread added to spot rates
  * 
- * Formula: Price = Σ(CF_i / (1 + (z_i + Z) / frequency) ^ (t_i * frequency)) + M / (1 + (z_n + Z) / frequency) ^ (t_n * frequency)
+ * This function implements the Z-spread calculation according to the Moscow Exchange (MOEX)
+ * Zero-Coupon Yield Curve Methodology. The methodology treats the yield curve as a set of
+ * effective annual zero rates (effective annual spot rates).
+ * 
+ * Formula: Price = Σ(CF_i / (1 + r(t_i) + z)^t_i) + M / (1 + r(t_n) + z)^t_n
+ * 
  * where:
  * - CF_i is coupon payment at period i
- * - z_i is spot rate for period i (from KBD curve)
- * - Z is the Z-spread to be added to all spot rates
- * - frequency is coupon payment frequency per year
+ * - r(t_i) is effective annual spot rate from MOEX KBD curve for time t_i (in years)
+ * - z is the Z-spread (additively added to effective annual spot rate)
  * - t_i is time to payment i in years
  * - M is principal (face value)
+ * 
+ * IMPORTANT METHODOLOGICAL NOTES:
+ * - MOEX methodology interprets KBD as effective annual spot rates, NOT nominal rates
+ * - The discounting formula: (1 + r(t_i) + z)^(-t_i) where r(t_i) is effective annual spot rate
+ * - Division by coupon frequency and multiplication of exponent by frequency are PROHIBITED
+ * - Z-spread is added additively to the effective annual spot rate
+ * - Alternative interpretations (nominal rates, period-based compounding) are methodologically incorrect
  * 
  * Only future coupon payments are included (coupondate > currentDate).
  * 
  * @param coupons - Array of coupon payments
  * @param faceValue - Face value of the bond
  * @param currentDate - Current date (analysis date)
- * @param yieldCurveMap - Yield curve map for zero-coupon rates (spot rates in percentage)
+ * @param yieldCurveMap - Yield curve map for zero-coupon rates (effective annual spot rates in percentage)
  * @param zSpread - Z-spread to add to spot rates (in decimal, e.g., 0.01 for 1%)
- * @param frequency - Coupon payment frequency per year (e.g., 2 for semi-annual)
+ * @param frequency - Coupon payment frequency per year (used only for cash flow structure, NOT for discounting)
  * @returns Theoretical price with Z-spread
  */
 const calculatePriceWithZSpread = (
@@ -376,7 +387,7 @@ const calculatePriceWithZSpread = (
   zSpread: number,
   frequency: number
 ): number | null => {
-  if (coupons.length === 0 || faceValue <= 0 || frequency <= 0) return null;
+  if (coupons.length === 0 || faceValue <= 0) return null;
 
   // Normalize current date to start of day for accurate comparison
   const currentDateNormalized = new Date(currentDate);
@@ -414,12 +425,16 @@ const calculatePriceWithZSpread = (
 
     if (yearsToCoupon <= 0) continue;
 
-    // Get spot rate for this period (with interpolation if needed)
+    // Get effective annual spot rate for this period (with interpolation if needed)
+    // MOEX KBD provides effective annual zero rates
     const spotRatePercent = interpolateZeroCurveYield(yieldCurveMap, yearsToCoupon);
     if (spotRatePercent === null) return null;
 
-    // Convert spot rate from percentage to decimal and add Z-spread
+    // Convert effective annual spot rate from percentage to decimal
     const spotRateDecimal = spotRatePercent / 100;
+    
+    // Add Z-spread additively to effective annual spot rate
+    // Formula: (1 + r(t_i) + z)^(-t_i) according to MOEX methodology
     const adjustedRate = spotRateDecimal + zSpread;
 
     // Get coupon value (in currency units, not percentage)
@@ -430,10 +445,10 @@ const calculatePriceWithZSpread = (
     const isLastPayment = i === sortedFutureCoupons.length - 1;
     const totalPayment = couponValue + (isLastPayment ? faceValue : 0);
 
-    // Discount using formula: CF / (1 + (spot_rate + Z) / frequency) ^ (years * frequency)
-    const ratePerPeriod = adjustedRate / frequency;
-    const periods = yearsToCoupon * frequency;
-    const discountFactor = Math.pow(1 + ratePerPeriod, periods);
+    // Discount using MOEX methodology formula: CF_i / (1 + r(t_i) + z)^t_i
+    // No division by frequency, no multiplication of exponent by frequency
+    // This is the ONLY correct formula according to MOEX methodology
+    const discountFactor = Math.pow(1 + adjustedRate, yearsToCoupon);
     const discountedPayment = totalPayment / discountFactor;
     
     price += discountedPayment;
@@ -445,25 +460,35 @@ const calculatePriceWithZSpread = (
 /**
  * Calculate Z-spread (Zero-Volatility Spread) for a bond using bisection method
  * 
- * Z-spread is the constant spread that must be added to all spot rates from the zero-coupon yield curve
- * so that the theoretical bond price equals the market dirty price.
+ * This function implements Z-spread calculation strictly according to the Moscow Exchange (MOEX)
+ * Zero-Coupon Yield Curve Methodology. The methodology treats KBD as effective annual spot rates.
  * 
- * Formula: Market_Dirty_Price = Σ(CF_i / (1 + (z_i + Z) / frequency) ^ (t_i * frequency)) + M / (1 + (z_n + Z) / frequency) ^ (t_n * frequency)
+ * Z-spread is the constant spread that must be added additively to all effective annual spot rates
+ * from the zero-coupon yield curve so that the theoretical bond price equals the market dirty price.
+ * 
+ * Formula: Market_Dirty_Price = Σ(CF_i / (1 + r(t_i) + z)^t_i) + M / (1 + r(t_n) + z)^t_n
  * 
  * Where:
  * - Market_Dirty_Price = Clean_Price + Accrued_Interest
  * - CF_i are future coupon payments
- * - z_i are spot rates from KBD curve for each coupon period
- * - Z is the Z-spread (to be found)
- * - frequency is coupon payment frequency per year
+ * - r(t_i) are effective annual spot rates from MOEX KBD curve for time t_i (in years)
+ * - z is the Z-spread (to be found, added additively to effective annual spot rate)
  * - t_i is time to payment i in years
  * - M is face value
  * 
- * Uses bisection method to find Z such that the difference between calculated and market price < 0.0001
+ * METHODOLOGICAL REQUIREMENTS (MOEX):
+ * - KBD is interpreted as effective annual zero rates (effective annual spot rates)
+ * - Discounting formula: (1 + r(t_i) + z)^(-t_i)
+ * - Division by coupon frequency is PROHIBITED
+ * - Multiplication of exponent by frequency is PROHIBITED
+ * - Z-spread is added additively to effective annual spot rate
+ * - Alternative interpretations (nominal rates, period-based compounding) are methodologically incorrect
+ * 
+ * Uses bisection method to find z such that the difference between calculated and market price < 0.0001
  * 
  * @param bond - Bond data
  * @param coupons - Array of coupon payments
- * @param zerocuponData - Zero-coupon yield curve data (KBD)
+ * @param zerocuponData - Zero-coupon yield curve data (KBD) from MOEX
  * @param currentDate - Current date (analysis date). If not provided, uses current date.
  * @returns Z-spread in percentage points (e.g., 1.5 for 1.5%), or null if calculation fails
  */
