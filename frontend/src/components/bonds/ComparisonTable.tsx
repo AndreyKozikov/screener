@@ -12,6 +12,13 @@ import {
   Button,
   Card,
   CardContent,
+  Tabs,
+  Tab,
+  TextField,
+  Grid,
+  Paper,
+  Checkbox,
+  FormControlLabel,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import DownloadIcon from '@mui/icons-material/Download';
@@ -35,6 +42,7 @@ import type { Coupon } from '../../types/coupon';
 import dayjs from 'dayjs';
 import type { BondListItem } from '../../types/bond';
 import { LoadingSpinner } from '../common/LoadingSpinner';
+import { fetchForecastData, type ForecastData } from '../../api/forecast';
 
 // Register AG Grid modules
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -57,6 +65,36 @@ interface ComparisonRow {
   secid: string;
 }
 
+interface TotalReturnResult {
+  secid: string;
+  name: string;
+  ticker: string;
+  // Input parameters
+  investAmount: number;
+  cleanPricePercent: number;
+  nominal: number;
+  accruedInterest: number;
+  couponRate: number;
+  years: number;
+  modDuration: number | null;
+  targetYieldChange: number;
+  // Intermediate calculations
+  priceRub: number;
+  dirtyPriceRub: number;
+  quantity: number;
+  cashBalance: number;
+  totalCoupons: number;
+  grossCouponsReceived: number;
+  priceChangePercent: number;
+  futureCleanPricePercent: number;
+  saleProceeds: number;
+  // Final results
+  finalBalance: number;
+  absoluteProfit: number;
+  totalReturnPercent: number;
+  annualReturn: number;
+}
+
 /**
  * ComparisonTable Component
  * 
@@ -71,6 +109,16 @@ export const ComparisonTable: React.FC = () => {
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const gridRef = useRef<AgGridReact<ComparisonRow>>(null);
   const [headerHeight, setHeaderHeight] = useState<number | undefined>(undefined);
+  const [currentTab, setCurrentTab] = useState(0);
+  
+  // Cash flow calculation state
+  const [investAmount, setInvestAmount] = useState<number>(10000);
+  const [years, setYears] = useState<number>(3);
+  const [forecastRate, setForecastRate] = useState<number | null>(null);
+  const [currentRate, setCurrentRate] = useState<number | null>(null);
+  const [forecastData, setForecastData] = useState<ForecastData | null>(null);
+  const [isLoadingForecast, setIsLoadingForecast] = useState(false);
+  const [useForecastRate, setUseForecastRate] = useState<boolean>(false);
 
   // Load zero-coupon yield curve data when component mounts or bonds change
   useEffect(() => {
@@ -137,6 +185,63 @@ export const ComparisonTable: React.FC = () => {
 
     void loadCouponsData();
   }, [comparisonBonds]);
+
+  // Load forecast data for rate prediction (only if checkbox is checked)
+  useEffect(() => {
+    if (!useForecastRate) {
+      // If checkbox is unchecked, clear forecast data and rate
+      setForecastData(null);
+      setForecastRate(null);
+      setIsLoadingForecast(false);
+      return;
+    }
+
+    const loadForecast = async () => {
+      try {
+        setIsLoadingForecast(true);
+        const data = await fetchForecastData();
+        setForecastData(data);
+        
+        // Auto-fill forecast rate based on current year + years horizon
+        const currentYear = new Date().getFullYear();
+        const targetYear = currentYear + years;
+        
+        if (data && data.data.основные_показатели) {
+          // Find key rate field name - search in names mapping
+          const keyRateFieldName = Object.keys(data.names.основные_показатели).find(
+            key => {
+              const name = data.names.основные_показатели[key]?.toLowerCase() || '';
+              return name.includes('ключевая ставка') || 
+                     name.includes('ключевая ставка банка россии') ||
+                     name.includes('ставка банка россии');
+            }
+          );
+          
+          if (keyRateFieldName) {
+            const yearData = data.data.основные_показатели.find(ind => ind.год === targetYear);
+            if (yearData && keyRateFieldName in yearData) {
+              const value = yearData[keyRateFieldName];
+              if (value !== null && value !== undefined) {
+                if (typeof value === 'object' && 'мин' in value && 'макс' in value) {
+                  const val = value as { мин: number; макс: number };
+                  const avgRate = (val.мин + val.макс) / 2;
+                  setForecastRate(avgRate);
+                } else if (typeof value === 'number') {
+                  setForecastRate(value);
+                }
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error loading forecast data:', error);
+      } finally {
+        setIsLoadingForecast(false);
+      }
+    };
+
+    void loadForecast();
+  }, [years, useForecastRate]);
 
   // Calculate years until maturity
   const calculateYearsToMaturity = (matDate: string | null): number | null => {
@@ -1814,6 +1919,286 @@ export const ComparisonTable: React.FC = () => {
     }
   };
 
+  // Calculate Total Return for a bond
+  const calculateTotalReturn = (bond: BondListItem): TotalReturnResult | null => {
+    // Validate required inputs
+    if (
+      bond.PREVPRICE === null || bond.PREVPRICE === undefined ||
+      bond.FACEVALUE === null || bond.FACEVALUE === undefined ||
+      bond.COUPONPERCENT === null || bond.COUPONPERCENT === undefined ||
+      forecastRate === null || currentRate === null
+    ) {
+      return null;
+    }
+
+    const cleanPricePercent = bond.PREVPRICE;
+    const nominal = bond.FACEVALUE;
+    const accruedInterest = bond.ACCRUEDINT ?? 0;
+    const couponRate = bond.COUPONPERCENT / 100; // Convert to decimal
+    const modDuration = calculateModifiedDuration(bond);
+
+    if (modDuration === null) {
+      return null;
+    }
+
+    // ===== DIRTY-TO-DIRTY METHOD =====
+    // This method correctly accounts for accrued interest (НКД) at both purchase and sale,
+    // ensuring that paid НКД is not incorrectly counted as profit.
+
+    // Step 1: Calculate purchase costs (T0) - Dirty price at purchase
+    const priceRub = nominal * (cleanPricePercent / 100);
+    const accruedInterestAtPurchase = accruedInterest;
+    const buyDirtyPrice = priceRub + accruedInterestAtPurchase;
+
+    // Step 2: Calculate quantity and total invested
+    const quantity = Math.floor(investAmount / buyDirtyPrice);
+    const totalInvested = quantity * buyDirtyPrice;
+    const cashBalance = investAmount - totalInvested;
+
+    // Step 3: Calculate future price with convexity adjustment
+    // Calculate delta yield: (targetYield - currentYield) / 100
+    // If forecastRate (8%) < currentRate (16%), deltaYield is negative (-0.08)
+    const deltaYield = (forecastRate - currentRate) / 100;
+    
+    // According to Fabozzi theory: PercentageChange = -ModDuration * deltaYield
+    // When deltaYield is negative (rates decrease), priceChangePercent will be positive (price increases)
+    const priceChangeDuration = -modDuration * deltaYield;
+    
+    // Calculate convexity adjustment: 0.5 * Convexity * deltaYield^2
+    const convexity = calculateConvexity(bond);
+    const priceChangeConvexity = convexity !== null 
+      ? 0.5 * convexity * Math.pow(deltaYield, 2)
+      : 0;
+    
+    // Total price change with convexity adjustment
+    const totalPriceChangePercent = priceChangeDuration + priceChangeConvexity;
+    
+    // Future clean price in percentage
+    const futureCleanPricePercent = cleanPricePercent * (1 + totalPriceChangePercent);
+
+    // Step 4: Calculate sale proceeds (T_exit) - Dirty price at sale
+    // For simplification, we use current accrued interest as accruedInterestAtSale
+    // In a more precise calculation, this would be based on coupon dates and time elapsed
+    const accruedInterestAtSale = accruedInterestAtPurchase; // Simplified: same as purchase
+    const futurePriceRub = nominal * (futureCleanPricePercent / 100);
+    const sellDirtyPrice = futurePriceRub + accruedInterestAtSale;
+    const totalSaleProceeds = quantity * sellDirtyPrice;
+
+    // Step 5: Calculate coupon income
+    // Total gross coupons received during holding period (includes НКД in first coupon)
+    const grossCouponsReceived = quantity * nominal * couponRate * years;
+    
+    // In Dirty-to-Dirty method: first coupon includes НКД that was paid at purchase
+    // This НКД is a return of what we already paid, not new income
+    // Therefore, we subtract the НКД paid at purchase from total coupons
+    const accruedInterestPaid = quantity * accruedInterestAtPurchase;
+    const totalCouponsReceived = grossCouponsReceived - accruedInterestPaid;
+
+    // Step 6: Calculate final results using Dirty-to-Dirty method
+    // Final balance = sale proceeds + coupons + cash balance
+    const finalBalance = totalSaleProceeds + totalCouponsReceived + cashBalance;
+    
+    // Absolute profit = final balance - total invested (which includes НКД paid at purchase)
+    // This ensures НКД paid at purchase is not counted as profit
+    const absoluteProfit = finalBalance - totalInvested;
+    
+    // Total return percentage based on initial investment amount
+    const totalReturnPercent = (absoluteProfit / investAmount) * 100;
+    const annualReturn = (Math.pow(finalBalance / investAmount, 1 / years) - 1) * 100;
+
+    return {
+      secid: bond.SECID,
+      name: bond.SHORTNAME || '—',
+      ticker: bond.SECID || '—',
+      investAmount: Math.round(investAmount * 100) / 100,
+      cleanPricePercent: Math.round(cleanPricePercent * 100) / 100,
+      nominal: Math.round(nominal * 100) / 100,
+      accruedInterest: Math.round(accruedInterestAtPurchase * 100) / 100,
+      couponRate: Math.round(couponRate * 10000) / 10000,
+      years: Math.round(years * 100) / 100,
+      modDuration: Math.round(modDuration * 100) / 100,
+      targetYieldChange: Math.round(deltaYield * 10000) / 10000,
+      priceRub: Math.round(priceRub * 100) / 100,
+      dirtyPriceRub: Math.round(buyDirtyPrice * 100) / 100,
+      quantity,
+      cashBalance: Math.round(cashBalance * 100) / 100,
+      totalCoupons: Math.round(totalCouponsReceived * 100) / 100,
+      grossCouponsReceived: Math.round(grossCouponsReceived * 100) / 100,
+      priceChangePercent: Math.round(totalPriceChangePercent * 10000) / 100,
+      futureCleanPricePercent: Math.round(futureCleanPricePercent * 100) / 100,
+      saleProceeds: Math.round(totalSaleProceeds * 100) / 100,
+      finalBalance: Math.round(finalBalance * 100) / 100,
+      absoluteProfit: Math.round(absoluteProfit * 100) / 100,
+      totalReturnPercent: Math.round(totalReturnPercent * 100) / 100,
+      annualReturn: Math.round(annualReturn * 100) / 100,
+    };
+  };
+
+  // Calculate Total Return results for all bonds
+  const totalReturnResults = useMemo(() => {
+    if (comparisonBonds.length === 0 || forecastRate === null || currentRate === null) {
+      return [];
+    }
+
+    return comparisonBonds
+      .map(bond => calculateTotalReturn(bond))
+      .filter((result): result is TotalReturnResult => result !== null);
+  }, [comparisonBonds, investAmount, years, forecastRate, currentRate]);
+
+  // Column definitions for Total Return results table
+  const totalReturnColumnDefs: ColDef[] = useMemo(() => [
+    {
+      field: 'name',
+      headerName: 'Название',
+      minWidth: 150,
+      cellStyle: { textAlign: 'left' },
+      pinned: 'left',
+    },
+    {
+      field: 'ticker',
+      headerName: 'Тикер',
+      minWidth: 100,
+      cellStyle: { textAlign: 'center' },
+    },
+    {
+      field: 'cleanPricePercent',
+      headerName: 'Чистая цена, %',
+      minWidth: 120,
+      cellStyle: { textAlign: 'right' },
+      valueFormatter: (params) => formatNumber(params.value, 2),
+    },
+    {
+      field: 'accruedInterest',
+      headerName: 'НКД, руб.',
+      minWidth: 100,
+      cellStyle: { textAlign: 'right' },
+      valueFormatter: (params) => formatNumber(params.value, 2),
+    },
+    {
+      field: 'couponRate',
+      headerName: 'Купонная ставка',
+      minWidth: 130,
+      cellStyle: { textAlign: 'right' },
+      valueFormatter: (params) => formatNumber(params.value * 100, 2) + '%',
+    },
+    {
+      field: 'modDuration',
+      headerName: 'Модифицированная дюрация',
+      minWidth: 180,
+      cellStyle: { textAlign: 'right' },
+      valueFormatter: (params) => formatNumber(params.value, 2),
+    },
+    {
+      field: 'priceRub',
+      headerName: 'Чистая цена, руб.',
+      minWidth: 140,
+      cellStyle: { textAlign: 'right' },
+      valueFormatter: (params) => formatNumber(params.value, 2),
+    },
+    {
+      field: 'dirtyPriceRub',
+      headerName: 'Грязная цена покупки, руб.',
+      minWidth: 180,
+      cellStyle: { textAlign: 'right' },
+      valueFormatter: (params) => formatNumber(params.value, 2),
+      headerTooltip: 'Грязная цена покупки (чистая цена + НКД) на момент покупки. Используется в методе Dirty-to-Dirty для корректного учета НКД.',
+      headerComponent: CustomHeaderWithTooltip,
+      headerClass: 'ag-header-center',
+    },
+    {
+      field: 'quantity',
+      headerName: 'Количество лотов',
+      minWidth: 130,
+      cellStyle: { textAlign: 'right' },
+      valueFormatter: (params) => String(params.value),
+    },
+    {
+      field: 'cashBalance',
+      headerName: 'Остаток, руб.',
+      minWidth: 120,
+      cellStyle: { textAlign: 'right' },
+      valueFormatter: (params) => formatNumber(params.value, 2),
+    },
+    {
+      field: 'grossCouponsReceived',
+      headerName: 'Полная сумма купонов (включая НКД в первом купоне), руб.',
+      minWidth: 320,
+      cellStyle: { textAlign: 'right' },
+      valueFormatter: (params) => formatNumber(params.value, 2),
+      headerTooltip: 'Полная сумма всех купонных выплат за период владения облигацией. Включает НКД, который был уплачен продавцу при покупке и вернется в первом купоне. Это валовая сумма всех купонных выплат без вычета уплаченного НКД.',
+      headerComponent: CustomHeaderWithTooltip,
+      headerClass: 'ag-header-center',
+    },
+    {
+      field: 'totalCoupons',
+      headerName: 'Чистый доход от купонов (за вычетом уплаченного НКД), руб.',
+      minWidth: 320,
+      cellStyle: { textAlign: 'right' },
+      valueFormatter: (params) => formatNumber(params.value, 2),
+      headerTooltip: 'Чистый доход от купонов за период владения облигацией, рассчитанный методом Dirty-to-Dirty. Из полной суммы купонов вычитается НКД, уплаченный при покупке (который вернется в первом купоне). Используется для корректного расчета прибыли.',
+      headerComponent: CustomHeaderWithTooltip,
+      headerClass: 'ag-header-center',
+    },
+    {
+      field: 'priceChangePercent',
+      headerName: 'Изменение цены, %',
+      minWidth: 140,
+      cellStyle: { textAlign: 'right' },
+      valueFormatter: (params) => formatNumber(params.value, 2) + '%',
+    },
+    {
+      field: 'futureCleanPricePercent',
+      headerName: 'Прогнозная цена, %',
+      minWidth: 140,
+      cellStyle: { textAlign: 'right' },
+      valueFormatter: (params) => formatNumber(params.value, 2),
+    },
+    {
+      field: 'saleProceeds',
+      headerName: 'Выручка от продажи (грязная цена), руб.',
+      minWidth: 240,
+      cellStyle: { textAlign: 'right' },
+      valueFormatter: (params) => formatNumber(params.value, 2),
+      headerTooltip: 'Выручка от продажи облигаций по грязной цене (прогнозная чистая цена + НКД на момент продажи). Используется в методе Dirty-to-Dirty.',
+      headerComponent: CustomHeaderWithTooltip,
+      headerClass: 'ag-header-center',
+    },
+    {
+      field: 'finalBalance',
+      headerName: 'Итоговая сумма, руб.',
+      minWidth: 150,
+      cellStyle: { textAlign: 'right', fontWeight: 600 },
+      valueFormatter: (params) => formatNumber(params.value, 2),
+    },
+    {
+      field: 'absoluteProfit',
+      headerName: 'Абсолютная прибыль, руб.',
+      minWidth: 170,
+      cellStyle: { textAlign: 'right', fontWeight: 600 },
+      valueFormatter: (params) => formatNumber(params.value, 2),
+      headerTooltip: 'Абсолютная прибыль, рассчитанная методом Dirty-to-Dirty: (Выручка от продажи + Купоны + Остаток) - Затраты на покупку. Учитывает НКД при покупке и продаже, исключая двойной учет НКД в прибыли.',
+      headerComponent: CustomHeaderWithTooltip,
+      headerClass: 'ag-header-center',
+    },
+    {
+      field: 'totalReturnPercent',
+      headerName: 'Совокупная доходность (Total Return), %',
+      minWidth: 200,
+      cellStyle: { textAlign: 'right', fontWeight: 600 },
+      valueFormatter: (params) => formatNumber(params.value, 2) + '%',
+      headerTooltip: 'Совокупная доходность (Total Return), рассчитанная методом Dirty-to-Dirty. Отражает реальную доходность инвестиции с учетом всех затрат (включая уплаченный НКД) и всех доходов (включая полученный НКД при продаже).',
+      headerComponent: CustomHeaderWithTooltip,
+      headerClass: 'ag-header-center',
+    },
+    {
+      field: 'annualReturn',
+      headerName: 'Среднегодовая доходность (CAGR), %',
+      minWidth: 220,
+      cellStyle: { textAlign: 'right', fontWeight: 600 },
+      valueFormatter: (params) => formatNumber(params.value, 2) + '%',
+    },
+  ] as ColDef[], []);
+
   if (comparisonBonds.length === 0) {
     return (
       <Card sx={{ 
@@ -1908,7 +2293,7 @@ export const ComparisonTable: React.FC = () => {
             >
               Загрузить из файла
             </Button>
-            {comparisonData.length > 0 && (
+            {comparisonData.length > 0 && currentTab === 0 && (
               <>
                 <Button
                   variant="outlined"
@@ -1959,8 +2344,19 @@ export const ComparisonTable: React.FC = () => {
           </Box>
         </Box>
 
-        {/* Table */}
-        <Box sx={{ flexGrow: 1, display: 'flex', px: 2 }}>
+        {/* Tabs Navigation */}
+        <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
+          <Tabs value={currentTab} onChange={(_, newValue) => setCurrentTab(newValue)}>
+            <Tab label="Сравнение облигаций" />
+            <Tab label="Расчет возможных денежных потоков" />
+          </Tabs>
+        </Box>
+
+        {/* Tab Content */}
+        <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden', height: '100%' }}>
+          {currentTab === 0 && (
+            /* Comparison Table */
+            <Box sx={{ flexGrow: 1, display: 'flex', px: 2 }}>
           <Box
             className="ag-theme-material"
             sx={{
@@ -2150,6 +2546,168 @@ export const ComparisonTable: React.FC = () => {
               theme="legacy"
             />
           </Box>
+          </Box>
+          )}
+
+          {currentTab === 1 && (
+            /* Cash Flow Calculation Tab */
+            <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', p: 2, minHeight: 0, overflow: 'auto' }}>
+              {/* Input Form */}
+              <Paper sx={{ p: 2, mb: 2 }}>
+                <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, mb: 2 }}>
+                  Параметры расчета
+                </Typography>
+                <Grid container spacing={2}>
+                  <Grid item xs={12} sm={3} md={3}>
+                    <TextField
+                      fullWidth
+                      label="Сумма инвестиций, руб."
+                      type="number"
+                      value={investAmount}
+                      onChange={(e) => setInvestAmount(Number(e.target.value))}
+                      inputProps={{ min: 0, step: 1000 }}
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={3} md={3}>
+                    <TextField
+                      fullWidth
+                      label="Горизонт расчета, лет"
+                      type="number"
+                      value={years}
+                      onChange={(e) => setYears(Number(e.target.value))}
+                      inputProps={{ min: 0.1, step: 0.1 }}
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={3} md={3}>
+                    <TextField
+                      fullWidth
+                      label="Предполагаемая ставка, %"
+                      type="number"
+                      value={forecastRate ?? ''}
+                      onChange={(e) => setForecastRate(e.target.value ? Number(e.target.value) : null)}
+                      inputProps={{ min: 0, step: 0.1 }}
+                      helperText={
+                        useForecastRate
+                          ? (isLoadingForecast ? 'Загрузка из прогноза...' : 'Из прогноза Банка России')
+                          : 'Введите значение вручную'
+                      }
+                      disabled={useForecastRate && isLoadingForecast}
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={3} md={3}>
+                    <TextField
+                      fullWidth
+                      label="Текущая ставка ЦБ, %"
+                      type="number"
+                      value={currentRate ?? ''}
+                      onChange={(e) => setCurrentRate(e.target.value ? Number(e.target.value) : null)}
+                      inputProps={{ min: 0, step: 0.1 }}
+                    />
+                  </Grid>
+                </Grid>
+                <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-start' }}>
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={useForecastRate}
+                        onChange={(e) => setUseForecastRate(e.target.checked)}
+                      />
+                    }
+                    label="Использовать ставку из прогноза Банка России"
+                  />
+                </Box>
+              </Paper>
+
+              {/* Results Table */}
+              {forecastRate !== null && currentRate !== null ? (
+                <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+                  <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, mb: 1 }}>
+                    Результаты расчета
+                  </Typography>
+                  <Box
+                    className="ag-theme-material"
+                    sx={{
+                      flex: 1,
+                      width: '100%',
+                      minHeight: 0,
+                      '& .ag-root-wrapper': {
+                        border: '1px solid #dee2e6',
+                        borderRadius: '4px',
+                        height: '100%',
+                        display: 'flex',
+                        flexDirection: 'column',
+                      },
+                      '& .ag-body': {
+                        flex: 1,
+                        minHeight: 0,
+                        overflow: 'auto',
+                      },
+                      '& .ag-header': {
+                        borderBottom: '1px solid #ddd',
+                      },
+                      '& .ag-header-cell': {
+                        borderRight: '1px solid #dee2e6 !important',
+                        borderBottom: '1px solid #dee2e6 !important',
+                        fontWeight: 600,
+                        background: '#fafafa',
+                        minHeight: '44px',
+                        height: 'auto',
+                      },
+                      '& .ag-header-cell-label': {
+                        whiteSpace: 'normal',
+                        wordBreak: 'break-word',
+                        lineHeight: 1.4,
+                        textAlign: 'center',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '8px 4px',
+                        width: '100%',
+                        height: '100%',
+                        overflow: 'visible',
+                      },
+                      '& .ag-header-cell-text': {
+                        whiteSpace: 'normal',
+                        wordBreak: 'break-word',
+                        lineHeight: 1.4,
+                        textAlign: 'center',
+                        overflow: 'visible',
+                      },
+                      '& .ag-cell': {
+                        borderRight: '1px solid #dee2e6 !important',
+                        borderBottom: '1px solid #dee2e6 !important',
+                      },
+                    }}
+                  >
+                    <AgGridReact<TotalReturnResult>
+                      rowData={totalReturnResults}
+                      columnDefs={totalReturnColumnDefs}
+                      defaultColDef={{
+                        sortable: true,
+                        filter: true,
+                        resizable: true,
+                        autoHeaderHeight: true,
+                        wrapHeaderText: true,
+                      }}
+                      animateRows={true}
+                      pagination={true}
+                      paginationPageSize={50}
+                      enableCellTextSelection={true}
+                      suppressRowClickSelection={true}
+                      getRowId={(params) => params.data.secid}
+                      theme="legacy"
+                    />
+                  </Box>
+                </Box>
+              ) : (
+                <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Typography variant="body2" color="text.secondary">
+                    Заполните все поля для расчета
+                  </Typography>
+                </Box>
+              )}
+            </Box>
+          )}
         </Box>
       </CardContent>
       <ComparisonImportDialog
