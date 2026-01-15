@@ -8,9 +8,10 @@ import type { CouponsListResponse } from '../types/coupon';
  * Fetch filtered bonds list
  * Loads ALL filtered data in one request for client-side pagination and search
  * Search filtering is done on client side, not sent to server
+ * @param excludeSpob If true, exclude bonds with trading mode SPOB
  */
-export const fetchBonds = async (filters: BondFilters, emitentTitle?: string): Promise<BondsListResponse> => {
-  const params: Record<string, string | number | (string | number)[] | null> = {};
+export const fetchBonds = async (filters: BondFilters, emitentTitle?: string, excludeSpob?: boolean): Promise<BondsListResponse> => {
+  const params: Record<string, string | number | (string | number)[] | boolean | null> = {};
   
   // Build query parameters (exclude search and skip/limit for client-side operations)
   if (filters.couponMin !== null) params.coupon_min = filters.couponMin;
@@ -22,6 +23,7 @@ export const fetchBonds = async (filters: BondFilters, emitentTitle?: string): P
   if (filters.matdateFrom) params.matdate_from = filters.matdateFrom;
   if (filters.matdateTo) params.matdate_to = filters.matdateTo;
   if (emitentTitle) params.emitent_title = emitentTitle;
+  if (excludeSpob === true) params.exclude_spob = true;
   if (filters.listlevel && Array.isArray(filters.listlevel) && filters.listlevel.length > 0) {
     // FastAPI expects array parameters to be sent as repeated query params: listlevel=1&listlevel=2
     // Convert numbers to strings for URL serialization

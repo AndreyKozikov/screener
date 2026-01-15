@@ -193,12 +193,58 @@ class CurrencyService:
             self.logger.error(f"[CURRENCY SERVICE] ERROR: Unexpected error - {error_type}: {str(exc)}")
             raise RuntimeError(f"Failed to fetch currency rates: {exc}") from exc
     
+    def _find_previous_rates(self, target_date: date, currency_data: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """
+        Find the nearest previous entry with non-empty rates.
+        
+        Args:
+            target_date: Date to search backwards from
+            currency_data: List of currency rate entries
+            
+        Returns:
+            Dictionary with rates if found, None otherwise
+        """
+        target_date_str = target_date.isoformat()
+        
+        # Filter entries with date <= target_date and non-empty rates
+        valid_entries = []
+        for entry in currency_data:
+            if not isinstance(entry, dict):
+                continue
+            
+            entry_date_str = entry.get("date")
+            if not entry_date_str:
+                continue
+            
+            try:
+                entry_date = date.fromisoformat(entry_date_str)
+                if entry_date <= target_date:
+                    rates = entry.get("rates", {})
+                    # Check if rates dict is not empty
+                    if rates and isinstance(rates, dict) and len(rates) > 0:
+                        valid_entries.append((entry_date, entry))
+            except (ValueError, TypeError):
+                continue
+        
+        if not valid_entries:
+            return None
+        
+        # Sort by date descending (most recent first)
+        valid_entries.sort(key=lambda x: x[0], reverse=True)
+        
+        # Return the most recent entry with rates
+        _, most_recent_entry = valid_entries[0]
+        self.logger.info(f"[CURRENCY SERVICE] Found previous rates entry for date: {most_recent_entry.get('date')}")
+        return most_recent_entry
+    
     def get_rates(self, target_date: Optional[date] = None, force_refresh: bool = False) -> Dict[str, Any]:
         """
         Get currency rates for the given date.
         
         If rates don't exist for the date and force_refresh is True,
         fetches from CBR API and saves to file.
+        
+        If rates don't exist or are empty, returns the nearest previous entry with rates.
         
         Args:
             target_date: Date to get rates for (defaults to today)
@@ -220,13 +266,27 @@ class CurrencyService:
             # Find and return existing rates
             for entry in currency_data:
                 if isinstance(entry, dict) and entry.get("date") == target_date_str:
-                    self.logger.info(f"[CURRENCY SERVICE] Found cached rates for {target_date_str}")
-                    return entry
+                    rates = entry.get("rates", {})
+                    # Check if rates are not empty
+                    if rates and isinstance(rates, dict) and len(rates) > 0:
+                        self.logger.info(f"[CURRENCY SERVICE] Found cached rates for {target_date_str}")
+                        return entry
+                    else:
+                        # Entry exists but has empty rates, look for previous entry
+                        self.logger.info(f"[CURRENCY SERVICE] Found entry for {target_date_str} but rates are empty, looking for previous entry")
+                        previous_entry = self._find_previous_rates(target_date, currency_data)
+                        if previous_entry:
+                            return previous_entry
         
         # Rates not found or force_refresh is True
         if not force_refresh:
             self.logger.info(f"[CURRENCY SERVICE] No cached rates for {target_date_str}, but force_refresh=False")
-            # Return empty structure
+            # Try to find previous entry with rates
+            previous_entry = self._find_previous_rates(target_date, currency_data)
+            if previous_entry:
+                self.logger.info(f"[CURRENCY SERVICE] Using previous rates entry for date: {previous_entry.get('date')}")
+                return previous_entry
+            # Return empty structure if no previous entry found
             return {
                 'date': target_date_str,
                 'source_date': '',
@@ -239,10 +299,23 @@ class CurrencyService:
         try:
             fresh_data = self._fetch_rates_from_cbr(target_date)
             self.logger.info(f"[CURRENCY SERVICE] Successfully fetched rates from CBR API")
+            
+            # Check if fetched rates are not empty
+            rates = fresh_data.get("rates", {})
+            if not rates or not isinstance(rates, dict) or len(rates) == 0:
+                self.logger.warning(f"[CURRENCY SERVICE] Fetched rates are empty for {target_date_str}, looking for previous entry")
+                previous_entry = self._find_previous_rates(target_date, currency_data)
+                if previous_entry:
+                    return previous_entry
         except Exception as exc:
             error_type = type(exc).__name__
             self.logger.error(f"[CURRENCY SERVICE] ERROR: Failed to fetch rates - {error_type}: {str(exc)}")
-            # Return empty structure on error
+            # Try to find previous entry with rates
+            previous_entry = self._find_previous_rates(target_date, currency_data)
+            if previous_entry:
+                self.logger.info(f"[CURRENCY SERVICE] Using previous rates entry after fetch error for date: {previous_entry.get('date')}")
+                return previous_entry
+            # Return empty structure on error if no previous entry found
             return {
                 'date': target_date_str,
                 'source_date': '',

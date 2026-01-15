@@ -123,7 +123,8 @@ export const SpreadAnalysis: React.FC = () => {
     const loadBonds = async () => {
       setIsLoadingBonds(true);
       try {
-        const response = await fetchBonds(filters, selectedEmitent);
+        // Exclude bonds with trading mode SPOB for spread analysis
+        const response = await fetchBonds(filters, selectedEmitent, true);
         setBonds(response.bonds);
       } catch (error) {
         console.error('Error loading bonds:', error);
@@ -757,26 +758,230 @@ export const SpreadAnalysis: React.FC = () => {
   ));
   SpreadHeaderWithTooltip.displayName = 'SpreadHeaderWithTooltip';
 
-  const GSpreadHeaderWithTooltip = React.memo((_params: IHeaderParams) => (
-    <Tooltip title="G-спред (Government Spread) — разница между фактической доходностью к погашению (YTM) облигации и теоретической доходностью, рассчитанной на основе кривой бескупонной доходности (КБД). Формула: G-спред = YTM_фактическая - YTM_теоретическая, где YTM_теоретическая вычисляется из теоретической цены облигации, полученной дисконтированием всех будущих купонных платежей и номинала по спот-ставкам КБД. Рассчитывается только для облигаций типа «Фикс с известным купоном» без колл или пут опционов. Положительное значение означает премию за кредитный риск, отрицательное — дисконт." arrow placement="top" enterDelay={300} leaveDelay={0}
-      slotProps={{ tooltip: { sx: { maxWidth: 600, bgcolor: 'rgba(255, 255, 255, 0.98)', fontSize: '13px', padding: '12px 16px', borderRadius: '8px' } } }}>
-      <div className="ag-header-cell-label" style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'help', gap: '4px' }}>
-        <span>G-спред (на основе кривой бескупонной доходности)</span>
-        <HelpOutlineIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
-      </div>
-    </Tooltip>
-  ));
+  const GSpreadHeaderWithTooltip = React.memo((_params: IHeaderParams) => {
+    return (
+      <Tooltip
+        title={
+          <Box sx={{ p: 0.5 }}>
+            <Typography variant="body2">
+              <strong>G-спред (Government Spread)</strong> — разница между фактической доходностью к погашению (YTM) облигации и теоретической доходностью, рассчитанной на основе кривой бескупонной доходности (КБД).
+            </Typography>
+            <Typography variant="body2">
+              <strong>Формула:</strong> G-спред = YTM_фактическая - YTM_теоретическая
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 1 }}>
+              <strong>Как это считается:</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              1. Все будущие купоны и номинал облигации дисконтируются по спот-ставкам из кривой бескупонной доходности (КБД) для соответствующих сроков.
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              2. Из полученной теоретической цены вычисляется теоретическая YTM.
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              3. G-спред = Фактическая YTM (рыночная) - Теоретическая YTM (из КБД).
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2, mt: 0.5 }}>
+              Положительное значение означает премию за кредитный риск и риск ликвидности. Отрицательное — дисконт (облигация торгуется дешевле теоретической цены).
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 1 }}>
+              <strong>🔍 Как интерпретировать значение</strong>
+            </Typography>
+            <Typography variant="body2">
+              <strong>Положительное значение</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              Облигация даёт доходность выше рыночной нормы.
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              Возможна недооценка, инвестор получает дополнительную премию.
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 1 }}>
+              <strong>Отрицательное значение</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              Облигация торгуется дороже рынка.
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              Обычно это надёжные или высоколиквидные бумаги.
+            </Typography>
+            <Typography variant="body2">
+              <strong>Около нуля</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              Цена близка к справедливой рыночной оценке.
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 1 }}>
+              <strong>✅ Как выбирать облигации</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              Сравнивайте облигации одного типа (сектор, надёжность, срок).
+            </Typography>
+            <Typography variant="body2">
+              <strong>При прочих равных:</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              • чем выше спред — тем лучше;
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              • одинаковый спред при большем сроке — предпочтительнее.
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              Очень высокий спред может означать повышенный риск — его нужно проверять.
+            </Typography>
+            <Typography variant="body2">
+              <strong>Практическое правило:</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              Предпочтение стоит отдавать облигациям с устойчивым положительным спредом по сравнению с аналогами.
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 1, pt: 1, borderTop: '1px solid rgba(0, 0, 0, 0.12)' }}>
+              <strong>⚠️ Важно:</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              В то время как «Премия по рынку» оценивает выгоду облигации «на глазок» только по дате её финала (используя дюрацию), G-спред проводит детальную проверку каждой купонной выплаты через кривую бескупонной доходности, показывая точную разницу между рыночной и теоретической доходностью. G-спред отличается от Z-спреда: Z-спред — это постоянная надбавка, которую нужно добавить ко всем спот-ставкам КБД, чтобы теоретическая цена равнялась рыночной цене.
+            </Typography>
+          </Box>
+        }
+        arrow
+        placement="top"
+        enterDelay={300}
+        leaveDelay={0}
+        slotProps={{
+          tooltip: {
+            sx: {
+              maxWidth: 500,
+              bgcolor: 'rgba(255, 255, 255, 0.98)',
+              color: 'rgba(0, 0, 0, 0.87)',
+              fontSize: '13px',
+              lineHeight: 1.5,
+              padding: '12px 16px',
+              borderRadius: '8px',
+              boxShadow: '0px 3px 5px -1px rgba(0, 0, 0, 0.2), 0px 6px 10px 0px rgba(0, 0, 0, 0.14), 0px 1px 18px 0px rgba(0, 0, 0, 0.12)',
+              border: '1px solid rgba(0, 0, 0, 0.12)',
+              '& .MuiTypography-root': {
+                color: 'rgba(0, 0, 0, 0.87) !important',
+              },
+            },
+          },
+        }}
+      >
+        <div 
+          className="ag-header-cell-label" 
+          style={{ 
+            width: '100%', 
+            height: '100%', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center',
+            cursor: 'help',
+            gap: '4px',
+          }}
+        >
+          <span>G-спред (на основе кривой бескупонной доходности)</span>
+          <HelpOutlineIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+        </div>
+      </Tooltip>
+    );
+  });
   GSpreadHeaderWithTooltip.displayName = 'GSpreadHeaderWithTooltip';
 
-  const ZSpreadHeaderWithTooltip = React.memo((_params: IHeaderParams) => (
-    <Tooltip title="Z-спред (Zero-Volatility Spread) — постоянная надбавка (в процентных пунктах), которую необходимо добавить ко всем спот-ставкам кривой бескупонной доходности (КБД), чтобы теоретическая цена облигации равнялась её текущей рыночной цене. Формула: Рыночная_Грязная_Цена = Σ(Будущий_Платеж / (1 + (Спот_Ставка + Z) / Частота_Выплат) ^ (Время_в_годах * Частота_Выплат)). Z-спред считается более точным показателем премии за риск, чем G-спред, потому что учитывает всю форму кривой доходности и структуру купонных выплат. Рассчитывается только для облигаций типа «Фикс с известным купоном» без встроенных опционов. Положительное значение означает премию за кредитный риск и неликвидность, отрицательное — дисконт." arrow placement="top" enterDelay={300} leaveDelay={0}
-      slotProps={{ tooltip: { sx: { maxWidth: 650, bgcolor: 'rgba(255, 255, 255, 0.98)', fontSize: '13px', padding: '12px 16px', borderRadius: '8px' } } }}>
-      <div className="ag-header-cell-label" style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'help', gap: '4px' }}>
-        <span>Z-спред (Zero-Volatility Spread)</span>
-        <HelpOutlineIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
-      </div>
-    </Tooltip>
-  ));
+  const ZSpreadHeaderWithTooltip = React.memo((_params: IHeaderParams) => {
+    return (
+      <Tooltip
+        title={
+          <Box sx={{ p: 0.5 }}>
+            <Typography variant="body2">
+              <strong>Z-спред (Zero-Volatility Spread)</strong> — постоянная надбавка (в процентных пунктах), которую необходимо добавить ко всем спот-ставкам кривой бескупонной доходности (КБД), чтобы теоретическая цена облигации равнялась её текущей рыночной цене.
+            </Typography>
+            <Typography variant="body2">
+              <strong>Формула:</strong> Рыночная_Грязная_Цена = Σ(Будущий_Платеж / (1 + (Спот_Ставка + Z) / Частота_Выплат) ^ (Время_в_годах * Частота_Выплат))
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 1 }}>
+              <strong>Как это считается:</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              1. Для каждого будущего купонного платежа берется соответствующая спот-ставка из КБД (с интерполяцией при необходимости).
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              2. К каждой спот-ставке добавляется одна и та же константа Z (Z-spread).
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              3. Методом бисекции находится такое значение Z, при котором сумма дисконтированных платежей равна рыночной грязной цене (чистая цена + НКД).
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2, mt: 0.5 }}>
+              Z-спред считается более точным показателем премии за риск, чем G-спред, потому что учитывает всю форму кривой доходности и структуру купонных выплат, что позволяет более точно сопоставлять облигации с различными сроками и купонными структурами.
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 1 }}>
+              <strong>🔍 Как интерпретировать значение</strong>
+            </Typography>
+            <Typography variant="body2">
+              <strong>Положительное значение</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              Облигация требует дополнительной премии за риск и неликвидность сверх безрисковой ставки. Чем выше Z-спред, тем больше риск или требуемая инвесторами компенсация.
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 1 }}>
+              <strong>Отрицательное значение</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              Облигация торгуется дороже, чем должна стоить по безрисковой кривой. Обычно это очень надежные или высоколиквидные бумаги.
+            </Typography>
+            <Typography variant="body2">
+              <strong>Около нуля</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              Облигация справедливо оценена рынком относительно безрисковой кривой доходности.
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 1, pt: 1, borderTop: '1px solid rgba(0, 0, 0, 0.12)' }}>
+              <strong>⚠️ Важно:</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ pl: 2 }}>
+              Z-спред рассчитывается только для облигаций типа «Фикс с известным купоном» без встроенных опционов (колл или пут). Для облигаций с опционами и остальных видов облигаций значение не рассчитывается и отображается как «—». Z-спред отличается от G-спреда: G-спред — это разница между фактической и теоретической YTM, а Z-спред — это константа, добавляемая ко всем спот-ставкам для точного совпадения цен.
+            </Typography>
+          </Box>
+        }
+        arrow
+        placement="top"
+        enterDelay={300}
+        leaveDelay={0}
+        slotProps={{
+          tooltip: {
+            sx: {
+              maxWidth: 550,
+              bgcolor: 'rgba(255, 255, 255, 0.98)',
+              color: 'rgba(0, 0, 0, 0.87)',
+              fontSize: '13px',
+              lineHeight: 1.5,
+              padding: '12px 16px',
+              borderRadius: '8px',
+              boxShadow: '0px 3px 5px -1px rgba(0, 0, 0, 0.2), 0px 6px 10px 0px rgba(0, 0, 0, 0.14), 0px 1px 18px 0px rgba(0, 0, 0, 0.12)',
+              border: '1px solid rgba(0, 0, 0, 0.12)',
+              '& .MuiTypography-root': {
+                color: 'rgba(0, 0, 0, 0.87) !important',
+              },
+            },
+          },
+        }}
+      >
+        <div 
+          className="ag-header-cell-label" 
+          style={{ 
+            width: '100%', 
+            height: '100%', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center',
+            cursor: 'help',
+            gap: '4px',
+          }}
+        >
+          <span>Z-спред (Zero-Volatility Spread)</span>
+          <HelpOutlineIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+        </div>
+      </Tooltip>
+    );
+  });
   ZSpreadHeaderWithTooltip.displayName = 'ZSpreadHeaderWithTooltip';
 
   const ModifiedDurationHeaderWithTooltip = React.memo((_params: IHeaderParams) => (

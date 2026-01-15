@@ -94,5 +94,29 @@
         "original_value": "11,2856"
       }
     }
+  },
+  {
+    "date": "2026-01-15",
+    "source_date": "15.01.2026",
+    "rates": {
+      "USD": {
+        "code": "USD",
+        "rate": 78.5711,
+        "nominal": 1,
+        "original_value": "78,5711"
+      },
+      "EUR": {
+        "code": "EUR",
+        "rate": 92.1964,
+        "nominal": 1,
+        "original_value": "92,1964"
+      },
+      "CNY": {
+        "code": "CNY",
+        "rate": 11.2419,
+        "nominal": 1,
+        "original_value": "11,2419"
+      }
+    }
   }
 ]

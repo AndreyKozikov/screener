@@ -36,6 +36,7 @@ async def list_bonds(
     rating_min: Optional[str] = Query(None),
     rating_max: Optional[str] = Query(None),
     emitent_title: Optional[str] = Query(None, description="Filter by emitent title"),
+    exclude_spob: Optional[bool] = Query(False, description="Exclude bonds with trading mode SPOB"),
 ):
     """
     Get filtered list of bonds.
@@ -94,6 +95,14 @@ async def list_bonds(
         emitent_service = get_emitent_service()
         secid_to_emitent_index = emitent_service.get_secid_to_emitent_title_index()
         filtered = [bond for bond in filtered if secid_to_emitent_index.get(bond.SECID) == emitent_title.strip()]
+    
+    # Filter out bonds with trading mode SPOB if exclude_spob is True
+    if exclude_spob:
+        before_count = len(filtered)
+        filtered = [bond for bond in filtered if bond.BOARDID.upper() != "SPOB"]
+        after_count = len(filtered)
+        logger = get_data_update_logger()
+        logger.info(f"[API /bonds] Excluding SPOB bonds - before={before_count}, after={after_count}")
     
     total_filtered = len(filtered)
     
