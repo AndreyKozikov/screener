@@ -17,7 +17,12 @@ import {
   InputLabel,
   Tabs,
   Tab,
+  ButtonGroup,
+  IconButton,
 } from '@mui/material';
+import ZoomInIcon from '@mui/icons-material/ZoomIn';
+import ZoomOutIcon from '@mui/icons-material/ZoomOut';
+import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import { fetchBonds } from '../../api/bonds';
 import { getEmitentList } from '../../api/emitent';
@@ -49,6 +54,7 @@ import {
   Scatter,
   Cell,
   LabelList,
+  Brush,
 } from 'recharts';
 import { CHART_CONFIG } from '../../utils/constants';
 import * as regression from 'regression';
@@ -93,6 +99,17 @@ export const SpreadAnalysis: React.FC = () => {
   const [headerHeight, setHeaderHeight] = useState<number | undefined>(undefined);
   const filters = useFiltersStore((state) => state.filters);
   const [currentTab, setCurrentTab] = useState(0);
+  
+  // Zoom and pan state for scatter chart
+  const [xDomain, setXDomain] = useState<[number, number] | undefined>(undefined);
+  const [yDomain, setYDomain] = useState<[number, number] | undefined>(undefined);
+  const [brushStartIndex, setBrushStartIndex] = useState<number>(0);
+  const [brushEndIndex, setBrushEndIndex] = useState<number | undefined>(undefined);
+  
+  // Pan state
+  const [isPanning, setIsPanning] = useState(false);
+  const [panStart, setPanStart] = useState<{ x: number; y: number; xDomain: [number, number]; yDomain: [number, number] } | null>(null);
+  const chartContainerRef = useRef<HTMLDivElement>(null);
 
   // Load emitent list on mount
   useEffect(() => {
@@ -639,6 +656,189 @@ export const SpreadAnalysis: React.FC = () => {
       };
     });
   }, [bonds, zerocuponData, couponsData]);
+
+  // Calculate default domains for chart
+  const defaultDomains = useMemo(() => {
+    if (comparisonData.length === 0) return { x: undefined, y: undefined };
+    
+    const points = comparisonData
+      .filter(row => {
+        const duration = parseFloat(row.regularDuration);
+        const hasZSpread = row.zSpread && row.zSpread !== '—';
+        return hasZSpread && !isNaN(duration) && duration > 0;
+      })
+      .map(row => {
+        const zSpreadStr = row.zSpread.replace('%', '').replace('+', '').trim();
+        const zSpreadPercent = parseFloat(zSpreadStr);
+        const duration = parseFloat(row.regularDuration);
+        return { duration, zSpreadBps: isNaN(zSpreadPercent) ? 0 : zSpreadPercent * 100 };
+      })
+      .filter(p => !isNaN(p.duration) && !isNaN(p.zSpreadBps));
+    
+    if (points.length === 0) return { x: undefined, y: undefined };
+    
+    const durations = points.map(p => p.duration);
+    const zSpreads = points.map(p => p.zSpreadBps);
+    
+    const minDuration = Math.min(...durations);
+    const maxDuration = Math.max(...durations);
+    const minZSpread = Math.min(...zSpreads);
+    const maxZSpread = Math.max(...zSpreads);
+    
+    return {
+      x: [minDuration - 0.5, maxDuration + 0.5] as [number, number],
+      y: [minZSpread - 20, maxZSpread + 20] as [number, number],
+    };
+  }, [comparisonData]);
+
+  // Reset zoom when chart data changes
+  useEffect(() => {
+    setXDomain(undefined);
+    setYDomain(undefined);
+    setBrushStartIndex(0);
+    setBrushEndIndex(undefined);
+    setIsPanning(false);
+    setPanStart(null);
+  }, [comparisonData.length, selectedEmitent]);
+
+  // Pan handlers
+  const handlePanStart = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    // Don't start panning if clicking on interactive elements
+    const target = e.target as HTMLElement;
+    if (target.closest('.recharts-tooltip-wrapper') || 
+        target.closest('.recharts-brush') ||
+        target.closest('.recharts-legend-wrapper') ||
+        target.closest('button')) {
+      return;
+    }
+    
+    // Allow panning with:
+    // 1. Middle mouse button (button === 1)
+    // 2. Left button + Ctrl/Cmd (always works)
+    // 3. Left button when zoomed in (no modifier keys needed)
+    const isZoomed = xDomain !== undefined || yDomain !== undefined;
+    const canPan = (e.button === 1) || 
+                   (e.button === 0 && (e.ctrlKey || e.metaKey)) ||
+                   (e.button === 0 && isZoomed);
+    
+    if (canPan) {
+      const currentX = xDomain || defaultDomains.x;
+      const currentY = yDomain || defaultDomains.y;
+      
+      // For panning, we need valid domains to work with
+      if (currentX && currentY && chartContainerRef.current) {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        setIsPanning(true);
+        setPanStart({
+          x: e.clientX,
+          y: e.clientY,
+          xDomain: currentX,
+          yDomain: currentY,
+        });
+        chartContainerRef.current.style.cursor = 'grabbing';
+      }
+    }
+  }, [xDomain, yDomain, defaultDomains]);
+
+  const handlePanMove = useCallback((e: MouseEvent) => {
+    if (!isPanning || !panStart || !chartContainerRef.current) return;
+
+    e.preventDefault();
+    
+    const container = chartContainerRef.current;
+    const rect = container.getBoundingClientRect();
+    
+    // Calculate pixel movement
+    const deltaX = e.clientX - panStart.x;
+    const deltaY = e.clientY - panStart.y;
+    
+    // Calculate percentage movement
+    const xPercentage = -deltaX / rect.width;
+    const yPercentage = deltaY / rect.height; // Invert Y axis (screen Y is opposite to chart Y)
+    
+    // Calculate domain ranges
+    const xRange = panStart.xDomain[1] - panStart.xDomain[0];
+    const yRange = panStart.yDomain[1] - panStart.yDomain[0];
+    
+    // Calculate new domains
+    const newXDomain: [number, number] = [
+      panStart.xDomain[0] + xRange * xPercentage,
+      panStart.xDomain[1] + xRange * xPercentage,
+    ];
+    
+    const newYDomain: [number, number] = [
+      panStart.yDomain[0] + yRange * yPercentage,
+      panStart.yDomain[1] + yRange * yPercentage,
+    ];
+    
+    // Clamp to default domain bounds if they exist
+    if (defaultDomains.x && defaultDomains.y) {
+      const xMin = defaultDomains.x[0];
+      const xMax = defaultDomains.x[1];
+      const yMin = defaultDomains.y[0];
+      const yMax = defaultDomains.y[1];
+      
+      // Only clamp if zoomed in (current range is smaller than default)
+      const currentXRange = newXDomain[1] - newXDomain[0];
+      const currentYRange = newYDomain[1] - newYDomain[0];
+      const defaultXRange = xMax - xMin;
+      const defaultYRange = yMax - yMin;
+      
+      if (currentXRange < defaultXRange) {
+        if (newXDomain[0] < xMin) {
+          const offset = xMin - newXDomain[0];
+          newXDomain[0] = xMin;
+          newXDomain[1] += offset;
+        }
+        if (newXDomain[1] > xMax) {
+          const offset = newXDomain[1] - xMax;
+          newXDomain[0] -= offset;
+          newXDomain[1] = xMax;
+        }
+      }
+      
+      if (currentYRange < defaultYRange) {
+        if (newYDomain[0] < yMin) {
+          const offset = yMin - newYDomain[0];
+          newYDomain[0] = yMin;
+          newYDomain[1] += offset;
+        }
+        if (newYDomain[1] > yMax) {
+          const offset = newYDomain[1] - yMax;
+          newYDomain[0] -= offset;
+          newYDomain[1] = yMax;
+        }
+      }
+    }
+    
+    setXDomain(newXDomain);
+    setYDomain(newYDomain);
+  }, [isPanning, panStart, defaultDomains]);
+
+  const handlePanEnd = useCallback(() => {
+    setIsPanning(false);
+    setPanStart(null);
+    if (chartContainerRef.current) {
+      chartContainerRef.current.style.cursor = '';
+    }
+  }, []);
+
+  // Attach global mouse event listeners for panning
+  useEffect(() => {
+    if (isPanning) {
+      document.addEventListener('mousemove', handlePanMove);
+      document.addEventListener('mouseup', handlePanEnd);
+      document.body.style.userSelect = 'none'; // Prevent text selection while panning
+      
+      return () => {
+        document.removeEventListener('mousemove', handlePanMove);
+        document.removeEventListener('mouseup', handlePanEnd);
+        document.body.style.userSelect = '';
+      };
+    }
+  }, [isPanning, handlePanMove, handlePanEnd]);
 
   // Prepare chart data for spread curve with Z-spread in basis points
   const chartData = useMemo(() => {
@@ -1225,16 +1425,104 @@ export const SpreadAnalysis: React.FC = () => {
                       </Box>
                     ) : (
                       <>
-                        <Typography variant="h6" sx={{ mb: 1, flexShrink: 0, fontWeight: 600 }}>
-                          Кривая Z-спредов эмитента {selectedEmitent || '—'}
-                        </Typography>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1, flexShrink: 0 }}>
+                          <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                            Кривая Z-спредов эмитента {selectedEmitent || '—'}
+                          </Typography>
+                          <ButtonGroup size="small" variant="outlined">
+                            <Tooltip title="Увеличить">
+                              <IconButton
+                                size="small"
+                                onClick={() => {
+                                  const currentX = xDomain || defaultDomains.x;
+                                  const currentY = yDomain || defaultDomains.y;
+                                  if (currentX && currentY) {
+                                    const xRange = currentX[1] - currentX[0];
+                                    const yRange = currentY[1] - currentY[0];
+                                    setXDomain([currentX[0] + xRange * 0.1, currentX[1] - xRange * 0.1]);
+                                    setYDomain([currentY[0] + yRange * 0.1, currentY[1] - yRange * 0.1]);
+                                  }
+                                }}
+                                disabled={!defaultDomains.x || !defaultDomains.y}
+                              >
+                                <ZoomInIcon />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Уменьшить">
+                              <IconButton
+                                size="small"
+                                onClick={() => {
+                                  const currentX = xDomain || defaultDomains.x;
+                                  const currentY = yDomain || defaultDomains.y;
+                                  if (currentX && currentY && defaultDomains.x && defaultDomains.y) {
+                                    const xRange = currentX[1] - currentX[0];
+                                    const yRange = currentY[1] - currentY[0];
+                                    const newXStart = Math.max(defaultDomains.x[0], currentX[0] - xRange * 0.1);
+                                    const newXEnd = Math.min(defaultDomains.x[1], currentX[1] + xRange * 0.1);
+                                    const newYStart = Math.max(defaultDomains.y[0], currentY[0] - yRange * 0.1);
+                                    const newYEnd = Math.min(defaultDomains.y[1], currentY[1] + yRange * 0.1);
+                                    setXDomain([newXStart, newXEnd]);
+                                    setYDomain([newYStart, newYEnd]);
+                                  }
+                                }}
+                                disabled={!defaultDomains.x || !defaultDomains.y}
+                              >
+                                <ZoomOutIcon />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Сбросить зум">
+                              <IconButton
+                                size="small"
+                                onClick={() => {
+                                  setXDomain(undefined);
+                                  setYDomain(undefined);
+                                  setBrushStartIndex(0);
+                                  setBrushEndIndex(undefined);
+                                }}
+                                disabled={!xDomain && !yDomain}
+                              >
+                                <RestartAltIcon />
+                              </IconButton>
+                            </Tooltip>
+                          </ButtonGroup>
+                        </Box>
                         <Typography variant="body2" color="text.secondary" sx={{ mb: 2, flexShrink: 0 }}>
-                          График показывает зависимость Z-спредов (в базисных пунктах) от дюрации. Z-спред — это постоянная надбавка, которую необходимо добавить ко всем спот-ставкам кривой бескупонной доходности, чтобы теоретическая цена облигации равнялась рыночной цене. Зеленые точки — потенциально недооцененные облигации (выше линии тренда на 15+ б.п.), красные — переоцененные (ниже линии тренда на 15+ б.п.).
+                          График показывает зависимость Z-спредов (в базисных пунктах) от дюрации. Z-спред — это постоянная надбавка, которую необходимо добавить ко всем спот-ставкам кривой бескупонной доходности, чтобы теоретическая цена облигации равнялась рыночной цене. Зеленые точки — потенциально недооцененные облигации (выше линии тренда на 15+ б.п.), красные — переоцененные (ниже линии тренда на 15+ б.п.). Управление: ползунок внизу для выбора диапазона, кнопки для зума. Для перемещения графика зажмите Ctrl/Cmd + левая кнопка мыши, среднюю кнопку мыши или просто перетащите, когда график увеличен.
                         </Typography>
-                        <Box sx={{ flex: 1, width: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                        <Box 
+                          ref={chartContainerRef}
+                          sx={{ 
+                            flex: 1, 
+                            width: '100%', 
+                            minHeight: 0, 
+                            display: 'flex', 
+                            flexDirection: 'column', 
+                            overflow: 'hidden',
+                            cursor: isPanning 
+                              ? 'grabbing' 
+                              : ((xDomain !== undefined || yDomain !== undefined) 
+                                  ? 'grab' 
+                                  : 'default'),
+                            position: 'relative',
+                            '&:hover': {
+                              cursor: isPanning 
+                                ? 'grabbing' 
+                                : ((xDomain !== undefined || yDomain !== undefined) 
+                                    ? 'grab' 
+                                    : 'default'),
+                            },
+                          }}
+                          onMouseDown={handlePanStart}
+                          onContextMenu={(e) => {
+                            // Prevent context menu when panning
+                            if (isPanning || (xDomain !== undefined || yDomain !== undefined)) {
+                              e.preventDefault();
+                            }
+                          }}
+                        >
                           <ResponsiveContainer width="100%" height="100%">
                             <ScatterChart
-                              margin={{ top: 20, right: 30, left: 80, bottom: 80 }}
+                              margin={{ top: 20, right: 30, left: 80, bottom: 120 }}
                             >
                               <CartesianGrid strokeDasharray="3 3" stroke={CHART_CONFIG.COLORS.GRID} />
                               <XAxis
@@ -1243,7 +1531,8 @@ export const SpreadAnalysis: React.FC = () => {
                                 name="Срок до погашения"
                                 label={{ value: 'Срок до погашения (лет)', position: 'insideBottom', offset: -10 }}
                                 tick={{ fontSize: 12 }}
-                                domain={['dataMin - 0.5', 'dataMax + 0.5']}
+                                domain={xDomain || defaultDomains.x || ['dataMin - 0.5', 'dataMax + 0.5']}
+                                allowDataOverflow={true}
                               />
                               <YAxis
                                 type="number"
@@ -1251,7 +1540,8 @@ export const SpreadAnalysis: React.FC = () => {
                                 name="Z-спред"
                                 label={{ value: 'Z-спред (б.п.)', angle: -90, position: 'insideLeft' }}
                                 tick={{ fontSize: 12 }}
-                                domain={['dataMin - 20', 'dataMax + 20']}
+                                domain={yDomain || defaultDomains.y || ['dataMin - 20', 'dataMax + 20']}
+                                allowDataOverflow={true}
                               />
                               <RechartsTooltip
                                 cursor={{ strokeDasharray: '3 3' }}
@@ -1328,6 +1618,32 @@ export const SpreadAnalysis: React.FC = () => {
                                   style={{ fontSize: 11, fill: '#666' }}
                                 />
                               </Scatter>
+                              <Brush
+                                dataKey="duration"
+                                height={30}
+                                stroke={CHART_CONFIG.COLORS.PRIMARY}
+                                fill={CHART_CONFIG.COLORS.PRIMARY}
+                                startIndex={brushStartIndex}
+                                endIndex={brushEndIndex === undefined ? (chartData?.points.length || 0) - 1 : brushEndIndex}
+                                onChange={(brushData: any) => {
+                                  if (brushData && typeof brushData.startIndex === 'number' && typeof brushData.endIndex === 'number') {
+                                    const points = chartData?.points || [];
+                                    if (points.length > 0) {
+                                      // Points are already sorted by duration in chartData
+                                      const startDuration = points[brushData.startIndex]?.duration;
+                                      const endDuration = points[brushData.endIndex]?.duration;
+                                      
+                                      if (startDuration !== undefined && endDuration !== undefined && !isNaN(startDuration) && !isNaN(endDuration)) {
+                                        const durationRange = endDuration - startDuration;
+                                        const padding = Math.max(durationRange * 0.05, 0.1);
+                                        setXDomain([Math.max(0, startDuration - padding), endDuration + padding]);
+                                        setBrushStartIndex(brushData.startIndex);
+                                        setBrushEndIndex(brushData.endIndex);
+                                      }
+                                    }
+                                  }
+                                }}
+                              />
                             </ScatterChart>
                           </ResponsiveContainer>
                         </Box>

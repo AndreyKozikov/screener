@@ -116,7 +116,7 @@ export const ComparisonTable: React.FC = () => {
   const [years, setYears] = useState<number>(3);
   const [forecastRate, setForecastRate] = useState<number | null>(null);
   const [currentRate, setCurrentRate] = useState<number | null>(null);
-  const [forecastData, setForecastData] = useState<ForecastData | null>(null);
+  const [_forecastData, setForecastData] = useState<ForecastData | null>(null);
   const [isLoadingForecast, setIsLoadingForecast] = useState(false);
   const [useForecastRate, setUseForecastRate] = useState<boolean>(false);
 
@@ -2558,7 +2558,7 @@ export const ComparisonTable: React.FC = () => {
                   Параметры расчета
                 </Typography>
                 <Grid container spacing={2}>
-                  <Grid item xs={12} sm={3} md={3}>
+                  <Grid size={{ xs: 12, sm: 3, md: 3 }}>
                     <TextField
                       fullWidth
                       label="Сумма инвестиций, руб."
@@ -2568,7 +2568,7 @@ export const ComparisonTable: React.FC = () => {
                       inputProps={{ min: 0, step: 1000 }}
                     />
                   </Grid>
-                  <Grid item xs={12} sm={3} md={3}>
+                  <Grid size={{ xs: 12, sm: 3, md: 3 }}>
                     <TextField
                       fullWidth
                       label="Горизонт расчета, лет"
@@ -2578,7 +2578,7 @@ export const ComparisonTable: React.FC = () => {
                       inputProps={{ min: 0.1, step: 0.1 }}
                     />
                   </Grid>
-                  <Grid item xs={12} sm={3} md={3}>
+                  <Grid size={{ xs: 12, sm: 3, md: 3 }}>
                     <TextField
                       fullWidth
                       label="Предполагаемая ставка, %"
@@ -2594,7 +2594,7 @@ export const ComparisonTable: React.FC = () => {
                       disabled={useForecastRate && isLoadingForecast}
                     />
                   </Grid>
-                  <Grid item xs={12} sm={3} md={3}>
+                  <Grid size={{ xs: 12, sm: 3, md: 3 }}>
                     <TextField
                       fullWidth
                       label="Текущая ставка ЦБ, %"

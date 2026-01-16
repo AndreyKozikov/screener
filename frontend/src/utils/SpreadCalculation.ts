@@ -385,7 +385,7 @@ const calculatePriceWithZSpread = (
   currentDate: Date,
   yieldCurveMap: Map<number, number>,
   zSpread: number,
-  frequency: number
+  _frequency: number
 ): number | null => {
   if (coupons.length === 0 || faceValue <= 0) return null;
 
