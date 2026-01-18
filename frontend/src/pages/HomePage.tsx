@@ -13,11 +13,13 @@ import TimelineIcon from '@mui/icons-material/Timeline';
 import AssessmentIcon from '@mui/icons-material/Assessment';
 import SchoolIcon from '@mui/icons-material/School';
 import AnalyticsIcon from '@mui/icons-material/Analytics';
+import PercentIcon from '@mui/icons-material/Percent';
 import { FiltersModal } from '../components/filters/FiltersModal';
 import { BondsTable } from '../components/bonds/BondsTable';
 import { BondDetails } from '../components/bonds/BondDetails';
 import { ZerocuponTable } from '../components/zerocupon/ZerocuponTable';
 import { ForecastTable } from '../components/forecast/ForecastTable';
+import { RuoniaTable } from '../components/ruonia/RuoniaTable';
 import { Workbench } from '../components/portfolio/Workbench';
 import { HubCard } from '../components/portfolio/HubCard';
 import { ComparisonTable } from '../components/bonds/ComparisonTable';
@@ -30,8 +32,10 @@ import { RefreshDataDialog } from '../components/common/RefreshDataDialog';
 import { FeedbackDialog } from '../components/common/FeedbackDialog';
 import { BondSelectionGuidePage } from './BondSelectionGuidePage';
 import { refreshBondsData, refreshCouponsData } from '../api/bonds';
-import { refreshZerocuponData } from '../api/zerocupon';
+import { refreshZerocuponData, fetchZerocuponData } from '../api/zerocupon';
 import { refreshRatingsData } from '../api/rating';
+import { refreshRuoniaData, fetchRuoniaData } from '../api/ruonia';
+import { fetchForecastDates } from '../api/forecast';
 import { refreshEmitentsData } from '../api/emitent';
 import { getCurrencyRates, refreshCurrencyRates, type CurrencyRatesResponse } from '../api/currency';
 import { useUiStore } from '../stores/uiStore';
@@ -56,7 +60,7 @@ export const HomePage: React.FC = () => {
   const comparisonBonds = useComparisonStore((state) => state.comparisonBonds);
   const [viewMode, setViewMode] = useState<ViewMode>('HUB');
   const [currentTab, setCurrentTab] = useState(0);
-  const [forecastSubView, setForecastSubView] = useState<'zerocupon' | 'forecast' | null>(null);
+  const [forecastSubView, setForecastSubView] = useState<'zerocupon' | 'forecast' | 'ruonia' | null>(null);
   const [comparisonSubView, setComparisonSubView] = useState<'comparison' | 'spread-analysis' | null>(null);
   
   // Refresh data dialog state
@@ -96,6 +100,32 @@ export const HomePage: React.FC = () => {
   // Currency rates state
   const [currencyRates, setCurrencyRates] = useState<CurrencyRatesResponse | null>(null);
   const [isLoadingCurrencyRates, setIsLoadingCurrencyRates] = useState(false);
+  
+  // RUONIA rate state
+  const [ruoniaRate, setRuoniaRate] = useState<number | null>(null);
+  
+  // Forecast cards last dates state
+  const [zerocuponLastDate, setZerocuponLastDate] = useState<string | null>(null);
+  const [forecastLastDate, setForecastLastDate] = useState<string | null>(null);
+  const [ruoniaLastDate, setRuoniaLastDate] = useState<string | null>(null);
+
+  // Helper function to format date from DD.MM.YYYY or YYYY-MM-DD to DD.MM.YYYY
+  const formatDateForDisplay = (dateStr: string | null): string | null => {
+    if (!dateStr) return null;
+    
+    // If already in DD.MM.YYYY format, return as is
+    if (/^\d{2}\.\d{2}\.\d{4}$/.test(dateStr)) {
+      return dateStr;
+    }
+    
+    // If in YYYY-MM-DD format, convert to DD.MM.YYYY
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      const [year, month, day] = dateStr.split('-');
+      return `${day}.${month}.${year}`;
+    }
+    
+    return dateStr;
+  };
 
   // Load currency rates on mount
   useEffect(() => {
@@ -112,6 +142,59 @@ export const HomePage: React.FC = () => {
     };
     
     loadCurrencyRates();
+  }, []);
+
+  // Load last dates for forecast cards
+  useEffect(() => {
+    const loadLastDates = async () => {
+      try {
+        // Load zerocupon last date
+        try {
+          const zerocuponData = await fetchZerocuponData(null, null);
+          if (zerocuponData.data && zerocuponData.data.length > 0) {
+            // Data is sorted descending, first item is the latest
+            const firstRecord = zerocuponData.data[0];
+            const dateStr = firstRecord['Дата'];
+            setZerocuponLastDate(formatDateForDisplay(dateStr));
+          }
+        } catch (error) {
+          console.error('Failed to load zerocupon last date:', error);
+        }
+
+        // Load forecast last date
+        try {
+          const forecastDates = await fetchForecastDates();
+          if (forecastDates && forecastDates.length > 0) {
+            // Dates are typically sorted, take the first (latest)
+            setForecastLastDate(formatDateForDisplay(forecastDates[0]));
+          }
+        } catch (error) {
+          console.error('Failed to load forecast last date:', error);
+        }
+
+        // Load ruonia last date and rate
+        try {
+          const ruoniaData = await fetchRuoniaData(null, null);
+          if (ruoniaData.data && ruoniaData.data.length > 0) {
+            // Data is sorted descending, first item is the latest
+            const firstRecord = ruoniaData.data[0];
+            const dateStr = firstRecord['Дата ставки'];
+            setRuoniaLastDate(formatDateForDisplay(dateStr));
+            // Get last RUONIA rate
+            const rate = firstRecord['Ставка RUONIA, % годовых'];
+            if (rate !== null && rate !== undefined) {
+              setRuoniaRate(typeof rate === 'number' ? rate : parseFloat(String(rate)));
+            }
+          }
+        } catch (error) {
+          console.error('Failed to load ruonia last date:', error);
+        }
+      } catch (error) {
+        console.error('Failed to load forecast cards last dates:', error);
+      }
+    };
+
+    loadLastDates();
   }, []);
 
   const handleRefreshDataClick = () => {
@@ -141,6 +224,17 @@ export const HomePage: React.FC = () => {
       },
       zerocupon: async () => {
         await refreshZerocuponData();
+        // Reload last date after refresh
+        try {
+          const zerocuponData = await fetchZerocuponData(null, null);
+          if (zerocuponData.data && zerocuponData.data.length > 0) {
+            const firstRecord = zerocuponData.data[0];
+            const dateStr = firstRecord['Дата'];
+            setZerocuponLastDate(formatDateForDisplay(dateStr));
+          }
+        } catch (error) {
+          console.error('Failed to reload zerocupon last date:', error);
+        }
       },
       ratings: async () => {
         await refreshRatingsData(forceUpdateRatings || false);
@@ -159,6 +253,25 @@ export const HomePage: React.FC = () => {
           setCurrencyRates(rates);
         } catch (error) {
           console.error('Failed to reload currency rates:', error);
+        }
+      },
+      ruonia: async () => {
+        await refreshRuoniaData();
+        // Reload last date and rate after refresh
+        try {
+          const ruoniaData = await fetchRuoniaData(null, null);
+          if (ruoniaData.data && ruoniaData.data.length > 0) {
+            const firstRecord = ruoniaData.data[0];
+            const dateStr = firstRecord['Дата ставки'];
+            setRuoniaLastDate(formatDateForDisplay(dateStr));
+            // Get last RUONIA rate
+            const rate = firstRecord['Ставка RUONIA, % годовых'];
+            if (rate !== null && rate !== undefined) {
+              setRuoniaRate(typeof rate === 'number' ? rate : parseFloat(String(rate)));
+            }
+          }
+        } catch (error) {
+          console.error('Failed to reload ruonia last date:', error);
         }
       },
     };
@@ -529,8 +642,13 @@ export const HomePage: React.FC = () => {
                     currencyRates.rates.CNY && { code: 'CNY', rate: currencyRates.rates.CNY.rate },
                   ].filter(Boolean) as Array<{ code: string; rate: number }>;
                   
-                  return currencies.map((currency, index) => (
-                    <React.Fragment key={currency.code}>
+                  const items: Array<{ label: string; value: number; key: string }> = [
+                    ...currencies.map(c => ({ label: c.code, value: c.rate, key: c.code })),
+                    ...(ruoniaRate !== null ? [{ label: 'RUONIA', value: ruoniaRate, key: 'RUONIA' }] : []),
+                  ];
+                  
+                  return items.map((item, index) => (
+                    <React.Fragment key={item.key}>
                       <Typography
                         variant="caption"
                         sx={{
@@ -540,9 +658,9 @@ export const HomePage: React.FC = () => {
                           color: 'text.primary',
                         }}
                       >
-                        {currency.code}: <strong>{currency.rate.toFixed(2)}</strong>
+                        {item.label}: <strong>{item.key === 'RUONIA' ? item.value.toFixed(2) + '%' : item.value.toFixed(2)}</strong>
                       </Typography>
-                      {index < currencies.length - 1 && (
+                      {index < items.length - 1 && (
                         <Box
                           sx={{
                             width: '1px',
@@ -732,10 +850,10 @@ export const HomePage: React.FC = () => {
                       p: 3,
                     }}
                   >
-                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)' }, gap: 3 }}>
+                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', lg: 'repeat(3, 1fr)' }, gap: 3 }}>
                       <HubCard
                         title="Кривая бескупонной доходности"
-                        value="—"
+                        value={zerocuponLastDate || "—"}
                         subtitle="Анализ временной структуры процентных ставок на основе данных Мосбиржи"
                         icon={<TimelineIcon />}
                         color="#1976d2"
@@ -743,11 +861,19 @@ export const HomePage: React.FC = () => {
                       />
                       <HubCard
                         title="Среднесрочный прогноз Банка России"
-                        value="—"
+                        value={forecastLastDate || "—"}
                         subtitle="Основные показатели денежно-кредитной политики и макроэкономические ожидания регулятора"
                         icon={<AssessmentIcon />}
                         color="#ff9800"
                         onClick={() => setForecastSubView('forecast')}
+                      />
+                      <HubCard
+                        title="Ставка RUONIA"
+                        value={ruoniaLastDate || "—"}
+                        subtitle="Информация о ставке RUONIA"
+                        icon={<PercentIcon />}
+                        color="#9c27b0"
+                        onClick={() => setForecastSubView('ruonia')}
                       />
                     </Box>
                   </Box>
@@ -790,6 +916,12 @@ export const HomePage: React.FC = () => {
                     {forecastSubView === 'forecast' && (
                       <Box sx={{ flexGrow: 1, minHeight: 0 }}>
                         <ForecastTable />
+                      </Box>
+                    )}
+                    
+                    {forecastSubView === 'ruonia' && (
+                      <Box sx={{ flexGrow: 1, minHeight: 0 }}>
+                        <RuoniaTable />
                       </Box>
                     )}
                   </Box>
@@ -914,6 +1046,7 @@ export const HomePage: React.FC = () => {
           { id: 'emitents', label: 'Обновить эмитентов', checked: false },
           { id: 'coupons', label: 'Обновить купоны', checked: false },
           { id: 'currency', label: 'Обновить курсы валют', checked: false },
+          { id: 'ruonia', label: 'Обновить данные ставки RUONIA', checked: false },
         ]}
         isRefreshing={isRefreshing}
         refreshStatus={refreshStatus}
