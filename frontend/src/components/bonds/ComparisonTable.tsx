@@ -16,9 +16,12 @@ import {
   Tab,
   TextField,
   Grid,
-  Paper,
   Checkbox,
   FormControlLabel,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import DownloadIcon from '@mui/icons-material/Download';
@@ -119,6 +122,10 @@ export const ComparisonTable: React.FC = () => {
   const [_forecastData, setForecastData] = useState<ForecastData | null>(null);
   const [isLoadingForecast, setIsLoadingForecast] = useState(false);
   const [useForecastRate, setUseForecastRate] = useState<boolean>(false);
+  const [useManualParams, setUseManualParams] = useState<boolean>(false);
+  // Manual price and accrued interest values per bond (keyed by secid)
+  const [manualPrices, setManualPrices] = useState<Map<string, { cleanPricePercent: number; accruedInterest: number }>>(new Map());
+  const [isParamsDialogOpen, setIsParamsDialogOpen] = useState<boolean>(false);
 
   // Load zero-coupon yield curve data when component mounts or bonds change
   useEffect(() => {
@@ -1931,9 +1938,15 @@ export const ComparisonTable: React.FC = () => {
       return null;
     }
 
-    const cleanPricePercent = bond.PREVPRICE;
+    // Use manual values if checkbox is checked and manual values are set, otherwise use bond data
+    const manualValues = manualPrices.get(bond.SECID);
+    const cleanPricePercent = useManualParams && manualValues 
+      ? manualValues.cleanPricePercent 
+      : bond.PREVPRICE;
     const nominal = bond.FACEVALUE;
-    const accruedInterest = bond.ACCRUEDINT ?? 0;
+    const accruedInterest = useManualParams && manualValues
+      ? manualValues.accruedInterest
+      : (bond.ACCRUEDINT ?? 0);
     const couponRate = bond.COUPONPERCENT / 100; // Convert to decimal
     const modDuration = calculateModifiedDuration(bond);
 
@@ -2034,6 +2047,36 @@ export const ComparisonTable: React.FC = () => {
     };
   };
 
+  // Handle manual price and accrued interest updates
+  // These functions preserve the other parameter value when updating one
+  const updateManualPrice = useCallback((secid: string, cleanPricePercent: number, currentAccruedInterest: number) => {
+    setManualPrices(prev => {
+      const newMap = new Map(prev);
+      const existing = newMap.get(secid);
+      // Use existing accruedInterest if available, otherwise use current from table data
+      const accruedInterestToKeep = existing?.accruedInterest ?? currentAccruedInterest;
+      newMap.set(secid, {
+        cleanPricePercent,
+        accruedInterest: accruedInterestToKeep,
+      });
+      return newMap;
+    });
+  }, []);
+
+  const updateManualAccruedInterest = useCallback((secid: string, accruedInterest: number, currentCleanPricePercent: number) => {
+    setManualPrices(prev => {
+      const newMap = new Map(prev);
+      const existing = newMap.get(secid);
+      // Use existing cleanPricePercent if available, otherwise use current from table data
+      const cleanPricePercentToKeep = existing?.cleanPricePercent ?? currentCleanPricePercent;
+      newMap.set(secid, {
+        cleanPricePercent: cleanPricePercentToKeep,
+        accruedInterest,
+      });
+      return newMap;
+    });
+  }, []);
+
   // Calculate Total Return results for all bonds
   const totalReturnResults = useMemo(() => {
     if (comparisonBonds.length === 0 || forecastRate === null || currentRate === null) {
@@ -2043,7 +2086,7 @@ export const ComparisonTable: React.FC = () => {
     return comparisonBonds
       .map(bond => calculateTotalReturn(bond))
       .filter((result): result is TotalReturnResult => result !== null);
-  }, [comparisonBonds, investAmount, years, forecastRate, currentRate]);
+  }, [comparisonBonds, investAmount, years, forecastRate, currentRate, useManualParams, manualPrices]);
 
   // Column definitions for Total Return results table
   const totalReturnColumnDefs: ColDef[] = useMemo(() => [
@@ -2066,6 +2109,21 @@ export const ComparisonTable: React.FC = () => {
       minWidth: 120,
       cellStyle: { textAlign: 'right' },
       valueFormatter: (params) => formatNumber(params.value, 2),
+      editable: useManualParams,
+      valueSetter: (params) => {
+        const newValue = typeof params.newValue === 'string' ? parseFloat(params.newValue) : params.newValue;
+        if (!isNaN(newValue) && newValue !== null && newValue !== undefined) {
+          params.data.cleanPricePercent = newValue;
+          // Pass current accruedInterest from table data to preserve it
+          updateManualPrice(params.data.secid, newValue, params.data.accruedInterest);
+          return true;
+        }
+        return false;
+      },
+      valueParser: (params) => {
+        const value = parseFloat(params.newValue);
+        return isNaN(value) ? params.oldValue : value;
+      },
     },
     {
       field: 'accruedInterest',
@@ -2073,6 +2131,21 @@ export const ComparisonTable: React.FC = () => {
       minWidth: 100,
       cellStyle: { textAlign: 'right' },
       valueFormatter: (params) => formatNumber(params.value, 2),
+      editable: useManualParams,
+      valueSetter: (params) => {
+        const newValue = typeof params.newValue === 'string' ? parseFloat(params.newValue) : params.newValue;
+        if (!isNaN(newValue) && newValue !== null && newValue !== undefined) {
+          params.data.accruedInterest = newValue;
+          // Pass current cleanPricePercent from table data to preserve it
+          updateManualAccruedInterest(params.data.secid, newValue, params.data.cleanPricePercent);
+          return true;
+        }
+        return false;
+      },
+      valueParser: (params) => {
+        const value = parseFloat(params.newValue);
+        return isNaN(value) ? params.oldValue : value;
+      },
     },
     {
       field: 'couponRate',
@@ -2197,7 +2270,7 @@ export const ComparisonTable: React.FC = () => {
       cellStyle: { textAlign: 'right', fontWeight: 600 },
       valueFormatter: (params) => formatNumber(params.value, 2) + '%',
     },
-  ] as ColDef[], []);
+  ] as ColDef[], [useManualParams, updateManualPrice, updateManualAccruedInterest]);
 
   if (comparisonBonds.length === 0) {
     return (
@@ -2293,6 +2366,21 @@ export const ComparisonTable: React.FC = () => {
             >
               Загрузить из файла
             </Button>
+            {currentTab === 1 && (
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={() => setIsParamsDialogOpen(true)}
+                sx={{
+                  '&.Mui-disabled': {
+                    color: 'text.disabled',
+                    borderColor: 'action.disabledBackground',
+                  },
+                }}
+              >
+                Параметры расчета
+              </Button>
+            )}
             {comparisonData.length > 0 && currentTab === 0 && (
               <>
                 <Button
@@ -2323,25 +2411,27 @@ export const ComparisonTable: React.FC = () => {
                 >
                   Сохранить в Markdown
                 </Button>
-                <Button
-                  variant="outlined"
-                  size="small"
-                  color="error"
-                  startIcon={<DeleteIcon />}
-                  onClick={handleClearComparison}
-                  disabled={comparisonBonds.length === 0}
-                  sx={{
-                    '&.Mui-disabled': {
-                      color: 'text.disabled',
-                      borderColor: 'action.disabledBackground',
-                    },
-                  }}
-                >
-                  Очистить сравнение
-                </Button>
               </>
             )}
           </Box>
+          {comparisonBonds.length > 0 && (
+            <Button
+              variant="outlined"
+              size="small"
+              color="error"
+              startIcon={<DeleteIcon />}
+              onClick={handleClearComparison}
+              disabled={comparisonBonds.length === 0}
+              sx={{
+                '&.Mui-disabled': {
+                  color: 'text.disabled',
+                  borderColor: 'action.disabledBackground',
+                },
+              }}
+            >
+              Очистить сравнение
+            </Button>
+          )}
         </Box>
 
         {/* Tabs Navigation */}
@@ -2552,71 +2642,6 @@ export const ComparisonTable: React.FC = () => {
           {currentTab === 1 && (
             /* Cash Flow Calculation Tab */
             <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', p: 2, minHeight: 0, overflow: 'auto' }}>
-              {/* Input Form */}
-              <Paper sx={{ p: 2, mb: 2 }}>
-                <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, mb: 2 }}>
-                  Параметры расчета
-                </Typography>
-                <Grid container spacing={2}>
-                  <Grid size={{ xs: 12, sm: 3, md: 3 }}>
-                    <TextField
-                      fullWidth
-                      label="Сумма инвестиций, руб."
-                      type="number"
-                      value={investAmount}
-                      onChange={(e) => setInvestAmount(Number(e.target.value))}
-                      inputProps={{ min: 0, step: 1000 }}
-                    />
-                  </Grid>
-                  <Grid size={{ xs: 12, sm: 3, md: 3 }}>
-                    <TextField
-                      fullWidth
-                      label="Горизонт расчета, лет"
-                      type="number"
-                      value={years}
-                      onChange={(e) => setYears(Number(e.target.value))}
-                      inputProps={{ min: 0.1, step: 0.1 }}
-                    />
-                  </Grid>
-                  <Grid size={{ xs: 12, sm: 3, md: 3 }}>
-                    <TextField
-                      fullWidth
-                      label="Предполагаемая ставка, %"
-                      type="number"
-                      value={forecastRate ?? ''}
-                      onChange={(e) => setForecastRate(e.target.value ? Number(e.target.value) : null)}
-                      inputProps={{ min: 0, step: 0.1 }}
-                      helperText={
-                        useForecastRate
-                          ? (isLoadingForecast ? 'Загрузка из прогноза...' : 'Из прогноза Банка России')
-                          : 'Введите значение вручную'
-                      }
-                      disabled={useForecastRate && isLoadingForecast}
-                    />
-                  </Grid>
-                  <Grid size={{ xs: 12, sm: 3, md: 3 }}>
-                    <TextField
-                      fullWidth
-                      label="Текущая ставка ЦБ, %"
-                      type="number"
-                      value={currentRate ?? ''}
-                      onChange={(e) => setCurrentRate(e.target.value ? Number(e.target.value) : null)}
-                      inputProps={{ min: 0, step: 0.1 }}
-                    />
-                  </Grid>
-                </Grid>
-                <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-start' }}>
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        checked={useForecastRate}
-                        onChange={(e) => setUseForecastRate(e.target.checked)}
-                      />
-                    }
-                    label="Использовать ставку из прогноза Банка России"
-                  />
-                </Box>
-              </Paper>
 
               {/* Results Table */}
               {forecastRate !== null && currentRate !== null ? (
@@ -2710,6 +2735,94 @@ export const ComparisonTable: React.FC = () => {
           )}
         </Box>
       </CardContent>
+      {/* Parameters Calculation Dialog */}
+      <Dialog
+        open={isParamsDialogOpen}
+        onClose={() => setIsParamsDialogOpen(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontWeight: 600 }}>
+          Параметры расчета
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ pt: 2 }}>
+            <Grid container spacing={2}>
+              <Grid size={{ xs: 12, sm: 6, md: 6 }}>
+                <TextField
+                  fullWidth
+                  label="Сумма инвестиций, руб."
+                  type="number"
+                  value={investAmount}
+                  onChange={(e) => setInvestAmount(Number(e.target.value))}
+                  inputProps={{ min: 0, step: 1000 }}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6, md: 6 }}>
+                <TextField
+                  fullWidth
+                  label="Горизонт расчета, лет"
+                  type="number"
+                  value={years}
+                  onChange={(e) => setYears(Number(e.target.value))}
+                  inputProps={{ min: 0.1, step: 0.1 }}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6, md: 6 }}>
+                <TextField
+                  fullWidth
+                  label="Предполагаемая ставка, %"
+                  type="number"
+                  value={forecastRate ?? ''}
+                  onChange={(e) => setForecastRate(e.target.value ? Number(e.target.value) : null)}
+                  inputProps={{ min: 0, step: 0.1 }}
+                  helperText={
+                    useForecastRate
+                      ? (isLoadingForecast ? 'Загрузка из прогноза...' : 'Из прогноза Банка России')
+                      : 'Введите значение вручную'
+                  }
+                  disabled={useForecastRate && isLoadingForecast}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6, md: 6 }}>
+                <TextField
+                  fullWidth
+                  label="Текущая ставка ЦБ, %"
+                  type="number"
+                  value={currentRate ?? ''}
+                  onChange={(e) => setCurrentRate(e.target.value ? Number(e.target.value) : null)}
+                  inputProps={{ min: 0, step: 0.1 }}
+                />
+              </Grid>
+            </Grid>
+            <Box sx={{ mt: 3, display: 'flex', flexDirection: 'column', gap: 1 }}>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={useForecastRate}
+                    onChange={(e) => setUseForecastRate(e.target.checked)}
+                  />
+                }
+                label="Использовать ставку из прогноза Банка России"
+              />
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={useManualParams}
+                    onChange={(e) => setUseManualParams(e.target.checked)}
+                  />
+                }
+                label="Задать параметры вручную"
+              />
+            </Box>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setIsParamsDialogOpen(false)}>
+            Закрыть
+          </Button>
+        </DialogActions>
+      </Dialog>
       <ComparisonImportDialog
         open={isImportDialogOpen}
         onClose={() => setIsImportDialogOpen(false)}

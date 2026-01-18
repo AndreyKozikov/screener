@@ -20,6 +20,7 @@ import { BondDetails } from '../components/bonds/BondDetails';
 import { ZerocuponTable } from '../components/zerocupon/ZerocuponTable';
 import { ForecastTable } from '../components/forecast/ForecastTable';
 import { RuoniaTable } from '../components/ruonia/RuoniaTable';
+import { KeyRateTable } from '../components/keyrate/KeyRateTable';
 import { Workbench } from '../components/portfolio/Workbench';
 import { HubCard } from '../components/portfolio/HubCard';
 import { ComparisonTable } from '../components/bonds/ComparisonTable';
@@ -38,6 +39,7 @@ import { refreshRuoniaData, fetchRuoniaData } from '../api/ruonia';
 import { fetchForecastDates } from '../api/forecast';
 import { refreshEmitentsData } from '../api/emitent';
 import { getCurrencyRates, refreshCurrencyRates, type CurrencyRatesResponse } from '../api/currency';
+import { loadKeyRateData, getKeyRateData } from '../api/keyrate';
 import { useUiStore } from '../stores/uiStore';
 import { useBondsStore } from '../stores/bondsStore';
 import { useComparisonStore } from '../stores/comparisonStore';
@@ -60,7 +62,7 @@ export const HomePage: React.FC = () => {
   const comparisonBonds = useComparisonStore((state) => state.comparisonBonds);
   const [viewMode, setViewMode] = useState<ViewMode>('HUB');
   const [currentTab, setCurrentTab] = useState(0);
-  const [forecastSubView, setForecastSubView] = useState<'zerocupon' | 'forecast' | 'ruonia' | null>(null);
+  const [forecastSubView, setForecastSubView] = useState<'zerocupon' | 'forecast' | 'ruonia' | 'keyrate' | null>(null);
   const [comparisonSubView, setComparisonSubView] = useState<'comparison' | 'spread-analysis' | null>(null);
   
   // Refresh data dialog state
@@ -104,10 +106,12 @@ export const HomePage: React.FC = () => {
   // RUONIA rate state
   const [ruoniaRate, setRuoniaRate] = useState<number | null>(null);
   
+  // Key rate state
+  const [keyRate, setKeyRate] = useState<number | null>(null);
+  
   // Forecast cards last dates state
   const [zerocuponLastDate, setZerocuponLastDate] = useState<string | null>(null);
   const [forecastLastDate, setForecastLastDate] = useState<string | null>(null);
-  const [ruoniaLastDate, setRuoniaLastDate] = useState<string | null>(null);
 
   // Helper function to format date from DD.MM.YYYY or YYYY-MM-DD to DD.MM.YYYY
   const formatDateForDisplay = (dateStr: string | null): string | null => {
@@ -172,14 +176,12 @@ export const HomePage: React.FC = () => {
           console.error('Failed to load forecast last date:', error);
         }
 
-        // Load ruonia last date and rate
+        // Load ruonia rate
         try {
           const ruoniaData = await fetchRuoniaData(null, null);
           if (ruoniaData.data && ruoniaData.data.length > 0) {
             // Data is sorted descending, first item is the latest
             const firstRecord = ruoniaData.data[0];
-            const dateStr = firstRecord['Дата ставки'];
-            setRuoniaLastDate(formatDateForDisplay(dateStr));
             // Get last RUONIA rate
             const rate = firstRecord['Ставка RUONIA, % годовых'];
             if (rate !== null && rate !== undefined) {
@@ -187,7 +189,43 @@ export const HomePage: React.FC = () => {
             }
           }
         } catch (error) {
-          console.error('Failed to load ruonia last date:', error);
+          console.error('Failed to load ruonia rate:', error);
+        }
+
+        // Load key rate - find value closest to current date
+        try {
+          const keyRateData = await getKeyRateData();
+          if (keyRateData && Object.keys(keyRateData).length > 0) {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            
+            // Find the date closest to today (but not in the future)
+            let closestDate: string | null = null;
+            let minDiff = Infinity;
+            
+            for (const dateStr of Object.keys(keyRateData)) {
+              const date = new Date(dateStr);
+              date.setHours(0, 0, 0, 0);
+              
+              // Only consider dates that are not in the future
+              if (date <= today) {
+                const diff = Math.abs(today.getTime() - date.getTime());
+                if (diff < minDiff) {
+                  minDiff = diff;
+                  closestDate = dateStr;
+                }
+              }
+            }
+            
+            if (closestDate) {
+              const rate = keyRateData[closestDate];
+              if (rate !== null && rate !== undefined) {
+                setKeyRate(typeof rate === 'number' ? rate : parseFloat(String(rate)));
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Failed to load key rate:', error);
         }
       } catch (error) {
         console.error('Failed to load forecast cards last dates:', error);
@@ -257,13 +295,11 @@ export const HomePage: React.FC = () => {
       },
       ruonia: async () => {
         await refreshRuoniaData();
-        // Reload last date and rate after refresh
+        // Reload rate after refresh
         try {
           const ruoniaData = await fetchRuoniaData(null, null);
           if (ruoniaData.data && ruoniaData.data.length > 0) {
             const firstRecord = ruoniaData.data[0];
-            const dateStr = firstRecord['Дата ставки'];
-            setRuoniaLastDate(formatDateForDisplay(dateStr));
             // Get last RUONIA rate
             const rate = firstRecord['Ставка RUONIA, % годовых'];
             if (rate !== null && rate !== undefined) {
@@ -271,7 +307,45 @@ export const HomePage: React.FC = () => {
             }
           }
         } catch (error) {
-          console.error('Failed to reload ruonia last date:', error);
+          console.error('Failed to reload ruonia rate:', error);
+        }
+      },
+      keyrate: async () => {
+        await loadKeyRateData();
+        // Reload key rate after refresh
+        try {
+          const keyRateData = await getKeyRateData();
+          if (keyRateData && Object.keys(keyRateData).length > 0) {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            
+            // Find the date closest to today (but not in the future)
+            let closestDate: string | null = null;
+            let minDiff = Infinity;
+            
+            for (const dateStr of Object.keys(keyRateData)) {
+              const date = new Date(dateStr);
+              date.setHours(0, 0, 0, 0);
+              
+              // Only consider dates that are not in the future
+              if (date <= today) {
+                const diff = Math.abs(today.getTime() - date.getTime());
+                if (diff < minDiff) {
+                  minDiff = diff;
+                  closestDate = dateStr;
+                }
+              }
+            }
+            
+            if (closestDate) {
+              const rate = keyRateData[closestDate];
+              if (rate !== null && rate !== undefined) {
+                setKeyRate(typeof rate === 'number' ? rate : parseFloat(String(rate)));
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Failed to reload key rate:', error);
         }
       },
     };
@@ -634,18 +708,35 @@ export const HomePage: React.FC = () => {
             >
               {isLoadingCurrencyRates ? (
                 <CircularProgress size={16} />
-              ) : currencyRates ? (
+              ) : (
                 (() => {
-                  const currencies = [
+                  const currencies = currencyRates ? [
                     currencyRates.rates.EUR && { code: 'EUR', rate: currencyRates.rates.EUR.rate },
                     currencyRates.rates.USD && { code: 'USD', rate: currencyRates.rates.USD.rate },
                     currencyRates.rates.CNY && { code: 'CNY', rate: currencyRates.rates.CNY.rate },
-                  ].filter(Boolean) as Array<{ code: string; rate: number }>;
+                  ].filter(Boolean) as Array<{ code: string; rate: number }> : [];
                   
                   const items: Array<{ label: string; value: number; key: string }> = [
                     ...currencies.map(c => ({ label: c.code, value: c.rate, key: c.code })),
                     ...(ruoniaRate !== null ? [{ label: 'RUONIA', value: ruoniaRate, key: 'RUONIA' }] : []),
+                    ...(keyRate !== null ? [{ label: 'Ключевая ставка', value: keyRate, key: 'KEYRATE' }] : []),
                   ];
+                  
+                  if (items.length === 0) {
+                    return (
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          fontFamily: '"Inter", "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                          fontSize: '0.75rem',
+                          fontWeight: 500,
+                          color: 'text.secondary',
+                        }}
+                      >
+                        Данные не загружены
+                      </Typography>
+                    );
+                  }
                   
                   return items.map((item, index) => (
                     <React.Fragment key={item.key}>
@@ -658,7 +749,7 @@ export const HomePage: React.FC = () => {
                           color: 'text.primary',
                         }}
                       >
-                        {item.label}: <strong>{item.key === 'RUONIA' ? item.value.toFixed(2) + '%' : item.value.toFixed(2)}</strong>
+                        {item.label}: <strong>{(item.key === 'RUONIA' || item.key === 'KEYRATE') ? item.value.toFixed(2) + '%' : item.value.toFixed(2)}</strong>
                       </Typography>
                       {index < items.length - 1 && (
                         <Box
@@ -672,18 +763,6 @@ export const HomePage: React.FC = () => {
                     </React.Fragment>
                   ));
                 })()
-              ) : (
-                <Typography
-                  variant="caption"
-                  sx={{
-                    fontFamily: '"Inter", "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                    fontSize: '0.75rem',
-                    fontWeight: 500,
-                    color: 'text.secondary',
-                  }}
-                >
-                  Курсы валют не загружены
-                </Typography>
               )}
             </Box>
 
@@ -850,7 +929,7 @@ export const HomePage: React.FC = () => {
                       p: 3,
                     }}
                   >
-                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', lg: 'repeat(3, 1fr)' }, gap: 3 }}>
+                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', lg: 'repeat(4, 1fr)' }, gap: 3 }}>
                       <HubCard
                         title="Кривая бескупонной доходности"
                         value={zerocuponLastDate || "—"}
@@ -869,11 +948,19 @@ export const HomePage: React.FC = () => {
                       />
                       <HubCard
                         title="Ставка RUONIA"
-                        value={ruoniaLastDate || "—"}
+                        value={ruoniaRate !== null ? `${ruoniaRate.toFixed(2)}%` : "—"}
                         subtitle="Информация о ставке RUONIA"
                         icon={<PercentIcon />}
                         color="#9c27b0"
                         onClick={() => setForecastSubView('ruonia')}
+                      />
+                      <HubCard
+                        title="Ключевая ставка ЦБ"
+                        value={keyRate !== null ? `${keyRate.toFixed(2)}%` : "—"}
+                        subtitle="Информация о ключевой ставке Центрального Банка"
+                        icon={<PercentIcon />}
+                        color="#e91e63"
+                        onClick={() => setForecastSubView('keyrate')}
                       />
                     </Box>
                   </Box>
@@ -922,6 +1009,12 @@ export const HomePage: React.FC = () => {
                     {forecastSubView === 'ruonia' && (
                       <Box sx={{ flexGrow: 1, minHeight: 0 }}>
                         <RuoniaTable />
+                      </Box>
+                    )}
+                    
+                    {forecastSubView === 'keyrate' && (
+                      <Box sx={{ flexGrow: 1, minHeight: 0 }}>
+                        <KeyRateTable />
                       </Box>
                     )}
                   </Box>
@@ -1041,12 +1134,13 @@ export const HomePage: React.FC = () => {
         onConfirm={handleRefreshConfirm}
         tasks={[
           { id: 'bonds', label: 'Обновить данные облигаций', checked: false },
-          { id: 'zerocupon', label: 'Обновление данных кривой бескупонной доходности', checked: false },
+          { id: 'zerocupon', label: 'Обновить данные кривой бескупонной доходности', checked: false },
           { id: 'ratings', label: 'Обновить рейтинги', checked: false },
           { id: 'emitents', label: 'Обновить эмитентов', checked: false },
           { id: 'coupons', label: 'Обновить купоны', checked: false },
           { id: 'currency', label: 'Обновить курсы валют', checked: false },
           { id: 'ruonia', label: 'Обновить данные ставки RUONIA', checked: false },
+          { id: 'keyrate', label: 'Обновить ключевую ставку ЦБ', checked: false },
         ]}
         isRefreshing={isRefreshing}
         refreshStatus={refreshStatus}

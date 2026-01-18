@@ -4,13 +4,14 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import bonds, metadata, zerocupon, forecast, llm, qwen, grok, emitent, rating, feedback, currency, ruonia
+from app.routers import bonds, metadata, zerocupon, forecast, llm, qwen, grok, emitent, rating, feedback, currency, ruonia, keyrate
 from app.services.data_loader import init_data_loader
 from app.services.coupon_loader import init_coupon_loader
 from app.services.emitent_service import init_emitent_service
 from app.services.rating_service import init_rating_service
 from app.services.currency_service import init_currency_service
 from app.services.ruonia_service import init_ruonia_service
+from app.services.keyrate_service import init_keyrate_service
 from app.config import settings
 
 
@@ -25,6 +26,7 @@ async def lifespan(app: FastAPI):
     init_rating_service(data_dir)
     init_currency_service(data_dir)
     init_ruonia_service(data_dir)
+    init_keyrate_service(data_dir)
     yield
     # Shutdown: cleanup if needed
     # (currently no cleanup required)
@@ -62,6 +64,7 @@ app.include_router(rating.router)
 app.include_router(feedback.router)
 app.include_router(currency.router)
 app.include_router(ruonia.router)
+app.include_router(keyrate.router)
 
 # Root endpoint
 @app.get("/")
