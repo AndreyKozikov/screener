@@ -46,6 +46,7 @@ import dayjs from 'dayjs';
 import type { BondListItem } from '../../types/bond';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { fetchForecastData, type ForecastData } from '../../api/forecast';
+import { getKeyRateData, type KeyRateData } from '../../api/keyrate';
 
 // Register AG Grid modules
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -193,13 +194,131 @@ export const ComparisonTable: React.FC = () => {
     void loadCouponsData();
   }, [comparisonBonds]);
 
+  // Helper function to get the closest key rate to current date
+  const getClosestKeyRate = (keyRateData: KeyRateData): number | null => {
+    if (!keyRateData || Object.keys(keyRateData).length === 0) {
+      return null;
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    let closestDate: string | null = null;
+    let minDiff = Infinity;
+
+    for (const dateStr of Object.keys(keyRateData)) {
+      const date = new Date(dateStr);
+      date.setHours(0, 0, 0, 0);
+      
+      // Only consider dates that are not in the future
+      if (date > today) continue;
+      
+      const diff = Math.abs(today.getTime() - date.getTime());
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestDate = dateStr;
+      }
+    }
+
+    if (closestDate) {
+      return keyRateData[closestDate];
+    }
+
+    return null;
+  };
+
+  // Load current key rate and set default values when component mounts
+  useEffect(() => {
+    const loadCurrentKeyRate = async () => {
+      try {
+        const keyRateData = await getKeyRateData();
+        const currentKeyRate = getClosestKeyRate(keyRateData);
+        
+        if (currentKeyRate !== null) {
+          // Set current rate if it's not already set
+          setCurrentRate((prev) => {
+            if (prev === null) {
+              return currentKeyRate;
+            }
+            return prev;
+          });
+          // Set forecast rate to current rate if it's not already set and not using forecast
+          setForecastRate((prev) => {
+            if (prev === null) {
+              return currentKeyRate;
+            }
+            return prev;
+          });
+        }
+      } catch (error) {
+        console.error('Error loading current key rate:', error);
+      }
+    };
+
+    void loadCurrentKeyRate();
+  }, []); // Run only once on mount
+
+  // Set default values when dialog opens
+  useEffect(() => {
+    if (!isParamsDialogOpen) return;
+
+    const loadCurrentKeyRateForDialog = async () => {
+      try {
+        const keyRateData = await getKeyRateData();
+        const currentKeyRate = getClosestKeyRate(keyRateData);
+        
+        if (currentKeyRate !== null) {
+          // Set current rate if it's not already set
+          setCurrentRate((prev) => {
+            if (prev === null) {
+              return currentKeyRate;
+            }
+            return prev;
+          });
+          // Set forecast rate to current rate if it's not already set and not using forecast
+          setForecastRate((prev) => {
+            if (prev === null && !useForecastRate) {
+              return currentKeyRate;
+            }
+            return prev;
+          });
+        }
+      } catch (error) {
+        console.error('Error loading current key rate for dialog:', error);
+      }
+    };
+
+    void loadCurrentKeyRateForDialog();
+  }, [isParamsDialogOpen, useForecastRate]); // Run when dialog opens
+
+  // Set forecast rate to current rate when useForecastRate is unchecked
+  useEffect(() => {
+    if (!useForecastRate && currentRate !== null) {
+      setForecastRate(currentRate);
+    }
+  }, [useForecastRate, currentRate]);
+
   // Load forecast data for rate prediction (only if checkbox is checked)
   useEffect(() => {
     if (!useForecastRate) {
-      // If checkbox is unchecked, clear forecast data and rate
+      // If checkbox is unchecked, clear forecast data
       setForecastData(null);
-      setForecastRate(null);
       setIsLoadingForecast(false);
+      // If currentRate is not set yet, try to load it
+      if (currentRate === null) {
+        const loadCurrentKeyRate = async () => {
+          try {
+            const keyRateData = await getKeyRateData();
+            const currentKeyRate = getClosestKeyRate(keyRateData);
+            if (currentKeyRate !== null) {
+              setCurrentRate(currentKeyRate);
+            }
+          } catch (error) {
+            console.error('Error loading current key rate:', error);
+          }
+        };
+        void loadCurrentKeyRate();
+      }
       return;
     }
 
@@ -248,7 +367,7 @@ export const ComparisonTable: React.FC = () => {
     };
 
     void loadForecast();
-  }, [years, useForecastRate]);
+  }, [years, useForecastRate, currentRate]);
 
   // Calculate years until maturity
   const calculateYearsToMaturity = (matDate: string | null): number | null => {
