@@ -347,14 +347,8 @@ export const SpreadAnalysis: React.FC = () => {
 
             if (!ignore && !abortController.signal.aborted) {
               setCouponsLoadProgress({ loaded: loadedCount, total: totalBonds });
-              // Update coupons data incrementally for better UX
-              setCouponsData(prev => {
-                const newMap = new Map(prev);
-                if (coupons && coupons.length > 0) {
-                  newMap.set(bond.SECID, coupons);
-                }
-                return newMap;
-              });
+              // Don't update couponsData incrementally - wait for all to load
+              // This prevents race conditions where comparisonData is calculated with partial data
             }
           } catch (error) {
             if (!abortController.signal.aborted && !ignore) {
@@ -368,11 +362,23 @@ export const SpreadAnalysis: React.FC = () => {
         await Promise.all(couponPromises);
 
         if (!ignore && !abortController.signal.aborted) {
-          // Final update with all coupons
+          // Final update with all coupons - only update after ALL are loaded
+          // This ensures comparisonData is calculated only with complete data
           setCouponsData(prev => {
             const newMap = new Map(prev);
+            // Clear previous data for bonds that are no longer in the list
+            // Keep only bonds that are in the current fixedCouponBonds list
+            const currentSecIds = new Set(fixedCouponBonds.map(b => b.SECID));
+            newMap.forEach((_, secid) => {
+              if (!currentSecIds.has(secid)) {
+                newMap.delete(secid);
+              }
+            });
+            // Add all newly loaded coupons
             couponsMap.forEach((coupons, secid) => {
-              newMap.set(secid, coupons);
+              if (coupons && coupons.length > 0) {
+                newMap.set(secid, coupons);
+              }
             });
             return newMap;
           });
@@ -693,11 +699,26 @@ export const SpreadAnalysis: React.FC = () => {
       bond => bond.BONDTYPE43 === 'Фикс с известным купоном'
     );
     
-    // Check if we're still loading coupons for fixed coupon bonds
-    // Only block if there are fixed coupon bonds and we're loading
+    // Strict check: if we're loading coupons OR if we have fixed coupon bonds but not all coupons are loaded
     if (isLoadingCoupons && fixedCouponBonds.length > 0) {
-      // Return empty array or previous data - but we'll show loading spinner instead
       return [];
+    }
+
+    // Additional check: verify that all fixed coupon bonds have their coupons loaded
+    // This prevents displaying data with missing G-spread/Z-spread calculations
+    if (fixedCouponBonds.length > 0) {
+      const allCouponsLoaded = fixedCouponBonds.every(bond => {
+        // Check if coupons are in the state
+        const hasCouponsInState = couponsData.has(bond.SECID);
+        // Also check if it's in the ref (for bonds that were just loaded)
+        const hasCouponsInRef = loadedBondsRef.current.has(bond.SECID);
+        return hasCouponsInState || hasCouponsInRef;
+      });
+
+      // If we have fixed coupon bonds but not all coupons are loaded, don't calculate yet
+      if (!allCouponsLoaded) {
+        return [];
+      }
     }
 
     // Get latest zero-coupon yield curve record
