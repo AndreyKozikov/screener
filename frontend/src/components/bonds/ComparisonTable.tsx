@@ -110,6 +110,10 @@ export const ComparisonTable: React.FC = () => {
   const [isLoadingZerocupon, setIsLoadingZerocupon] = useState(false);
   const [couponsData, setCouponsData] = useState<Map<string, Coupon[]>>(new Map());
   const [isLoadingCoupons, setIsLoadingCoupons] = useState(false);
+  const [couponsLoadProgress, setCouponsLoadProgress] = useState<{ loaded: number; total: number }>({ loaded: 0, total: 0 });
+  const [couponsLoadErrors, setCouponsLoadErrors] = useState<Set<string>>(new Set());
+  const couponsAbortControllerRef = useRef<AbortController | null>(null);
+  const loadedBondsRef = useRef<Set<string>>(new Set());
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const gridRef = useRef<AgGridReact<ComparisonRow>>(null);
   const [headerHeight, setHeaderHeight] = useState<number | undefined>(undefined);
@@ -130,7 +134,12 @@ export const ComparisonTable: React.FC = () => {
 
   // Load zero-coupon yield curve data when component mounts or bonds change
   useEffect(() => {
-    if (comparisonBonds.length === 0) return;
+    if (comparisonBonds.length === 0) {
+      setZerocuponData([]);
+      return;
+    }
+
+    let ignore = false;
 
     const loadZerocuponData = async () => {
       try {
@@ -143,56 +152,214 @@ export const ComparisonTable: React.FC = () => {
         const dateTo = today.format('DD.MM.YYYY');
 
         const response = await fetchZerocuponData(dateFrom, dateTo);
-        setZerocuponData(response.data);
+        if (!ignore) {
+          setZerocuponData(response.data);
+        }
       } catch (error) {
-        console.error('Error loading zerocupon data:', error);
-        setZerocuponData([]);
+        if (!ignore) {
+          console.error('Error loading zerocupon data:', error);
+          setZerocuponData([]);
+        }
       } finally {
-        setIsLoadingZerocupon(false);
+        if (!ignore) {
+          setIsLoadingZerocupon(false);
+        }
       }
     };
 
     void loadZerocuponData();
+
+    return () => {
+      ignore = true;
+    };
   }, [comparisonBonds.length]);
+
+  // Helper function to retry fetching coupons with exponential backoff
+  const fetchBondCouponsWithRetry = useCallback(async (
+    secid: string,
+    maxRetries: number = 2,
+    retryDelay: number = 1000
+  ): Promise<Coupon[] | null> => {
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const response = await fetchBondCoupons(secid, false);
+        if (response.coupons && response.coupons.length > 0) {
+          return response.coupons;
+        }
+        return [];
+      } catch (error) {
+        if (attempt < maxRetries) {
+          // Exponential backoff: wait longer with each retry
+          const delay = retryDelay * Math.pow(2, attempt);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+        console.error(`Error loading coupons for ${secid} after ${maxRetries + 1} attempts:`, error);
+        return null;
+      }
+    }
+    return null;
+  }, []);
+
+  // Create stable list of fixed coupon bond SECIDs using useMemo
+  const fixedCouponBondSecIds = useMemo(() => {
+    return comparisonBonds
+      .filter(bond => bond.BONDTYPE43 === 'Фикс с известным купоном')
+      .map(bond => bond.SECID)
+      .sort()
+      .join(',');
+  }, [comparisonBonds]);
 
   // Load coupons data for fixed coupon bonds
   useEffect(() => {
-    if (comparisonBonds.length === 0) return;
+    if (comparisonBonds.length === 0) {
+      setCouponsData(new Map());
+      setCouponsLoadProgress({ loaded: 0, total: 0 });
+      setIsLoadingCoupons(false);
+      loadedBondsRef.current.clear();
+      return;
+    }
+
+    // Cancel previous requests if any
+    if (couponsAbortControllerRef.current) {
+      couponsAbortControllerRef.current.abort();
+    }
+
+    // Create new AbortController for this request batch
+    const abortController = new AbortController();
+    couponsAbortControllerRef.current = abortController;
+
+    let ignore = false;
 
     const loadCouponsData = async () => {
       try {
         setIsLoadingCoupons(true);
+        setCouponsLoadErrors(new Set());
         const couponsMap = new Map<string, Coupon[]>();
 
-        // Load coupons only for fixed coupon bonds
+        // Get fixed coupon bonds
         const fixedCouponBonds = comparisonBonds.filter(
           bond => bond.BONDTYPE43 === 'Фикс с известным купоном'
         );
 
-        // Load coupons in parallel
+        // Check if we already have all coupons loaded for these bonds (using only ref, not state)
+        const allLoaded = fixedCouponBonds.every(bond => 
+          loadedBondsRef.current.has(bond.SECID)
+        );
+
+        if (allLoaded && fixedCouponBonds.length > 0) {
+          // All coupons already loaded, just update progress
+          setCouponsLoadProgress({ loaded: fixedCouponBonds.length, total: fixedCouponBonds.length });
+          setIsLoadingCoupons(false);
+          return;
+        }
+
+        const totalBonds = fixedCouponBonds.length;
+        setCouponsLoadProgress({ loaded: 0, total: totalBonds });
+
+        if (totalBonds === 0) {
+          setCouponsData(new Map());
+          setIsLoadingCoupons(false);
+          return;
+        }
+
+        // Load coupons with progress tracking
+        let loadedCount = 0;
+        const errors = new Set<string>();
+
         const couponPromises = fixedCouponBonds.map(async (bond) => {
+          // Check if already loaded (using only ref)
+          if (loadedBondsRef.current.has(bond.SECID)) {
+            if (!ignore && !abortController.signal.aborted) {
+              loadedCount++;
+              setCouponsLoadProgress({ loaded: loadedCount, total: totalBonds });
+            }
+            return;
+          }
+
+          // Check abort signal
+          if (abortController.signal.aborted || ignore) {
+            return;
+          }
+
           try {
-            const response = await fetchBondCoupons(bond.SECID, false);
-            if (response.coupons && response.coupons.length > 0) {
-              couponsMap.set(bond.SECID, response.coupons);
+            const coupons = await fetchBondCouponsWithRetry(bond.SECID, 2, 1000);
+            
+            if (abortController.signal.aborted || ignore) {
+              return;
+            }
+
+            if (coupons !== null) {
+              if (coupons.length > 0) {
+                couponsMap.set(bond.SECID, coupons);
+                loadedBondsRef.current.add(bond.SECID);
+              }
+              loadedCount++;
+            } else {
+              errors.add(bond.SECID);
+              loadedCount++;
+            }
+
+            if (!ignore && !abortController.signal.aborted) {
+              setCouponsLoadProgress({ loaded: loadedCount, total: totalBonds });
+              // Don't update couponsData incrementally - wait for all to load
+              // This prevents race conditions where comparisonData is calculated with partial data
             }
           } catch (error) {
-            console.error(`Error loading coupons for ${bond.SECID}:`, error);
+            if (!abortController.signal.aborted && !ignore) {
+              errors.add(bond.SECID);
+              loadedCount++;
+              setCouponsLoadProgress({ loaded: loadedCount, total: totalBonds });
+            }
           }
         });
 
         await Promise.all(couponPromises);
-        setCouponsData(couponsMap);
+
+        if (!ignore && !abortController.signal.aborted) {
+          // Final update with all coupons - only update after ALL are loaded
+          // This ensures comparisonData is calculated only with complete data
+          setCouponsData(prev => {
+            const newMap = new Map(prev);
+            // Clear previous data for bonds that are no longer in the list
+            // Keep only bonds that are in the current fixedCouponBonds list
+            const currentSecIds = new Set(fixedCouponBonds.map(b => b.SECID));
+            newMap.forEach((_, secid) => {
+              if (!currentSecIds.has(secid)) {
+                newMap.delete(secid);
+              }
+            });
+            // Add all newly loaded coupons
+            couponsMap.forEach((coupons, secid) => {
+              if (coupons && coupons.length > 0) {
+                newMap.set(secid, coupons);
+              }
+            });
+            return newMap;
+          });
+          setCouponsLoadErrors(errors);
+          setIsLoadingCoupons(false);
+          setCouponsLoadProgress({ loaded: totalBonds, total: totalBonds });
+        }
       } catch (error) {
-        console.error('Error loading coupons data:', error);
-        setCouponsData(new Map());
-      } finally {
-        setIsLoadingCoupons(false);
+        if (!ignore && !abortController.signal.aborted) {
+          console.error('Error loading coupons data:', error);
+          setCouponsData(new Map());
+          setIsLoadingCoupons(false);
+        }
       }
     };
 
     void loadCouponsData();
-  }, [comparisonBonds]);
+
+    return () => {
+      ignore = true;
+      if (couponsAbortControllerRef.current) {
+        couponsAbortControllerRef.current.abort();
+        couponsAbortControllerRef.current = null;
+      }
+    };
+  }, [fixedCouponBondSecIds, fetchBondCouponsWithRetry]);
 
   // Helper function to get the closest key rate to current date
   const getClosestKeyRate = (keyRateData: KeyRateData): number | null => {
@@ -670,6 +837,34 @@ export const ComparisonTable: React.FC = () => {
   const comparisonData: ComparisonRow[] = useMemo(() => {
     if (comparisonBonds.length === 0) return [];
 
+    // Don't calculate comparison data if coupons are still loading
+    // This prevents race conditions where data is calculated before coupons are loaded
+    const fixedCouponBonds = comparisonBonds.filter(
+      bond => bond.BONDTYPE43 === 'Фикс с известным купоном'
+    );
+    
+    // Strict check: if we're loading coupons OR if we have fixed coupon bonds but not all coupons are loaded
+    if (isLoadingCoupons && fixedCouponBonds.length > 0) {
+      return [];
+    }
+
+    // Additional check: verify that all fixed coupon bonds have their coupons loaded
+    // This prevents displaying data with missing G-spread/Z-spread calculations
+    if (fixedCouponBonds.length > 0) {
+      const allCouponsLoaded = fixedCouponBonds.every(bond => {
+        // Check if coupons are in the state
+        const hasCouponsInState = couponsData.has(bond.SECID);
+        // Also check if it's in the ref (for bonds that were just loaded)
+        const hasCouponsInRef = loadedBondsRef.current.has(bond.SECID);
+        return hasCouponsInState || hasCouponsInRef;
+      });
+
+      // If we have fixed coupon bonds but not all coupons are loaded, don't calculate yet
+      if (!allCouponsLoaded) {
+        return [];
+      }
+    }
+
     // Get latest zero-coupon yield curve record
     const latestRecord = getLatestZerocuponRecord(zerocuponData);
     if (!latestRecord) {
@@ -821,7 +1016,7 @@ export const ComparisonTable: React.FC = () => {
         secid: bond.SECID,
       };
     });
-  }, [comparisonBonds, zerocuponData, couponsData]);
+  }, [comparisonBonds, zerocuponData, couponsData, isLoadingCoupons]);
 
   // Custom header component with Material-UI Tooltip (same as PortfolioTable)
   const CustomHeaderWithTooltip = React.memo((params: IHeaderParams) => {
@@ -2450,8 +2645,43 @@ export const ComparisonTable: React.FC = () => {
         borderRadius: '12px',
       }}>
         <CardContent sx={{ p: 0, '&:last-child': { pb: 0 }, flexGrow: 1, display: 'flex', flexDirection: 'column', width: '100%' }}>
-          <Box sx={{ flexGrow: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <LoadingSpinner message={isLoadingZerocupon ? "Загрузка данных кривой бескупонной доходности..." : "Загрузка данных о купонах..."} />
+          <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2 }}>
+            <LoadingSpinner 
+              message={
+                isLoadingZerocupon 
+                  ? "Загрузка данных кривой бескупонной доходности..." 
+                  : isLoadingCoupons && couponsLoadProgress.total > 0
+                  ? `Загрузка данных о купонах... (${couponsLoadProgress.loaded} из ${couponsLoadProgress.total})`
+                  : "Загрузка данных о купонах..."
+              } 
+            />
+            {isLoadingCoupons && couponsLoadProgress.total > 0 && (
+              <Box sx={{ width: '300px', mt: 1 }}>
+                <Box 
+                  sx={{ 
+                    width: '100%', 
+                    height: '8px', 
+                    backgroundColor: 'rgba(0, 0, 0, 0.1)', 
+                    borderRadius: '4px',
+                    overflow: 'hidden'
+                  }}
+                >
+                  <Box
+                    sx={{
+                      width: `${(couponsLoadProgress.loaded / couponsLoadProgress.total) * 100}%`,
+                      height: '100%',
+                      backgroundColor: 'primary.main',
+                      transition: 'width 0.3s ease',
+                    }}
+                  />
+                </Box>
+                {couponsLoadErrors.size > 0 && (
+                  <Typography variant="caption" color="error" sx={{ mt: 1, display: 'block' }}>
+                    Ошибка загрузки купонов для {couponsLoadErrors.size} облигаций
+                  </Typography>
+                )}
+              </Box>
+            )}
           </Box>
         </CardContent>
       </Card>
