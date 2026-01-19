@@ -4,6 +4,7 @@ import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import PsychologyIcon from '@mui/icons-material/Psychology';
 import FeedbackIcon from '@mui/icons-material/Feedback';
+import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ShowChartIcon from '@mui/icons-material/ShowChart';
 import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
@@ -31,6 +32,7 @@ import { LLMAnalysisModelDialog, type LLMModel } from '../components/llm/LLMAnal
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
 import { RefreshDataDialog } from '../components/common/RefreshDataDialog';
 import { FeedbackDialog } from '../components/common/FeedbackDialog';
+import { HelpDialog, type HelpSection } from '../components/common/HelpDialog';
 import { BondSelectionGuidePage } from './BondSelectionGuidePage';
 import { refreshBondsData, refreshCouponsData } from '../api/bonds';
 import { refreshZerocuponData, fetchZerocuponData } from '../api/zerocupon';
@@ -98,6 +100,7 @@ export const HomePage: React.FC = () => {
   const [isNoSelectionDialogOpen, setIsNoSelectionDialogOpen] = useState(false);
   const [isFiltersModalOpen, setIsFiltersModalOpen] = useState(false);
   const [isFeedbackDialogOpen, setIsFeedbackDialogOpen] = useState(false);
+  const [isHelpDialogOpen, setIsHelpDialogOpen] = useState(false);
   
   // Currency rates state
   const [currencyRates, setCurrencyRates] = useState<CurrencyRatesResponse | null>(null);
@@ -557,6 +560,48 @@ export const HomePage: React.FC = () => {
     setViewMode('HUB');
   };
 
+  // Determine current help section based on view state
+  const getCurrentHelpSection = (): HelpSection => {
+    if (viewMode === 'HUB') {
+      return 'default';
+    }
+
+    // Determine section based on currentTab and subviews
+    if (currentTab === 0) {
+      // Рынок Облигаций
+      return 'bonds-table';
+    } else if (currentTab === 2) {
+      // Прогнозы
+      if (forecastSubView === 'zerocupon') {
+        return 'zerocupon';
+      } else if (forecastSubView === 'forecast') {
+        return 'forecast';
+      } else if (forecastSubView === 'ruonia') {
+        return 'ruonia';
+      } else if (forecastSubView === 'keyrate') {
+        return 'keyrate';
+      }
+      return 'default';
+    } else if (currentTab === 3) {
+      // Мой Портфель
+      return 'portfolio';
+    } else if (currentTab === 4) {
+      // Сравнение
+      if (comparisonSubView === 'comparison') {
+        return 'comparison-bonds';
+      } else if (comparisonSubView === 'spread-analysis') {
+        return 'spread-analysis';
+      }
+      return 'default';
+    }
+
+    return 'default';
+  };
+
+  const handleHelpClick = () => {
+    setIsHelpDialogOpen(true);
+  };
+
   // Hub Cards Configuration
   const hubCards = [
     {
@@ -671,6 +716,18 @@ export const HomePage: React.FC = () => {
                 }}
               >
                 <FeedbackIcon sx={{ fontSize: 18 }} />
+              </IconButton>
+              <IconButton
+                size="small"
+                onClick={handleHelpClick}
+                sx={{ 
+                  color: 'text.primary',
+                  '&:hover': {
+                    bgcolor: 'action.hover',
+                  },
+                }}
+              >
+                <HelpOutlineIcon sx={{ fontSize: 18 }} />
               </IconButton>
             </Box>
           </Box>
@@ -1219,6 +1276,11 @@ export const HomePage: React.FC = () => {
         onClose={() => setIsFeedbackDialogOpen(false)}
         onSend={handleFeedbackSend}
         tabName={getCurrentTabName()}
+      />
+      <HelpDialog
+        open={isHelpDialogOpen}
+        onClose={() => setIsHelpDialogOpen(false)}
+        section={getCurrentHelpSection()}
       />
     </Box>
   );
