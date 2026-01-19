@@ -51231,5 +51231,18 @@
     "MaxRate": null,
     "StatusXML": null,
     "DateUpdate": null
+  },
+  "2026-01-16": {
+    "DT": "2026-01-16T00:00:00",
+    "ruo": 15.88,
+    "vol": 571.62,
+    "T": 53,
+    "C": 18,
+    "MinRate": 14.8,
+    "Percentile25": 15.75,
+    "Percentile75": 15.9,
+    "MaxRate": 15.9,
+    "StatusXML": 0,
+    "DateUpdate": "2026-01-19T14:24:25.313000"
   }
 }
