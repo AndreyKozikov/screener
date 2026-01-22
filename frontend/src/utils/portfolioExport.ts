@@ -20,6 +20,7 @@ export interface PortfolioSecidFormat {
   format: 'secid-only';
   secids: string[];
   quantities?: Record<string, number>; // Map of SECID to quantity
+  averagePurchasePrices?: Record<string, number>; // Map of SECID to average purchase price (% of face value)
   exportedAt: string;
 }
 
@@ -38,22 +39,38 @@ export const exportPortfolioFull = async (bonds: PortfolioBond[]): Promise<void>
   // Export bonds data using existing function
   await exportSelectedBonds(uniqueSecids);
   
-  // Create a separate file for quantities if any bond has quantity != 1
+  // Create a separate file for quantities and averagePurchasePrices if any bond has non-default values
   const quantities: Record<string, number> = {};
+  const averagePurchasePrices: Record<string, number> = {};
   bonds.forEach(bond => {
     if (bond.quantity && bond.quantity !== 1) {
       quantities[bond.SECID] = bond.quantity;
     }
+    if (bond.averagePurchasePrice != null && bond.averagePurchasePrice !== undefined) {
+      averagePurchasePrices[bond.SECID] = bond.averagePurchasePrice;
+    }
   });
   
-  // If there are non-default quantities, save them in a separate file
-  if (Object.keys(quantities).length > 0) {
-    const quantitiesData = {
+  // If there are non-default quantities or averagePurchasePrices, save them in a separate file
+  if (Object.keys(quantities).length > 0 || Object.keys(averagePurchasePrices).length > 0) {
+    const quantitiesData: {
+      version: string;
+      format: string;
+      quantities?: Record<string, number>;
+      averagePurchasePrices?: Record<string, number>;
+      exportedAt: string;
+    } = {
       version: '1.0',
       format: 'quantities',
-      quantities,
       exportedAt: new Date().toISOString(),
     };
+    
+    if (Object.keys(quantities).length > 0) {
+      quantitiesData.quantities = quantities;
+    }
+    if (Object.keys(averagePurchasePrices).length > 0) {
+      quantitiesData.averagePurchasePrices = averagePurchasePrices;
+    }
     
     const json = JSON.stringify(quantitiesData, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
@@ -82,9 +99,13 @@ export const exportPortfolioSecidOnly = (bonds: PortfolioBond[]): void => {
   
   // Build quantities map (only include if quantity != 1)
   const quantities: Record<string, number> = {};
+  const averagePurchasePrices: Record<string, number> = {};
   bonds.forEach(bond => {
     if (bond.quantity && bond.quantity !== 1) {
       quantities[bond.SECID] = bond.quantity;
+    }
+    if (bond.averagePurchasePrice != null && bond.averagePurchasePrice !== undefined) {
+      averagePurchasePrices[bond.SECID] = bond.averagePurchasePrice;
     }
   });
   
@@ -93,6 +114,7 @@ export const exportPortfolioSecidOnly = (bonds: PortfolioBond[]): void => {
     format: 'secid-only',
     secids,
     ...(Object.keys(quantities).length > 0 && { quantities }),
+    ...(Object.keys(averagePurchasePrices).length > 0 && { averagePurchasePrices }),
     exportedAt: new Date().toISOString(),
   };
 

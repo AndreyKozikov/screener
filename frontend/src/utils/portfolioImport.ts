@@ -104,16 +104,17 @@ const extractSecidsFromFullFormat = (data: Record<string, unknown>): string[] =>
 };
 
 /**
- * Extract SECIDs and quantities from SECID-only format
+ * Extract SECIDs, quantities, and averagePurchasePrices from SECID-only format
  */
 const extractSecidsFromSecidFormat = (
   data: PortfolioSecidFormat | string[]
-): { secids: string[]; quantities: Record<string, number> } => {
+): { secids: string[]; quantities: Record<string, number>; averagePurchasePrices: Record<string, number> } => {
   const quantities: Record<string, number> = {};
+  const averagePurchasePrices: Record<string, number> = {};
   
   if (Array.isArray(data)) {
     const secids = data.filter((secid: unknown) => typeof secid === 'string' && secid.length > 0);
-    return { secids, quantities };
+    return { secids, quantities, averagePurchasePrices };
   }
 
   if (data.format === 'secid-only' && Array.isArray(data.secids)) {
@@ -129,18 +130,28 @@ const extractSecidsFromSecidFormat = (
       }
     }
     
-    return { secids, quantities };
+    // Extract averagePurchasePrices if present
+    if (data.averagePurchasePrices && typeof data.averagePurchasePrices === 'object' && !Array.isArray(data.averagePurchasePrices)) {
+      const pricesObj = data.averagePurchasePrices as Record<string, unknown>;
+      for (const [secid, price] of Object.entries(pricesObj)) {
+        if (typeof price === 'number' && !isNaN(price) && price > 0) {
+          averagePurchasePrices[secid] = price;
+        }
+      }
+    }
+    
+    return { secids, quantities, averagePurchasePrices };
   }
 
-  return { secids: [], quantities };
+  return { secids: [], quantities, averagePurchasePrices };
 };
 
 /**
- * Parse portfolio file and extract SECIDs and quantities
+ * Parse portfolio file and extract SECIDs, quantities, and averagePurchasePrices
  */
 export const parsePortfolioFile = (
   fileContent: string
-): { secids: string[]; quantities: Record<string, number> } => {
+): { secids: string[]; quantities: Record<string, number>; averagePurchasePrices: Record<string, number> } => {
   let parsedData: unknown;
 
   try {
@@ -158,8 +169,8 @@ export const parsePortfolioFile = (
   if (isFullExportFormat(parsedData)) {
     const secids = extractSecidsFromFullFormat(parsedData as Record<string, unknown>);
     // For full format, check if there's a separate quantities file or embedded quantities
-    // For now, return empty quantities (default to 1)
-    return { secids, quantities: {} };
+    // For now, return empty quantities and averagePurchasePrices (default to 1 and current price)
+    return { secids, quantities: {}, averagePurchasePrices: {} };
   }
 
   // If neither format matches, try to extract SECIDs from any structure
@@ -184,7 +195,7 @@ export const parsePortfolioFile = (
         }
       }
       if (secids.length > 0) {
-        return { secids, quantities: {} };
+        return { secids, quantities: {}, averagePurchasePrices: {} };
       }
     }
   }
@@ -197,11 +208,12 @@ export const parsePortfolioFile = (
 };
 
 /**
- * Load bonds data by SECIDs from API and convert to PortfolioBond with quantities
+ * Load bonds data by SECIDs from API and convert to PortfolioBond with quantities and averagePurchasePrices
  */
 const loadBondsBySecids = async (
   secids: string[],
-  quantities: Record<string, number>
+  quantities: Record<string, number>,
+  averagePurchasePrices: Record<string, number>
 ): Promise<PortfolioBond[]> => {
   if (secids.length === 0) {
     return [];
@@ -230,13 +242,14 @@ const loadBondsBySecids = async (
     limit: 10000, // Large limit to get all bonds
   });
 
-  // Filter bonds by SECIDs and convert to PortfolioBond with quantities
+  // Filter bonds by SECIDs and convert to PortfolioBond with quantities and averagePurchasePrices
   const secidSet = new Set(secids);
   const filteredBonds: PortfolioBond[] = response.bonds
     .filter(bond => secidSet.has(bond.SECID))
     .map(bond => ({
       ...bond,
       quantity: quantities[bond.SECID] ?? 1, // Use saved quantity or default to 1
+      averagePurchasePrice: averagePurchasePrices[bond.SECID] ?? bond.PREVPRICE ?? null, // Use saved averagePurchasePrice or default to current price
     }));
 
   // Remove duplicates by ISIN (if ISIN exists), otherwise by SECID
@@ -279,8 +292,8 @@ export const importPortfolioFromFile = async (file: File): Promise<PortfolioImpo
     throw new Error('Не удалось прочитать файл. Убедитесь, что файл не поврежден.');
   }
 
-  // Parse file and extract SECIDs and quantities
-  let parseResult: { secids: string[]; quantities: Record<string, number> };
+  // Parse file and extract SECIDs, quantities, and averagePurchasePrices
+  let parseResult: { secids: string[]; quantities: Record<string, number>; averagePurchasePrices: Record<string, number> };
   try {
     parseResult = parsePortfolioFile(fileContent);
   } catch (error) {
@@ -290,15 +303,16 @@ export const importPortfolioFromFile = async (file: File): Promise<PortfolioImpo
     throw new Error('Не удалось обработать файл портфеля.');
   }
 
-  const { secids, quantities } = parseResult;
+  const { secids, quantities, averagePurchasePrices } = parseResult;
 
   if (secids.length === 0) {
     throw new Error('В файле не найдено ни одного SECID облигации.');
   }
 
-  // Remove duplicates while preserving quantities
+  // Remove duplicates while preserving quantities and averagePurchasePrices
   const uniqueSecids: string[] = [];
   const uniqueQuantities: Record<string, number> = {};
+  const uniqueAveragePurchasePrices: Record<string, number> = {};
   const seenSecids = new Set<string>();
   
   secids.forEach(secid => {
@@ -308,13 +322,16 @@ export const importPortfolioFromFile = async (file: File): Promise<PortfolioImpo
       if (quantities[secid] !== undefined) {
         uniqueQuantities[secid] = quantities[secid];
       }
+      if (averagePurchasePrices[secid] !== undefined) {
+        uniqueAveragePurchasePrices[secid] = averagePurchasePrices[secid];
+      }
     }
   });
 
-  // Load bonds data from API with quantities
+  // Load bonds data from API with quantities and averagePurchasePrices
   let bonds: PortfolioBond[] = [];
   try {
-    bonds = await loadBondsBySecids(uniqueSecids, uniqueQuantities);
+    bonds = await loadBondsBySecids(uniqueSecids, uniqueQuantities, uniqueAveragePurchasePrices);
     
     // Check if some bonds were not found
     const foundSecids = new Set(bonds.map(b => b.SECID));

@@ -90,4 +90,5 @@ export interface BondDetail {
 // Portfolio bond with quantity
 export interface PortfolioBond extends BondListItem {
   quantity: number; // Количество облигаций (целое число > 0)
+  averagePurchasePrice?: number | null; // Средняя цена покупки в процентах от номинала (float)
 }

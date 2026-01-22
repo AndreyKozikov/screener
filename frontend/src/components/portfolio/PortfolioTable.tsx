@@ -59,6 +59,7 @@ export const PortfolioTable: React.FC = () => {
   const loadPortfolioBonds = usePortfolioStore((state) => state.loadPortfolioBonds);
   const clearPortfolio = usePortfolioStore((state) => state.clearPortfolio);
   const updateBondQuantity = usePortfolioStore((state) => state.updateBondQuantity);
+  const updateBondAveragePurchasePrice = usePortfolioStore((state) => state.updateBondAveragePurchasePrice);
   const setSelectedBond = useUiStore((state) => state.setSelectedBond);
   const [fieldDescriptions, setFieldDescriptions] = useState<FieldDescriptionMap>({});
   const metadataLoadedRef = useRef(false);
@@ -185,6 +186,25 @@ export const PortfolioTable: React.FC = () => {
   });
 
   CustomHeaderWithTooltip.displayName = 'CustomHeaderWithTooltip';
+
+  // Column size limits configuration for responsive sizing
+  const columnSizeLimits = useMemo(() => [
+    { key: 'SHORTNAME', minWidth: 120 },
+    { key: 'RATING', minWidth: 100 },
+    { key: 'PREVPRICE', minWidth: 100 },
+    { key: 'COUPON_YIELD_TO_PRICE', minWidth: 120 },
+    { key: 'YIELDATPREVWAPRICE', minWidth: 140 },
+    { key: 'FACEVALUE', minWidth: 100 },
+    { key: 'FACEUNIT', minWidth: 60 },
+    { key: 'COUPONPERCENT', minWidth: 100 },
+    { key: 'COUPONPERCENT_NOMINAL', minWidth: 130 },
+    { key: 'COUPONPERIOD', minWidth: 80 },
+    { key: 'ACCRUEDINT', minWidth: 80 },
+    { key: 'DURATION_YEARS', minWidth: 80 },
+    { key: 'quantity', minWidth: 100 },
+    { key: 'averagePurchasePrice', minWidth: 130 },
+    { key: 'removeFromPortfolio', minWidth: 140, maxWidth: 160 },
+  ], []);
 
   // Column definitions - same as BondsTable but without "Add to Portfolio" column
   const columnDefs: ColDef[] = useMemo(() => {
@@ -454,8 +474,7 @@ export const PortfolioTable: React.FC = () => {
       autoHeaderHeight: true,
     }),
     createColumnDef('quantity', 'Количество, шт.', {
-      minWidth: 120,
-      width: 120,
+      minWidth: 100,
       editable: true,
       cellEditor: 'agNumberCellEditor',
       cellEditorParams: {
@@ -496,11 +515,72 @@ export const PortfolioTable: React.FC = () => {
       headerTooltip: 'Количество облигаций в портфеле',
       autoHeaderHeight: true,
     }),
+    createColumnDef('averagePurchasePrice', 'Средняя цена покупки', {
+      minWidth: 130,
+      editable: true,
+      cellEditor: 'agNumberCellEditor',
+      cellEditorParams: {
+        min: 0,
+        precision: 2,
+        step: 0.01,
+      },
+      cellStyle: { textAlign: 'center' },
+      valueGetter: (params) => {
+        const bond = params.data as PortfolioBond | undefined;
+        if (!bond) return null;
+        // Return averagePurchasePrice if set, otherwise default to current price (PREVPRICE)
+        return bond.averagePurchasePrice ?? bond.PREVPRICE ?? null;
+      },
+      valueSetter: (params) => {
+        const bond = params.data as PortfolioBond | undefined;
+        if (!bond) return false;
+        
+        // Validate: must be number > 0 or null/undefined
+        const newValue = params.newValue;
+        if (newValue === null || newValue === undefined || newValue === '') {
+          // If cleared, set to current price
+          const currentPrice = bond.PREVPRICE ?? null;
+          const valueChanged = bond.averagePurchasePrice !== currentPrice;
+          if (valueChanged) {
+            bond.averagePurchasePrice = currentPrice;
+            updateBondAveragePurchasePrice(bond.SECID, currentPrice);
+          }
+          return valueChanged;
+        }
+        
+        if (typeof newValue !== 'number' || isNaN(newValue) || newValue <= 0) {
+          return false;
+        }
+        
+        // Update both the data object (for grid) and the store (for persistence)
+        const valueChanged = bond.averagePurchasePrice !== newValue;
+        if (valueChanged) {
+          bond.averagePurchasePrice = newValue;
+          updateBondAveragePurchasePrice(bond.SECID, newValue);
+        }
+        return valueChanged;
+      },
+      valueFormatter: (params) => {
+        const value = params.value;
+        if (value == null || value === undefined) {
+          // If no value, show current price
+          const bond = params.data as PortfolioBond | undefined;
+          if (bond && bond.PREVPRICE != null) {
+            return formatNumber(bond.PREVPRICE, 2);
+          }
+          return '—';
+        }
+        return formatNumber(value, 2);
+      },
+      type: 'numericColumn',
+      headerTooltip: 'Средняя цена покупки в процентах от номинала облигации',
+      autoHeaderHeight: true,
+    }),
     {
       field: 'removeFromPortfolio',
       headerName: 'Удалить из портфеля',
-      minWidth: 150,
-      width: 150,
+      minWidth: 140,
+      maxWidth: 160,
       pinned: 'right',
       sortable: false,
       filter: false,
@@ -514,14 +594,14 @@ export const PortfolioTable: React.FC = () => {
       suppressSizeToFit: true,
     },
     ] as ColDef[];
-  }, [getFieldDescription, removeBondFromPortfolio, updateBondQuantity]);
+  }, [getFieldDescription, removeBondFromPortfolio, updateBondQuantity, updateBondAveragePurchasePrice, columnSizeLimits]);
 
   // Default column properties
   const defaultColDef: ColDef = useMemo(() => ({
     sortable: true,
     filter: true,
     resizable: true,
-    minWidth: 80,
+    minWidth: 90,
     suppressSizeToFit: false,
     autoHeaderHeight: true,
   }), []);
@@ -543,8 +623,8 @@ export const PortfolioTable: React.FC = () => {
       return;
     }
     
-    // If clicking on "quantity" column, mark it and prevent row click (opening details)
-    if (event.column && event.column.getColId() === 'quantity') {
+    // If clicking on "quantity" or "averagePurchasePrice" column, mark it and prevent row click (opening details)
+    if (event.column && (event.column.getColId() === 'quantity' || event.column.getColId() === 'averagePurchasePrice')) {
       portfolioCellClickedRef.current = true;
       // Prevent event propagation to avoid opening details
       if (event.event) {
@@ -586,22 +666,22 @@ export const PortfolioTable: React.FC = () => {
       return;
     }
     
-    // Check 3: Don't open details if clicking on editable quantity cell
-    const clickedCell = target.closest('.ag-cell');
-    if (clickedCell) {
-      const colId = clickedCell.getAttribute('col-id');
-      if (colId === 'quantity') {
-        // Allow editing, don't open details
-        return;
+      // Check 3: Don't open details if clicking on editable quantity or averagePurchasePrice cell
+      const clickedCell = target.closest('.ag-cell');
+      if (clickedCell) {
+        const colId = clickedCell.getAttribute('col-id');
+        if (colId === 'quantity' || colId === 'averagePurchasePrice') {
+          // Allow editing, don't open details
+          return;
+        }
+        if (colId === 'removeFromPortfolio') {
+          return;
+        }
+        // Also check by CSS class
+        if (clickedCell.classList.contains('portfolio-action-cell')) {
+          return;
+        }
       }
-      if (colId === 'removeFromPortfolio') {
-        return;
-      }
-      // Also check by CSS class
-      if (clickedCell.classList.contains('portfolio-action-cell')) {
-        return;
-      }
-    }
     
     // Check 5: Walk up DOM tree to find any portfolio column cell
     let currentElement: HTMLElement | null = target;
@@ -611,7 +691,7 @@ export const PortfolioTable: React.FC = () => {
         if (colId === 'removeFromPortfolio') {
           return;
         }
-        if (colId === 'quantity') {
+        if (colId === 'quantity' || colId === 'averagePurchasePrice') {
           return;
         }
         if (currentElement.classList.contains('portfolio-action-cell')) {
@@ -682,16 +762,19 @@ export const PortfolioTable: React.FC = () => {
   // Handle grid ready
   const onGridReady = useCallback(() => {
     if (gridRef.current?.api) {
-      // Auto-size columns after grid is ready
-      gridRef.current.api.autoSizeAllColumns(false);
+      // Size columns to fit grid width with minimum width constraints
+      gridRef.current.api.sizeColumnsToFit({
+        defaultMinWidth: 90,
+        columnLimits: columnSizeLimits,
+      });
       
       setTimeout(() => {
         calculateHeaderHeight();
       }, 250);
     }
-  }, [calculateHeaderHeight]);
+  }, [calculateHeaderHeight, columnSizeLimits]);
 
-  // Handle first data rendered - set default sort
+  // Handle first data rendered - set default sort and resize columns
   const onFirstDataRendered = useCallback(() => {
     if (gridRef.current?.api) {
       // Set default sort by SHORTNAME ascending after data is rendered
@@ -703,8 +786,18 @@ export const PortfolioTable: React.FC = () => {
           defaultState: { sort: null }
         });
       }
+      
+          // Resize columns to fit grid width after data is loaded
+      setTimeout(() => {
+        if (gridRef.current?.api) {
+          gridRef.current.api.sizeColumnsToFit({
+            defaultMinWidth: 90,
+            columnLimits: columnSizeLimits,
+          });
+        }
+      }, 100);
     }
-  }, []);
+  }, [columnSizeLimits]);
 
   // Preserve selection when data updates
   const prevPortfolioBondsRef = useRef<PortfolioBond[]>([]);
@@ -724,34 +817,46 @@ export const PortfolioTable: React.FC = () => {
     }
   }, [portfolioBonds]);
 
-  // Recalculate header height when data, columns, or window resize
+  // Recalculate header height and resize columns when data, columns, or window resize
   useEffect(() => {
     if (portfolioBonds.length > 0 && gridRef.current?.api) {
       const timeoutId = setTimeout(() => {
         if (gridRef.current?.api) {
+          // Resize columns to fit grid width when data changes
+          gridRef.current.api.sizeColumnsToFit({
+            defaultMinWidth: 90,
+            columnLimits: columnSizeLimits,
+          });
           calculateHeaderHeight();
         }
       }, 500);
 
       return () => clearTimeout(timeoutId);
     }
-  }, [portfolioBonds.length, columnDefs, fieldDescriptions, calculateHeaderHeight]);
+  }, [portfolioBonds.length, columnDefs, fieldDescriptions, calculateHeaderHeight, columnSizeLimits]);
 
   // Recalculate on window resize
   useEffect(() => {
     const handleResize = () => {
       if (portfolioBonds.length > 0 && gridRef.current?.api) {
-        setTimeout(() => {
+        // Debounce resize to avoid too many calculations
+        const timeoutId = setTimeout(() => {
           if (gridRef.current?.api) {
+            // Resize columns to fit new grid width
+            gridRef.current.api.sizeColumnsToFit({
+              defaultMinWidth: 90,
+              columnLimits: columnSizeLimits,
+            });
             calculateHeaderHeight();
           }
-        }, 100);
+        }, 150);
+        return () => clearTimeout(timeoutId);
       }
     };
 
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, [portfolioBonds.length, calculateHeaderHeight]);
+  }, [portfolioBonds.length, calculateHeaderHeight, columnSizeLimits]);
 
   const handleExportPortfolio = async (format: PortfolioExportFormat) => {
     try {
@@ -863,36 +968,41 @@ export const PortfolioTable: React.FC = () => {
               borderBottom: '1px solid rgba(0,0,0,0.08)',
               bgcolor: 'background.paper',
               gap: 1,
+              display: 'flex',
+              justifyContent: 'space-between',
             }}
           >
-            <Button
-              variant="outlined"
-              size="small"
-              startIcon={<SaveIcon />}
-              onClick={() => setIsExportDialogOpen(true)}
-              disabled={portfolioBonds.length === 0}
-            >
-              Сохранить портфель
-            </Button>
-            <Button
-              variant="outlined"
-              size="small"
-              startIcon={<UploadFileIcon />}
-              onClick={() => setIsImportDialogOpen(true)}
-            >
-              Загрузить портфель
-            </Button>
-            <Divider orientation="vertical" flexItem sx={{ mx: 1 }} />
-            <Button
-              variant="outlined"
-              size="small"
-              color="error"
-              startIcon={<DeleteIcon />}
-              onClick={handleClearPortfolio}
-              disabled={portfolioBonds.length === 0}
-            >
-              Очистить портфель
-            </Button>
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<SaveIcon />}
+                onClick={() => setIsExportDialogOpen(true)}
+                disabled={portfolioBonds.length === 0}
+              >
+                Сохранить портфель
+              </Button>
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<UploadFileIcon />}
+                onClick={() => setIsImportDialogOpen(true)}
+              >
+                Загрузить портфель
+              </Button>
+            </Box>
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+              <Button
+                variant="outlined"
+                size="small"
+                color="error"
+                startIcon={<DeleteIcon />}
+                onClick={handleClearPortfolio}
+                disabled={portfolioBonds.length === 0}
+              >
+                Очистить портфель
+              </Button>
+            </Box>
           </Toolbar>
           <CardContent sx={{ p: 0, '&:last-child': { pb: 0 }, flexGrow: 1, display: 'flex', flexDirection: 'column', width: '100%', minHeight: 0, height: 'calc(100vh - 200px)' }}>
             <Box sx={{ flexGrow: 1, display: 'flex', px: 2, py: 2, minHeight: 0, overflow: 'hidden', height: 'calc(100vh - 200px)' }}>
@@ -1024,7 +1134,7 @@ export const PortfolioTable: React.FC = () => {
                 textAlign: 'left !important',
               },
               // Ensure numeric columns are centered
-              '& .ag-cell[col-id="PREVPRICE"], & .ag-cell[col-id="COUPON_YIELD_TO_PRICE"], & .ag-cell[col-id="YIELDATPREVWAPRICE"], & .ag-cell[col-id="FACEVALUE"], & .ag-cell[col-id="COUPONPERCENT"], & .ag-cell[col-id="COUPONPERCENT_NOMINAL"], & .ag-cell[col-id="COUPONPERIOD"], & .ag-cell[col-id="ACCRUEDINT"], & .ag-cell[col-id="DURATION_YEARS"], & .ag-cell[col-id="FACEUNIT"], & .ag-cell[col-id="RATING"], & .ag-cell[col-id="quantity"]': {
+              '& .ag-cell[col-id="PREVPRICE"], & .ag-cell[col-id="COUPON_YIELD_TO_PRICE"], & .ag-cell[col-id="YIELDATPREVWAPRICE"], & .ag-cell[col-id="FACEVALUE"], & .ag-cell[col-id="COUPONPERCENT"], & .ag-cell[col-id="COUPONPERCENT_NOMINAL"], & .ag-cell[col-id="COUPONPERIOD"], & .ag-cell[col-id="ACCRUEDINT"], & .ag-cell[col-id="DURATION_YEARS"], & .ag-cell[col-id="FACEUNIT"], & .ag-cell[col-id="RATING"], & .ag-cell[col-id="quantity"], & .ag-cell[col-id="averagePurchasePrice"]': {
                 justifyContent: 'center',
                 textAlign: 'center !important',
               },
@@ -1096,7 +1206,12 @@ export const PortfolioTable: React.FC = () => {
               rowHeight={52}
               autoSizeStrategy={{
                 type: 'fitGridWidth',
-                defaultMinWidth: 80,
+                defaultMinWidth: 90,
+                columnLimits: columnSizeLimits.map(limit => ({
+                  colId: limit.key,
+                  minWidth: limit.minWidth,
+                  ...(limit.maxWidth && { maxWidth: limit.maxWidth }),
+                })),
               }}
               suppressAggFuncInHeader={true}
               suppressMenuHide={true}

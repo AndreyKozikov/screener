@@ -28,6 +28,7 @@ import DownloadIcon from '@mui/icons-material/Download';
 import SaveIcon from '@mui/icons-material/Save';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
+import RefreshIcon from '@mui/icons-material/Refresh';
 import { useComparisonStore } from '../../stores/comparisonStore';
 import { ComparisonImportDialog } from './ComparisonImportDialog';
 import { formatNumber, calculateCouponFrequency } from '../../utils/formatters';
@@ -131,6 +132,17 @@ export const ComparisonTable: React.FC = () => {
   // Manual price and accrued interest values per bond (keyed by secid)
   const [manualPrices, setManualPrices] = useState<Map<string, { cleanPricePercent: number; accruedInterest: number }>>(new Map());
   const [isParamsDialogOpen, setIsParamsDialogOpen] = useState<boolean>(false);
+  
+  // Temporary states for dialog parameters (not applied until "Применить" is clicked)
+  const [tempInvestAmount, setTempInvestAmount] = useState<number>(10000);
+  const [tempYears, setTempYears] = useState<number>(3);
+  const [tempForecastRate, setTempForecastRate] = useState<number | null>(null);
+  const [tempCurrentRate, setTempCurrentRate] = useState<number | null>(null);
+  const [tempUseForecastRate, setTempUseForecastRate] = useState<boolean>(false);
+  const [tempUseManualParams, setTempUseManualParams] = useState<boolean>(false);
+  
+  // Trigger for manual recalculation (incremented when "Пересчитать" button is clicked)
+  const [recalculateTrigger, setRecalculateTrigger] = useState<number>(0);
 
   // Load zero-coupon yield curve data when component mounts or bonds change
   useEffect(() => {
@@ -425,9 +437,17 @@ export const ComparisonTable: React.FC = () => {
     void loadCurrentKeyRate();
   }, []); // Run only once on mount
 
-  // Set default values when dialog opens
+  // Initialize temporary states when dialog opens
   useEffect(() => {
     if (!isParamsDialogOpen) return;
+
+    // Initialize temporary states from current states
+    setTempInvestAmount(investAmount);
+    setTempYears(years);
+    setTempForecastRate(forecastRate);
+    setTempCurrentRate(currentRate);
+    setTempUseForecastRate(useForecastRate);
+    setTempUseManualParams(useManualParams);
 
     const loadCurrentKeyRateForDialog = async () => {
       try {
@@ -435,15 +455,15 @@ export const ComparisonTable: React.FC = () => {
         const currentKeyRate = getClosestKeyRate(keyRateData);
         
         if (currentKeyRate !== null) {
-          // Set current rate if it's not already set
-          setCurrentRate((prev) => {
+          // Set temporary current rate if it's not already set
+          setTempCurrentRate((prev) => {
             if (prev === null) {
               return currentKeyRate;
             }
             return prev;
           });
-          // Set forecast rate to current rate if it's not already set and not using forecast
-          setForecastRate((prev) => {
+          // Set temporary forecast rate to current rate if it's not already set and not using forecast
+          setTempForecastRate((prev) => {
             if (prev === null && !useForecastRate) {
               return currentKeyRate;
             }
@@ -456,29 +476,32 @@ export const ComparisonTable: React.FC = () => {
     };
 
     void loadCurrentKeyRateForDialog();
-  }, [isParamsDialogOpen, useForecastRate]); // Run when dialog opens
+  }, [isParamsDialogOpen]); // Run when dialog opens
 
-  // Set forecast rate to current rate when useForecastRate is unchecked
+  // Set temporary forecast rate to temporary current rate when tempUseForecastRate is unchecked (only in dialog)
   useEffect(() => {
-    if (!useForecastRate && currentRate !== null) {
-      setForecastRate(currentRate);
+    if (isParamsDialogOpen && !tempUseForecastRate && tempCurrentRate !== null) {
+      setTempForecastRate(tempCurrentRate);
     }
-  }, [useForecastRate, currentRate]);
+  }, [isParamsDialogOpen, tempUseForecastRate, tempCurrentRate]);
 
-  // Load forecast data for rate prediction (only if checkbox is checked)
+  // Load forecast data for rate prediction (only if checkbox is checked and dialog is open)
+  // This only updates temporary state, not the actual calculation parameters
   useEffect(() => {
-    if (!useForecastRate) {
+    if (!isParamsDialogOpen) return;
+    
+    if (!tempUseForecastRate) {
       // If checkbox is unchecked, clear forecast data
       setForecastData(null);
       setIsLoadingForecast(false);
-      // If currentRate is not set yet, try to load it
-      if (currentRate === null) {
+      // If tempCurrentRate is not set yet, try to load it
+      if (tempCurrentRate === null) {
         const loadCurrentKeyRate = async () => {
           try {
             const keyRateData = await getKeyRateData();
             const currentKeyRate = getClosestKeyRate(keyRateData);
             if (currentKeyRate !== null) {
-              setCurrentRate(currentKeyRate);
+              setTempCurrentRate(currentKeyRate);
             }
           } catch (error) {
             console.error('Error loading current key rate:', error);
@@ -495,9 +518,9 @@ export const ComparisonTable: React.FC = () => {
         const data = await fetchForecastData();
         setForecastData(data);
         
-        // Auto-fill forecast rate based on current year + years horizon
+        // Auto-fill temporary forecast rate based on current year + tempYears horizon
         const currentYear = new Date().getFullYear();
-        const targetYear = currentYear + years;
+        const targetYear = currentYear + tempYears;
         
         if (data && data.data.основные_показатели) {
           // Find key rate field name - search in names mapping
@@ -518,9 +541,9 @@ export const ComparisonTable: React.FC = () => {
                 if (typeof value === 'object' && 'мин' in value && 'макс' in value) {
                   const val = value as { мин: number; макс: number };
                   const avgRate = (val.мин + val.макс) / 2;
-                  setForecastRate(avgRate);
+                  setTempForecastRate(avgRate);
                 } else if (typeof value === 'number') {
-                  setForecastRate(value);
+                  setTempForecastRate(value);
                 }
               }
             }
@@ -534,7 +557,7 @@ export const ComparisonTable: React.FC = () => {
     };
 
     void loadForecast();
-  }, [years, useForecastRate, currentRate]);
+  }, [isParamsDialogOpen, tempYears, tempUseForecastRate, tempCurrentRate]);
 
   // Calculate years until maturity
   const calculateYearsToMaturity = (matDate: string | null): number | null => {
@@ -2392,6 +2415,11 @@ export const ComparisonTable: React.FC = () => {
   }, []);
 
   // Calculate Total Return results for all bonds
+  // Recalculation happens only when:
+  // 1. comparisonBonds change
+  // 2. recalculateTrigger is incremented (when "Пересчитать" button is clicked)
+  // All parameter changes (investAmount, years, forecastRate, currentRate, useManualParams, manualPrices) 
+  // do NOT trigger automatic recalculation - user must click "Пересчитать" button
   const totalReturnResults = useMemo(() => {
     if (comparisonBonds.length === 0 || forecastRate === null || currentRate === null) {
       return [];
@@ -2400,7 +2428,13 @@ export const ComparisonTable: React.FC = () => {
     return comparisonBonds
       .map(bond => calculateTotalReturn(bond))
       .filter((result): result is TotalReturnResult => result !== null);
-  }, [comparisonBonds, investAmount, years, forecastRate, currentRate, useManualParams, manualPrices]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [comparisonBonds, recalculateTrigger]);
+  
+  // Function to trigger manual recalculation
+  const handleRecalculate = useCallback(() => {
+    setRecalculateTrigger(prev => prev + 1);
+  }, []);
 
   // Column definitions for Total Return results table
   const totalReturnColumnDefs: ColDef[] = useMemo(() => [
@@ -2428,7 +2462,8 @@ export const ComparisonTable: React.FC = () => {
         const newValue = typeof params.newValue === 'string' ? parseFloat(params.newValue) : params.newValue;
         if (!isNaN(newValue) && newValue !== null && newValue !== undefined) {
           params.data.cleanPricePercent = newValue;
-          // Pass current accruedInterest from table data to preserve it
+          // Update manualPrices but do NOT trigger recalculation
+          // Recalculation will happen only when "Пересчитать" button is clicked
           updateManualPrice(params.data.secid, newValue, params.data.accruedInterest);
           return true;
         }
@@ -2450,7 +2485,8 @@ export const ComparisonTable: React.FC = () => {
         const newValue = typeof params.newValue === 'string' ? parseFloat(params.newValue) : params.newValue;
         if (!isNaN(newValue) && newValue !== null && newValue !== undefined) {
           params.data.accruedInterest = newValue;
-          // Pass current cleanPricePercent from table data to preserve it
+          // Update manualPrices but do NOT trigger recalculation
+          // Recalculation will happen only when "Пересчитать" button is clicked
           updateManualAccruedInterest(params.data.secid, newValue, params.data.cleanPricePercent);
           return true;
         }
@@ -2995,9 +3031,25 @@ export const ComparisonTable: React.FC = () => {
               {/* Results Table */}
               {forecastRate !== null && currentRate !== null ? (
                 <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-                  <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, mb: 1 }}>
-                    Результаты расчета
-                  </Typography>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                    <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                      Результаты расчета
+                    </Typography>
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      startIcon={<RefreshIcon />}
+                      onClick={handleRecalculate}
+                      sx={{
+                        '&.Mui-disabled': {
+                          color: 'text.disabled',
+                          borderColor: 'action.disabledBackground',
+                        },
+                      }}
+                    >
+                      Пересчитать
+                    </Button>
+                  </Box>
                   <Box
                     className="ag-theme-material"
                     sx={{
@@ -3102,8 +3154,8 @@ export const ComparisonTable: React.FC = () => {
                   fullWidth
                   label="Сумма инвестиций, руб."
                   type="number"
-                  value={investAmount}
-                  onChange={(e) => setInvestAmount(Number(e.target.value))}
+                  value={tempInvestAmount}
+                  onChange={(e) => setTempInvestAmount(Number(e.target.value))}
                   inputProps={{ min: 0, step: 1000 }}
                 />
               </Grid>
@@ -3112,8 +3164,8 @@ export const ComparisonTable: React.FC = () => {
                   fullWidth
                   label="Горизонт расчета, лет"
                   type="number"
-                  value={years}
-                  onChange={(e) => setYears(Number(e.target.value))}
+                  value={tempYears}
+                  onChange={(e) => setTempYears(Number(e.target.value))}
                   inputProps={{ min: 0.1, step: 0.1 }}
                 />
               </Grid>
@@ -3122,15 +3174,15 @@ export const ComparisonTable: React.FC = () => {
                   fullWidth
                   label="Предполагаемая ставка, %"
                   type="number"
-                  value={forecastRate ?? ''}
-                  onChange={(e) => setForecastRate(e.target.value ? Number(e.target.value) : null)}
+                  value={tempForecastRate ?? ''}
+                  onChange={(e) => setTempForecastRate(e.target.value ? Number(e.target.value) : null)}
                   inputProps={{ min: 0, step: 0.1 }}
                   helperText={
-                    useForecastRate
+                    tempUseForecastRate
                       ? (isLoadingForecast ? 'Загрузка из прогноза...' : 'Из прогноза Банка России')
                       : 'Введите значение вручную'
                   }
-                  disabled={useForecastRate && isLoadingForecast}
+                  disabled={tempUseForecastRate && isLoadingForecast}
                 />
               </Grid>
               <Grid size={{ xs: 12, sm: 6, md: 6 }}>
@@ -3138,8 +3190,8 @@ export const ComparisonTable: React.FC = () => {
                   fullWidth
                   label="Текущая ставка ЦБ, %"
                   type="number"
-                  value={currentRate ?? ''}
-                  onChange={(e) => setCurrentRate(e.target.value ? Number(e.target.value) : null)}
+                  value={tempCurrentRate ?? ''}
+                  onChange={(e) => setTempCurrentRate(e.target.value ? Number(e.target.value) : null)}
                   inputProps={{ min: 0, step: 0.1 }}
                 />
               </Grid>
@@ -3148,8 +3200,8 @@ export const ComparisonTable: React.FC = () => {
               <FormControlLabel
                 control={
                   <Checkbox
-                    checked={useForecastRate}
-                    onChange={(e) => setUseForecastRate(e.target.checked)}
+                    checked={tempUseForecastRate}
+                    onChange={(e) => setTempUseForecastRate(e.target.checked)}
                   />
                 }
                 label="Использовать ставку из прогноза Банка России"
@@ -3157,8 +3209,8 @@ export const ComparisonTable: React.FC = () => {
               <FormControlLabel
                 control={
                   <Checkbox
-                    checked={useManualParams}
-                    onChange={(e) => setUseManualParams(e.target.checked)}
+                    checked={tempUseManualParams}
+                    onChange={(e) => setTempUseManualParams(e.target.checked)}
                   />
                 }
                 label="Задать параметры вручную"
@@ -3167,6 +3219,22 @@ export const ComparisonTable: React.FC = () => {
           </Box>
         </DialogContent>
         <DialogActions>
+          <Button 
+            variant="contained" 
+            onClick={() => {
+              // Apply temporary values to actual states
+              setInvestAmount(tempInvestAmount);
+              setYears(tempYears);
+              setForecastRate(tempForecastRate);
+              setCurrentRate(tempCurrentRate);
+              setUseForecastRate(tempUseForecastRate);
+              setUseManualParams(tempUseManualParams);
+              // Close dialog
+              setIsParamsDialogOpen(false);
+            }}
+          >
+            Применить
+          </Button>
           <Button onClick={() => setIsParamsDialogOpen(false)}>
             Закрыть
           </Button>

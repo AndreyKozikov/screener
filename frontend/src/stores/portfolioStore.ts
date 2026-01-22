@@ -20,6 +20,7 @@ interface PortfolioState {
   loadBondsToPortfolio: (bonds: BondListItem[]) => void;
   loadPortfolioBonds: (bonds: PortfolioBond[]) => void;
   updateBondQuantity: (secid: string, quantity: number) => void;
+  updateBondAveragePurchasePrice: (secid: string, averagePurchasePrice: number | null) => void;
   setCouponsForBond: (secid: string, coupons: Coupon[]) => void;
   removeCouponsForBond: (secid: string) => void;
   getNextPaymentDate: () => Date | null;
@@ -47,10 +48,11 @@ export const usePortfolioStore = create<PortfolioState>()(
             }
           }
           
-          // Add bond with default quantity of 1
+          // Add bond with default quantity of 1 and averagePurchasePrice = current price (PREVPRICE)
           const portfolioBond: PortfolioBond = {
             ...bond,
             quantity: 1,
+            averagePurchasePrice: bond.PREVPRICE ?? null,
           };
           
           // Load coupons asynchronously
@@ -149,6 +151,7 @@ export const usePortfolioStore = create<PortfolioState>()(
             .map(bond => ({
               ...bond,
               quantity: 1,
+              averagePurchasePrice: bond.PREVPRICE ?? null,
             }));
           
           return {
@@ -216,6 +219,7 @@ export const usePortfolioStore = create<PortfolioState>()(
             .map(bond => ({
               ...bond,
               quantity: bond.quantity ?? 1, // Preserve quantity from import or default to 1
+              averagePurchasePrice: bond.averagePurchasePrice ?? bond.PREVPRICE ?? null, // Preserve averagePurchasePrice from import or default to current price
             }));
           
           // Load coupons for all new bonds asynchronously
@@ -249,6 +253,23 @@ export const usePortfolioStore = create<PortfolioState>()(
             portfolioBonds: state.portfolioBonds.map(bond =>
               bond.SECID === secid
                 ? { ...bond, quantity: validQuantity }
+                : bond
+            ),
+          };
+        });
+      },
+
+      updateBondAveragePurchasePrice: (secid, averagePurchasePrice) => {
+        set((state) => {
+          // Validate averagePurchasePrice: must be number > 0 or null
+          const validPrice = averagePurchasePrice !== null && averagePurchasePrice !== undefined && !isNaN(averagePurchasePrice) && averagePurchasePrice > 0
+            ? averagePurchasePrice
+            : null;
+          
+          return {
+            portfolioBonds: state.portfolioBonds.map(bond =>
+              bond.SECID === secid
+                ? { ...bond, averagePurchasePrice: validPrice }
                 : bond
             ),
           };
