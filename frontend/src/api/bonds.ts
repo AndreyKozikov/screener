@@ -33,13 +33,14 @@ export const fetchBonds = async (filters: BondFilters, emitentTitle?: string, ex
     // FastAPI expects array parameters to be sent as repeated query params: faceunit=RUB&faceunit=USD
     params.faceunit = filters.faceunit;
   }
+  // bondtype и bondtype43 теперь содержат ID (числа) вместо строковых названий
   if (filters.bondtype && Array.isArray(filters.bondtype) && filters.bondtype.length > 0) {
-    // FastAPI expects array parameters to be sent as repeated query params: bondtype=exchange_bond&bondtype=corporate_bond
-    params.bondtype = filters.bondtype;
+    // FastAPI expects array parameters to be sent as repeated query params: bondtype=1&bondtype=3
+    params.bondtype = filters.bondtype.map(String);
   }
   if (filters.bondtype43 && Array.isArray(filters.bondtype43) && filters.bondtype43.length > 0) {
-    // FastAPI expects array parameters to be sent as repeated query params: bondtype43=value1&bondtype43=value2
-    params.bondtype43 = filters.bondtype43;
+    // FastAPI expects array parameters to be sent as repeated query params: bondtype43=6&bondtype43=8
+    params.bondtype43 = filters.bondtype43.map(String);
   }
   if (filters.ratingMin !== null) params.rating_min = filters.ratingMin;
   if (filters.ratingMax !== null) params.rating_max = filters.ratingMax;

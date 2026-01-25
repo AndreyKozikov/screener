@@ -20,7 +20,8 @@ import {
   formatNumber, 
   formatPercent, 
   calculateCouponYieldToPrice,
-  calculateCouponFrequency 
+  calculateCouponFrequency,
+  calculateCouponYieldToAveragePurchasePrice
 } from '../../utils/formatters';
 import { EmptyState } from '../common/EmptyState';
 import type { BondListItem, PortfolioBond } from '../../types/bond';
@@ -203,6 +204,7 @@ export const PortfolioTable: React.FC = () => {
     { key: 'DURATION_YEARS', minWidth: 80 },
     { key: 'quantity', minWidth: 100 },
     { key: 'averagePurchasePrice', minWidth: 130 },
+    { key: 'couponYieldToAveragePurchasePrice', minWidth: 180 },
     { key: 'removeFromPortfolio', minWidth: 140, maxWidth: 160 },
   ], []);
 
@@ -515,7 +517,7 @@ export const PortfolioTable: React.FC = () => {
       headerTooltip: 'Количество облигаций в портфеле',
       autoHeaderHeight: true,
     }),
-    createColumnDef('averagePurchasePrice', 'Средняя цена покупки', {
+    createColumnDef('averagePurchasePrice', 'Средняя цена покупки, %', {
       minWidth: 130,
       editable: true,
       cellEditor: 'agNumberCellEditor',
@@ -576,6 +578,52 @@ export const PortfolioTable: React.FC = () => {
       headerTooltip: 'Средняя цена покупки в процентах от номинала облигации',
       autoHeaderHeight: true,
     }),
+    createColumnDef('couponYieldToAveragePurchasePrice', 'Доходность купона к средней цене покупки', {
+      minWidth: 180,
+      valueGetter: (params) => {
+        const bond = params.data as PortfolioBond | undefined;
+        if (!bond) return null;
+        
+        // Вычисления только для облигаций с валютой SUR
+        if (bond.FACEUNIT !== 'SUR') {
+          return null;
+        }
+        
+        // Получаем среднюю цену покупки (или текущую цену, если не задана)
+        const averagePurchasePrice = bond.averagePurchasePrice ?? bond.PREVPRICE ?? null;
+        if (averagePurchasePrice === null) return null;
+        
+        // Получаем необходимые данные
+        const couponValue = bond.COUPONVALUE;
+        const faceValue = bond.FACEVALUE;
+        const couponPeriod = bond.COUPONPERIOD;
+        
+        // Вычисляем частоту купона
+        const couponFrequency = calculateCouponFrequency(couponPeriod);
+        
+        // Вычисляем доходность
+        return calculateCouponYieldToAveragePurchasePrice(
+          couponValue,
+          averagePurchasePrice,
+          faceValue,
+          couponFrequency
+        );
+      },
+      valueFormatter: (params) => {
+        if (params.value == null || params.value === undefined) {
+          // Для облигаций не в валюте SUR показываем прочерк
+          const bond = params.data as PortfolioBond | undefined;
+          if (bond && bond.FACEUNIT !== 'SUR') {
+            return '—';
+          }
+          return '—';
+        }
+        return formatPercent(params.value);
+      },
+      type: 'numericColumn',
+      headerTooltip: 'Рассчитывается как (Купон × Частота купона) / (Средняя цена покупки × Номинал / 100) × 100. Вычисляется только для облигаций в валюте SUR.',
+      autoHeaderHeight: true,
+    }),
     {
       field: 'removeFromPortfolio',
       headerName: 'Удалить из портфеля',
@@ -594,7 +642,7 @@ export const PortfolioTable: React.FC = () => {
       suppressSizeToFit: true,
     },
     ] as ColDef[];
-  }, [getFieldDescription, removeBondFromPortfolio, updateBondQuantity, updateBondAveragePurchasePrice, columnSizeLimits]);
+  }, [getFieldDescription, removeBondFromPortfolio, updateBondQuantity, updateBondAveragePurchasePrice, columnSizeLimits, calculateCouponFrequency, calculateCouponYieldToAveragePurchasePrice]);
 
   // Default column properties
   const defaultColDef: ColDef = useMemo(() => ({
@@ -624,7 +672,7 @@ export const PortfolioTable: React.FC = () => {
     }
     
     // If clicking on "quantity" or "averagePurchasePrice" column, mark it and prevent row click (opening details)
-    if (event.column && (event.column.getColId() === 'quantity' || event.column.getColId() === 'averagePurchasePrice')) {
+    if (event.column && (event.column.getColId() === 'quantity' || event.column.getColId() === 'averagePurchasePrice' || event.column.getColId() === 'couponYieldToAveragePurchasePrice')) {
       portfolioCellClickedRef.current = true;
       // Prevent event propagation to avoid opening details
       if (event.event) {
@@ -670,7 +718,7 @@ export const PortfolioTable: React.FC = () => {
       const clickedCell = target.closest('.ag-cell');
       if (clickedCell) {
         const colId = clickedCell.getAttribute('col-id');
-        if (colId === 'quantity' || colId === 'averagePurchasePrice') {
+        if (colId === 'quantity' || colId === 'averagePurchasePrice' || colId === 'couponYieldToAveragePurchasePrice') {
           // Allow editing, don't open details
           return;
         }
@@ -691,7 +739,7 @@ export const PortfolioTable: React.FC = () => {
         if (colId === 'removeFromPortfolio') {
           return;
         }
-        if (colId === 'quantity' || colId === 'averagePurchasePrice') {
+        if (colId === 'quantity' || colId === 'averagePurchasePrice' || colId === 'couponYieldToAveragePurchasePrice') {
           return;
         }
         if (currentElement.classList.contains('portfolio-action-cell')) {
@@ -1134,7 +1182,7 @@ export const PortfolioTable: React.FC = () => {
                 textAlign: 'left !important',
               },
               // Ensure numeric columns are centered
-              '& .ag-cell[col-id="PREVPRICE"], & .ag-cell[col-id="COUPON_YIELD_TO_PRICE"], & .ag-cell[col-id="YIELDATPREVWAPRICE"], & .ag-cell[col-id="FACEVALUE"], & .ag-cell[col-id="COUPONPERCENT"], & .ag-cell[col-id="COUPONPERCENT_NOMINAL"], & .ag-cell[col-id="COUPONPERIOD"], & .ag-cell[col-id="ACCRUEDINT"], & .ag-cell[col-id="DURATION_YEARS"], & .ag-cell[col-id="FACEUNIT"], & .ag-cell[col-id="RATING"], & .ag-cell[col-id="quantity"], & .ag-cell[col-id="averagePurchasePrice"]': {
+              '& .ag-cell[col-id="PREVPRICE"], & .ag-cell[col-id="COUPON_YIELD_TO_PRICE"], & .ag-cell[col-id="YIELDATPREVWAPRICE"], & .ag-cell[col-id="FACEVALUE"], & .ag-cell[col-id="COUPONPERCENT"], & .ag-cell[col-id="COUPONPERCENT_NOMINAL"], & .ag-cell[col-id="COUPONPERIOD"], & .ag-cell[col-id="ACCRUEDINT"], & .ag-cell[col-id="DURATION_YEARS"], & .ag-cell[col-id="FACEUNIT"], & .ag-cell[col-id="RATING"], & .ag-cell[col-id="quantity"], & .ag-cell[col-id="averagePurchasePrice"], & .ag-cell[col-id="couponYieldToAveragePurchasePrice"]': {
                 justifyContent: 'center',
                 textAlign: 'center !important',
               },

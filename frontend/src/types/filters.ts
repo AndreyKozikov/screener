@@ -13,8 +13,8 @@ export interface BondFilters {
   matdateTo: string | null;
   listlevel: number[];
   faceunit: string[];
-  bondtype: string[];
-  bondtype43: string[];
+  bondtype: number[];  // ID типов облигаций из bond_type_mapping
+  bondtype43: number[];  // ID видов облигаций из bond_type43_mapping
   ratingMin: string | null;
   ratingMax: string | null;
   search: string;

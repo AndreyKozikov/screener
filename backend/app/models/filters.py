@@ -27,11 +27,11 @@ class BondFilters(BaseModel):
     # Currency filter (face unit)
     faceunit: Optional[List[str]] = Field(None, description="Currency face units (RUB, USD, EUR, etc.)")
     
-    # Bond type filter
-    bondtype: Optional[List[str]] = Field(None, description="Bond types (exchange_bond, ofz_bond, corporate_bond, etc.)")
+    # Bond type filter (ID из bond_type_mapping)
+    bondtype: Optional[List[int]] = Field(None, description="Bond type IDs (from bond_type_mapping: 1=exchange_bond, 2=ofz_bond, 3=corporate_bond, 4=municipal_bond, 5=subfederal_bond)")
     
-    # Bond type 43 filter (вид облигации из bonds.json)
-    bondtype43: Optional[List[str]] = Field(None, description="Bond type 43 (вид облигации: Амортизируемые облигации, Валютные облигации, etc.)")
+    # Bond type 43 filter (ID из bond_type43_mapping)
+    bondtype43: Optional[List[int]] = Field(None, description="Bond type43 IDs (from bond_type43_mapping: 1=Амортизируемые облигации, 2=Валютные облигации, 3=Конвертируемые облигации, 4=Линкер/облигации с индексируемым, 5=Структурная облигация, 6=Фикс с известным купоном, 7=Фикс с неизвестным купоном, 8=Флоатер)")
     
     # Rating range filter
     rating_min: Optional[str] = Field(None, description="Minimum rating (AAA, AA+, AA, AA-, A+, etc.)")

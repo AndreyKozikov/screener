@@ -18,6 +18,67 @@ RATINGS = [
 ]
 
 
+def standardize_rating(rating: Optional[str]) -> Optional[str]:
+    """
+    Standardizes rating notation by removing Russian market indicators.
+    
+    Removes:
+    - (RU) suffix (with or without space): "AAA (RU)" -> "AAA"
+    - .ru suffix: "AAA.ru" -> "AAA"
+    - ru prefix (case-insensitive): "ruAAA" -> "AAA"
+    
+    Preserves the core rating value (e.g., AAA, AA+, BBB-) including modifiers (+ and -).
+    
+    Examples:
+        "AAA (RU)" -> "AAA"
+        "AA+ (RU)" -> "AA+"
+        "AAA.ru" -> "AAA"
+        "AA+.ru" -> "AA+"
+        "ruAAA" -> "AAA"
+        "ruAA+" -> "AA+"
+        "BBB-" -> "BBB-"
+        "BBB- (RU)" -> "BBB-"
+        "ruBBB-" -> "BBB-"
+    
+    Args:
+        rating: Rating string that may contain Russian market indicators
+    
+    Returns:
+        Standardized rating string containing only the core rating value, or None if input is None/empty
+    """
+    if not rating or not isinstance(rating, str):
+        return None
+    
+    # Strip whitespace
+    normalized = rating.strip()
+    
+    if not normalized:
+        return None
+    
+    # Remove (RU) suffix - handles both "AAA (RU)" and "AAA(RU)" formats
+    # Case-insensitive, with optional spaces
+    normalized = re.sub(r'\s*\(RU\)\s*$', '', normalized, flags=re.IGNORECASE)
+    
+    # Remove .ru suffix - handles "AAA.ru" format
+    # Case-insensitive
+    normalized = re.sub(r'\.ru\s*$', '', normalized, flags=re.IGNORECASE)
+    
+    # Remove ru prefix - handles "ruAAA" format
+    # Case-insensitive, with optional spaces after
+    normalized = re.sub(r'^ru\s*', '', normalized, flags=re.IGNORECASE)
+    
+    # Remove any remaining ru indicators that might be embedded (e.g., "BB+|ru|")
+    # This handles edge cases like "BB+|ru|" -> "BB+"
+    normalized = re.sub(r'\|ru\|', '', normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r'\|RU\|', '', normalized, flags=re.IGNORECASE)
+    
+    # Clean up any extra whitespace
+    normalized = normalized.strip()
+    
+    # Return None if result is empty, otherwise return the standardized rating
+    return normalized if normalized else None
+
+
 def is_rating_in_range(
     rating_level: Optional[str],
     rating_min: Optional[str],

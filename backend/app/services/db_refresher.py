@@ -8,9 +8,19 @@ from datetime import date, datetime
 
 import orjson
 
-from app.services.bond_filter import get_rating_index, RATINGS
+from app.services.bond_filter import get_rating_index, RATINGS, standardize_rating
+from app.models.filters import BondFilters
 from app.services.emitent_service import get_emitent_service
 from app.services.coupon_loader import get_coupon_loader
+
+
+# Константа со списком всех возможных рейтингов в строгом иерархическом порядке
+# От наивысшего (AAA) до наинизшего (D)
+RATINGS_ORDER = [
+    'AAA', 'AA+', 'AA', 'AA-', 'A+', 'A', 'A-', 
+    'BBB+', 'BBB', 'BBB-', 'BB+', 'BB', 'BB-', 
+    'B+', 'B', 'B-', 'CCC', 'CC', 'C', 'D'
+]
 
 
 class DBBonds:
@@ -286,7 +296,9 @@ class DBBonds:
                 worst_rating = self._get_worst_rating(bond["RATINGS"])
                 if worst_rating:
                     bond["RATING_AGENCY"] = worst_rating.get("agency_name_short_ru", "").strip()
-                    bond["RATING_LEVEL"] = worst_rating.get("rating_level_name_short_ru", "").strip()
+                    rating_level_raw = worst_rating.get("rating_level_name_short_ru", "").strip()
+                    # Стандартизируем рейтинг: удаляем русские индикаторы рынка
+                    bond["RATING_LEVEL"] = standardize_rating(rating_level_raw) or rating_level_raw
         
         # Загружаем типы облигаций из bonds_emitent.json
         emitent_map = self._load_emitent_map()
@@ -454,14 +466,15 @@ class DBBonds:
     
     def _get_bond_rating(self, bond_data: Dict[str, Any], emitent_data: Optional[Dict[str, Any]] = None) -> Optional[str]:
         """
-        Получает итоговый рейтинг облигации.
+        Получает итоговый рейтинг облигации и стандартизирует его.
         
         Args:
             bond_data: Данные облигации
             emitent_data: Данные эмитента (опционально)
         
         Returns:
-            Строка с рейтингом (например, "AAA", "AA+") или None
+            Стандартизированная строка с рейтингом (например, "AAA", "AA+") или None.
+            Все русские индикаторы рынка ((RU), .ru, ru префикс) удаляются.
         """
         # Сначала пытаемся получить рейтинг из данных облигации
         ratings = bond_data.get("RATINGS", [])
@@ -479,7 +492,10 @@ class DBBonds:
         worst_rating = self._get_worst_rating(ratings)
         if worst_rating:
             rating_str = worst_rating.get("rating_level_name_short_ru", "").strip()
-            return rating_str if rating_str else None
+            if rating_str:
+                # Стандартизируем рейтинг: удаляем русские индикаторы рынка
+                standardized = standardize_rating(rating_str)
+                return standardized
         
         return None
     
@@ -666,8 +682,236 @@ class DBBonds:
 
     # -------------------------------------------------------------------------
     # Слой данных: только SQL-запросы, возврат сырых данных (list of dict).
-    # Фильтрация по рейтингу и эмитенту выполняется в сервисном слое.
+    # Фильтрация по рейтингу теперь выполняется на уровне БД в методе select().
+    # Фильтрация по эмитенту выполняется в сервисном слое (требует дополнительных данных).
     # -------------------------------------------------------------------------
+
+    def select(
+        self,
+        filters: Optional[BondFilters] = None,
+        *,
+        # Прямые параметры для обратной совместимости
+        coupon_percent_min: Optional[float] = None,
+        coupon_percent_max: Optional[float] = None,
+        yield_to_maturity_min: Optional[float] = None,
+        yield_to_maturity_max: Optional[float] = None,
+        coupon_yield_to_price_min: Optional[float] = None,
+        coupon_yield_to_price_max: Optional[float] = None,
+        maturity_date_from: Optional[str] = None,
+        maturity_date_to: Optional[str] = None,
+        listlevel: Optional[List[int]] = None,
+        currency: Optional[List[str]] = None,
+        bond_type_ids: Optional[List[int]] = None,
+        bond_kind_ids: Optional[List[int]] = None,
+        rating_min: Optional[str] = None,
+        rating_max: Optional[str] = None,
+        exclude_spob: bool = False,
+    ) -> List[Dict[str, Any]]:
+        """
+        Универсальный метод для выборки облигаций с динамическим формированием SQL-запроса.
+        
+        Применяет все фильтры на уровне базы данных для повышения производительности.
+        Особое внимание уделено фильтрации по рейтингу, которая реализована через SQL-условия
+        с учетом шкалы RATINGS и возможных префиксов/суффиксов в значениях рейтингов.
+        
+        Args:
+            filters: Объект BondFilters с параметрами фильтрации (приоритет над прямыми параметрами)
+            coupon_percent_min: Минимальный процент купона
+            coupon_percent_max: Максимальный процент купона
+            yield_to_maturity_min: Минимальная доходность к погашению
+            yield_to_maturity_max: Максимальная доходность к погашению
+            coupon_yield_to_price_min: Минимальная доходность купона к цене
+            coupon_yield_to_price_max: Максимальная доходность купона к цене
+            maturity_date_from: Дата погашения от (YYYY-MM-DD)
+            maturity_date_to: Дата погашения до (YYYY-MM-DD)
+            listlevel: Список уровней листинга
+            currency: Список валют
+            bond_type_ids: Список ID типов облигаций
+            bond_kind_ids: Список ID видов облигаций
+            rating_min: Минимальный рейтинг (из шкалы RATINGS)
+            rating_max: Максимальный рейтинг (из шкалы RATINGS)
+            exclude_spob: Исключить облигации с режимом торгов SPOB
+        
+        Returns:
+            Список словарей с данными облигаций. Каждый словарь содержит все поля таблицы bonds.
+            Если таблица не существует, возвращает пустой список.
+        
+        Raises:
+            sqlite3.Error: Если произошла ошибка при работе с БД
+        """
+        if not self._table_exists("bonds"):
+            self.logger.warning("Таблица bonds не существует, select возвращает []")
+            return []
+        
+        # Используем фильтры из объекта, если передан, иначе используем прямые параметры
+        if filters is not None:
+            coupon_percent_min = filters.coupon_min
+            coupon_percent_max = filters.coupon_max
+            yield_to_maturity_min = filters.yield_min
+            yield_to_maturity_max = filters.yield_max
+            coupon_yield_to_price_min = filters.coupon_yield_min
+            coupon_yield_to_price_max = filters.coupon_yield_max
+            maturity_date_from = filters.matdate_from.isoformat() if filters.matdate_from else None
+            maturity_date_to = filters.matdate_to.isoformat() if filters.matdate_to else None
+            listlevel = filters.listlevel
+            currency = filters.faceunit
+            rating_min = filters.rating_min
+            rating_max = filters.rating_max
+        
+        # Формируем динамические WHERE-условия
+        where_parts: List[str] = []
+        params: List[Any] = []
+        
+        # Фильтр по проценту купона (диапазон)
+        if coupon_percent_min is not None:
+            where_parts.append("coupon_percent >= ?")
+            params.append(coupon_percent_min)
+        if coupon_percent_max is not None:
+            where_parts.append("coupon_percent <= ?")
+            params.append(coupon_percent_max)
+        
+        # Фильтр по доходности к погашению (диапазон)
+        if yield_to_maturity_min is not None:
+            where_parts.append("yield_to_maturity >= ?")
+            params.append(yield_to_maturity_min)
+        if yield_to_maturity_max is not None:
+            where_parts.append("yield_to_maturity <= ?")
+            params.append(yield_to_maturity_max)
+        
+        # Фильтр по доходности купона к цене (диапазон)
+        if coupon_yield_to_price_min is not None:
+            where_parts.append("coupon_yield_to_price >= ?")
+            params.append(coupon_yield_to_price_min)
+        if coupon_yield_to_price_max is not None:
+            where_parts.append("coupon_yield_to_price <= ?")
+            params.append(coupon_yield_to_price_max)
+        
+        # Фильтр по дате погашения (диапазон)
+        if maturity_date_from is not None:
+            where_parts.append("maturity_date >= ?")
+            params.append(maturity_date_from)
+        if maturity_date_to is not None:
+            where_parts.append("maturity_date <= ?")
+            params.append(maturity_date_to)
+        
+        # Фильтр по уровню листинга (IN)
+        if listlevel is not None and len(listlevel) > 0:
+            placeholders = ",".join("?" * len(listlevel))
+            where_parts.append(f"listing_level IN ({placeholders})")
+            params.extend(listlevel)
+        
+        # Фильтр по валюте (IN)
+        if currency is not None and len(currency) > 0:
+            placeholders = ",".join("?" * len(currency))
+            where_parts.append(f"currency IN ({placeholders})")
+            params.extend(currency)
+        
+        # Фильтр по типу облигации (IN)
+        if bond_type_ids is not None and len(bond_type_ids) > 0:
+            placeholders = ",".join("?" * len(bond_type_ids))
+            where_parts.append(f"bond_type IN ({placeholders})")
+            params.extend(bond_type_ids)
+        
+        # Фильтр по виду облигации (IN)
+        if bond_kind_ids is not None and len(bond_kind_ids) > 0:
+            placeholders = ",".join("?" * len(bond_kind_ids))
+            where_parts.append(f"bond_kind IN ({placeholders})")
+            params.extend(bond_kind_ids)
+        
+        # Фильтр по рейтингу (специальная логика с учетом шкалы RATINGS)
+        # Использует оператор IN с динамическим списком рейтингов из диапазона
+        if rating_min is not None or rating_max is not None:
+            rating_result = self._build_rating_filter_sql(rating_min, rating_max)
+            if rating_result:
+                # rating_result - это кортеж (SQL-условие, список параметров)
+                rating_sql, rating_params = rating_result
+                where_parts.append(rating_sql)
+                params.extend(rating_params)
+        
+        # Фильтр по режиму торгов SPOB
+        if exclude_spob:
+            if self._column_exists("bonds", "boardid"):
+                where_parts.append("(boardid IS NULL OR UPPER(TRIM(boardid)) != 'SPOB')")
+        
+        # Формируем финальный SQL-запрос
+        where_sql = " AND ".join(where_parts) if where_parts else "1=1"
+        
+        # Определяем список колонок с учетом наличия boardid
+        base_cols = "secid, isin, name, rating, current_price, coupon_yield_to_price, yield_to_maturity, face_value, currency, coupon_value, coupon_percent, coupon_frequency, accrued_interest, duration_years, has_put_option, has_call_option, maturity_date, listing_level, bond_type, bond_kind, offer_date"
+        if self._column_exists("bonds", "boardid"):
+            base_cols = "secid, boardid, isin, name, rating, current_price, coupon_yield_to_price, yield_to_maturity, face_value, currency, coupon_value, coupon_percent, coupon_frequency, accrued_interest, duration_years, has_put_option, has_call_option, maturity_date, listing_level, bond_type, bond_kind, offer_date"
+        
+        sql = f"SELECT {base_cols} FROM bonds WHERE {where_sql}"
+        
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute(sql, params)
+                rows = cursor.fetchall()
+                result = [dict(row) for row in rows]
+                self.logger.debug(f"Выбрано {len(result)} записей из таблицы bonds с применением фильтров")
+                return result
+        except Exception as e:
+            self.logger.error(f"Ошибка при select: {e}", exc_info=True)
+            raise
+    
+    def _build_rating_filter_sql(
+        self,
+        rating_min: Optional[str],
+        rating_max: Optional[str]
+    ) -> Optional[Tuple[str, List[str]]]:
+        """
+        Формирует SQL-условие для фильтрации по рейтингу с использованием оператора IN.
+        
+        Использует константу RATINGS_ORDER для определения диапазона рейтингов.
+        Правильно обрабатывает случай, когда rating_min может быть больше rating_max
+        (пользователь может выбрать диапазон в любом порядке).
+        
+        Args:
+            rating_min: Один из граничных рейтингов (может быть как минимальным, так и максимальным)
+            rating_max: Другой граничный рейтинг (может быть как минимальным, так и максимальным)
+        
+        Returns:
+            Кортеж (SQL-строка с условием для WHERE, список параметров) или None, если фильтр не применим.
+            Список параметров содержит рейтинги из диапазона для оператора IN.
+        """
+        # Если оба фильтра None, фильтр не применяется
+        if rating_min is None and rating_max is None:
+            return None
+        
+        # Определяем индексы границ диапазона в RATINGS_ORDER
+        try:
+            idx_start = RATINGS_ORDER.index(rating_min.upper()) if rating_min is not None else 0
+            idx_end = RATINGS_ORDER.index(rating_max.upper()) if rating_max is not None else len(RATINGS_ORDER) - 1
+        except ValueError:
+            # Если рейтинг не найден в шкале, не применяем фильтр
+            self.logger.warning(f"Рейтинг не найден в шкале RATINGS_ORDER: min={rating_min}, max={rating_max}")
+            return None
+        
+        # Срезаем список (всегда берем от меньшего индекса к большему)
+        # Это позволяет корректно обработать случай, когда пользователь выбрал диапазон
+        # в обратном порядке (например, от AA- до AA вместо от AA до AA-)
+        low = min(idx_start, idx_end)
+        high = max(idx_start, idx_end)
+        
+        # Формируем список рейтингов в диапазоне [low, high] включительно
+        ratings_in_range = RATINGS_ORDER[low:high + 1]
+        
+        if not ratings_in_range:
+            return None
+        
+        # В таблице рейтинги хранятся без префиксов и суффиксов (просто 'AAA', 'AA+', 'AA', и т.д.)
+        # Поэтому используем только базовые значения рейтингов
+        # Формируем SQL-условие с использованием IN
+        # Используем UPPER для case-insensitive сравнения
+        # Исключаем NULL и пустые строки
+        placeholders = ",".join("?" * len(ratings_in_range))
+        sql_condition = f"(rating IS NOT NULL AND TRIM(rating) != '' AND UPPER(TRIM(rating)) IN ({placeholders}))"
+        
+        # Возвращаем условие и список рейтингов (в верхнем регистре для сравнения)
+        rating_params = [rating.upper() for rating in ratings_in_range]
+        return (sql_condition, rating_params)
 
     def fetch_bonds_raw(
         self,
@@ -760,6 +1004,131 @@ class DBBonds:
                 return [dict(row) for row in rows]
         except Exception as e:
             self.logger.error(f"Ошибка при fetch_bonds_raw: {e}", exc_info=True)
+            raise
+
+    def count(
+        self,
+        filters: Optional[BondFilters] = None,
+        *,
+        # Прямые параметры для обратной совместимости
+        coupon_percent_min: Optional[float] = None,
+        coupon_percent_max: Optional[float] = None,
+        yield_to_maturity_min: Optional[float] = None,
+        yield_to_maturity_max: Optional[float] = None,
+        coupon_yield_to_price_min: Optional[float] = None,
+        coupon_yield_to_price_max: Optional[float] = None,
+        maturity_date_from: Optional[str] = None,
+        maturity_date_to: Optional[str] = None,
+        listlevel: Optional[List[int]] = None,
+        currency: Optional[List[str]] = None,
+        bond_type_ids: Optional[List[int]] = None,
+        bond_kind_ids: Optional[List[int]] = None,
+        rating_min: Optional[str] = None,
+        rating_max: Optional[str] = None,
+        exclude_spob: bool = False,
+    ) -> int:
+        """
+        Универсальный метод для подсчета облигаций с применением всех фильтров на уровне БД.
+        
+        Использует ту же логику фильтрации, что и метод select, но возвращает только количество записей.
+        
+        Args:
+            filters: Объект BondFilters с параметрами фильтрации (приоритет над прямыми параметрами)
+            ... (остальные параметры аналогичны методу select)
+        
+        Returns:
+            Количество облигаций, соответствующих фильтрам
+        
+        Raises:
+            sqlite3.Error: Если произошла ошибка при работе с БД
+        """
+        if not self._table_exists("bonds"):
+            return 0
+        
+        # Используем фильтры из объекта, если передан, иначе используем прямые параметры
+        if filters is not None:
+            coupon_percent_min = filters.coupon_min
+            coupon_percent_max = filters.coupon_max
+            yield_to_maturity_min = filters.yield_min
+            yield_to_maturity_max = filters.yield_max
+            coupon_yield_to_price_min = filters.coupon_yield_min
+            coupon_yield_to_price_max = filters.coupon_yield_max
+            maturity_date_from = filters.matdate_from.isoformat() if filters.matdate_from else None
+            maturity_date_to = filters.matdate_to.isoformat() if filters.matdate_to else None
+            listlevel = filters.listlevel
+            currency = filters.faceunit
+            rating_min = filters.rating_min
+            rating_max = filters.rating_max
+        
+        # Формируем динамические WHERE-условия (та же логика, что и в select)
+        where_parts: List[str] = []
+        params: List[Any] = []
+        
+        # Применяем те же фильтры, что и в методе select
+        if coupon_percent_min is not None:
+            where_parts.append("coupon_percent >= ?")
+            params.append(coupon_percent_min)
+        if coupon_percent_max is not None:
+            where_parts.append("coupon_percent <= ?")
+            params.append(coupon_percent_max)
+        if yield_to_maturity_min is not None:
+            where_parts.append("yield_to_maturity >= ?")
+            params.append(yield_to_maturity_min)
+        if yield_to_maturity_max is not None:
+            where_parts.append("yield_to_maturity <= ?")
+            params.append(yield_to_maturity_max)
+        if coupon_yield_to_price_min is not None:
+            where_parts.append("coupon_yield_to_price >= ?")
+            params.append(coupon_yield_to_price_min)
+        if coupon_yield_to_price_max is not None:
+            where_parts.append("coupon_yield_to_price <= ?")
+            params.append(coupon_yield_to_price_max)
+        if maturity_date_from is not None:
+            where_parts.append("maturity_date >= ?")
+            params.append(maturity_date_from)
+        if maturity_date_to is not None:
+            where_parts.append("maturity_date <= ?")
+            params.append(maturity_date_to)
+        if listlevel is not None and len(listlevel) > 0:
+            placeholders = ",".join("?" * len(listlevel))
+            where_parts.append(f"listing_level IN ({placeholders})")
+            params.extend(listlevel)
+        if currency is not None and len(currency) > 0:
+            placeholders = ",".join("?" * len(currency))
+            where_parts.append(f"currency IN ({placeholders})")
+            params.extend(currency)
+        if bond_type_ids is not None and len(bond_type_ids) > 0:
+            placeholders = ",".join("?" * len(bond_type_ids))
+            where_parts.append(f"bond_type IN ({placeholders})")
+            params.extend(bond_type_ids)
+        if bond_kind_ids is not None and len(bond_kind_ids) > 0:
+            placeholders = ",".join("?" * len(bond_kind_ids))
+            where_parts.append(f"bond_kind IN ({placeholders})")
+            params.extend(bond_kind_ids)
+        
+        # Фильтр по рейтингу (используем ту же логику, что и в select)
+        if rating_min is not None or rating_max is not None:
+            rating_result = self._build_rating_filter_sql(rating_min, rating_max)
+            if rating_result:
+                # rating_result - это кортеж (SQL-условие, список параметров)
+                rating_sql, rating_params = rating_result
+                where_parts.append(rating_sql)
+                params.extend(rating_params)
+        
+        if exclude_spob:
+            if self._column_exists("bonds", "boardid"):
+                where_parts.append("(boardid IS NULL OR UPPER(TRIM(boardid)) != 'SPOB')")
+        
+        where_sql = " AND ".join(where_parts) if where_parts else "1=1"
+        sql = f"SELECT COUNT(*) FROM bonds WHERE {where_sql}"
+        
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(sql, params)
+                return int(cursor.fetchone()[0])
+        except Exception as e:
+            self.logger.error(f"Ошибка при count: {e}", exc_info=True)
             raise
 
     def count_bonds(

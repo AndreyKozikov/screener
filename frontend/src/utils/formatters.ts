@@ -251,3 +251,28 @@ export const calculateCouponFrequency = (couponPeriod: number | null): number | 
   // Round to nearest integer
   return Math.round(frequency);
 };
+
+/**
+ * Calculate coupon yield to average purchase price
+ * Formula: (Купон * Частота купона) / (Средняя цена покупки * Номинал / 100) * 100
+ * @param couponValue - Coupon payment amount in currency
+ * @param averagePurchasePrice - Average purchase price in percent of face value
+ * @param faceValue - Face value (nominal value) of the bond
+ * @param couponFrequency - Number of coupon payments per year
+ * @returns Coupon yield to average purchase price in percent per annum, or null if cannot calculate
+ */
+export const calculateCouponYieldToAveragePurchasePrice = (
+  couponValue: number | null,
+  averagePurchasePrice: number | null,
+  faceValue: number | null,
+  couponFrequency: number | null
+): number | null => {
+  if (couponValue === null || averagePurchasePrice === null || faceValue === null || couponFrequency === null || 
+      averagePurchasePrice === 0 || faceValue === 0) {
+    return null;
+  }
+  
+  // Formula: (Купон * Частота купона) / (Средняя цена покупки * Номинал / 100) * 100
+  // This gives annual yield in percent
+  return (couponValue * couponFrequency * 100) / (averagePurchasePrice * faceValue / 100);
+};

@@ -41,16 +41,26 @@ const RATINGS = [
   'D'
 ];
 
-const BOND_TYPE43_OPTIONS = [
-  'Амортизируемые облигации',
-  'Валютные облигации',
-  'Конвертируемые облигации',
-  'Линкер/облигации с индексируемым',
-  'Структурная облигация',
-  'Фикс с известным купоном',
-  'Фикс с неизвестным купоном',
-  'Флоатер',
+// Маппинг русских названий видов облигаций в ID (из bond_type43_mapping.json)
+const BOND_TYPE43_OPTIONS: Array<{ label: string; id: number }> = [
+  { label: 'Амортизируемые облигации', id: 1 },
+  { label: 'Валютные облигации', id: 2 },
+  { label: 'Конвертируемые облигации', id: 3 },
+  { label: 'Линкер/облигации с индексируемым', id: 4 },
+  { label: 'Структурная облигация', id: 5 },
+  { label: 'Фикс с известным купоном', id: 6 },
+  { label: 'Фикс с неизвестным купоном', id: 7 },
+  { label: 'Флоатер', id: 8 },
 ];
+
+// Маппинг английских ключей типов облигаций в ID (из bond_type_mapping.json)
+const BOND_TYPE_TO_ID: Record<string, number> = {
+  "exchange_bond": 1,
+  "ofz_bond": 2,
+  "corporate_bond": 3,
+  "municipal_bond": 4,
+  "subfederal_bond": 5,
+};
 
 const BOND_TYPE_LABELS: Record<string, string> = {
   "exchange_bond": "Биржевая облигация",
@@ -576,11 +586,18 @@ export const CurrencyFilter: React.FC = () => {
 export const BondTypeFilter: React.FC = () => {
   const { draftFilters, setDraftFilter, filterOptions, isLoadingFilterOptions } = useFiltersStore();
 
-  const handleToggle = (value: string) => {
+  const handleToggle = (typeKey: string) => {
+    // Преобразуем строковый ключ в ID
+    const typeId = BOND_TYPE_TO_ID[typeKey];
+    if (typeId === undefined) {
+      console.warn(`[BondTypeFilter] Unknown bond type: ${typeKey}`);
+      return;
+    }
+
     const currentValues = draftFilters.bondtype || [];
-    const newValues = currentValues.includes(value)
-      ? currentValues.filter(v => v !== value)
-      : [...currentValues, value];
+    const newValues = currentValues.includes(typeId)
+      ? currentValues.filter(v => v !== typeId)
+      : [...currentValues, typeId];
     setDraftFilter('bondtype', newValues);
   };
 
@@ -603,24 +620,29 @@ export const BondTypeFilter: React.FC = () => {
 
   return (
     <Stack direction="column" spacing={1} sx={{ width: '100%' }}>
-      {availableBondTypes.map((type) => (
-        <Chip
-          key={type}
-          label={BOND_TYPE_LABELS[type] || type}
-          onClick={() => handleToggle(type)}
-          color={selectedValues.includes(type) ? 'primary' : 'default'}
-          variant={selectedValues.includes(type) ? 'filled' : 'outlined'}
-          sx={{
-            width: 'fit-content',
-            fontWeight: selectedValues.includes(type) ? 600 : 400,
-            cursor: 'pointer',
-            '&:hover': {
-              transform: 'scale(1.02)',
-              transition: 'transform 0.2s',
-            },
-          }}
-        />
-      ))}
+      {availableBondTypes.map((type) => {
+        const typeId = BOND_TYPE_TO_ID[type];
+        if (typeId === undefined) return null;
+        
+        return (
+          <Chip
+            key={type}
+            label={BOND_TYPE_LABELS[type] || type}
+            onClick={() => handleToggle(type)}
+            color={selectedValues.includes(typeId) ? 'primary' : 'default'}
+            variant={selectedValues.includes(typeId) ? 'filled' : 'outlined'}
+            sx={{
+              width: 'fit-content',
+              fontWeight: selectedValues.includes(typeId) ? 600 : 400,
+              cursor: 'pointer',
+              '&:hover': {
+                transform: 'scale(1.02)',
+                transition: 'transform 0.2s',
+              },
+            }}
+          />
+        );
+      })}
     </Stack>
   );
 };
@@ -632,11 +654,11 @@ export const BondTypeFilter: React.FC = () => {
 export const BondType43Filter: React.FC = () => {
   const { draftFilters, setDraftFilter } = useFiltersStore();
 
-  const handleToggle = (value: string) => {
+  const handleToggle = (id: number) => {
     const currentValues = draftFilters.bondtype43 || [];
-    const newValues = currentValues.includes(value)
-      ? currentValues.filter(v => v !== value)
-      : [...currentValues, value];
+    const newValues = currentValues.includes(id)
+      ? currentValues.filter(v => v !== id)
+      : [...currentValues, id];
     setDraftFilter('bondtype43', newValues);
   };
 
@@ -646,14 +668,14 @@ export const BondType43Filter: React.FC = () => {
     <Stack direction="column" spacing={1} sx={{ width: '100%' }}>
       {BOND_TYPE43_OPTIONS.map((option) => (
         <Chip
-          key={option}
-          label={option}
-          onClick={() => handleToggle(option)}
-          color={selectedValues.includes(option) ? 'primary' : 'default'}
-          variant={selectedValues.includes(option) ? 'filled' : 'outlined'}
+          key={option.id}
+          label={option.label}
+          onClick={() => handleToggle(option.id)}
+          color={selectedValues.includes(option.id) ? 'primary' : 'default'}
+          variant={selectedValues.includes(option.id) ? 'filled' : 'outlined'}
           sx={{
             width: 'fit-content',
-            fontWeight: selectedValues.includes(option) ? 600 : 400,
+            fontWeight: selectedValues.includes(option.id) ? 600 : 400,
             cursor: 'pointer',
             '&:hover': {
               transform: 'scale(1.02)',

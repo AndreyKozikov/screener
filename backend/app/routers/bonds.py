@@ -30,8 +30,8 @@ async def list_bonds(
     matdate_to: Optional[date] = Query(None),
     listlevel: Optional[List[int]] = Query(None),
     faceunit: Optional[List[str]] = Query(None),
-    bondtype: Optional[List[str]] = Query(None),
-    bondtype43: Optional[List[str]] = Query(None),
+    bondtype: Optional[List[int]] = Query(None, description="Bond type IDs (from bond_type_mapping: 1=exchange_bond, 2=ofz_bond, etc.)"),
+    bondtype43: Optional[List[int]] = Query(None, description="Bond type43 IDs (from bond_type43_mapping: 1=Амортизируемые облигации, 6=Фикс с известным купоном, etc.)"),
     rating_min: Optional[str] = Query(None),
     rating_max: Optional[str] = Query(None),
     emitent_title: Optional[str] = Query(None, description="Filter by emitent title"),
@@ -41,12 +41,15 @@ async def list_bonds(
     Выгрузка списка облигаций с фильтрами (чистая архитектура).
 
     Роутер: валидирует query-параметры, вызывает сервисный слой, возвращает JSON.
-    Сервис: получает данные из DBBonds (только SQL), преобразует в формат для фронта,
-    применяет фильтры по рейтингу и эмитенту, вычисляет производные поля.
-    Поиск (search) выполняется на клиенте.
+    Сервис: вызывает DBBonds.select() для получения данных с применением всех фильтров
+    на уровне БД, преобразует данные в формат для фронта, применяет фильтр по эмитенту
+    (если указан). Поиск (search) выполняется на клиенте.
+
+    Вся фильтрация облигаций (кроме фильтрации по эмитенту) выполняется в методе
+    DBBonds.select() на уровне SQL для повышения производительности.
 
     Фильтры: coupon, yield, coupon_yield, matdate, listlevel, faceunit,
-    bondtype, bondtype43, rating_min/max, emitent_title, exclude_spob.
+    bondtype (ID), bondtype43 (ID), rating_min/max, emitent_title, exclude_spob.
     """
     filters = BondFilters(
         coupon_min=coupon_min,

@@ -72,7 +72,7 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({ open, onClose, section }
                   <strong>Из таблицы скринера:</strong> В основной таблице облигаций найдите столбец <strong>"Добавить к сравнению"</strong> и нажмите на иконку <strong>➕</strong> рядом с нужной облигацией. Иконка изменится на <strong>❌</strong>, что означает, что облигация добавлена.
                 </Typography>
                 <Typography component="li" variant="body1" color="text.secondary" sx={{ mb: 1, fontSize: '1rem' }}>
-                  <strong>Из файла:</strong> Нажмите кнопку <strong>"Загрузить из файла"</strong> в верхней части раздела. Поддерживаются файлы экспорта портфеля в формате JSON (как с полными данными, так и только с SECID).
+                  <strong>Из файла:</strong> Нажмите кнопку <strong>"Загрузить из файла"</strong> в верхней части раздела. Поддерживаются файлы в формате JSON: экспорт портфеля (только SECID) или экспорт портфеля с полными данными. Из файла извлекаются SECID облигаций, актуальные данные подгружаются из базы.
                 </Typography>
               </Box>
             </Box>
@@ -87,7 +87,7 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({ open, onClose, section }
               </Typography>
               <Box component="ul" sx={{ mt: 1, pl: 3 }}>
                 <Typography component="li" variant="body1" color="text.secondary" sx={{ mb: 0.5, fontSize: '1rem' }}>
-                  <strong>🗑️ Удалить</strong> — кнопка для удаления облигации из сравнения
+                  <strong>🗑️ Действия</strong> — кнопка для удаления облигации из сравнения
                 </Typography>
                 <Typography component="li" variant="body1" color="text.secondary" sx={{ mb: 0.5, fontSize: '1rem' }}>
                   <strong>📝 Название</strong> — краткое название облигации
@@ -96,40 +96,40 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({ open, onClose, section }
                   <strong>🏷️ Тикер</strong> — идентификатор облигации (SECID)
                 </Typography>
                 <Typography component="li" variant="body1" color="text.secondary" sx={{ mb: 0.5, fontSize: '1rem' }}>
-                  <strong>📅 Погашение</strong> — дата погашения облигации
+                  <strong>📅 Срок до погашения, лет</strong> — срок до погашения облигации в годах
                 </Typography>
                 <Typography component="li" variant="body1" color="text.secondary" sx={{ mb: 0.5, fontSize: '1rem' }}>
-                  <strong>💰 Цена</strong> — текущая чистая цена облигации в процентах от номинала
+                  <strong>💵 Доходность купона относительно номинала (%)</strong> — купонная ставка в процентах годовых
                 </Typography>
                 <Typography component="li" variant="body1" color="text.secondary" sx={{ mb: 0.5, fontSize: '1rem' }}>
-                  <strong>📈 YTM</strong> — доходность к погашению (Yield to Maturity)
+                  <strong>💰 Цена (%)</strong> — текущая чистая цена в процентах от номинала
                 </Typography>
                 <Typography component="li" variant="body1" color="text.secondary" sx={{ mb: 0.5, fontSize: '1rem' }}>
-                  <strong>💵 Купон</strong> — размер купонной ставки в процентах годовых
+                  <strong>📈 Доходность к погашению, YTM (%)</strong> — доходность к погашению (Yield to Maturity)
                 </Typography>
                 <Typography component="li" variant="body1" color="text.secondary" sx={{ mb: 0.5, fontSize: '1rem' }}>
-                  <strong>📊 Купон к цене</strong> — отношение купонной ставки к текущей цене (показывает текущую доходность)
+                  <strong>📊 Доходность купона к текущей цене (%)</strong> — отношение купонной ставки к текущей цене (текущая доходность)
                 </Typography>
                 <Typography component="li" variant="body1" color="text.secondary" sx={{ mb: 0.5, fontSize: '1rem' }}>
-                  <strong>⏱️ Дюрация Маколея</strong> — средневзвешенный срок до получения денежных потоков (в годах). Наведите на заголовок для подробной информации.
+                  <strong>⏱️ Дюрация</strong> — дюрация Маколея (средневзвешенный срок до получения денежных потоков, в годах). Наведите на заголовок для подробной информации.
                 </Typography>
                 <Typography component="li" variant="body1" color="text.secondary" sx={{ mb: 0.5, fontSize: '1rem' }}>
-                  <strong>📉 Модифицированная дюрация</strong> — мера чувствительности цены облигации к изменению процентных ставок. Наведите на заголовок для подробной информации.
+                  <strong>📉 Модифицированная дюрация</strong> — мера чувствительности цены к изменению процентных ставок. Наведите на заголовок для подробной информации.
                 </Typography>
                 <Typography component="li" variant="body1" color="text.secondary" sx={{ mb: 0.5, fontSize: '1rem' }}>
-                  <strong>📐 Выпуклость</strong> — показатель, показывающий точность оценки изменения цены с помощью дюрации. Наведите на заголовок для подробной информации.
+                  <strong>📐 Выпуклость</strong> — показатель точности оценки изменения цены с помощью дюрации. Наведите на заголовок для подробной информации.
                 </Typography>
                 <Typography component="li" variant="body1" color="text.secondary" sx={{ mb: 0.5, fontSize: '1rem' }}>
-                  <strong>🔄 Изменение цены</strong> — прогнозируемое изменение цены при изменении ставок на ±1%. Формат: <strong>потеря при росте ставок / прибыль при снижении ставок</strong>. Красный цвет — потери, зеленый — прибыль.
+                  <strong>🔄 Изменение цены при росте / снижении ставки на 1%</strong> — прогноз изменения цены при изменении ставок на ±1%. Формат: <strong>потеря при росте / прибыль при снижении</strong>. Красный — потери, зеленый — прибыль.
                 </Typography>
                 <Typography component="li" variant="body1" color="text.secondary" sx={{ mb: 0.5, fontSize: '1rem' }}>
-                  <strong>📊 Spread</strong> — разница между доходностью облигации и доходностью кривой бескупонной доходности (КБД) на срок, равный дюрации Маколея. Положительные значения (зеленый) — премия, отрицательные (красный) — дисконт.
+                  <strong>📊 Премии и отклонения по рынку</strong> — разница между доходностью облигации и доходностью кривой КБД на срок дюрации Маколея. Положительные (зеленый) — премия, отрицательные (красный) — дисконт.
                 </Typography>
                 <Typography component="li" variant="body1" color="text.secondary" sx={{ mb: 0.5, fontSize: '1rem' }}>
-                  <strong>📈 G-Spread</strong> — разница между фактической доходностью облигации и теоретической доходностью, рассчитанной на основе кривой КБД с учетом всех купонов.
+                  <strong>📈 G-спред</strong> — разница между фактической доходностью облигации и теоретической по кривой КБД с учетом всех купонов.
                 </Typography>
                 <Typography component="li" variant="body1" color="text.secondary" sx={{ mb: 0.5, fontSize: '1rem' }}>
-                  <strong>📉 Z-Spread</strong> — постоянная спред-премия, добавляемая к кривой КБД для получения текущей цены облигации. Рассчитывается только для облигаций с фиксированным купоном без встроенных опционов.
+                  <strong>📉 Z-спред</strong> — постоянная спред-премия к кривой КБД для получения текущей цены. Рассчитывается только для облигаций с фиксированным купоном без встроенных опционов.
                 </Typography>
               </Box>
               <Typography variant="body1" color="text.secondary" sx={{ mt: 2, fontSize: '1rem' }}>
@@ -143,42 +143,20 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({ open, onClose, section }
                 💰 Вкладка "Расчет возможных денежных потоков"
               </Typography>
               <Typography variant="body1" color="text.secondary" sx={{ mb: 1, fontSize: '1rem' }}>
-                Эта вкладка позволяет рассчитать прогноз доходности инвестиций с учетом изменения процентных ставок. Для начала работы:
+                Вкладка позволяет рассчитать прогноз доходности с учетом изменения процентных ставок. Пока параметры не заданы, отображается сообщение <strong>"Заполните все поля для расчета"</strong>. Порядок действий:
               </Typography>
               <Box component="ol" sx={{ mt: 1, pl: 3 }}>
                 <Typography component="li" variant="body1" color="text.secondary" sx={{ mb: 1, fontSize: '1rem' }}>
-                  Нажмите кнопку <strong>"Параметры расчета"</strong> в верхней части раздела
+                  Нажмите <strong>"Параметры расчета"</strong> (кнопка доступна на этой вкладке).
                 </Typography>
                 <Typography component="li" variant="body1" color="text.secondary" sx={{ mb: 1, fontSize: '1rem' }}>
-                  Задайте параметры:
-                  <Box component="ul" sx={{ mt: 0.5, pl: 3 }}>
-                    <Typography component="li" variant="body1" color="text.secondary" sx={{ fontSize: '1rem' }}>
-                      <strong>Сумма инвестиций</strong> — сколько вы планируете инвестировать (в рублях)
-                    </Typography>
-                    <Typography component="li" variant="body1" color="text.secondary" sx={{ fontSize: '1rem' }}>
-                      <strong>Горизонт расчета</strong> — на сколько лет вы планируете инвестировать
-                    </Typography>
-                    <Typography component="li" variant="body1" color="text.secondary" sx={{ fontSize: '1rem' }}>
-                      <strong>Предполагаемая ставка</strong> — прогнозируемая ключевая ставка ЦБ (можно использовать прогноз Банка России, установив соответствующую галочку)
-                    </Typography>
-                    <Typography component="li" variant="body1" color="text.secondary" sx={{ fontSize: '1rem' }}>
-                      <strong>Текущая ставка ЦБ</strong> — текущая ключевая ставка Центрального банка
-                    </Typography>
-                  </Box>
+                  Задайте параметры: <strong>Сумма инвестиций, руб.</strong>, <strong>Горизонт расчета, лет</strong>, <strong>Предполагаемая ставка, %</strong>, <strong>Текущая ставка ЦБ, %</strong>. При необходимости включите <strong>"Использовать ставку из прогноза Банка России"</strong> — тогда предполагаемая ставка подставится из прогноза.
                 </Typography>
                 <Typography component="li" variant="body1" color="text.secondary" sx={{ mb: 1, fontSize: '1rem' }}>
-                  При необходимости включите опцию <strong>"Задать параметры вручную"</strong> для редактирования цены и НКД каждой облигации. После включения этой опции:
-                  <Box component="ul" sx={{ mt: 0.5, pl: 3 }}>
-                    <Typography component="li" variant="body1" color="text.secondary" sx={{ fontSize: '1rem', mb: 0.5 }}>
-                      В таблице результатов станут доступны для редактирования колонки <strong>"Чистая цена, %"</strong> и <strong>"НКД, руб."</strong>
-                    </Typography>
-                    <Typography component="li" variant="body1" color="text.secondary" sx={{ fontSize: '1rem', mb: 0.5 }}>
-                      Для редактирования значения сделайте <strong>двойной щелчок</strong> по ячейке с нужным параметром
-                    </Typography>
-                    <Typography component="li" variant="body1" color="text.secondary" sx={{ fontSize: '1rem' }}>
-                      Введите новое значение и нажмите клавишу <strong>Enter</strong> для сохранения изменений
-                    </Typography>
-                  </Box>
+                  Нажмите <strong>"Применить"</strong>. После этого появится таблица результатов. Пересчет <strong>не выполняется автоматически</strong>: при изменении параметров в диалоге, ручной цены или НКД нужно нажать кнопку <strong>"Пересчитать"</strong> над таблицей результатов.
+                </Typography>
+                <Typography component="li" variant="body1" color="text.secondary" sx={{ mb: 1, fontSize: '1rem' }}>
+                  Опция <strong>"Задать параметры вручную"</strong>: при включении в таблице результатов становятся редактируемыми колонки <strong>"Чистая цена, %"</strong> и <strong>"НКД, руб."</strong>. Двойной щелчок по ячейке → ввод значения → <strong>Enter</strong> для сохранения. После изменений нажмите <strong>"Пересчитать"</strong>.
                 </Typography>
               </Box>
               <Typography variant="body1" color="text.secondary" sx={{ mt: 2, mb: 1, fontSize: '1rem' }}>
@@ -186,31 +164,40 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({ open, onClose, section }
               </Typography>
               <Box component="ul" sx={{ mt: 1, pl: 3 }}>
                 <Typography component="li" variant="body1" color="text.secondary" sx={{ mb: 0.5, fontSize: '1rem' }}>
-                  <strong>Количество облигаций</strong> — сколько облигаций можно купить на указанную сумму
+                  <strong>Название</strong>, <strong>Тикер</strong>, <strong>Чистая цена, %</strong>, <strong>НКД, руб.</strong> (при ручном вводе — редактируемые), <strong>Купонная ставка</strong>, <strong>Модифицированная дюрация</strong>
                 </Typography>
                 <Typography component="li" variant="body1" color="text.secondary" sx={{ mb: 0.5, fontSize: '1rem' }}>
-                  <strong>Грязная цена покупки</strong> — цена покупки с учетом НКД
+                  <strong>Чистая цена, руб.</strong>, <strong>Грязная цена покупки, руб.</strong> — цена покупки с учетом НКД
                 </Typography>
                 <Typography component="li" variant="body1" color="text.secondary" sx={{ mb: 0.5, fontSize: '1rem' }}>
-                  <strong>Купоны</strong> — сумма купонных выплат за период владения
+                  <strong>Количество лотов</strong> — сколько лотов можно купить на указанную сумму
                 </Typography>
                 <Typography component="li" variant="body1" color="text.secondary" sx={{ mb: 0.5, fontSize: '1rem' }}>
-                  <strong>Изменение цены</strong> — прогнозируемое изменение цены облигации с учетом дюрации и выпуклости
+                  <strong>Остаток, руб.</strong> — неинвестированный остаток суммы
                 </Typography>
                 <Typography component="li" variant="body1" color="text.secondary" sx={{ mb: 0.5, fontSize: '1rem' }}>
-                  <strong>Выручка от продажи</strong> — сумма, которую вы получите при продаже облигаций
+                  <strong>Полная сумма купонов (включая НКД в первом купоне), руб.</strong> — все купонные выплаты за период владения
                 </Typography>
                 <Typography component="li" variant="body1" color="text.secondary" sx={{ mb: 0.5, fontSize: '1rem' }}>
-                  <strong>Итоговая сумма</strong> — общая сумма, которую вы получите (выручка + купоны + остаток)
+                  <strong>Чистый доход от купонов (за вычетом уплаченного НКД), руб.</strong> — доход от купонов по методу Dirty-to-Dirty
                 </Typography>
                 <Typography component="li" variant="body1" color="text.secondary" sx={{ mb: 0.5, fontSize: '1rem' }}>
-                  <strong>Абсолютная прибыль</strong> — разница между итоговой суммой и затратами на покупку
+                  <strong>Изменение цены, %</strong>, <strong>Прогнозная цена, %</strong> — прогноз изменения цены с учетом дюрации и выпуклости
                 </Typography>
                 <Typography component="li" variant="body1" color="text.secondary" sx={{ mb: 0.5, fontSize: '1rem' }}>
-                  <strong>Совокупная доходность (Total Return)</strong> — процентная доходность инвестиции
+                  <strong>Выручка от продажи (грязная цена), руб.</strong> — сумма от продажи облигаций по грязной цене
                 </Typography>
                 <Typography component="li" variant="body1" color="text.secondary" sx={{ mb: 0.5, fontSize: '1rem' }}>
-                  <strong>Среднегодовая доходность (CAGR)</strong> — среднегодовая доходность с учетом сложного процента
+                  <strong>Итоговая сумма, руб.</strong> — выручка от продажи + чистый доход от купонов + остаток
+                </Typography>
+                <Typography component="li" variant="body1" color="text.secondary" sx={{ mb: 0.5, fontSize: '1rem' }}>
+                  <strong>Абсолютная прибыль, руб.</strong> — разница между итоговой суммой и затратами на покупку (метод Dirty-to-Dirty)
+                </Typography>
+                <Typography component="li" variant="body1" color="text.secondary" sx={{ mb: 0.5, fontSize: '1rem' }}>
+                  <strong>Совокупная доходность (Total Return), %</strong> — процентная доходность инвестиции
+                </Typography>
+                <Typography component="li" variant="body1" color="text.secondary" sx={{ mb: 0.5, fontSize: '1rem' }}>
+                  <strong>Среднегодовая доходность (CAGR), %</strong> — среднегодовая доходность с учетом сложного процента
                 </Typography>
               </Box>
             </Box>
@@ -221,14 +208,14 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({ open, onClose, section }
                 💾 Экспорт данных
               </Typography>
               <Typography variant="body1" color="text.secondary" sx={{ mb: 1, fontSize: '1rem' }}>
-                В разделе доступны функции экспорта:
+                Экспорт доступен только на вкладке <strong>"Сравнение облигаций"</strong> при наличии данных:
               </Typography>
               <Box component="ul" sx={{ mt: 1, pl: 3 }}>
                 <Typography component="li" variant="body1" color="text.secondary" sx={{ mb: 0.5, fontSize: '1rem' }}>
-                  <strong>Сохранить в CSV</strong> — экспорт таблицы сравнения в формат CSV для открытия в Excel или других программах
+                  <strong>Сохранить в CSV</strong> — экспорт таблицы сравнения в CSV для Excel и других программ
                 </Typography>
                 <Typography component="li" variant="body1" color="text.secondary" sx={{ mb: 0.5, fontSize: '1rem' }}>
-                  <strong>Сохранить в Markdown</strong> — экспорт таблицы сравнения в формат Markdown для документирования
+                  <strong>Сохранить в Markdown</strong> — экспорт таблицы сравнения в Markdown для документирования
                 </Typography>
               </Box>
             </Box>
@@ -252,7 +239,7 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({ open, onClose, section }
                   Используйте расчет денежных потоков для оценки потенциальной доходности при различных сценариях изменения ставок
                 </Typography>
                 <Typography component="li" variant="body1" color="text.secondary" sx={{ mb: 0.5, fontSize: '1rem' }}>
-                  При расчете денежных потоков учитывается метод Dirty-to-Dirty, который корректно учитывает НКД при покупке и продаже
+                  Расчет денежных потоков выполняется методом Dirty-to-Dirty с корректным учетом НКД при покупке и продаже
                 </Typography>
               </Box>
             </Box>
@@ -264,7 +251,7 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({ open, onClose, section }
               </Typography>
               <Box component="ul" sx={{ mt: 1, pl: 3 }}>
                 <Typography component="li" variant="body1" sx={{ mb: 0.5, fontSize: '1rem' }}>
-                  Некоторые показатели (Spread, G-Spread, Z-Spread, Выпуклость) рассчитываются только для облигаций с фиксированным купоном без встроенных опционов
+                  Показатели «Премии и отклонения по рынку», G-спред, Z-спред и Выпуклость рассчитываются только для облигаций с фиксированным купоном без встроенных опционов
                 </Typography>
                 <Typography component="li" variant="body1" sx={{ mb: 0.5, fontSize: '1rem' }}>
                   Расчеты основаны на текущих данных и являются прогнозными оценками

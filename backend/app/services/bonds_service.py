@@ -2,10 +2,12 @@
 """
 Сервисный слой выгрузки облигаций (чистая архитектура).
 
-Получает параметры от роутера, вызывает DBBonds для выборки сырых данных,
-применяет фильтры по рейтингу и эмитенту, преобразует строки в BondListItem,
-вычисляет производные поля (COUPON_YIELD_TO_PRICE, COUPON_FREQUENCY, DURATION_YEARS)
-и возвращает готовый ответ для API.
+Получает параметры от роутера, вызывает DBBonds.select() для выборки данных
+с применением всех фильтров на уровне БД, преобразует строки в BondListItem,
+применяет фильтр по эмитенту (если указан), и возвращает готовый ответ для API.
+
+Вся фильтрация облигаций (кроме фильтрации по эмитенту) выполняется в методе
+DBBonds.select() на уровне SQL для повышения производительности.
 """
 
 from datetime import date
@@ -19,7 +21,8 @@ from app.models.filters import BondFilters
 from app.models.responses import BondsListResponse
 from app.services.db_refresher import DBBonds
 from app.services.emitent_service import get_emitent_service
-from app.services.bond_filter import is_rating_in_range
+# Фильтрация по рейтингу перенесена на уровень БД в метод DBBonds.select()
+# from app.services.bond_filter import is_rating_in_range  # Больше не используется
 
 
 def _load_mappings(data_dir: Path) -> Tuple[Dict[int, str], Dict[int, str]]:
@@ -143,9 +146,12 @@ def get_bonds_list(
     """
     Выгрузка списка облигаций с фильтрами.
 
-    Вызывает DBBonds (только SQL), применяет фильтры по рейтингу и эмитенту
-    в сервисном слое, преобразует данные в формат для фронта и возвращает
-    BondsListResponse.
+    Вызывает DBBonds.select() для получения данных с применением всех фильтров на уровне БД.
+    Преобразует сырые данные из БД в BondListItem, применяет фильтр по эмитенту
+    (если указан), и возвращает BondsListResponse.
+    
+    Вся фильтрация облигаций (кроме фильтрации по эмитенту) выполняется в методе
+    DBBonds.select() на уровне SQL для повышения производительности.
     """
     if data_dir is None:
         backend = Path(__file__).resolve().parent.parent.parent
@@ -154,52 +160,15 @@ def get_bonds_list(
 
     type_rev, kind_rev = _load_mappings(data_dir)
 
-    # Маппинг bondtype/bondtype43 (строка) -> id для SQL
-    type_fwd: Dict[str, int] = {}
-    kind_fwd: Dict[str, int] = {}
-    type_path = data_dir / "bonds_type_mapping.json"
-    kind_path = data_dir / "bonds_type43_mapping.json"
-    if type_path.exists():
-        try:
-            type_fwd = orjson.loads(type_path.read_bytes())
-        except Exception:
-            pass
-    if kind_path.exists():
-        try:
-            kind_fwd = orjson.loads(kind_path.read_bytes())
-        except Exception:
-            pass
-
-    bond_type_ids: Optional[List[int]] = None
-    if filters.bondtype:
-        bond_type_ids = [type_fwd[t] for t in filters.bondtype if t in type_fwd]
-        if not bond_type_ids:
-            bond_type_ids = None
-
-    bond_kind_ids: Optional[List[int]] = None
-    if filters.bondtype43:
-        bond_kind_ids = [kind_fwd[k] for k in filters.bondtype43 if k in kind_fwd]
-        if not bond_kind_ids:
-            bond_kind_ids = None
-
-    mat_from = filters.matdate_from.isoformat() if filters.matdate_from else None
-    mat_to = filters.matdate_to.isoformat() if filters.matdate_to else None
-
     db = DBBonds(db_path=db_path, data_dir=data_dir)
 
-    raw = db.fetch_bonds_raw(
-        coupon_percent_min=filters.coupon_min,
-        coupon_percent_max=filters.coupon_max,
-        yield_to_maturity_min=filters.yield_min,
-        yield_to_maturity_max=filters.yield_max,
-        coupon_yield_to_price_min=filters.coupon_yield_min,
-        coupon_yield_to_price_max=filters.coupon_yield_max,
-        maturity_date_from=mat_from,
-        maturity_date_to=mat_to,
-        listlevel=filters.listlevel,
-        currency=filters.faceunit,
-        bond_type_ids=bond_type_ids,
-        bond_kind_ids=bond_kind_ids,
+    # Используем универсальный метод select, который применяет все фильтры на уровне БД
+    # Фронтенд теперь отправляет ID напрямую, преобразование не требуется
+    # bondtype и bondtype43 уже содержат ID (числа), которые передаются напрямую в SQL-запрос
+    raw = db.select(
+        filters=filters,
+        bond_type_ids=filters.bondtype,
+        bond_kind_ids=filters.bondtype43,
         exclude_spob=exclude_spob,
     )
 
@@ -214,9 +183,8 @@ def get_bonds_list(
         except Exception:
             continue
 
-    # Фильтр по рейтингу (в сервисном слое)
-    if filters.rating_min is not None or filters.rating_max is not None:
-        bonds = [b for b in bonds if is_rating_in_range(b.RATING_LEVEL, filters.rating_min, filters.rating_max)]
+    # Фильтрация по рейтингу теперь выполняется на уровне БД в методе select
+    # Удалена фильтрация в сервисном слое для повышения производительности
 
     # Фильтр по эмитенту
     if emitent_title and str(emitent_title).strip():
