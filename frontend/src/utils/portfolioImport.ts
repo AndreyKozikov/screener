@@ -234,7 +234,6 @@ const loadBondsBySecids = async (
     faceunit: [],
     bondtype: [],
     bondtype43: [],
-    couponType: [],
     ratingMin: null,
     ratingMax: null,
     search: '',
