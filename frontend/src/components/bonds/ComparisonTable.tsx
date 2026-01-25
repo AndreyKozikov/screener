@@ -41,7 +41,7 @@ import {
   formatSpread,
 } from '../../utils/zerocuponInterpolation';
 import { calculateGSpread, formatGSpread, calculateZSpread } from '../../utils/SpreadCalculation';
-import { fetchBondCoupons } from '../../api/bonds';
+import { fetchBondsCoupons } from '../../api/bonds';
 import type { Coupon } from '../../types/coupon';
 import dayjs from 'dayjs';
 import type { BondListItem } from '../../types/bond';
@@ -186,19 +186,27 @@ export const ComparisonTable: React.FC = () => {
     };
   }, [comparisonBonds.length]);
 
-  // Helper function to retry fetching coupons with exponential backoff
-  const fetchBondCouponsWithRetry = useCallback(async (
-    secid: string,
+  // Helper function to fetch coupons in batch with retry
+  const fetchBondsCouponsWithRetry = useCallback(async (
+    secids: string[],
     maxRetries: number = 2,
     retryDelay: number = 1000
-  ): Promise<Coupon[] | null> => {
+  ): Promise<Map<string, Coupon[]>> => {
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        const response = await fetchBondCoupons(secid, false);
-        if (response.coupons && response.coupons.length > 0) {
-          return response.coupons;
-        }
-        return [];
+        const couponsMap = await fetchBondsCoupons(secids, false);
+        const result = new Map<string, Coupon[]>();
+        
+        // Extract coupons from response
+        couponsMap.forEach((response, secid) => {
+          if (response.coupons && response.coupons.length > 0) {
+            result.set(secid, response.coupons);
+          } else {
+            result.set(secid, []);
+          }
+        });
+        
+        return result;
       } catch (error) {
         if (attempt < maxRetries) {
           // Exponential backoff: wait longer with each retry
@@ -206,11 +214,12 @@ export const ComparisonTable: React.FC = () => {
           await new Promise(resolve => setTimeout(resolve, delay));
           continue;
         }
-        console.error(`Error loading coupons for ${secid} after ${maxRetries + 1} attempts:`, error);
-        return null;
+        console.error(`Error loading coupons for ${secids.length} bonds after ${maxRetries + 1} attempts:`, error);
+        // Return empty map on final failure
+        return new Map<string, Coupon[]>();
       }
     }
-    return null;
+    return new Map<string, Coupon[]>();
   }, []);
 
   // Create stable list of fixed coupon bond SECIDs using useMemo
@@ -275,58 +284,68 @@ export const ComparisonTable: React.FC = () => {
           return;
         }
 
-        // Load coupons with progress tracking
-        let loadedCount = 0;
+        // Filter out bonds that are already loaded
+        const bondsToLoad = fixedCouponBonds.filter(bond => 
+          !loadedBondsRef.current.has(bond.SECID)
+        );
+
+        if (bondsToLoad.length === 0) {
+          // All bonds already loaded
+          setCouponsLoadProgress({ loaded: totalBonds, total: totalBonds });
+          setIsLoadingCoupons(false);
+          return;
+        }
+
+        // Load coupons in batch with progress tracking
+        let loadedCount = fixedCouponBonds.length - bondsToLoad.length;
         const errors = new Set<string>();
 
-        const couponPromises = fixedCouponBonds.map(async (bond) => {
-          // Check if already loaded (using only ref)
-          if (loadedBondsRef.current.has(bond.SECID)) {
-            if (!ignore && !abortController.signal.aborted) {
-              loadedCount++;
-              setCouponsLoadProgress({ loaded: loadedCount, total: totalBonds });
-            }
-            return;
-          }
+        // Update progress for already loaded bonds
+        if (loadedCount > 0 && !ignore && !abortController.signal.aborted) {
+          setCouponsLoadProgress({ loaded: loadedCount, total: totalBonds });
+        }
 
-          // Check abort signal
+        try {
+          // Fetch all coupons in a single batch request
+          const secidsToLoad = bondsToLoad.map(bond => bond.SECID);
+          const batchCouponsMap = await fetchBondsCouponsWithRetry(secidsToLoad, 2, 1000);
+          
           if (abortController.signal.aborted || ignore) {
             return;
           }
 
-          try {
-            const coupons = await fetchBondCouponsWithRetry(bond.SECID, 2, 1000);
-            
-            if (abortController.signal.aborted || ignore) {
-              return;
-            }
-
-            if (coupons !== null) {
-              if (coupons.length > 0) {
-                couponsMap.set(bond.SECID, coupons);
-                loadedBondsRef.current.add(bond.SECID);
-              }
-              loadedCount++;
+          // Process batch results
+          batchCouponsMap.forEach((coupons, secid) => {
+            if (coupons && coupons.length > 0) {
+              couponsMap.set(secid, coupons);
+              loadedBondsRef.current.add(secid);
             } else {
-              errors.add(bond.SECID);
-              loadedCount++;
+              errors.add(secid);
             }
+            loadedCount++;
+          });
 
-            if (!ignore && !abortController.signal.aborted) {
-              setCouponsLoadProgress({ loaded: loadedCount, total: totalBonds });
-              // Don't update couponsData incrementally - wait for all to load
-              // This prevents race conditions where comparisonData is calculated with partial data
+          // Mark missing secids as errors
+          secidsToLoad.forEach(secid => {
+            if (!batchCouponsMap.has(secid)) {
+              errors.add(secid);
             }
-          } catch (error) {
-            if (!abortController.signal.aborted && !ignore) {
-              errors.add(bond.SECID);
-              loadedCount++;
-              setCouponsLoadProgress({ loaded: loadedCount, total: totalBonds });
-            }
+          });
+
+          if (!ignore && !abortController.signal.aborted) {
+            setCouponsLoadProgress({ loaded: loadedCount, total: totalBonds });
           }
-        });
-
-        await Promise.all(couponPromises);
+        } catch (error) {
+          if (!abortController.signal.aborted && !ignore) {
+            console.error('Error loading coupons batch:', error);
+            // Mark all bonds as errors
+            bondsToLoad.forEach(bond => {
+              errors.add(bond.SECID);
+            });
+            loadedCount = totalBonds;
+            setCouponsLoadProgress({ loaded: loadedCount, total: totalBonds });
+          }
+        }
 
         if (!ignore && !abortController.signal.aborted) {
           // Final update with all coupons - only update after ALL are loaded
@@ -371,7 +390,7 @@ export const ComparisonTable: React.FC = () => {
         couponsAbortControllerRef.current = null;
       }
     };
-  }, [fixedCouponBondSecIds, fetchBondCouponsWithRetry]);
+  }, [fixedCouponBondSecIds, fetchBondsCouponsWithRetry]);
 
   // Helper function to get the closest key rate to current date
   const getClosestKeyRate = (keyRateData: KeyRateData): number | null => {

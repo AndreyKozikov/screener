@@ -18,6 +18,33 @@ RATINGS = [
 ]
 
 
+def is_rating_in_range(
+    rating_level: Optional[str],
+    rating_min: Optional[str],
+    rating_max: Optional[str],
+) -> bool:
+    """
+    Проверяет, входит ли рейтинг облигации (RATING_LEVEL) в диапазон [rating_min, rating_max].
+    Используется для фильтрации по рейтингу в сервисном слое.
+    """
+    if not rating_level or not str(rating_level).strip():
+        return False
+    if rating_min is None and rating_max is None:
+        return True
+    try:
+        min_rating_index = 0 if rating_min is None else RATINGS.index(rating_min.upper())
+        max_rating_index = len(RATINGS) - 1 if rating_max is None else RATINGS.index(rating_max.upper())
+    except ValueError:
+        return True  # неверные границы — не отфильтровываем
+    bond_rating_upper = str(rating_level).upper()
+    for rating_index in range(min_rating_index, max_rating_index + 1):
+        rating_value = RATINGS[rating_index]
+        pattern = rf'(?:^|[^A-Z])({re.escape(rating_value)})(?:[^A-Z+\-]|$)'
+        if re.search(pattern, bond_rating_upper):
+            return True
+    return False
+
+
 def get_rating_index(rating: Optional[str]) -> Optional[int]:
     """
     Get rating index in the rating scale. Returns None if rating is not found.
@@ -141,38 +168,10 @@ def filter_bonds(bonds: List[BondListItem], filters: BondFilters) -> List[BondLi
         after_count = len(filtered)
         print(f"DEBUG filter_bonds: bondtype43 filter - before={before_count}, after={after_count}, filtering by={filters.bondtype43}")
     
-    # Rating range filter
+    # Rating range filter (использует общий helper is_rating_in_range)
     if filters.rating_min is not None or filters.rating_max is not None:
         before_count = len(filtered)
-        
-        # Get rating indices for min and max
-        min_rating_index = 0 if filters.rating_min is None else RATINGS.index(filters.rating_min.upper())
-        max_rating_index = len(RATINGS) - 1 if filters.rating_max is None else RATINGS.index(filters.rating_max.upper())
-        
-        # Filter bonds by rating range
-        # Check if any rating from selected range matches in bond's RATING_LEVEL as a complete rating
-        # E.g., filter "A+" should match "A+(RU)" but filter "A" should NOT match "AAA" or "A+"
-        def is_rating_in_range(bond: BondListItem) -> bool:
-            if bond.RATING_LEVEL is None or not bond.RATING_LEVEL:
-                return False
-            
-            bond_rating_upper = bond.RATING_LEVEL.upper()
-            
-            # Check if any rating from the selected range matches as a complete rating
-            for rating_index in range(min_rating_index, max_rating_index + 1):
-                rating_value = RATINGS[rating_index]
-                
-                # Use regex to match whole rating, not as part of another rating
-                # Rating can be preceded by: start of string, space, opening parenthesis, or lowercase letters (prefix)
-                # Rating can be followed by: end of string, space, closing parenthesis, opening parenthesis (suffix)
-                # Pattern ensures "A" matches "A(RU)" but not "AAA" or "A+"
-                pattern = rf'(?:^|[^A-Z])({re.escape(rating_value)})(?:[^A-Z+\-]|$)'
-                if re.search(pattern, bond_rating_upper):
-                    return True
-            
-            return False
-        
-        filtered = [b for b in filtered if is_rating_in_range(b)]
+        filtered = [b for b in filtered if is_rating_in_range(b.RATING_LEVEL, filters.rating_min, filters.rating_max)]
         after_count = len(filtered)
         print(f"DEBUG filter_bonds: rating filter - before={before_count}, after={after_count}, filtering by={filters.rating_min} to {filters.rating_max}")
     

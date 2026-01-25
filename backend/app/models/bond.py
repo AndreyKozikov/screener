@@ -36,6 +36,10 @@ class BondListItem(BaseModel):
     BONDTYPE: Optional[str] = None  # Тип облигации (type из bonds_emitent.json)
     BONDTYPE43: Optional[str] = None  # Вид облигации (BONDTYPE из bonds.json, индекс 43)
     COUPON_TYPE: Optional[str] = None  # Тип купона (FIX или FLOAT) из coupons_data.json
+    # Вычисляемые на бэкенде поля (чистая архитектура — фронт только отображает)
+    COUPON_YIELD_TO_PRICE: Optional[float] = None  # Доходность купона к текущей цене, %
+    COUPON_FREQUENCY: Optional[int] = None  # Число выплат купона в год
+    DURATION_YEARS: Optional[float] = None  # Дюрация в годах
     
     class Config:
         from_attributes = True

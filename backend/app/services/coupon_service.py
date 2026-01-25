@@ -312,6 +312,112 @@ class CouponService:
         coupons = bond_data.get("coupons", [])
         # Clean old fields from coupons for backward compatibility with old data structure
         return [self._clean_coupon_fields(c) for c in coupons]
+    
+    def get_coupons_batch(self, secids: List[str], use_db: bool = True) -> Dict[str, Dict]:
+        """
+        Get coupons data for multiple bonds by secid list.
+        
+        Args:
+            secids: List of Security IDs
+            use_db: If True, try to get coupons from database first, then fallback to JSON file
+            
+        Returns:
+            Dictionary mapping secid to bond coupon data:
+            {
+                "secid1": {
+                    "coupons": [...],
+                    "coupon_type": "FIX" or "FLOAT" or None,
+                    "amortizations": [...]
+                },
+                "secid2": {...}
+            }
+        """
+        if not secids:
+            return {}
+        
+        result: Dict[str, Dict] = {}
+        
+        # Try to get coupons from database if use_db is True
+        if use_db:
+            try:
+                from app.services.db_refresher import DBBonds
+                db_bonds = DBBonds()
+                db_coupons = db_bonds.fetch_coupons_raw(secids)
+                
+                # Group coupons by secid
+                coupons_by_secid: Dict[str, List[Dict]] = {}
+                for coupon_row in db_coupons:
+                    secid = coupon_row.get("secid")
+                    if secid:
+                        if secid not in coupons_by_secid:
+                            coupons_by_secid[secid] = []
+                        # Clean coupon fields (remove secid from coupon data as it's in the key)
+                        cleaned_coupon = {k: v for k, v in coupon_row.items() if k != "secid"}
+                        coupons_by_secid[secid].append(self._clean_coupon_fields(cleaned_coupon))
+                
+                # Get coupon_type from JSON file for each secid
+                data = self._read_data()
+                bonds = data.get("bonds", {})
+                
+                for secid in secids:
+                    coupons = coupons_by_secid.get(secid, [])
+                    coupon_type = None
+                    amortizations = []
+                    
+                    # Try to get coupon_type from cached data
+                    if secid in bonds:
+                        bond_data = bonds[secid]
+                        amortizations_data = bond_data.get("amortizations", [])
+                        if amortizations_data and len(amortizations_data) > 0:
+                            coupon_type = amortizations_data[0].get("coupon_type")
+                            amortizations = amortizations_data
+                    
+                    result[secid] = {
+                        "coupons": coupons,
+                        "coupon_type": coupon_type,
+                        "amortizations": amortizations
+                    }
+                
+                # Return data from DB (even if some coupons are empty)
+                # We got data from DB for all requested secids (some may have empty coupons, which is valid)
+                return result
+            except Exception as exc:
+                # If DB access fails, fallback to JSON file
+                print(f"[КУПОНЫ] ВНИМАНИЕ: Не удалось получить купоны из БД: {exc}")
+                print(f"[КУПОНЫ] Переключение на загрузку из JSON файла")
+        
+        # Fallback: get coupons from JSON file (coupon_service cache)
+        data = self._read_data()
+        bonds = data.get("bonds", {})
+        
+        for secid in secids:
+            if secid in bonds:
+                bond_data = bonds[secid].copy()
+                coupons_data = bond_data.get("coupons", [])
+                amortizations = bond_data.get("amortizations", [])
+                
+                # Clean duplicate fields from coupons
+                cleaned_coupons = [self._clean_coupon_fields(c) for c in coupons_data]
+                
+                # Get coupon_type from amortizations
+                coupon_type = None
+                if amortizations and len(amortizations) > 0:
+                    coupon_type = amortizations[0].get("coupon_type")
+                
+                result[secid] = {
+                    "coupons": cleaned_coupons,
+                    "coupon_type": coupon_type,
+                    "amortizations": amortizations
+                }
+            else:
+                # No data for this secid
+                result[secid] = {
+                    "coupons": [],
+                    "coupon_type": None,
+                    "amortizations": []
+                }
+        
+        return result
 
 
 # Singleton instance

@@ -743,9 +743,10 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
       valueGetter: (params) => {
         const bond = params.data;
         if (!bond) return null;
-        // Calculate coupon frequency (payments per year)
+        // Предпочитаем значение с бэкенда (чистая архитектура)
+        if (bond.COUPON_YIELD_TO_PRICE != null) return bond.COUPON_YIELD_TO_PRICE;
+        // Fallback для портфеля/сравнения (данные не от API списка)
         const couponFrequency = calculateCouponFrequency(bond.COUPONPERIOD);
-        // Calculate yield: (COUPONVALUE / (PREVPRICE × FACEVALUE / 100)) × (payments per year) × 100
         return calculateCouponYieldToPrice(bond.COUPONVALUE, bond.PREVPRICE, bond.FACEVALUE, couponFrequency);
       },
       valueFormatter: (params) => formatPercent(params.value),
@@ -804,6 +805,7 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
       valueGetter: (params) => {
         const bond = params.data;
         if (!bond) return null;
+        if (bond.COUPON_FREQUENCY != null) return bond.COUPON_FREQUENCY;
         return calculateCouponFrequency(bond.COUPONPERIOD);
       },
       valueFormatter: (params) => formatNumber(params.value, 0),
@@ -822,10 +824,9 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
       minWidth: 80,
       valueGetter: (params) => {
         const bond = params.data;
-        if (!bond || bond.DURATION == null || bond.DURATION === undefined) return null;
-        // Если дюрация равна 0, возвращаем null для отображения прочерка
-        if (bond.DURATION === 0) return null;
-        // Преобразование из дней в годы: DURATION / 365
+        if (!bond) return null;
+        if (bond.DURATION_YEARS != null) return bond.DURATION_YEARS;
+        if (bond.DURATION == null || bond.DURATION === undefined || bond.DURATION === 0) return null;
         return bond.DURATION / 365;
       },
       valueFormatter: (params) => {

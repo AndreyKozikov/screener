@@ -21,3 +21,13 @@ export interface CouponsListResponse {
   coupon_type?: string | null;  // FIX or FLOAT from amortizations section
 }
 
+export interface CouponsBySecid {
+  secid: string;
+  coupons: Coupon[];
+  coupon_type?: string | null;
+}
+
+export interface MultipleCouponsResponse {
+  data: CouponsBySecid[];
+}
+

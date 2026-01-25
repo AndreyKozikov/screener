@@ -110,13 +110,18 @@ export interface ZerocuponRefreshResponse {
   end_date?: string;
   dates_fetched: number;
   dates_failed?: number;
+  database_updated?: boolean;
 }
 
 /**
  * Request a refresh of zero-coupon yield curve data from MOEX API
+ * 
+ * @param updateZeroCouponCurve - If true, updates the database table kbd after saving data to file
  */
-export const refreshZerocuponData = async (): Promise<ZerocuponRefreshResponse> => {
-  const response = await apiClient.post<ZerocuponRefreshResponse>('/zerocupon/refresh');
+export const refreshZerocuponData = async (updateZeroCouponCurve: boolean = false): Promise<ZerocuponRefreshResponse> => {
+  const response = await apiClient.post<ZerocuponRefreshResponse>('/zerocupon/refresh', null, {
+    params: { update_zero_coupon_curve: updateZeroCouponCurve }
+  });
   return response.data;
 };
 

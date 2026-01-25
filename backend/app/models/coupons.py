@@ -66,3 +66,15 @@ class CouponsListResponse(BaseModel):
     coupons: List[Coupon]
     coupon_type: Optional[str] = None  # FIX or FLOAT from amortizations section
 
+
+class CouponsBySecid(BaseModel):
+    """Coupons data for a specific secid"""
+    secid: str
+    coupons: List[Coupon]
+    coupon_type: Optional[str] = None  # FIX or FLOAT from amortizations section
+
+
+class MultipleCouponsResponse(BaseModel):
+    """Response model for multiple bonds coupons"""
+    data: List[CouponsBySecid]  # List of coupons grouped by secid
+

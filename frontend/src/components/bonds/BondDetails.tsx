@@ -20,7 +20,7 @@ import {
 import CloseIcon from '@mui/icons-material/Close';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
-import { fetchBondDetail, fetchBondCoupons } from '../../api/bonds';
+import { fetchBondDetail, fetchBondsCoupons } from '../../api/bonds';
 import { fetchColumnMapping, fetchDescriptions } from '../../api/metadata';
 import type { ColumnMapping } from '../../types/api';
 import type { DescriptionsResponse } from '../../api/metadata';
@@ -211,8 +211,9 @@ export const BondDetails: React.FC = () => {
 
     const loadCouponType = async () => {
       try {
-        const response = await fetchBondCoupons(currentSecIdRef);
-        if (!isCancelled && currentSecIdRef === selectedBondId) {
+        const couponsMap = await fetchBondsCoupons([currentSecIdRef]);
+        const response = couponsMap.get(currentSecIdRef);
+        if (!isCancelled && currentSecIdRef === selectedBondId && response) {
           setCouponType(response.coupon_type || null);
         }
       } catch (err) {
@@ -259,8 +260,9 @@ export const BondDetails: React.FC = () => {
       try {
         setIsLoadingCoupons(true);
         setCouponsError(null);
-        const response = await fetchBondCoupons(currentSecIdRef);
-        if (!isCancelled && currentSecIdRef === selectedBondId) {
+        const couponsMap = await fetchBondsCoupons([currentSecIdRef]);
+        const response = couponsMap.get(currentSecIdRef);
+        if (!isCancelled && currentSecIdRef === selectedBondId && response) {
           const hasCouponsNow = response.coupons.length > 0;
           setCoupons(response.coupons);
           setCouponType(response.coupon_type || null);

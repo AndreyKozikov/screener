@@ -13,6 +13,7 @@ from app.services.currency_service import init_currency_service
 from app.services.ruonia_service import init_ruonia_service
 from app.services.keyrate_service import init_keyrate_service
 from app.services.trading_history_service import init_trading_history_service
+from app.services.kbd_service import init_kbd_service
 from app.config import settings
 
 
@@ -29,6 +30,8 @@ async def lifespan(app: FastAPI):
     init_ruonia_service(data_dir)
     init_keyrate_service(data_dir)
     init_trading_history_service(data_dir)
+    # Initialize KBD service (uses database, not data_dir)
+    init_kbd_service()
     yield
     # Shutdown: cleanup if needed
     # (currently no cleanup required)

@@ -265,7 +265,8 @@ export const HomePage: React.FC = () => {
         triggerDataRefresh();
       },
       zerocupon: async () => {
-        await refreshZerocuponData();
+        // Pass update_zero_coupon_curve=true to update database after file save
+        await refreshZerocuponData(true);
         // Reload last date after refresh
         try {
           const zerocuponData = await fetchZerocuponData(null, null);

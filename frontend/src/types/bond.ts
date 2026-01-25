@@ -36,6 +36,10 @@ export interface BondListItem {
   BONDTYPE: string | null;  // Тип облигации
   BONDTYPE43: string | null;  // Вид облигации (из bonds.json, индекс 43)
   COUPON_TYPE: string | null;  // Тип купона (FIX или FLOAT)
+  /** Вычисляемые на бэкенде поля; фронт только отображает */
+  COUPON_YIELD_TO_PRICE?: number | null;  // Доходность купона к текущей цене, %
+  COUPON_FREQUENCY?: number | null;      // Число выплат купона в год
+  DURATION_YEARS?: number | null;        // Дюрация в годах
 }
 
 // Detailed bond information

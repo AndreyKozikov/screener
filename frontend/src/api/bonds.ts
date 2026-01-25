@@ -2,7 +2,7 @@ import { apiClient } from './client';
 import type { BondsListResponse } from '../types/api';
 import type { BondDetail } from '../types/bond';
 import type { BondFilters } from '../types/filters';
-import type { CouponsListResponse } from '../types/coupon';
+import type { CouponsListResponse, MultipleCouponsResponse } from '../types/coupon';
 
 /**
  * Fetch filtered bonds list
@@ -177,7 +177,9 @@ export const refreshCouponsData = async (forceRefresh: boolean = false): Promise
 };
 
 /**
- * Fetch bond coupons by SECID
+ * Fetch bond coupons by SECID (single bond)
+ * @param secid Security ID
+ * @param forceRefresh If true, force refresh from MOEX API
  */
 export const fetchBondCoupons = async (secid: string, forceRefresh: boolean = false): Promise<CouponsListResponse> => {
   const params: Record<string, boolean> = {};
@@ -186,4 +188,87 @@ export const fetchBondCoupons = async (secid: string, forceRefresh: boolean = fa
   }
   const response = await apiClient.get<CouponsListResponse>(`/bonds/${secid}/coupons`, { params });
   return response.data;
+};
+
+/**
+ * Fetch coupons for multiple bonds by SECID list (batch request)
+ * This is the unified method for loading coupons - supports both single and multiple bonds
+ * @param secids Array of Security IDs (can be single element or multiple)
+ * @param forceRefresh If true, force refresh from MOEX API (only for single bond requests)
+ * @returns Map of secid to CouponsListResponse for easy lookup
+ */
+export const fetchBondsCoupons = async (
+  secids: string[],
+  forceRefresh: boolean = false
+): Promise<Map<string, CouponsListResponse>> => {
+  if (!secids || secids.length === 0) {
+    return new Map();
+  }
+
+  // Remove duplicates and empty strings
+  const uniqueSecids = Array.from(new Set(secids.filter(s => s && s.trim())));
+
+  if (uniqueSecids.length === 0) {
+    return new Map();
+  }
+
+  // For single bond, use the original endpoint for backward compatibility
+  if (uniqueSecids.length === 1) {
+    const secid = uniqueSecids[0];
+    const response = await fetchBondCoupons(secid, forceRefresh);
+    const result = new Map<string, CouponsListResponse>();
+    result.set(secid, response);
+    return result;
+  }
+
+  // For multiple bonds, use batch endpoint
+  try {
+    const params: Record<string, string[]> = {
+      secids: uniqueSecids,
+    };
+
+    // Serialize array parameters correctly for FastAPI
+    const paramsSerializer = (params: Record<string, any>): string => {
+      const searchParams = new URLSearchParams();
+      Object.entries(params).forEach(([key, value]) => {
+        if (Array.isArray(value)) {
+          value.forEach((item) => {
+            searchParams.append(key, String(item));
+          });
+        } else {
+          searchParams.append(key, String(value));
+        }
+      });
+      return searchParams.toString();
+    };
+
+    const response = await apiClient.get<MultipleCouponsResponse>('/bonds/coupons/batch', {
+      params,
+      paramsSerializer,
+    });
+
+    // Convert response to Map for easy lookup
+    const result = new Map<string, CouponsListResponse>();
+    response.data.data.forEach((item) => {
+      result.set(item.secid, {
+        coupons: item.coupons,
+        coupon_type: item.coupon_type,
+      });
+    });
+
+    // Ensure all requested secids are in the result (even if empty)
+    uniqueSecids.forEach((secid) => {
+      if (!result.has(secid)) {
+        result.set(secid, {
+          coupons: [],
+          coupon_type: null,
+        });
+      }
+    });
+
+    return result;
+  } catch (error) {
+    console.error('[Bonds API] Error fetching coupons batch:', error);
+    throw error;
+  }
 };

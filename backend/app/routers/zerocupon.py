@@ -13,6 +13,8 @@ import json
 import httpx
 
 from app.utils.logger import get_data_update_logger
+from app.services.db_orchestrator import DBOrchestrator
+from app.services.kbd_service import get_kbd_service
 
 router = APIRouter(prefix="/api/zerocupon", tags=["zerocupon"])
 
@@ -33,20 +35,22 @@ async def get_zerocupon_data(
     """
     Get zero-coupon yield curve data filtered by date range.
     
-    Returns data as JSON array of records.
+    Returns data as JSON array of records from database.
     By default returns data for the last year.
     """
-    csv_path = _get_zerocupon_path()
-    
-    if not csv_path.exists():
-        raise HTTPException(status_code=404, detail="zerocupon.csv file not found")
-    
     try:
-        # Read CSV with semicolon separator
-        df = pd.read_csv(csv_path, sep=";", encoding="utf-8-sig", decimal=".")
+        # Get KBD service
+        kbd_service = get_kbd_service()
+        if not kbd_service:
+            raise HTTPException(
+                status_code=503,
+                detail="KBD service is not initialized. Please ensure the database is available."
+            )
         
-        # Check if DataFrame is empty
-        if df.empty:
+        # Get formatted data from database
+        formatted_data = kbd_service.get_kbd_data_formatted()
+        
+        if not formatted_data:
             return {
                 "data": [],
                 "count": 0,
@@ -54,9 +58,12 @@ async def get_zerocupon_data(
                 "date_to": date_to,
             }
         
+        # Convert to DataFrame for filtering
+        df = pd.DataFrame(formatted_data)
+        
         # Check if "Дата" column exists
         if "Дата" not in df.columns:
-            raise HTTPException(status_code=500, detail="CSV file missing 'Дата' column")
+            raise HTTPException(status_code=500, detail="Database data missing 'Дата' column")
         
         # Parse date column
         df["Дата"] = pd.to_datetime(df["Дата"], dayfirst=True, errors="coerce")
@@ -72,16 +79,6 @@ async def get_zerocupon_data(
                 "date_from": date_from,
                 "date_to": date_to,
             }
-        
-        # Convert all numeric columns (except Дата and Время) to float
-        # This ensures proper numeric type handling
-        for col in df.columns:
-            if col not in ["Дата", "Время"]:
-                # Try to convert to numeric, replacing commas with dots if needed
-                df[col] = pd.to_numeric(
-                    df[col].astype(str).str.replace(",", ".", regex=False),
-                    errors="coerce"
-                )
         
         # Filter by date range
         if date_from:
@@ -135,7 +132,7 @@ async def get_zerocupon_data(
         if columns_to_exclude:
             df = df.drop(columns=columns_to_exclude)
         
-        # Convert to records (list of dicts) - use orient='records' for proper JSON
+        # Convert to records (list of dicts)
         records = df.to_dict(orient="records")
         
         # Replace all NaN, NaT, and inf values with None for proper JSON serialization
@@ -786,18 +783,36 @@ def refresh_zerocupon_data() -> Dict[str, Any]:
 
 
 @router.post("/refresh")
-async def refresh_zerocupon():
+async def refresh_zerocupon(
+    update_zero_coupon_curve: bool = Query(False, description="Update zero coupon curve data in database after file save")
+):
     """
     Refresh zero-coupon yield curve data from MOEX API.
     Fetches missing data from the last date in CSV up to yesterday.
+    
+    If update_zero_coupon_curve is True, after successfully downloading and saving data to file,
+    updates the database table kbd using the orchestrator.
     """
     logger = get_data_update_logger()
-    logger.info("[API /zerocupon/refresh] Received request to refresh zerocupon data")
+    logger.info(f"[API /zerocupon/refresh] Received request to refresh zerocupon data (update_zero_coupon_curve={update_zero_coupon_curve})")
     
     try:
-        # Run in thread to avoid blocking
+        # Step 1: Download data from MOEX API and save to CSV file
+        logger.info("[API /zerocupon/refresh] Step 1: Downloading data from MOEX API and saving to CSV file...")
         result = await asyncio.to_thread(refresh_zerocupon_data)
-        logger.info(f"[API /zerocupon/refresh] Refresh completed successfully: {result}")
+        logger.info(f"[API /zerocupon/refresh] Step 1 completed: {result}")
+        
+        # Step 2: Synchronize data from CSV file to database
+        logger.info("[API /zerocupon/refresh] Step 2: Starting database synchronization from CSV file via Orchestrator...")
+        orchestrator = DBOrchestrator()
+        db_refresh_result = await asyncio.to_thread(orchestrator.migrate, "kbd")
+        if db_refresh_result:
+            logger.info("[API /zerocupon/refresh] Step 2 completed: Database table kbd refreshed successfully")
+            result["database_updated"] = True
+        else:
+            logger.warning("[API /zerocupon/refresh] Step 2 failed: Database table kbd refresh failed, but CSV file was saved successfully")
+            result["database_updated"] = False
+        
         return result
     except Exception as e:
         logger.error(f"[API /zerocupon/refresh] ERROR: {type(e).__name__} - {str(e)}")
