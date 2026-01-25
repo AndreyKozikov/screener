@@ -210,7 +210,7 @@ class DataLoader:
                 
                 list_item = BondListItem(**list_item_data)
                 
-                # Try to get coupon value and coupon_type from coupons data if available
+                # Try to get coupon value from coupons data if available
                 coupon_loader = get_coupon_loader()
                 if coupon_loader is not None:
                     nearest_coupon_value = coupon_loader.get_nearest_coupon_value(
@@ -219,11 +219,6 @@ class DataLoader:
                     # Set COUPONVALUE with coupon value from coupons data if found
                     if nearest_coupon_value is not None:
                         list_item.COUPONVALUE = nearest_coupon_value
-                    
-                    # Get coupon_type from coupons data
-                    coupon_type = coupon_loader.get_coupon_type(list_item.SECID)
-                    if coupon_type is not None:
-                        list_item.COUPON_TYPE = coupon_type
                 
                 bonds_list.append(list_item)
             except Exception as e:

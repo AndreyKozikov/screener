@@ -14,7 +14,6 @@ import {
   CurrencyFilter,
   BondTypeFilter,
   BondType43Filter,
-  CouponTypeFilter,
   RatingRangeFilter,
 } from './AllFilters';
 
@@ -141,9 +140,6 @@ export const FiltersPanel: React.FC = () => {
           </Box>
           <Box sx={{ width: '500px', flexShrink: 0 }}>
             <BondType43Filter />
-          </Box>
-          <Box sx={{ width: '180px', flexShrink: 0 }}>
-            <CouponTypeFilter />
           </Box>
           <Box sx={{ width: '250px', flexShrink: 0 }}>
             <Box sx={{ mb: 0.5 }}>

@@ -49,7 +49,6 @@ const initialFilters: BondFilters = {
   faceunit: [],
   bondtype: [],
   bondtype43: [],
-  couponType: [],
   ratingMin: null,
   ratingMax: null,
   search: '',

@@ -33,9 +33,6 @@ class BondFilters(BaseModel):
     # Bond type 43 filter (вид облигации из bonds.json)
     bondtype43: Optional[List[str]] = Field(None, description="Bond type 43 (вид облигации: Амортизируемые облигации, Валютные облигации, etc.)")
     
-    # Coupon type filter
-    coupon_type: Optional[List[str]] = Field(None, description="Coupon types (FIX, FLOAT)")
-    
     # Rating range filter
     rating_min: Optional[str] = Field(None, description="Minimum rating (AAA, AA+, AA, AA-, A+, etc.)")
     rating_max: Optional[str] = Field(None, description="Maximum rating (AAA, AA+, AA, AA-, A+, etc.)")

@@ -28,7 +28,6 @@ import {
   CurrencyFilter,
   BondTypeFilter,
   BondType43Filter,
-  CouponTypeFilter,
   RatingRangeFilter,
 } from './AllFilters';
 
@@ -466,14 +465,6 @@ export const FiltersModal: React.FC<FiltersModalProps> = ({ open, onClose }) => 
                     Вид облигации
                   </Typography>
                   <BondType43Filter />
-                </Box>
-                <Divider />
-                {/* Блок фильтра: Тип купона (постоянный или плавающий) */}
-                <Box sx={{ width: '100%' }}>
-                  <Typography variant="subtitle1" fontWeight={600} gutterBottom>
-                    Тип купона
-                  </Typography>
-                  <CouponTypeFilter />
                 </Box>
               </Stack>
               </Box>

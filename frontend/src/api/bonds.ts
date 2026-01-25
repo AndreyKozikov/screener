@@ -41,10 +41,6 @@ export const fetchBonds = async (filters: BondFilters, emitentTitle?: string, ex
     // FastAPI expects array parameters to be sent as repeated query params: bondtype43=value1&bondtype43=value2
     params.bondtype43 = filters.bondtype43;
   }
-  if (filters.couponType && Array.isArray(filters.couponType) && filters.couponType.length > 0) {
-    // FastAPI expects array parameters to be sent as repeated query params: coupon_type=FIX&coupon_type=FLOAT
-    params.coupon_type = filters.couponType;
-  }
   if (filters.ratingMin !== null) params.rating_min = filters.ratingMin;
   if (filters.ratingMax !== null) params.rating_max = filters.ratingMax;
   // Note: search is NOT sent to server - it will be filtered on client side

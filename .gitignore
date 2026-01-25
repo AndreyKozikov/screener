@@ -150,6 +150,7 @@ memory_bank/
 .streamlit/
 .continue/
 DEPLOYMENT_GUIDE.md
+backend/app/data/bonds_trading_history.json
 
 # IDE and Editor
 *.sublime-project

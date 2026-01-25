@@ -669,60 +669,7 @@ export const BondType43Filter: React.FC = () => {
 };
 
 // ============================================================================
-// 10. Тип купона (CouponTypeFilter) - ToggleButtonGroup
-// ============================================================================
-
-export const CouponTypeFilter: React.FC = () => {
-  const { draftFilters, setDraftFilter } = useFiltersStore();
-
-  const couponTypeOptions = [
-    { value: 'FIX', label: 'Постоянный' },
-    { value: 'FLOAT', label: 'Плавающий' },
-  ];
-
-  const handleChange = (_event: React.MouseEvent<HTMLElement>, newValues: string[]) => {
-    if (newValues !== null) {
-      setDraftFilter('couponType', newValues);
-    }
-  };
-
-  const selectedValues = draftFilters.couponType || [];
-
-  return (
-    <ToggleButtonGroup
-      value={selectedValues}
-      onChange={handleChange}
-      aria-label="тип купона"
-      fullWidth
-      sx={{ width: '100%' }}
-    >
-      {couponTypeOptions.map((option) => (
-        <ToggleButton
-          key={option.value}
-          value={option.value}
-          aria-label={option.label}
-          sx={{
-            px: 3,
-            py: 1.5,
-            fontWeight: selectedValues.includes(option.value) ? 600 : 400,
-            '&.Mui-selected': {
-              backgroundColor: 'primary.main',
-              color: 'white',
-              '&:hover': {
-                backgroundColor: 'primary.dark',
-              },
-            },
-          }}
-        >
-          {option.label}
-        </ToggleButton>
-      ))}
-    </ToggleButtonGroup>
-  );
-};
-
-// ============================================================================
-// 11. Рейтинг (RatingRangeFilter)
+// 10. Рейтинг (RatingRangeFilter)
 // ============================================================================
 
 export const RatingRangeFilter: React.FC = () => {

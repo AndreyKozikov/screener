@@ -141,13 +141,6 @@ def filter_bonds(bonds: List[BondListItem], filters: BondFilters) -> List[BondLi
         after_count = len(filtered)
         print(f"DEBUG filter_bonds: bondtype43 filter - before={before_count}, after={after_count}, filtering by={filters.bondtype43}")
     
-    # Coupon type filter
-    if filters.coupon_type:
-        before_count = len(filtered)
-        filtered = [b for b in filtered if b.COUPON_TYPE is not None and b.COUPON_TYPE in filters.coupon_type]
-        after_count = len(filtered)
-        print(f"DEBUG filter_bonds: coupon_type filter - before={before_count}, after={after_count}, filtering by={filters.coupon_type}")
-    
     # Rating range filter
     if filters.rating_min is not None or filters.rating_max is not None:
         before_count = len(filtered)

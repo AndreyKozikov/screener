@@ -40,6 +40,7 @@ import { refreshRatingsData } from '../api/rating';
 import { refreshRuoniaData, fetchRuoniaData } from '../api/ruonia';
 import { fetchForecastDates } from '../api/forecast';
 import { refreshEmitentsData } from '../api/emitent';
+import { refreshTradingHistory } from '../api/tradingHistory';
 import { getCurrencyRates, refreshCurrencyRates, type CurrencyRatesResponse } from '../api/currency';
 import { loadKeyRateData, getKeyRateData } from '../api/keyrate';
 import { useUiStore } from '../stores/uiStore';
@@ -312,6 +313,9 @@ export const HomePage: React.FC = () => {
         } catch (error) {
           console.error('Failed to reload ruonia rate:', error);
         }
+      },
+      'trading-history': async () => {
+        await refreshTradingHistory();
       },
       keyrate: async () => {
         await loadKeyRateData();
@@ -1198,6 +1202,7 @@ export const HomePage: React.FC = () => {
           { id: 'currency', label: 'Обновить курсы валют', checked: false },
           { id: 'ruonia', label: 'Обновить данные ставки RUONIA', checked: false },
           { id: 'keyrate', label: 'Обновить ключевую ставку ЦБ', checked: false },
+          { id: 'trading-history', label: 'Обновить историю торгов', checked: false },
         ]}
         isRefreshing={isRefreshing}
         refreshStatus={refreshStatus}

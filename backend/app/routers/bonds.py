@@ -32,7 +32,6 @@ async def list_bonds(
     faceunit: Optional[List[str]] = Query(None),
     bondtype: Optional[List[str]] = Query(None),
     bondtype43: Optional[List[str]] = Query(None),
-    coupon_type: Optional[List[str]] = Query(None),
     rating_min: Optional[str] = Query(None),
     rating_max: Optional[str] = Query(None),
     emitent_title: Optional[str] = Query(None, description="Filter by emitent title"),
@@ -51,7 +50,6 @@ async def list_bonds(
     - Currency face unit (faceunit)
     - Bond type (bondtype)
     - Bond type 43 (bondtype43) - вид облигации из bonds.json
-    - Coupon type (coupon_type) - FIX or FLOAT
     - Rating range (rating_min, rating_max)
     
     Note: Search filtering is done on client side, not on server.
@@ -73,7 +71,6 @@ async def list_bonds(
         faceunit=faceunit,
         bondtype=bondtype,
         bondtype43=bondtype43,
-        coupon_type=coupon_type,
         rating_min=rating_min,
         rating_max=rating_max,
         search=None,  # Search is handled on client side

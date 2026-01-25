@@ -103,7 +103,9 @@ export const SpreadAnalysis: React.FC = () => {
   const [headerHeight, setHeaderHeight] = useState<number | undefined>(undefined);
   const filters = useFiltersStore((state) => state.filters);
   const [currentTab, setCurrentTab] = useState(0);
-  
+  /** Верхний уровень: 0 — Кривая спредов эмитентов, 1 — Кривая спредов внутри рейтинговой группы (флоатеры) */
+  const [mainTab, setMainTab] = useState(0);
+
   // Zoom and pan state for scatter chart
   const [xDomain, setXDomain] = useState<[number, number] | undefined>(undefined);
   const [yDomain, setYDomain] = useState<[number, number] | undefined>(undefined);
@@ -1537,29 +1539,39 @@ export const SpreadAnalysis: React.FC = () => {
   return (
     <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', width: '100%', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', borderRadius: '12px' }}>
       <CardContent sx={{ p: 0, '&:last-child': { pb: 0 }, flexGrow: 1, display: 'flex', flexDirection: 'column', width: '100%' }}>
-        {/* Emitent Selector */}
-        <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
-          <FormControl fullWidth>
-            <InputLabel>Эмитент</InputLabel>
-            <Select
-              value={selectedEmitent}
-              onChange={(e) => setSelectedEmitent(e.target.value)}
-              label="Эмитент"
-              disabled={isLoadingEmitents || emitentOptions.length === 0}
-            >
-              <MenuItem value="">
-                <em>Не выбран</em>
-              </MenuItem>
-              {emitentOptions.map((emitent) => (
-                <MenuItem key={emitent} value={emitent}>{emitent}</MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+        {/* Верхний уровень: Кривая спредов эмитентов | Кривая спредов внутри рейтинговой группы (флоатеры) */}
+        <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
+          <Tabs value={mainTab} onChange={(_, newValue) => setMainTab(newValue)}>
+            <Tab label="Кривая спредов эмитентов" />
+            <Tab label="Кривая спредов внутри рейтинговой группы (флоатеры)" />
+          </Tabs>
         </Box>
 
-        {/* Tabs Section */}
-        <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden', height: '100%' }}>
-          {isLoadingBonds || isLoadingZerocupon || isLoadingCoupons ? (
+        {mainTab === 0 && (
+          <>
+            {/* Emitent Selector */}
+            <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
+              <FormControl fullWidth>
+                <InputLabel>Эмитент</InputLabel>
+                <Select
+                  value={selectedEmitent}
+                  onChange={(e) => setSelectedEmitent(e.target.value)}
+                  label="Эмитент"
+                  disabled={isLoadingEmitents || emitentOptions.length === 0}
+                >
+                  <MenuItem value="">
+                    <em>Не выбран</em>
+                  </MenuItem>
+                  {emitentOptions.map((emitent) => (
+                    <MenuItem key={emitent} value={emitent}>{emitent}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Box>
+
+            {/* Tabs Section */}
+            <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden', height: '100%' }}>
+              {isLoadingBonds || isLoadingZerocupon || isLoadingCoupons ? (
             <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 0, gap: 2 }}>
               <LoadingSpinner 
                 message={
@@ -1908,8 +1920,17 @@ export const SpreadAnalysis: React.FC = () => {
               </Box>
             </>
           )}
-        </Box>
+            </Box>
+          </>
+        )}
 
+        {mainTab === 1 && (
+          <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', p: 4, minHeight: 200 }}>
+            <Typography variant="body1" color="text.secondary">
+              Раздел в разработке
+            </Typography>
+          </Box>
+        )}
       </CardContent>
     </Card>
   );
