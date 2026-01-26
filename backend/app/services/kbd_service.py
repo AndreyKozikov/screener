@@ -46,6 +46,7 @@ class KbdService:
         Преобразует сырые данные из БД в формат, ожидаемый фронтендом.
         
         Применяет обратный маппинг столбцов на русские наименования.
+        Преобразует дату из формата YYYY-MM-DD обратно в DD.MM.YYYY для фронтенда.
         
         Args:
             raw_data: Список словарей с сырыми данными из БД (ключи - английские названия столбцов)
@@ -53,6 +54,8 @@ class KbdService:
         Returns:
             Список словарей с данными для фронтенда (ключи - русские названия столбцов)
         """
+        from datetime import datetime
+        
         formatted_data = []
         
         for record in raw_data:
@@ -60,21 +63,37 @@ class KbdService:
             
             for english_col, russian_col in self.reverse_column_mapping.items():
                 value = record.get(english_col)
-                # Сохраняем значение как есть (может быть None, float, str)
+                
+                # Преобразуем дату из формата YYYY-MM-DD в DD.MM.YYYY
+                if english_col == "date" and value:
+                    try:
+                        # Парсим дату из формата YYYY-MM-DD
+                        date_obj = datetime.strptime(value, "%Y-%m-%d")
+                        # Преобразуем в формат DD.MM.YYYY для фронтенда
+                        value = date_obj.strftime("%d.%m.%Y")
+                    except (ValueError, TypeError):
+                        # Если не удалось преобразовать, оставляем как есть
+                        pass
+                
+                # Сохраняем значение (может быть None, float, str)
                 formatted_record[russian_col] = value
             
             formatted_data.append(formatted_record)
         
         return formatted_data
     
-    def get_kbd_data_formatted(self) -> List[Dict[str, Any]]:
+    def get_kbd_data_formatted(self, date_from: Optional[str] = None, date_to: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Получает данные из БД и преобразует их в формат для фронтенда.
+        
+        Args:
+            date_from: Начальная дата в формате DD.MM.YYYY (включительно). Если None, фильтр не применяется.
+            date_to: Конечная дата в формате DD.MM.YYYY (включительно). Если None, фильтр не применяется.
         
         Returns:
             Список словарей с данными для фронтенда (ключи - русские названия столбцов)
         """
-        raw_data = self.db_kbd.get_kbd_data()
+        raw_data = self.db_kbd.get_kbd_data(date_from=date_from, date_to=date_to)
         return self.format_kbd_response(raw_data)
 
 

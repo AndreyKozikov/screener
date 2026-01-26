@@ -47,8 +47,15 @@ async def get_zerocupon_data(
                 detail="KBD service is not initialized. Please ensure the database is available."
             )
         
-        # Get formatted data from database
-        formatted_data = kbd_service.get_kbd_data_formatted()
+        # Determine date filters
+        # If no dates provided, default to last year
+        if not date_from and not date_to:
+            one_year_ago = datetime.now() - timedelta(days=365)
+            date_from = one_year_ago.strftime("%d.%m.%Y")
+            date_to = datetime.now().strftime("%d.%m.%Y")
+        
+        # Get formatted data from database with date filtering at SQL level
+        formatted_data = kbd_service.get_kbd_data_formatted(date_from=date_from, date_to=date_to)
         
         if not formatted_data:
             return {
@@ -58,14 +65,14 @@ async def get_zerocupon_data(
                 "date_to": date_to,
             }
         
-        # Convert to DataFrame for filtering
+        # Convert to DataFrame for further processing (weekend filtering, etc.)
         df = pd.DataFrame(formatted_data)
         
         # Check if "Дата" column exists
         if "Дата" not in df.columns:
             raise HTTPException(status_code=500, detail="Database data missing 'Дата' column")
         
-        # Parse date column
+        # Parse date column for display formatting (already in DD.MM.YYYY format from service)
         df["Дата"] = pd.to_datetime(df["Дата"], dayfirst=True, errors="coerce")
         
         # Remove rows with invalid dates
@@ -79,28 +86,6 @@ async def get_zerocupon_data(
                 "date_from": date_from,
                 "date_to": date_to,
             }
-        
-        # Filter by date range
-        if date_from:
-            try:
-                date_from_dt = datetime.strptime(date_from, "%d.%m.%Y")
-                df = df[df["Дата"] >= date_from_dt]
-            except ValueError:
-                raise HTTPException(status_code=400, detail="Invalid date_from format. Use DD.MM.YYYY")
-        
-        if date_to:
-            try:
-                date_to_dt = datetime.strptime(date_to, "%d.%m.%Y")
-                # Include the end date (set time to end of day)
-                date_to_dt = date_to_dt.replace(hour=23, minute=59, second=59)
-                df = df[df["Дата"] <= date_to_dt]
-            except ValueError:
-                raise HTTPException(status_code=400, detail="Invalid date_to format. Use DD.MM.YYYY")
-        
-        # If no dates provided, default to last year
-        if not date_from and not date_to:
-            one_year_ago = datetime.now() - timedelta(days=365)
-            df = df[df["Дата"] >= one_year_ago]
         
         # Check if DataFrame is empty after date filtering
         if df.empty:

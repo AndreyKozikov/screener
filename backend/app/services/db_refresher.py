@@ -1726,8 +1726,8 @@ class DBkbd:
         """
         create_table_sql = """
         CREATE TABLE IF NOT EXISTS kbd (
-            date TEXT NOT NULL,
-            time TEXT NOT NULL,
+            date DATE NOT NULL,
+            time TIME NOT NULL,
             term_0_25 REAL,
             term_0_5 REAL,
             term_0_75 REAL,
@@ -1820,10 +1820,52 @@ class DBkbd:
             )
             return None
         
+        # Преобразуем дату из формата DD.MM.YYYY в формат YYYY-MM-DD (стандартный формат SQLite DATE)
+        date_str = date_value.strip() if date_value else None
+        date_formatted = None
+        if date_str:
+            try:
+                # Парсим дату из формата DD.MM.YYYY
+                date_obj = datetime.strptime(date_str, "%d.%m.%Y")
+                # Преобразуем в формат YYYY-MM-DD для SQLite DATE
+                date_formatted = date_obj.strftime("%Y-%m-%d")
+            except ValueError as e:
+                self.logger.warning(
+                    f"Неверный формат даты в записи KBD: {date_str}. "
+                    f"Ожидается формат DD.MM.YYYY. Ошибка: {e}"
+                )
+                return None
+        
+        # Преобразуем время в формат HH:MM:SS (стандартный формат SQLite TIME)
+        time_str = time_value.strip() if time_value else None
+        time_formatted = None
+        if time_str:
+            try:
+                # Парсим время из различных возможных форматов
+                # Может быть HH:MM:SS или просто HH:MM
+                if len(time_str.split(':')) == 2:
+                    # Формат HH:MM, добавляем секунды
+                    time_obj = datetime.strptime(time_str, "%H:%M")
+                    time_formatted = time_obj.strftime("%H:%M:%S")
+                elif len(time_str.split(':')) == 3:
+                    # Формат HH:MM:SS
+                    time_obj = datetime.strptime(time_str, "%H:%M:%S")
+                    time_formatted = time_obj.strftime("%H:%M:%S")
+                else:
+                    # Пытаемся распарсить как есть
+                    time_formatted = time_str
+            except ValueError as e:
+                self.logger.warning(
+                    f"Неверный формат времени в записи KBD: {time_str}. "
+                    f"Ожидается формат HH:MM или HH:MM:SS. Ошибка: {e}"
+                )
+                # Используем исходное значение, если не удалось распарсить
+                time_formatted = time_str
+        
         # Преобразуем данные с применением маппинга
         transformed = {
-            "date": date_value.strip() if date_value else None,
-            "time": time_value.strip() if time_value else None,
+            "date": date_formatted,
+            "time": time_formatted,
         }
         
         # Преобразуем числовые поля
@@ -1907,9 +1949,13 @@ class DBkbd:
             self.logger.error(f"Ошибка при вставке данных в таблицу kbd: {e}", exc_info=True)
             raise
     
-    def get_kbd_data(self) -> List[Dict[str, Any]]:
+    def get_kbd_data(self, date_from: Optional[str] = None, date_to: Optional[str] = None) -> List[Dict[str, Any]]:
         """
-        Извлекает сырые данные из таблицы kbd.
+        Извлекает сырые данные из таблицы kbd с фильтрацией по дате.
+        
+        Args:
+            date_from: Начальная дата в формате DD.MM.YYYY (включительно). Если None, фильтр не применяется.
+            date_to: Конечная дата в формате DD.MM.YYYY (включительно). Если None, фильтр не применяется.
         
         Returns:
             Список словарей с данными из таблицы kbd, отсортированных по date DESC.
@@ -1922,16 +1968,48 @@ class DBkbd:
             self.logger.warning("Таблица kbd не существует, get_kbd_data возвращает []")
             return []
         
-        sql = "SELECT * FROM kbd ORDER BY date DESC"
+        # Базовый SQL запрос
+        sql = "SELECT * FROM kbd"
+        conditions = []
+        params = []
+        
+        # Добавляем фильтрацию по дате
+        # Даты в БД хранятся в формате YYYY-MM-DD (тип DATE)
+        if date_from:
+            try:
+                # Преобразуем DD.MM.YYYY в YYYY-MM-DD
+                date_from_dt = datetime.strptime(date_from, "%d.%m.%Y")
+                date_from_sql = date_from_dt.strftime("%Y-%m-%d")
+                conditions.append("date >= ?")
+                params.append(date_from_sql)
+            except ValueError:
+                self.logger.warning(f"Неверный формат date_from: {date_from}, пропускаем фильтр")
+        
+        if date_to:
+            try:
+                # Преобразуем DD.MM.YYYY в YYYY-MM-DD
+                date_to_dt = datetime.strptime(date_to, "%d.%m.%Y")
+                date_to_sql = date_to_dt.strftime("%Y-%m-%d")
+                conditions.append("date <= ?")
+                params.append(date_to_sql)
+            except ValueError:
+                self.logger.warning(f"Неверный формат date_to: {date_to}, пропускаем фильтр")
+        
+        # Добавляем условия WHERE если есть фильтры
+        if conditions:
+            sql += " WHERE " + " AND ".join(conditions)
+        
+        # Добавляем сортировку
+        sql += " ORDER BY date DESC"
         
         try:
             with sqlite3.connect(self.db_path) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
-                cursor.execute(sql)
+                cursor.execute(sql, params)
                 rows = cursor.fetchall()
                 result = [dict(row) for row in rows]
-                self.logger.debug(f"Выбрано {len(result)} записей из таблицы kbd")
+                self.logger.debug(f"Выбрано {len(result)} записей из таблицы kbd (фильтры: date_from={date_from}, date_to={date_to})")
                 return result
         except sqlite3.Error as e:
             self.logger.error(f"Ошибка при get_kbd_data: {e}", exc_info=True)
