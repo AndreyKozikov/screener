@@ -21,8 +21,8 @@ from app.models.filters import BondFilters
 from app.models.responses import BondsListResponse
 from app.services.db_refresher import DBBonds
 from app.services.emitent_service import get_emitent_service
-# Фильтрация по рейтингу перенесена на уровень БД в метод DBBonds.select()
-# from app.services.bond_filter import is_rating_in_range  # Больше не используется
+
+from backend.app.services.db_refresher import DBCoupon
 
 
 def _load_mappings(data_dir: Path) -> Tuple[Dict[int, str], Dict[int, str]]:
@@ -62,6 +62,111 @@ def _parse_date(s: Optional[str]) -> Optional[date]:
         return date.fromisoformat(s.strip()[:10])
     except ValueError:
         return None
+
+
+def _find_closest_coupon(coupons: List[Dict[str, Any]], current_date: date) -> Optional[Dict[str, Any]]:
+    """
+    Находит будущий купон с наиболее близкой датой к текущей дате.
+    
+    Поскольку фильтрация на уровне БД уже возвращает только будущие купоны
+    (coupondate >= current_date), выбирается купон с минимальной датой.
+    
+    Args:
+        coupons: Список словарей с данными купонов (уже отфильтрованных по дате)
+        current_date: Текущая дата для сравнения (используется для документации)
+    
+    Returns:
+        Словарь с данными ближайшего будущего купона или None, если список пуст
+    """
+    if not coupons:
+        return None
+    
+    closest_coupon = None
+    min_date = None
+    
+    for coupon in coupons:
+        coupondate_str = coupon.get("coupondate")
+        if not coupondate_str:
+            continue
+        
+        try:
+            coupondate = date.fromisoformat(coupondate_str)
+            # Выбираем купон с минимальной датой (ближайший будущий)
+            if min_date is None or coupondate < min_date:
+                min_date = coupondate
+                closest_coupon = coupon
+        except (ValueError, TypeError):
+            # Пропускаем купоны с некорректной датой
+            continue
+    
+    return closest_coupon
+
+
+def _get_coupons_for_bonds(
+    db: DBCoupon,
+    secids: List[str],
+    current_date: date
+) -> Dict[str, Optional[float]]:
+    """
+    Получает значения купонов из таблицы coupons для списка облигаций.
+    
+    Для каждой облигации выбирается купон с наиболее близкой датой к текущей дате,
+    и извлекается значение из поля value.
+    
+    Args:
+        db: Экземпляр DBBonds для работы с БД
+        secids: Список идентификаторов облигаций
+        current_date: Текущая дата для фильтрации и выбора ближайшего купона
+    
+    Returns:
+        Словарь, где ключ - secid, значение - значение купона из поля value или None
+    """
+    if not secids:
+        return {}
+    
+    # Получаем текущую дату в формате YYYY-MM-DD
+    from_date_str = current_date.isoformat()
+    
+    try:
+        # Запрашиваем купоны для всех облигаций с параметром from=текущая дата
+        coupons_raw = db.fetch_coupons_raw(
+            secids=secids,
+            from_date=from_date_str
+        )
+    except Exception:
+        # В случае ошибки возвращаем пустой словарь
+        return {}
+    
+    # Группируем купоны по secid
+    coupons_by_secid: Dict[str, List[Dict[str, Any]]] = {}
+    for coupon in coupons_raw:
+        secid = coupon.get("secid")
+        if secid:
+            if secid not in coupons_by_secid:
+                coupons_by_secid[secid] = []
+            coupons_by_secid[secid].append(coupon)
+    
+    # Для каждой облигации находим ближайший купон и извлекаем value
+    result: Dict[str, Optional[float]] = {}
+    for secid in secids:
+        coupons = coupons_by_secid.get(secid, [])
+        closest_coupon = _find_closest_coupon(coupons, current_date)
+        
+        if closest_coupon:
+            value = closest_coupon.get("value")
+            # Преобразуем value в float, если возможно
+            if value is not None:
+                try:
+                    result[secid] = float(value)
+                except (ValueError, TypeError):
+                    result[secid] = None
+            else:
+                result[secid] = None
+        else:
+            # Купон не найден - ставим None (прочерк)
+            result[secid] = None
+    
+    return result
 
 
 def _row_to_bond_list_item(
@@ -183,8 +288,18 @@ def get_bonds_list(
         except Exception:
             continue
 
-    # Фильтрация по рейтингу теперь выполняется на уровне БД в методе select
-    # Удалена фильтрация в сервисном слое для повышения производительности
+    # Получаем купоны из таблицы coupons для всех облигаций
+    # Используем текущую дату для фильтрации и выбора ближайшего купона
+
+    current_date = date.today()
+    secids = [b.SECID for b in bonds if b.SECID]
+    dbcoupon = DBCoupon()
+    coupons_map = _get_coupons_for_bonds(dbcoupon, secids, current_date)
+    
+    # Обновляем COUPONVALUE для каждой облигации из данных купонов
+    for bond in bonds:
+        if bond.SECID in coupons_map:
+            bond.COUPONVALUE = coupons_map[bond.SECID]
 
     # Фильтр по эмитенту
     if emitent_title and str(emitent_title).strip():

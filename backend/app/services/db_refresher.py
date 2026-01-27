@@ -539,8 +539,9 @@ class DBBonds:
         has_put_option = 1 if raw_data.get("PUTOPTIONDATE") else 0
         has_call_option = 1 if raw_data.get("CALLOPTIONDATE") else 0
         
-        # Получаем текущую цену (PREVPRICE или PREVWAPRICE)
-        current_price = raw_data.get("PREVPRICE") or raw_data.get("PREVWAPRICE")
+        # Получаем текущую цену из marketdata_yields.PRICE, с fallback на PREVPRICE или PREVWAPRICE
+        # PRICE из marketdata_yields - это цена, по которой была рассчитана доходность
+        current_price = raw_data.get("PRICE") or raw_data.get("PREVPRICE") or raw_data.get("PREVWAPRICE")
         
         # Получаем yield_to_maturity
         yield_to_maturity = raw_data.get("YIELDATPREVWAPRICE")
@@ -1353,9 +1354,9 @@ class DBCoupon:
         create_table_sql = """
         CREATE TABLE IF NOT EXISTS coupons (
             secid TEXT NOT NULL,
-            coupondate TEXT,
-            recorddate TEXT,
-            startdate TEXT,
+            coupondate DATE,
+            recorddate DATE,
+            startdate DATE,
             initialfacevalue INTEGER,
             facevalue INTEGER,
             faceunit TEXT,
@@ -1436,6 +1437,7 @@ class DBCoupon:
         При отсутствии полей в JSON:
         - Для текстовых полей используется None (NULL)
         - Для числовых полей используется 0
+        - Для полей дат (coupondate, recorddate, startdate) используется None или преобразование в формат DATE
         
         Args:
             raw_data: Словарь с сырыми данными купона из JSON
@@ -1445,21 +1447,43 @@ class DBCoupon:
         """
         # Извлекаем обязательные поля для составного ключа
         secid = raw_data.get("secid")
-        coupondate = raw_data.get("coupondate")
+        coupondate_str = raw_data.get("coupondate")
         
-        if not secid or not coupondate:
+        if not secid or not coupondate_str:
             self.logger.warning(
                 f"Пропущена запись купона: отсутствует secid или coupondate. "
                 f"Данные: {raw_data}"
             )
             return None
         
+        # Преобразуем даты из строк в объекты date, затем обратно в строки для хранения в БД
+        # SQLite хранит DATE как TEXT в формате YYYY-MM-DD
+        def parse_date(date_str: Optional[str]) -> Optional[str]:
+            """Преобразует строку даты в формат YYYY-MM-DD для хранения в БД"""
+            if not date_str:
+                return None
+            try:
+                # Парсим дату из строки (может быть в разных форматах)
+                if isinstance(date_str, str):
+                    # Пробуем разные форматы
+                    for fmt in ["%Y-%m-%d", "%d.%m.%Y", "%Y/%m/%d"]:
+                        try:
+                            parsed_date = datetime.strptime(date_str, fmt).date()
+                            return parsed_date.isoformat()  # Возвращаем в формате YYYY-MM-DD
+                        except ValueError:
+                            continue
+                    # Если не удалось распарсить, возвращаем как есть (если уже в формате YYYY-MM-DD)
+                    return date_str if len(date_str) == 10 and date_str[4] == '-' and date_str[7] == '-' else None
+                return None
+            except Exception:
+                return None
+        
         # Преобразуем данные с обработкой отсутствующих полей
         transformed = {
             "secid": secid,
-            "coupondate": coupondate if coupondate else None,
-            "recorddate": raw_data.get("recorddate") if raw_data.get("recorddate") else None,
-            "startdate": raw_data.get("startdate") if raw_data.get("startdate") else None,
+            "coupondate": parse_date(coupondate_str),
+            "recorddate": parse_date(raw_data.get("recorddate")),
+            "startdate": parse_date(raw_data.get("startdate")),
             "initialfacevalue": raw_data.get("initialfacevalue") if raw_data.get("initialfacevalue") is not None else 0,
             "facevalue": raw_data.get("facevalue") if raw_data.get("facevalue") is not None else 0,
             "faceunit": raw_data.get("faceunit") if raw_data.get("faceunit") else None,
@@ -1523,48 +1547,110 @@ class DBCoupon:
             self.logger.error(f"Ошибка при вставке данных в таблицу coupons: {e}", exc_info=True)
             raise
     
-    def fetch_coupons_raw(self, secids: List[str]) -> List[Dict[str, Any]]:
+    def fetch_coupons_raw(
+        self, 
+        secids: Optional[List[str]] = None, 
+        from_date: Optional[str] = None, 
+        till_date: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
         """
-        Выполняет SELECT по таблице coupons для указанных secid.
+        Выполняет SELECT по таблице coupons с динамической фильтрацией.
         Возвращает сырые строки в виде списка словарей (ключи — имена колонок).
         
+        Логика работы фильтров по датам:
+        - Если from_date не задан (None), метод отбирает все записи от начала истории до till_date включительно
+        - Если till_date не задан (None), метод отбирает все записи начиная с from_date до конца истории
+        - Если оба параметра заданы, метод отбирает записи в указанном диапазоне [from_date, till_date] включительно
+        - Если оба параметра не заданы, метод возвращает все записи для указанного secid
+        
         Args:
-            secids: Список идентификаторов облигаций (secid) для выборки купонов
+            secids: Список идентификаторов облигаций (secid) для выборки купонов. 
+                   Если None или пустой список, фильтрация по secid не применяется.
+            from_date: Начальная дата диапазона в формате YYYY-MM-DD (включительно). 
+                      Если None, фильтр не применяется.
+            till_date: Конечная дата диапазона в формате YYYY-MM-DD (включительно). 
+                      Если None, фильтр не применяется.
         
         Returns:
             Список словарей с данными купонов. Каждый словарь содержит все поля таблицы coupons.
-            Если таблица не существует или список secids пуст, возвращает пустой список.
+            Если таблица не существует, возвращает пустой список.
         
         Raises:
             sqlite3.Error: Если произошла ошибка при работе с БД
+            ValueError: Если формат даты некорректен
         """
-        if not secids:
-            self.logger.warning("Список secids пуст, fetch_coupons_raw возвращает []")
-            return []
-        
         if not self._table_exists("coupons"):
             self.logger.warning("Таблица coupons не существует, fetch_coupons_raw возвращает []")
             return []
         
-        # Формируем SQL запрос с IN для фильтрации по secid
-        placeholders = ",".join("?" * len(secids))
-        sql = f"""
+        # Валидация и нормализация дат
+        if from_date:
+            try:
+                # Проверяем формат даты и нормализуем
+                datetime.strptime(from_date, "%Y-%m-%d")
+            except ValueError:
+                raise ValueError(f"Неверный формат from_date: {from_date}. Ожидается YYYY-MM-DD")
+        
+        if till_date:
+            try:
+                # Проверяем формат даты и нормализуем
+                datetime.strptime(till_date, "%Y-%m-%d")
+            except ValueError:
+                raise ValueError(f"Неверный формат till_date: {till_date}. Ожидается YYYY-MM-DD")
+        
+        # Формируем SQL запрос динамически
+        sql = """
         SELECT 
             secid, coupondate, recorddate, startdate, initialfacevalue,
             facevalue, faceunit, value, valueprc, value_rub
-        FROM coupons 
-        WHERE secid IN ({placeholders})
-        ORDER BY secid, coupondate
+        FROM coupons
         """
+        
+        conditions = []
+        params = []
+        
+        # Фильтрация по secid
+        if secids and len(secids) > 0:
+            placeholders = ",".join("?" * len(secids))
+            conditions.append(f"secid IN ({placeholders})")
+            params.extend(secids)
+        
+        # Фильтрация по датам
+        # coupondate хранится как DATE в формате YYYY-MM-DD
+        if from_date:
+            conditions.append("coupondate >= ?")
+            params.append(from_date)
+        
+        if till_date:
+            conditions.append("coupondate <= ?")
+            params.append(till_date)
+        
+        # Добавляем условия WHERE если есть фильтры
+        if conditions:
+            sql += " WHERE " + " AND ".join(conditions)
+        
+        # Добавляем сортировку
+        sql += " ORDER BY secid, coupondate"
         
         try:
             with sqlite3.connect(self.db_path) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
-                cursor.execute(sql, secids)
+                cursor.execute(sql, params)
                 rows = cursor.fetchall()
                 result = [dict(row) for row in rows]
-                self.logger.debug(f"Выбрано {len(result)} записей купонов для {len(secids)} облигаций")
+                
+                # Формируем информативное сообщение для логирования
+                filter_info = []
+                if secids and len(secids) > 0:
+                    filter_info.append(f"secids={len(secids)}")
+                if from_date:
+                    filter_info.append(f"from={from_date}")
+                if till_date:
+                    filter_info.append(f"till={till_date}")
+                
+                filter_str = ", ".join(filter_info) if filter_info else "без фильтров"
+                self.logger.debug(f"Выбрано {len(result)} записей купонов ({filter_str})")
                 return result
         except sqlite3.Error as e:
             self.logger.error(f"Ошибка при fetch_coupons_raw: {e}", exc_info=True)
