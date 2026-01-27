@@ -19,10 +19,8 @@ import orjson
 from app.models.bond import BondListItem
 from app.models.filters import BondFilters
 from app.models.responses import BondsListResponse
-from app.services.db_refresher import DBBonds
+from app.services.db_refresher import DBBonds, DBCoupon
 from app.services.emitent_service import get_emitent_service
-
-from backend.app.services.db_refresher import DBCoupon
 
 
 def _load_mappings(data_dir: Path) -> Tuple[Dict[int, str], Dict[int, str]]:
