@@ -1,3 +1,10 @@
+"""Сервис для работы с данными рейтингов облигаций из API MOEX.
+
+Этот модуль содержит класс RatingService для загрузки, кэширования и управления
+данными о рейтингах облигаций из API Московской биржи. Данные сохраняются в JSON
+файл и обновляются при необходимости.
+"""
+
 import json
 from datetime import date, timedelta
 from pathlib import Path
@@ -10,15 +17,42 @@ from app.services.emitent_service import get_emitent_service
 
 
 class RatingService:
-    """Service for handling bond rating data from MOEX website"""
+    """Сервис для работы с данными рейтингов облигаций из API MOEX.
+    
+    Класс обеспечивает загрузку данных о рейтингах облигаций из API Московской биржи,
+    кэширование данных в JSON файл и управление обновлением данных. Поддерживает
+    получение рейтингов по SECID и BOARDID, автоматическое определение emitent_id
+    и специальную обработку ОФЗ (автоматическое присвоение рейтинга AAA).
+    
+    Attributes:
+        data_dir: Путь к директории с JSON файлами данных.
+        rating_file: Путь к файлу для хранения данных о рейтингах.
+        _rating_cache: Кэш загруженных данных о рейтингах.
+    """
     
     def __init__(self, data_dir: Path):
+        """Инициализирует сервис для работы с рейтингами.
+        
+        Args:
+            data_dir: Путь к директории с JSON файлами данных.
+        """
         self.data_dir = data_dir
         self.rating_file = data_dir / "bonds_rating.json"
         self._rating_cache: Optional[Dict[str, Dict]] = None
     
     def _load_rating_data(self) -> Dict[str, Dict]:
-        """Load rating data from JSON file"""
+        """Загружает данные о рейтингах из JSON файла.
+        
+        Загружает данные из файла bonds_rating.json с кэшированием. При первом
+        вызове загружает данные из файла и сохраняет в кэш. При последующих вызовах
+        возвращает данные из кэша.
+        
+        Returns:
+            Словарь с данными о рейтингах. Ключ - SECID облигации, значение -
+            словарь с данными рейтингов (новый формат: {"last_updated": "...", "ratings": [...]}
+            или старый формат: {"cci_rating_securities": [...]} или прямой массив).
+            Если файл не существует или поврежден, возвращает пустой словарь и создает новый файл.
+        """
         if self._rating_cache is not None:
             print(f"[RATING SERVICE] Using cached rating data (in-memory cache)")
             return self._rating_cache
@@ -52,14 +86,21 @@ class RatingService:
         return self._rating_cache
     
     def _filter_rating_keys(self, rating_item: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Filter rating item to keep only required keys.
+        """Фильтрует запись рейтинга, оставляя только необходимые ключи.
+        
+        Извлекает из словаря рейтинга только поля, необходимые для работы приложения.
+        Упрощает структуру данных для использования в других компонентах.
         
         Args:
-            rating_item: Rating dictionary with all fields
-            
+            rating_item: Словарь с данными рейтинга со всеми полями из API MOEX.
+        
         Returns:
-            Filtered dictionary with only required keys
+            Отфильтрованный словарь с только необходимыми ключами:
+            - agency_id: Идентификатор агентства рейтинга
+            - agency_name_short_ru: Краткое название агентства на русском
+            - rating_level_id: Идентификатор уровня рейтинга
+            - rating_date: Дата присвоения рейтинга
+            - rating_level_name_short_ru: Краткое название уровня рейтинга на русском
         """
         required_keys = [
             "agency_id",
@@ -72,11 +113,14 @@ class RatingService:
         return {key: rating_item.get(key) for key in required_keys if key in rating_item}
     
     def _create_empty_rating(self) -> List[Dict[str, Any]]:
-        """
-        Create empty rating entry with default values.
+        """Создает пустую запись рейтинга со значениями по умолчанию.
+        
+        Используется когда рейтинг не найден или произошла ошибка при загрузке.
+        Возвращает список с одной записью рейтинга с пустыми значениями.
         
         Returns:
-            List with one empty rating dictionary
+            Список с одним словарем рейтинга со значениями по умолчанию
+            (все поля пустые или равны 0).
         """
         return [
             {
@@ -89,13 +133,13 @@ class RatingService:
         ]
     
     def _create_ofz_aaa_rating(self) -> List[Dict[str, Any]]:
-        """
-        Create AAA rating for OFZ (Government bonds) with emitent_id = 1228.
+        """Создает рейтинг AAA для ОФЗ (государственных облигаций) с emitent_id = 1228.
         
-        OFZ bonds are automatically assigned AAA rating without API request.
+        ОФЗ облигации автоматически получают рейтинг AAA без запроса к API MOEX,
+        так как они являются государственными облигациями с наивысшим уровнем надежности.
         
         Returns:
-            List with one AAA rating dictionary
+            Список с одним словарем рейтинга AAA с полем agency_name_short_ru = "Автоматический".
         """
         return [
             {
@@ -108,14 +152,18 @@ class RatingService:
         ]
     
     def _is_data_stale(self, last_updated: str) -> bool:
-        """
-        Check if data is older than one month.
+        """Проверяет, устарели ли данные (старше одного месяца).
+        
+        Определяет, превышает ли возраст данных 30 дней. Используется для принятия
+        решения об обновлении данных из API MOEX.
         
         Args:
-            last_updated: Date string in ISO format (YYYY-MM-DD)
-            
+            last_updated: Строка с датой последнего обновления в формате ISO (YYYY-MM-DD).
+        
         Returns:
-            True if data is older than one month, False otherwise
+            True если данные старше 30 дней, False в противном случае.
+            Если дата некорректна или не может быть распознана, возвращает True
+            (данные считаются устаревшими).
         """
         try:
             last_date = date.fromisoformat(last_updated)
@@ -130,8 +178,12 @@ class RatingService:
             # If date is invalid, consider data stale to force update
             return True
     
-    def _save_rating_data(self):
-        """Save rating data to JSON file"""
+    def _save_rating_data(self) -> None:
+        """Сохраняет данные о рейтингах в JSON файл.
+        
+        Записывает кэшированные данные в файл bonds_rating.json с форматированием
+        (отступы и перенос строки). Создает директорию для файла при необходимости.
+        """
         if self._rating_cache is None:
             self._rating_cache = {}
         
@@ -148,14 +200,16 @@ class RatingService:
         print(f"[RATING SERVICE] File saved successfully, size: {file_size} bytes")
     
     def _get_emitent_id_from_cache(self, secid: str) -> Optional[str]:
-        """
-        Get emitent ID from cached emitent data (bonds_emitent.json).
+        """Получает emitent_id из кэшированных данных эмитента (bonds_emitent.json).
+        
+        Ищет emitent_id для облигации в кэше данных эмитентов. Используется для
+        определения emitent_id перед запросом рейтингов к API MOEX.
         
         Args:
-            secid: Security ID
-            
+            secid: Идентификатор облигации (SECID) для поиска emitent_id.
+        
         Returns:
-            Emitent ID (as string) or None if not found in cache
+            Emitent ID (строка) или None, если данные не найдены в кэше.
         """
         try:
             emitent_service = get_emitent_service()
@@ -180,14 +234,20 @@ class RatingService:
             return None
     
     def _extract_emitent_id_from_api(self, secid: str) -> Optional[str]:
-        """
-        Extract emitent ID from MOEX API by fetching securities data.
+        """Извлекает emitent_id из API MOEX путем загрузки данных об облигации.
+        
+        Выполняет HTTP запрос к API MOEX для получения данных об облигации по SECID
+        и извлекает emitent_id из секции description ответа.
         
         Args:
-            secid: Security ID
-            
+            secid: Идентификатор облигации (SECID) для запроса к API MOEX.
+        
         Returns:
-            Emitent ID (as string) or None if not found
+            Emitent ID (строка) или None, если emitent_id не найден в ответе API.
+        
+        Raises:
+            RuntimeError: Если не удалось загрузить данные (сетевая ошибка, таймаут)
+                или если формат ответа API неожиданный.
         """
         print(f"[RATING SERVICE] Fetching emitent ID from MOEX API for SECID: {secid}")
         
@@ -257,15 +317,29 @@ class RatingService:
         return None
     
     def _fetch_rating_via_api(self, secid: str, emitent_id: str) -> Optional[List[Dict[str, Any]]]:
-        """
-        Fetch rating data from MOEX API using emitent ID.
+        """Загружает данные рейтинга из API MOEX используя emitent_id.
+        
+        Выполняет HTTP запрос к API MOEX для получения рейтингов облигации по SECID
+        и emitent_id. Парсит ответ в различных форматах и извлекает список рейтингов
+        из секции cci_rating_securities.
         
         Args:
-            secid: Security ID
-            emitent_id: Emitent ID extracted from MOEX API
-            
+            secid: Идентификатор облигации (SECID) для запроса рейтингов.
+            emitent_id: Идентификатор эмитента (emitent_id) для формирования URL запроса.
+        
         Returns:
-            List of rating dictionaries or None if not found
+            Список словарей с данными рейтингов (отфильтрованных по необходимым ключам)
+            или None, если рейтинги не найдены. Если все рейтинги отфильтрованы,
+            возвращает пустой рейтинг.
+        
+        Raises:
+            RuntimeError: Если не удалось загрузить данные (сетевая ошибка, таймаут)
+                или если формат ответа API неожиданный.
+        
+        Note:
+            API MOEX может возвращать данные в различных форматах (список, словарь,
+            вложенные структуры). Метод обрабатывает все возможные форматы и извлекает
+            данные из секции cci_rating_securities.
         """
         # Construct API URL
         api_url = (
@@ -411,21 +485,26 @@ class RatingService:
         return None
     
     def _fetch_rating_from_moex(self, secid: str, boardid: str) -> Optional[List[Dict[str, Any]]]:
-        """
-        Fetch rating data from MOEX by SECID and BOARDID.
+        """Загружает данные рейтинга из MOEX по SECID и BOARDID.
         
-        Strategy:
-        1. First, try to get emitent ID from cached emitent data (bonds_emitent.json)
-        2. If not found in cache, fetch from MOEX API
-        3. If emitent_id = 1228 (OFZ), automatically assign AAA rating without API request
-        4. Otherwise, fetch rating data via MOEX API using emitent ID
+        Выполняет многошаговую стратегию для получения рейтинга облигации:
+        1. Сначала пытается получить emitent_id из кэша данных эмитентов
+        2. Если не найден в кэше, загружает из API MOEX
+        3. Если emitent_id = 1228 (ОФЗ), автоматически присваивает рейтинг AAA
+        4. Иначе загружает данные рейтинга через API MOEX используя emitent_id
         
         Args:
-            secid: Security ID
-            boardid: Board ID (not used in new implementation, kept for compatibility)
-            
+            secid: Идентификатор облигации (SECID) для поиска рейтинга.
+            boardid: Идентификатор торговой площадки (BOARDID). Не используется
+                в новой реализации, оставлен для совместимости.
+        
         Returns:
-            List of rating dictionaries or None if not found
+            Список словарей с данными рейтингов или None, если рейтинг не найден.
+            Если emitent_id не найден или произошла ошибка, возвращает пустой рейтинг.
+        
+        Note:
+            ОФЗ облигации (emitent_id = 1228) автоматически получают рейтинг AAA
+            без запроса к API MOEX, так как они являются государственными облигациями.
         """
         print(f"[RATING SERVICE] Fetching rating data from MOEX")
         print(f"[RATING SERVICE] SECID: {secid}, BOARDID: {boardid}")
@@ -475,26 +554,35 @@ class RatingService:
         return rating_data
     
     def get_rating(self, secid: str, boardid: str, force_refresh: bool = False, force_update_all: bool = False) -> List[Dict[str, Any]]:
-        """
-        Get rating data for a specific bond by SECID and BOARDID.
+        """Получает данные рейтинга для конкретной облигации по SECID и BOARDID.
         
-        First checks local file. If force_refresh is True, fetches from MOEX website
-        when data is missing or stale. If force_refresh is False, only returns cached data.
+        Сначала проверяет локальный файл. Если force_refresh=True, загружает из API MOEX
+        когда данные отсутствуют или устарели. Если force_refresh=False, возвращает
+        только кэшированные данные (без сетевых запросов).
         
         Args:
-            secid: Security ID
-            boardid: Board ID
-            force_refresh: If True, fetch from MOEX when data is missing or stale.
-                          If False, only return cached data (no network requests).
-            force_update_all: If True, ignore last_updated date and always fetch from MOEX
-                             when force_refresh is True. If False, respect date check.
-            
+            secid: Идентификатор облигации (SECID) для получения рейтинга.
+            boardid: Идентификатор торговой площадки (BOARDID). Не используется
+                в новой реализации, оставлен для совместимости.
+            force_refresh: Если True, загружает из API MOEX когда данные отсутствуют
+                или устарели (старше одного месяца). Если False, возвращает только
+                кэшированные данные без сетевых запросов.
+            force_update_all: Если True, игнорирует дату last_updated и всегда загружает
+                из API MOEX когда force_refresh=True. Если False, учитывает проверку даты.
+        
         Returns:
-            List of rating dictionaries with keys: agency_id, agency_name_short_ru,
-            rating_level_id, rating_date, rating_level_name_short_ru
-            
-        Raises:
-            RuntimeError: If data cannot be fetched or parsed (only when force_refresh=True)
+            Список словарей с данными рейтингов, каждый словарь содержит ключи:
+            - agency_id: Идентификатор агентства рейтинга
+            - agency_name_short_ru: Краткое название агентства на русском
+            - rating_level_id: Идентификатор уровня рейтинга
+            - rating_date: Дата присвоения рейтинга
+            - rating_level_name_short_ru: Краткое название уровня рейтинга на русском
+            Если рейтинг не найден, возвращается список с одной пустой записью рейтинга.
+        
+        Note:
+            Данные считаются устаревшими если они старше 30 дней. Поддерживаются
+            различные форматы кэшированных данных (новый формат с last_updated,
+            старый формат с cci_rating_securities, прямой массив).
         """
         print(f"[RATING SERVICE] Getting rating for SECID={secid}, BOARDID={boardid}, force_refresh={force_refresh}, force_update_all={force_update_all}")
         
@@ -621,14 +709,28 @@ class RatingService:
 _rating_service: Optional[RatingService] = None
 
 
-def init_rating_service(data_dir: Path):
-    """Initialize the rating service singleton"""
+def init_rating_service(data_dir: Path) -> None:
+    """Инициализирует singleton экземпляр сервиса рейтингов.
+    
+    Создает глобальный экземпляр RatingService с указанной директорией данных.
+    Должен быть вызван перед использованием get_rating_service().
+    
+    Args:
+        data_dir: Путь к директории с JSON файлами данных.
+    """
     global _rating_service
     _rating_service = RatingService(data_dir)
 
 
 def get_rating_service() -> RatingService:
-    """Get the rating service instance"""
+    """Получает singleton экземпляр сервиса рейтингов.
+    
+    Returns:
+        Экземпляр RatingService для работы с данными рейтингов облигаций.
+    
+    Raises:
+        RuntimeError: Если сервис не был инициализирован через init_rating_service().
+    """
     if _rating_service is None:
         raise RuntimeError("Rating service not initialized")
     return _rating_service

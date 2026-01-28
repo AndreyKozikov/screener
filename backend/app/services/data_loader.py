@@ -1,3 +1,10 @@
+"""Загрузчик данных из JSON файлов с кэшированием.
+
+Этот модуль содержит класс DataLoader для загрузки и кэширования данных об облигациях
+из JSON файлов. Обеспечивает загрузку данных облигаций, рейтингов, типов облигаций
+и метаданных (маппинги колонок, описания полей).
+"""
+
 from datetime import date, datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Any
@@ -13,9 +20,27 @@ from app.utils.logger import get_data_update_logger
 
 
 class DataLoader:
-    """Handles loading and caching of JSON data files"""
+    """Загрузчик данных из JSON файлов с кэшированием.
+    
+    Класс обеспечивает загрузку данных об облигациях из JSON файлов (bonds.json,
+    bonds_rating.json, bonds_emitent.json) с кэшированием для повышения производительности.
+    Предоставляет методы для получения списка облигаций, детальной информации об облигациях,
+    маппингов колонок и описаний полей.
+    
+    Attributes:
+        data_dir: Путь к директории с JSON файлами данных.
+        _bonds_cache: Кэш списка облигаций (BondListItem).
+        _details_cache: Кэш детальной информации об облигациях.
+        _columns_cache: Кэш маппингов колонок (поле -> отображаемое имя).
+        _descriptions_cache: Кэш описаний полей.
+    """
     
     def __init__(self, data_dir: Path):
+        """Инициализирует загрузчик данных.
+        
+        Args:
+            data_dir: Путь к директории с JSON файлами данных.
+        """
         self.data_dir = data_dir
         self._bonds_cache: Optional[List[BondListItem]] = None
         self._details_cache: Optional[Dict[str, Dict]] = None
@@ -23,38 +48,90 @@ class DataLoader:
         self._descriptions_cache: Optional[Dict] = None
     
     async def get_bonds(self) -> List[BondListItem]:
-        """Load all bonds (cached)"""
+        """Получает список всех облигаций (с кэшированием).
+        
+        Загружает список облигаций из файла bonds.json и преобразует их в объекты
+        BondListItem. Данные кэшируются в памяти для повышения производительности.
+        
+        Returns:
+            Список объектов BondListItem с данными облигаций. Облигации с режимом
+            торгов SPOB исключаются из списка.
+        """
         if self._bonds_cache is None:
             self._load_bonds_data()
         return self._bonds_cache
     
     async def get_bond_details(self) -> Dict[str, Dict]:
-        """Load detailed bond information (cached)"""
+        """Получает детальную информацию об облигациях (с кэшированием).
+        
+        Загружает детальную информацию об облигациях из файла bonds.json, включая
+        данные из секций securities, marketdata и marketdata_yields. Данные кэшируются
+        в памяти для повышения производительности.
+        
+        Returns:
+            Словарь, где ключ - SECID облигации, значение - словарь с детальной
+            информацией, содержащий секции:
+            - securities: Данные из секции securities
+            - marketdata: Данные из секции marketdata
+            - marketdata_yields: Список данных из секции marketdata_yields
+        """
         if self._details_cache is None:
             self._load_bonds_data()
         return self._details_cache
     
     async def get_column_mapping(self) -> Dict[str, str]:
-        """Load column name mappings (cached)"""
+        """Получает маппинг колонок (с кэшированием).
+        
+        Загружает маппинг имен полей на отображаемые имена из файла columns.json.
+        Данные кэшируются в памяти для повышения производительности.
+        
+        Returns:
+            Словарь, где ключ - имя поля, значение - отображаемое имя колонки.
+        """
         if self._columns_cache is None:
             self._columns_cache = self._load_column_mapping()
         return self._columns_cache
     
     async def get_descriptions(self) -> Dict:
-        """Load field descriptions (cached)"""
+        """Получает описания полей (с кэшированием).
+        
+        Загружает описания полей из файла describe.json. Данные кэшируются в памяти
+        для повышения производительности.
+        
+        Returns:
+            Словарь с описаниями полей из файла describe.json.
+        """
         if self._descriptions_cache is None:
             self._descriptions_cache = self._load_descriptions()
         return self._descriptions_cache
     
     def refresh_bonds_dataset(self, source_url: str) -> Dict[str, int]:
-        """
-        Download the latest bonds dataset from an external source and refresh caches.
+        """Загружает последний набор данных об облигациях из внешнего источника.
+        
+        Выполняет HTTP запрос к указанному URL для получения актуальных данных об
+        облигациях в формате JSON. Сохраняет данные в файл bonds.json и обновляет
+        кэши для немедленного использования новых данных.
         
         Args:
-            source_url: URL to fetch the bonds JSON payload from.
+            source_url: URL для загрузки JSON данных об облигациях.
+                Ожидается формат, совместимый с bonds.json (содержит секции
+                securities, marketdata, marketdata_yields).
         
         Returns:
-            Summary information about the downloaded dataset.
+            Словарь с информацией о загруженном наборе данных, содержащий:
+            - securities: Количество записей в секции securities
+            - marketdata: Количество записей в секции marketdata
+            - marketdata_yields: Количество записей в секции marketdata_yields
+        
+        Raises:
+            RuntimeError: Если не удалось загрузить данные (сетевая ошибка, таймаут)
+                или если получен некорректный JSON.
+            OSError: Если не удалось записать данные в файл bonds.json.
+        
+        Note:
+            После загрузки данных также выполняется запись в корневой файл bonds.json
+            для совместимости с вспомогательными инструментами (например, Streamlit app).
+            Ошибка записи корневого файла не прерывает процесс обновления.
         """
         logger = get_data_update_logger()
         logger.info(f"[REFRESH BONDS] Starting bonds dataset refresh from {source_url}")
@@ -123,8 +200,23 @@ class DataLoader:
         logger.info(f"[REFRESH BONDS] Refresh completed successfully. Summary: {summary}")
         return summary
     
-    def _load_bonds_data(self):
-        """Load bonds.json and parse into structures"""
+    def _load_bonds_data(self) -> None:
+        """Загружает bonds.json и парсит данные в структуры.
+        
+        Загружает данные из файла bonds.json, парсит секции securities, marketdata
+        и marketdata_yields, объединяет данные по SECID и создает объекты BondListItem
+        для списка облигаций и словари для детальной информации. Также загружает и
+        добавляет данные о рейтингах и типах облигаций из дополнительных файлов.
+        
+        Raises:
+            IOError: Если не удалось прочитать файл bonds.json.
+            orjson.JSONDecodeError: Если файл bonds.json содержит некорректный JSON.
+        
+        Note:
+            Облигации с режимом торгов SPOB исключаются из списка. Данные о купонах
+            загружаются из CouponLoader, если он инициализирован. Рейтинги загружаются
+            из bonds_rating.json, типы облигаций - из bonds_emitent.json.
+        """
         logger = get_data_update_logger()
         bonds_path = self.data_dir / "bonds.json"
         
@@ -356,7 +448,16 @@ class DataLoader:
             logger.info(f"[LOAD BONDS DATA] Skipped {skipped_spob_count} bonds with trading mode SPOB")
     
     def _load_column_mapping(self) -> Dict[str, str]:
-        """Load columns.json and build field -> display name mapping"""
+        """Загружает columns.json и строит маппинг полей на отображаемые имена.
+        
+        Загружает данные из файла columns.json и создает словарь для преобразования
+        имен полей в отображаемые имена колонок. Обрабатывает секции securities,
+        marketdata и marketdata_yields.
+        
+        Returns:
+            Словарь, где ключ - имя поля, значение - отображаемое имя колонки.
+            Если файл не существует или некорректен, возвращает пустой словарь.
+        """
         columns_path = self.data_dir / "columns.json"
         
         with open(columns_path, 'rb') as f:
@@ -385,19 +486,33 @@ class DataLoader:
         return mapping
     
     def _load_descriptions(self) -> Dict:
-        """Load describe.json"""
+        """Загружает describe.json с описаниями полей.
+        
+        Returns:
+            Словарь с описаниями полей из файла describe.json.
+            Если файл не существует или некорректен, может вызвать исключение.
+        """
         desc_path = self.data_dir / "describe.json"
         
         with open(desc_path, 'rb') as f:
             return orjson.loads(f.read())
     
-    def clear_bonds_cache(self):
-        """Clear bonds cache to force reload with updated coupon data"""
+    def clear_bonds_cache(self) -> None:
+        """Очищает кэш облигаций для принудительной перезагрузки.
+        
+        Сбрасывает кэши списка облигаций и детальной информации. Используется
+        после обновления данных о купонах для принудительной перезагрузки данных
+        с актуальными значениями купонов.
+        """
         self._bonds_cache = None
         self._details_cache = None
     
-    def clear_metadata_cache(self):
-        """Clear metadata cache (columns and descriptions) to force reload"""
+    def clear_metadata_cache(self) -> None:
+        """Очищает кэш метаданных (колонки и описания) для принудительной перезагрузки.
+        
+        Сбрасывает кэши маппингов колонок и описаний полей. Используется после
+        обновления метаданных для принудительной перезагрузки данных.
+        """
         logger = get_data_update_logger()
         logger.info("[CLEAR METADATA CACHE] Clearing metadata cache (columns and descriptions)")
         self._columns_cache = None
@@ -406,7 +521,18 @@ class DataLoader:
     
     @staticmethod
     def _parse_int(value: any) -> Optional[int]:
-        """Parse integer value from various formats"""
+        """Парсит целочисленное значение из различных форматов.
+        
+        Преобразует значение в целое число, поддерживая различные типы входных данных
+        (int, str, float). Обрабатывает некорректные значения.
+        
+        Args:
+            value: Значение для преобразования в целое число. Может быть int, str, float
+                или другим типом.
+        
+        Returns:
+            Целое число или None, если значение не может быть преобразовано в int.
+        """
         if value is None:
             return None
         if isinstance(value, int):
@@ -422,7 +548,19 @@ class DataLoader:
             return None
     
     def _load_ratings_map(self) -> Dict[str, Dict[str, Any]]:
-        """Load ratings from bonds_rating.json and return as a map with all ratings"""
+        """Загружает рейтинги из bonds_rating.json и возвращает как словарь.
+        
+        Загружает данные о рейтингах облигаций из файла bonds_rating.json и создает
+        словарь для быстрого доступа. Поддерживает различные форматы данных (новый
+        формат с ключом "ratings", старый формат с ключом "cci_rating_securities",
+        прямой массив рейтингов).
+        
+        Returns:
+            Словарь, где ключ - SECID облигации, значение - словарь с данными:
+            - ratings: Список валидных рейтингов (с agency_name_short_ru)
+            - all_ratings: Список всех рейтингов (для выбора наихудшего)
+            Если файл не существует или некорректен, возвращает пустой словарь.
+        """
         ratings_path = self.data_dir / "bonds_rating.json"
         ratings_map = {}
         
@@ -472,14 +610,19 @@ class DataLoader:
         return ratings_map
     
     def _get_worst_rating(self, ratings_list: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-        """
-        Get worst rating from a list of ratings, excluding "Отозван" if other ratings exist.
+        """Получает наихудший рейтинг из списка рейтингов.
+        
+        Определяет наихудший рейтинг из списка, исключая рейтинги со значением "Отозван",
+        если есть другие рейтинги. Использует шкалу рейтингов для определения позиции
+        рейтинга.
         
         Args:
-            ratings_list: List of rating dictionaries
-            
+            ratings_list: Список словарей с рейтингами. Каждый словарь должен содержать
+                ключ "rating_level_name_short_ru" с уровнем рейтинга.
+        
         Returns:
-            Worst rating dictionary or None
+            Словарь с наихудшим рейтингом (с наибольшим индексом в шкале) или None,
+            если список пуст или не содержит валидных рейтингов.
         """
         if not ratings_list:
             return None
@@ -512,8 +655,17 @@ class DataLoader:
         
         return worst_rating
     
-    def _add_ratings_to_bonds(self, bonds_list: List[BondListItem], ratings_map: Dict[str, Dict[str, Any]]):
-        """Add ratings from ratings_map to bonds, selecting worst rating"""
+    def _add_ratings_to_bonds(self, bonds_list: List[BondListItem], ratings_map: Dict[str, Dict[str, Any]]) -> None:
+        """Добавляет рейтинги из ratings_map к облигациям, выбирая наихудший рейтинг.
+        
+        Для каждой облигации из списка добавляет все рейтинги и определяет наихудший
+        рейтинг, который сохраняется в полях RATING_AGENCY и RATING_LEVEL.
+        
+        Args:
+            bonds_list: Список объектов BondListItem для добавления рейтингов.
+            ratings_map: Словарь с рейтингами, где ключ - SECID облигации, значение -
+                словарь с ключами "all_ratings" (список всех рейтингов).
+        """
         ratings_added = 0
         for bond in bonds_list:
             if bond.SECID in ratings_map:
@@ -533,7 +685,16 @@ class DataLoader:
         print(f"[DATA LOADER] Added ratings to {ratings_added} bonds")
     
     def _load_bondtype_map(self) -> Dict[str, Optional[str]]:
-        """Load bond types from bonds_emitent.json and return as a map"""
+        """Загружает типы облигаций из bonds_emitent.json и возвращает как словарь.
+        
+        Загружает данные о типах облигаций из файла bonds_emitent.json и создает
+        словарь для быстрого доступа. Извлекает поле "type" из каждой записи эмитента.
+        
+        Returns:
+            Словарь, где ключ - SECID облигации, значение - тип облигации (строка)
+            или None, если тип отсутствует. Если файл не существует или некорректен,
+            возвращает пустой словарь.
+        """
         emitent_path = self.data_dir / "bonds_emitent.json"
         bondtype_map = {}
         
@@ -562,8 +723,16 @@ class DataLoader:
         
         return bondtype_map
     
-    def _add_bondtypes_to_bonds(self, bonds_list: List[BondListItem], bondtype_map: Dict[str, Optional[str]]):
-        """Add bond types from bondtype_map to bonds"""
+    def _add_bondtypes_to_bonds(self, bonds_list: List[BondListItem], bondtype_map: Dict[str, Optional[str]]) -> None:
+        """Добавляет типы облигаций из bondtype_map к облигациям.
+        
+        Для каждой облигации из списка устанавливает поле BONDTYPE из словаря типов.
+        
+        Args:
+            bonds_list: Список объектов BondListItem для добавления типов.
+            bondtype_map: Словарь с типами облигаций, где ключ - SECID облигации,
+                значение - тип облигации (строка) или None.
+        """
         bondtypes_added = 0
         for bond in bonds_list:
             if bond.SECID in bondtype_map:
@@ -574,7 +743,17 @@ class DataLoader:
     
     @staticmethod
     def _parse_date(date_str: str) -> Optional[date]:
-        """Parse date string from various formats"""
+        """Парсит строку даты в объект date.
+        
+        Преобразует строку с датой в формате YYYY-MM-DD в объект date.
+        Обрабатывает некорректные значения и специальное значение "0000-00-00".
+        
+        Args:
+            date_str: Строка с датой в формате YYYY-MM-DD.
+        
+        Returns:
+            Объект date или None, если строка некорректна, пуста или равна "0000-00-00".
+        """
         if not date_str or date_str == "0000-00-00":
             return None
         
@@ -588,14 +767,28 @@ class DataLoader:
 _data_loader: Optional[DataLoader] = None
 
 
-def init_data_loader(data_dir: Path):
-    """Initialize the data loader singleton"""
+def init_data_loader(data_dir: Path) -> None:
+    """Инициализирует singleton экземпляр загрузчика данных.
+    
+    Создает глобальный экземпляр DataLoader с указанной директорией данных.
+    Должен быть вызван перед использованием get_data_loader().
+    
+    Args:
+        data_dir: Путь к директории с JSON файлами данных.
+    """
     global _data_loader
     _data_loader = DataLoader(data_dir)
 
 
 def get_data_loader() -> DataLoader:
-    """Get the data loader instance"""
+    """Получает singleton экземпляр загрузчика данных.
+    
+    Returns:
+        Экземпляр DataLoader для работы с данными из JSON файлов.
+    
+    Raises:
+        RuntimeError: Если загрузчик не был инициализирован через init_data_loader().
+    """
     if _data_loader is None:
         raise RuntimeError("Data loader not initialized")
     return _data_loader

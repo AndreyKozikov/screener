@@ -1,6 +1,11 @@
+"""Роутеры для работы с данными ключевой ставки ЦБ РФ.
+
+Этот модуль содержит роутеры FastAPI для обработки HTTP запросов, связанных
+с данными ключевой ставки Центрального банка Российской Федерации. Включает
+endpoints для загрузки данных из ЦБ РФ, получения данных с фильтрацией по датам
+и экспорта данных в формате Markdown.
 """
-Router for Central Bank of Russia (CBR) key rate data endpoints.
-"""
+
 import asyncio
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Query
@@ -11,30 +16,38 @@ from app.services.keyrate_service import get_keyrate_service
 from app.utils.logger import get_data_update_logger
 
 router = APIRouter(prefix="/api/keyrate", tags=["keyrate"])
+"""Роутер FastAPI для обработки запросов к API ключевой ставки."""
+
+
 
 
 @router.post("/load")
 async def load_keyrate_data() -> Dict[str, float]:
-    """
-    Load key rate data from CBR HTML page and save to JSON file.
+    """Загружает данные ключевой ставки с HTML страницы ЦБ РФ и сохраняет в JSON файл.
     
-    This endpoint:
-    1. Loads existing data from JSON file (if exists)
-    2. Determines start date:
-       - If file exists and has data: uses last date from file
-       - If file doesn't exist or is corrupted: uses default date (17.09.2013)
-    3. Sets end date to current date
-    4. Fetches new data from CBR HTML page
-    5. Parses HTML tables using pandas.read_html with decimal="," and thousands=" "
-    6. Validates table structure (checks for "Дата" and "Ставка" columns)
-    7. Merges new data with existing data
-    8. Saves updated data to JSON file
+    Выполняет инкрементальное обновление данных ключевой ставки. Загружает только
+    новые данные с последней даты из существующего файла до текущей даты.
+    
+    Последовательность выполнения:
+        1. Загружает существующие данные из JSON файла (если существует)
+        2. Определяет начальную дату:
+           - Если файл существует и содержит данные: использует последнюю дату из файла
+           - Если файл не существует или поврежден: использует дату по умолчанию (17.09.2013)
+        3. Устанавливает конечную дату на текущую дату
+        4. Загружает новые данные с HTML страницы ЦБ РФ
+        5. Парсит HTML таблицы используя pandas.read_html с decimal="," и thousands=" "
+        6. Валидирует структуру таблицы (проверяет наличие колонок "Дата" и "Ставка")
+        7. Объединяет новые данные с существующими
+        8. Сохраняет обновленные данные в JSON файл
     
     Returns:
-        Dictionary with date (YYYY-MM-DD) as key and rate (float) as value
-        
+        Словарь со всеми данными ключевой ставки, где ключ - дата в формате YYYY-MM-DD,
+        значение - ключевая ставка (float) в процентах.
+    
     Raises:
-        HTTPException: If data cannot be loaded or parsed
+        HTTPException: Если формат таблицы не соответствует ожидаемому (статус 400),
+            если не удалось загрузить данные из ЦБ РФ (статус 502),
+            или если произошла другая ошибка (статус 500).
     """
     logger = get_data_update_logger()
     logger.info("[API /keyrate/load] Request received to load key rate data")
@@ -78,12 +91,36 @@ async def get_keyrate_data(
     date_from: Optional[str] = Query(None, description="Start date in DD.MM.YYYY format"),
     date_to: Optional[str] = Query(None, description="End date in DD.MM.YYYY format"),
 ) -> Dict[str, Any]:
-    """
-    Get key rate data filtered by date range.
+    """Получает данные ключевой ставки с фильтрацией по диапазону дат.
+    
+    Загружает данные ключевой ставки из JSON файла и применяет фильтрацию по
+    диапазону дат, если указаны параметры date_from и date_to.
+    
+    Args:
+        date_from: Начальная дата диапазона в формате DD.MM.YYYY (включительно).
+            Если не указана, фильтр не применяется.
+        date_to: Конечная дата диапазона в формате DD.MM.YYYY (включительно).
+            Если не указана, фильтр не применяется.
     
     Returns:
-        - If no filters (date_from and date_to are None): Dictionary with date (YYYY-MM-DD) as key and rate (float) as value
-        - If filters are provided: Dictionary with 'data' (array of records), 'count', 'date_from', 'date_to'
+        Если фильтры не указаны (date_from и date_to равны None):
+            Словарь с данными ключевой ставки, где ключ - дата в формате YYYY-MM-DD,
+            значение - ключевая ставка (float) в процентах.
+        
+        Если фильтры указаны:
+            Словарь с отфильтрованными данными, содержащий:
+            - data: Список словарей с записями, каждая содержит:
+              - Дата: Дата в формате YYYY-MM-DD
+              - Ключевая ставка, % годовых: Значение ключевой ставки
+            - count: Количество записей после фильтрации
+            - date_from: Начальная дата фильтра (если указана)
+            - date_to: Конечная дата фильтра (если указана)
+            Записи отсортированы по дате в порядке убывания (от новых к старым).
+    
+    Raises:
+        HTTPException: Если формат даты некорректен (статус 400),
+            если произошла ошибка при загрузке данных (статус 502),
+            или если произошла другая ошибка (статус 500).
     """
     logger = get_data_update_logger()
     logger.info(f"[API /keyrate/data] Request received, date_from={date_from}, date_to={date_to}")
@@ -170,10 +207,35 @@ async def download_keyrate_markdown(
     date_from: Optional[str] = Query(None, description="Start date in DD.MM.YYYY format"),
     date_to: Optional[str] = Query(None, description="End date in DD.MM.YYYY format"),
 ) -> Response:
-    """
-    Download key rate data as Markdown file.
+    """Скачивает данные ключевой ставки в формате Markdown.
     
-    Returns filtered data as Markdown table.
+    Загружает данные ключевой ставки из JSON файла, применяет фильтрацию по
+    диапазону дат (если указаны) и возвращает данные в формате Markdown таблицы
+    для скачивания.
+    
+    Args:
+        date_from: Начальная дата диапазона в формате DD.MM.YYYY (включительно).
+            Если не указана, фильтр не применяется.
+        date_to: Конечная дата диапазона в формате DD.MM.YYYY (включительно).
+            Если не указана, фильтр не применяется.
+    
+    Returns:
+        HTTP Response с Markdown файлом для скачивания, содержащим:
+        - Заголовок "# Ключевая ставка ЦБ"
+        - Таблицу Markdown с колонками:
+          - Дата: Дата в формате YYYY-MM-DD
+          - Ключевая ставка, % годовых: Значение ключевой ставки (форматируется
+            с 2 знаками после запятой)
+        Записи отсортированы по дате в порядке убывания (от новых к старым).
+    
+    Raises:
+        HTTPException: Если формат даты некорректен (статус 400),
+            если данные не найдены для указанного диапазона дат (статус 404),
+            или если произошла ошибка при генерации Markdown (статус 500).
+    
+    Note:
+        Имя файла формируется автоматически: keyrate_DD-MM-YYYY_DD-MM-YYYY.md для
+        фильтрованных данных или keyrate_all.md для всех данных.
     """
     logger = get_data_update_logger()
     logger.info(f"[API /keyrate/download/markdown] Request received, date_from={date_from}, date_to={date_to}")

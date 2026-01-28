@@ -1,3 +1,10 @@
+"""Роутеры для работы с рейтингами облигаций.
+
+Этот модуль содержит роутеры FastAPI для обработки HTTP запросов, связанных
+с рейтингами облигаций. Включает endpoints для получения рейтинга облигации
+и массового обновления рейтингов из API MOEX.
+"""
+
 import asyncio
 from fastapi import APIRouter, HTTPException, Query
 from typing import List, Dict, Any
@@ -7,6 +14,9 @@ from app.services.data_loader import get_data_loader
 from app.utils.logger import get_data_update_logger
 
 router = APIRouter(prefix="/api/rating", tags=["rating"])
+"""Роутер FastAPI для обработки запросов к API рейтингов."""
+
+
 
 
 @router.get("/{secid}")
@@ -14,23 +24,29 @@ async def get_bond_rating(
     secid: str,
     boardid: str = Query(..., description="Board ID (e.g., TQCB, TQOB)")
 ) -> List[Dict[str, Any]]:
-    """
-    Get bond rating data by SECID and BOARDID from local cache only.
+    """Получает данные рейтинга облигации по SECID и BOARDID только из локального кэша.
     
-    Only reads from local file bonds_rating.json. Does NOT fetch from MOEX website.
-    If data is not found in cache, returns empty rating list.
-    Use POST /api/rating/refresh to update ratings from MOEX.
+    Читает данные только из локального файла bonds_rating.json. Не выполняет запросы
+    к API MOEX. Если данные не найдены в кэше, возвращает пустой список рейтингов.
+    Для обновления рейтингов из MOEX используйте POST /api/rating/refresh.
     
     Args:
-        secid: Security ID
-        boardid: Board ID
-        
+        secid: Идентификатор облигации (SECID) для получения рейтинга.
+        boardid: Идентификатор торговой площадки (BOARDID), например "TQCB", "TQOB".
+            Не используется в новой реализации, оставлен для совместимости.
+    
     Returns:
-        List of rating dictionaries with keys: agency_id, agency_name_short_ru,
-        rating_level_id, rating_date, rating_level_name_short_ru
-        
+        Список словарей с данными рейтингов, каждый словарь содержит:
+        - agency_id: Идентификатор агентства рейтинга
+        - agency_name_short_ru: Краткое название агентства на русском
+        - rating_level_id: Идентификатор уровня рейтинга
+        - rating_date: Дата присвоения рейтинга
+        - rating_level_name_short_ru: Краткое название уровня рейтинга на русском
+        Если рейтинг не найден в кэше, возвращается список с одной пустой записью рейтинга.
+    
     Raises:
-        HTTPException: If data cannot be loaded from cache
+        HTTPException: Если произошла ошибка при загрузке данных из кэша
+            (статус 502 или 500).
     """
     print(f"\n{'='*80}")
     print(f"[RATING] Request received")
@@ -85,18 +101,31 @@ async def get_bond_rating(
 async def refresh_ratings_data(
     force_update: bool = Query(False, description="Force update all ratings regardless of last_updated date")
 ):
-    """
-    Refresh ratings for all bonds from bonds.json file.
+    """Обновляет рейтинги для всех облигаций из файла bonds.json.
     
-    Reads SECID and BOARDID from bonds.json and updates ratings for each bond.
-    All processing is done on the backend.
+    Читает SECID и BOARDID из файла bonds.json и обновляет рейтинги для каждой
+    облигации путем загрузки из API MOEX. Все обработка выполняется на бэкенде.
     
     Args:
-        force_update: If True, update all ratings regardless of last_updated date.
-                     If False, only update ratings that are missing or stale (>30 days).
+        force_update: Если True, обновляет все рейтинги независимо от даты
+            last_updated. Если False, обновляет только рейтинги, которые отсутствуют
+            или устарели (старше 30 дней).
     
     Returns:
-        Dictionary with refresh statistics
+        Словарь со статистикой обновления, содержащий:
+        - status: Статус операции ("ok")
+        - total_bonds: Общее количество облигаций для обработки
+        - updated: Количество успешно обновленных облигаций
+        - errors: Количество ошибок при обновлении
+        - skipped: Количество пропущенных облигаций (отсутствует SECID или BOARDID)
+    
+    Raises:
+        HTTPException: Если произошла ошибка при обновлении данных (статус 500).
+    
+    Note:
+        Ошибки при обновлении отдельных облигаций не прерывают процесс. Все ошибки
+        логируются, и обработка продолжается для остальных облигаций. ОФЗ облигации
+        (emitent_id = 1228) автоматически получают рейтинг AAA без запроса к API MOEX.
     """
     logger = get_data_update_logger()
     logger.info(f"[API /rating/refresh] Received request to refresh ratings data (force_update={force_update})")

@@ -1,8 +1,8 @@
-"""
-Email service for sending feedback via SendGrid API.
+"""Сервис для отправки email уведомлений через API SendGrid.
 
-This module handles email sending functionality. The recipient email address
-is hardcoded and not exposed through the API for security.
+Этот модуль содержит функции для отправки email уведомлений о предложениях
+по улучшению приложения через API SendGrid. Адрес получателя жестко задан
+и не раскрывается через API для безопасности.
 """
 
 import os
@@ -33,27 +33,43 @@ if load_dotenv:
         # Fallback to current directory
         load_dotenv(override=True)
 
-# Email configuration - NOT exposed through API
-SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY", "")
-EMAIL_TO = "nwisdom@mail.ru"  # Hardcoded, not exposed through API
-# IMPORTANT: EMAIL_FROM must be a verified email address in SendGrid
-# For API usage, you need Domain Authentication (not Single Sender Verification)
-# Set SENDGRID_FROM_EMAIL to your verified email address (e.g., your real email)
-EMAIL_FROM = os.getenv("SENDGRID_FROM_EMAIL", "")  # Must be verified in SendGrid
+SENDGRID_API_KEY: str = os.getenv("SENDGRID_API_KEY", "")
+"""API ключ SendGrid для отправки email (из переменной окружения SENDGRID_API_KEY)."""
+
+EMAIL_TO: str = "nwisdom@mail.ru"
+"""Адрес получателя email (жестко задан, не раскрывается через API)."""
+
+EMAIL_FROM: str = os.getenv("SENDGRID_FROM_EMAIL", "")
+"""Адрес отправителя email (из переменной окружения SENDGRID_FROM_EMAIL).
+
+Важно: EMAIL_FROM должен быть верифицированным email адресом в SendGrid.
+Для использования API требуется Domain Authentication (не Single Sender Verification).
+Установите SENDGRID_FROM_EMAIL на ваш верифицированный email адрес.
+"""
 
 
 def send_feedback_email(feedback_id: int, text: str, tab_name: str, timestamp: str) -> bool:
-    """
-    Send a single feedback item via SendGrid API.
+    """Отправляет одно предложение по улучшению приложения через API SendGrid.
+    
+    Формирует и отправляет email с данными предложения по улучшению приложения.
+    Email содержит текст предложения, название вкладки, где было отправлено предложение,
+    и временную метку. Отправляется в формате plain text и HTML.
     
     Args:
-        feedback_id: ID of the feedback item
-        text: Feedback text
-        tab_name: Name of the tab where feedback was submitted
-        timestamp: ISO format timestamp
+        feedback_id: Идентификатор предложения для отображения в теме письма.
+        text: Текст предложения по улучшению приложения.
+        tab_name: Название вкладки, где было отправлено предложение.
+        timestamp: Временная метка в формате ISO для отображения времени отправки.
     
     Returns:
-        True if email was sent successfully, False otherwise
+        True если email успешно отправлен (статус ответа 200, 201 или 202),
+        False в противном случае (ошибка отправки, отсутствие API ключа или
+        адреса отправителя).
+    
+    Note:
+        Требует установки пакета sendgrid и настройки переменных окружения:
+        - SENDGRID_API_KEY: API ключ SendGrid
+        - SENDGRID_FROM_EMAIL: Верифицированный email адрес отправителя
     """
     if SendGridAPIClient is None or Mail is None:
         print("ERROR: sendgrid package is not installed. Install it with: pip install sendgrid")
@@ -123,14 +139,28 @@ def send_feedback_email(feedback_id: int, text: str, tab_name: str, timestamp: s
 
 
 def send_multiple_feedback_emails(feedback_items: List[Dict[str, Any]]) -> bool:
-    """
-    Send multiple feedback items in a single email via SendGrid API.
+    """Отправляет несколько предложений по улучшению приложения в одном email через API SendGrid.
+    
+    Формирует и отправляет один email с несколькими предложениями по улучшению приложения.
+    Email содержит список всех предложений с их текстами, названиями вкладок и временными
+    метками. Отправляется в формате plain text и HTML.
     
     Args:
-        feedback_items: List of feedback items, each with 'id', 'text', 'tab_name', 'timestamp'
+        feedback_items: Список словарей с данными предложений. Каждый словарь должен содержать:
+            - id: Идентификатор предложения
+            - text: Текст предложения
+            - tab_name: Название вкладки, где было отправлено предложение
+            - timestamp: Временная метка в формате ISO
     
     Returns:
-        True if email was sent successfully, False otherwise
+        True если email успешно отправлен (статус ответа 200, 201 или 202),
+        False в противном случае. Если список предложений пуст, возвращает True
+        (нечего отправлять).
+    
+    Note:
+        Требует установки пакета sendgrid и настройки переменных окружения:
+        - SENDGRID_API_KEY: API ключ SendGrid
+        - SENDGRID_FROM_EMAIL: Верифицированный email адрес отправителя
     """
     if SendGridAPIClient is None or Mail is None:
         print("ERROR: sendgrid package is not installed. Install it with: pip install sendgrid")

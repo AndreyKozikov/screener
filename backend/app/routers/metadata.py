@@ -1,3 +1,10 @@
+"""Роутеры для получения метаданных приложения.
+
+Этот модуль содержит роутеры FastAPI для обработки HTTP запросов на получение
+метаданных приложения, включая маппинги колонок, описания полей и доступные
+опции фильтров.
+"""
+
 from fastapi import APIRouter
 from typing import Dict, List
 
@@ -5,14 +12,23 @@ from app.services.data_loader import get_data_loader
 from app.utils.logger import get_data_update_logger
 
 router = APIRouter(prefix="/api", tags=["metadata"])
+"""Роутер FastAPI для обработки запросов к API метаданных."""
+
+
 
 
 @router.get("/columns", response_model=Dict[str, str])
 async def get_columns():
-    """
-    Get column name mappings (English field names to Russian display names).
+    """Получает маппинг названий колонок (английские имена полей на русские отображаемые имена).
     
-    Returns dictionary like {"SECID": "Код инструмента", ...}
+    Загружает маппинг из файла columns.json и возвращает словарь для преобразования
+    английских названий полей в русские отображаемые имена колонок.
+    
+    Returns:
+        Словарь, где ключ - английское имя поля (например, "SECID"),
+        значение - русское отображаемое имя колонки (например, "Код инструмента").
+        Данные загружаются из секций securities, marketdata и marketdata_yields
+        файла columns.json.
     """
     loader = get_data_loader()
     return await loader.get_column_mapping()
@@ -20,10 +36,14 @@ async def get_columns():
 
 @router.get("/descriptions")
 async def get_descriptions():
-    """
-    Get field descriptions.
+    """Получает описания полей.
     
-    Returns detailed descriptions for each field.
+    Загружает подробные описания полей из файла describe.json и возвращает их
+    для использования на фронтенде (подсказки, справка).
+    
+    Returns:
+        Словарь с описаниями полей из файла describe.json. Структура словаря
+        соответствует структуре файла describe.json.
     """
     loader = get_data_loader()
     return await loader.get_descriptions()
@@ -31,13 +51,18 @@ async def get_descriptions():
 
 @router.get("/filter-options")
 async def get_filter_options():
-    """
-    Get available filter options (distinct values for dropdowns).
+    """Получает доступные опции фильтров (уникальные значения для выпадающих списков).
+    
+    Загружает все облигации из кэша DataLoader и извлекает уникальные значения
+    для полей LISTLEVEL, FACEUNIT и BONDTYPE. Используется для заполнения
+    выпадающих списков фильтров на фронтенде.
     
     Returns:
-    - Available list levels
-    - Available currency face units
-    - Available bond types
+        Словарь с доступными опциями фильтров, содержащий:
+        - listlevels: Отсортированный список уникальных уровней листинга
+        - faceunits: Отсортированный список уникальных валют (например, ["SUR", "USD"])
+        - bondtypes: Отсортированный список уникальных типов облигаций
+            (например, ["exchange_bond", "ofz_bond", "corporate_bond"])
     """
     loader = get_data_loader()
     all_bonds = await loader.get_bonds()
@@ -55,9 +80,17 @@ async def get_filter_options():
 
 @router.post("/refresh-metadata")
 async def refresh_metadata():
-    """
-    Clear metadata cache (columns and descriptions) to force reload from files.
-    Useful when columns.json or describe.json files are updated.
+    """Очищает кэш метаданных для принудительной перезагрузки из файлов.
+    
+    Очищает кэш маппингов колонок и описаний полей в DataLoader. При следующем
+    запросе метаданные будут перезагружены из файлов columns.json и describe.json.
+    Полезно при обновлении этих файлов.
+    
+    Returns:
+        Словарь с результатом операции, содержащий:
+        - status: Статус операции ("ok")
+        - message: Сообщение о том, что кэш очищен и данные будут перезагружены
+            при следующем запросе
     """
     logger = get_data_update_logger()
     logger.info("[API /refresh-metadata] Received request to refresh metadata cache")

@@ -1,3 +1,11 @@
+"""Роутеры для работы с данными индикатора RUONIA.
+
+Этот модуль содержит роутеры FastAPI для обработки HTTP запросов, связанных
+с данными индикатора RUONIA (индикатор однодневной ставки межбанковского кредитования)
+от ЦБ РФ. Включает endpoints для получения данных с фильтрацией по датам,
+экспорта данных в формате Markdown и обновления данных из ЦБ РФ.
+"""
+
 import asyncio
 from datetime import datetime, timedelta
 from fastapi import APIRouter, HTTPException, Query
@@ -9,6 +17,9 @@ from app.services.ruonia_service import get_ruonia_service
 from app.utils.logger import get_data_update_logger
 
 router = APIRouter(prefix="/api/ruonia", tags=["ruonia"])
+"""Роутер FastAPI для обработки запросов к API индикатора RUONIA."""
+
+
 
 
 @router.get("/data")
@@ -16,11 +27,38 @@ async def get_ruonia_data(
     date_from: Optional[str] = Query(None, description="Start date in DD.MM.YYYY format"),
     date_to: Optional[str] = Query(None, description="End date in DD.MM.YYYY format"),
 ) -> Dict[str, Any]:
-    """
-    Get RUONIA data filtered by date range.
+    """Получает данные RUONIA с фильтрацией по диапазону дат.
+    
+    Загружает данные RUONIA из JSON файла и применяет фильтрацию по диапазону дат,
+    если указаны параметры date_from и date_to. Преобразует данные в формат с русскими
+    названиями колонок для удобства отображения на фронтенде.
+    
+    Args:
+        date_from: Начальная дата диапазона в формате DD.MM.YYYY (включительно).
+            Если не указана, фильтр не применяется.
+        date_to: Конечная дата диапазона в формате DD.MM.YYYY (включительно).
+            Если не указана, фильтр не применяется.
     
     Returns:
-        Dictionary with 'data' (array of records), 'count', 'date_from', 'date_to'
+        Словарь с отфильтрованными данными RUONIA, содержащий:
+        - data: Список словарей с записями, каждая содержит:
+          - Дата ставки: Дата в формате YYYY-MM-DD
+          - Ставка RUONIA, % годовых: Значение ставки RUONIA
+          - Объем сделок RUONIA, млрд руб.: Объем сделок
+          - Количество сделок, ед.: Количество сделок
+          - Минимальная процентная ставка, % годовых: Минимальная ставка
+          - 25-й процентиль по процентным ставкам, % годовых: 25-й процентиль
+          - 75-й процентиль по процентным ставкам, % годовых: 75-й процентиль
+          - Максимальная процентная ставка, % годовых: Максимальная ставка
+        - count: Количество записей после фильтрации
+        - date_from: Начальная дата фильтра (если указана)
+        - date_to: Конечная дата фильтра (если указана)
+        Записи отсортированы по дате в порядке убывания (от новых к старым).
+    
+    Raises:
+        HTTPException: Если формат даты некорректен (статус 400),
+            если произошла ошибка при загрузке данных (статус 502),
+            или если произошла другая ошибка (статус 500).
     """
     logger = get_data_update_logger()
     logger.info(f"[API /ruonia/data] Request received, date_from={date_from}, date_to={date_to}")
@@ -120,10 +158,39 @@ async def download_ruonia_markdown(
     date_from: Optional[str] = Query(None, description="Start date in DD.MM.YYYY format"),
     date_to: Optional[str] = Query(None, description="End date in DD.MM.YYYY format"),
 ) -> Response:
-    """
-    Download RUONIA data as Markdown file.
+    """Скачивает данные RUONIA в формате Markdown.
     
-    Returns filtered data as Markdown table.
+    Загружает данные RUONIA из JSON файла, применяет фильтрацию по диапазону дат
+    (если указаны) и возвращает данные в формате Markdown таблицы для скачивания.
+    
+    Args:
+        date_from: Начальная дата диапазона в формате DD.MM.YYYY (включительно).
+            Если не указана, фильтр не применяется.
+        date_to: Конечная дата диапазона в формате DD.MM.YYYY (включительно).
+            Если не указана, фильтр не применяется.
+    
+    Returns:
+        HTTP Response с Markdown файлом для скачивания, содержащим:
+        - Заголовок "# Ставка RUONIA"
+        - Таблицу Markdown с колонками:
+          - Дата ставки: Дата в формате YYYY-MM-DD
+          - Ставка RUONIA, % годовых: Значение ставки (форматируется с 4 знаками после запятой)
+          - Объем сделок RUONIA, млрд руб.: Объем сделок
+          - Количество сделок, ед.: Количество сделок
+          - Минимальная процентная ставка, % годовых: Минимальная ставка
+          - 25-й процентиль по процентным ставкам, % годовых: 25-й процентиль
+          - 75-й процентиль по процентным ставкам, % годовых: 75-й процентиль
+          - Максимальная процентная ставка, % годовых: Максимальная ставка
+        Записи отсортированы по дате в порядке убывания (от новых к старым).
+    
+    Raises:
+        HTTPException: Если формат даты некорректен (статус 400),
+            если данные не найдены для указанного диапазона дат (статус 404),
+            или если произошла ошибка при генерации Markdown (статус 500).
+    
+    Note:
+        Имя файла формируется автоматически: ruonia_DD-MM-YYYY_DD-MM-YYYY.md для
+        фильтрованных данных или ruonia_all.md для всех данных.
     """
     logger = get_data_update_logger()
     logger.info(f"[API /ruonia/download/markdown] Request received, date_from={date_from}, date_to={date_to}")
@@ -263,14 +330,30 @@ async def download_ruonia_markdown(
 
 @router.post("/refresh")
 async def refresh_ruonia_data() -> Dict[str, Any]:
-    """
-    Force refresh RUONIA data from CBR by downloading Excel file.
+    """Принудительно обновляет данные RUONIA из ЦБ РФ путем загрузки Excel файла.
     
-    Downloads data from the date after the last entry in existing data
-    (or from default start date if no data exists) to today.
+    Выполняет инкрементальное обновление данных RUONIA. Загружает только новые данные
+    с даты после последней записи в существующих данных (или с даты по умолчанию
+    11.01.2010, если данных нет) до текущей даты.
     
     Returns:
-        Dictionary with refresh result
+        Словарь с результатом обновления, содержащий:
+        - status: Статус операции ("ok" или "error")
+        - message: Сообщение о результате обновления
+        - from_date: Начальная дата диапазона загрузки (при успехе)
+        - to_date: Конечная дата диапазона загрузки (при успехе)
+        - new_entries: Количество новых записей (при успехе)
+        - updated_entries: Количество обновленных записей (при успехе)
+        - total_entries: Общее количество записей после обновления (при успехе)
+        - error: Сообщение об ошибке (при ошибке)
+        - updated: Флаг успешного обновления (True или False)
+    
+    Raises:
+        HTTPException: Если произошла ошибка при обновлении данных (статус 500).
+    
+    Note:
+        Если from_date > to_date (нет новых данных для загрузки), возвращается
+        результат с updated=False и сообщением "No new data to download".
     """
     logger = get_data_update_logger()
     logger.info("[API /ruonia/refresh] Received request to refresh RUONIA data")

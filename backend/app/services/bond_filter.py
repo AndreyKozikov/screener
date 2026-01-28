@@ -1,11 +1,16 @@
+"""Утилиты для фильтрации и работы с рейтингами облигаций.
+
+Этот модуль содержит функции для стандартизации рейтингов, проверки диапазонов
+рейтингов и фильтрации списка облигаций по различным критериям.
+"""
+
 import re
 from typing import List, Optional
 from app.models.bond import BondListItem
 from app.models.filters import BondFilters
 
 
-# Rating scale - from highest to lowest
-RATINGS = [
+RATINGS: List[str] = [
     'AAA',
     'AA+', 'AA', 'AA-',
     'A+', 'A', 'A-',
@@ -16,35 +21,58 @@ RATINGS = [
     'CC', 'C',
     'D'
 ]
+"""Шкала рейтингов от наивысшего к наинизшему.
+
+Список содержит все возможные рейтинги облигаций в порядке убывания качества.
+Используется для определения позиции рейтинга в общей шкале и фильтрации
+облигаций по диапазону рейтингов.
+
+Рейтинги упорядочены по убыванию качества:
+    - AAA: Наивысший рейтинг
+    - AA+, AA, AA-: Очень высокий рейтинг
+    - A+, A, A-: Высокий рейтинг
+    - BBB+, BBB, BBB-: Средний рейтинг
+    - BB+, BB, BB-: Ниже среднего рейтинг
+    - B+, B, B-: Низкий рейтинг
+    - CCC+, CCC, CCC-: Очень низкий рейтинг
+    - CC, C: Крайне низкий рейтинг
+    - D: Дефолт
+"""
 
 
 def standardize_rating(rating: Optional[str]) -> Optional[str]:
-    """
-    Standardizes rating notation by removing Russian market indicators.
+    """Стандартизирует обозначение рейтинга, удаляя русские индикаторы рынка.
     
-    Removes:
-    - (RU) suffix (with or without space): "AAA (RU)" -> "AAA"
-    - .ru suffix: "AAA.ru" -> "AAA"
-    - ru prefix (case-insensitive): "ruAAA" -> "AAA"
+    Удаляет из строки рейтинга все русские индикаторы рынка, оставляя только
+    основное значение рейтинга (например, AAA, AA+, BBB-) с модификаторами (+ и -).
     
-    Preserves the core rating value (e.g., AAA, AA+, BBB-) including modifiers (+ and -).
-    
-    Examples:
-        "AAA (RU)" -> "AAA"
-        "AA+ (RU)" -> "AA+"
-        "AAA.ru" -> "AAA"
-        "AA+.ru" -> "AA+"
-        "ruAAA" -> "AAA"
-        "ruAA+" -> "AA+"
-        "BBB-" -> "BBB-"
-        "BBB- (RU)" -> "BBB-"
-        "ruBBB-" -> "BBB-"
+    Удаляемые индикаторы:
+        - Суффикс (RU) (с пробелами или без): "AAA (RU)" -> "AAA"
+        - Суффикс .ru: "AAA.ru" -> "AAA"
+        - Префикс ru (без учета регистра): "ruAAA" -> "AAA"
+        - Встроенные индикаторы |ru| или |RU|: "BB+|ru|" -> "BB+"
     
     Args:
-        rating: Rating string that may contain Russian market indicators
+        rating: Строка с рейтингом, которая может содержать русские индикаторы рынка.
+            Может быть None или пустой строкой.
     
     Returns:
-        Standardized rating string containing only the core rating value, or None if input is None/empty
+        Стандартизированная строка рейтинга, содержащая только основное значение,
+        или None, если входное значение None или пустое.
+    
+    Examples:
+        >>> standardize_rating("AAA (RU)")
+        'AAA'
+        >>> standardize_rating("AA+ (RU)")
+        'AA+'
+        >>> standardize_rating("AAA.ru")
+        'AAA'
+        >>> standardize_rating("ruAAA")
+        'AAA'
+        >>> standardize_rating("BBB-")
+        'BBB-'
+        >>> standardize_rating(None)
+        None
     """
     if not rating or not isinstance(rating, str):
         return None
@@ -84,9 +112,24 @@ def is_rating_in_range(
     rating_min: Optional[str],
     rating_max: Optional[str],
 ) -> bool:
-    """
-    Проверяет, входит ли рейтинг облигации (RATING_LEVEL) в диапазон [rating_min, rating_max].
-    Используется для фильтрации по рейтингу в сервисном слое.
+    """Проверяет, входит ли рейтинг облигации в указанный диапазон.
+    
+    Определяет, находится ли рейтинг облигации в диапазоне [rating_min, rating_max]
+    включительно. Использует шкалу RATINGS для определения позиции рейтингов.
+    Поддерживает частичное совпадение рейтингов (например, 'ruAA' совпадет с 'AA').
+    
+    Args:
+        rating_level: Рейтинг облигации для проверки. Может быть None или пустой строкой.
+        rating_min: Минимальный рейтинг диапазона из шкалы RATINGS. Если None,
+            нижняя граница не ограничивается.
+        rating_max: Максимальный рейтинг диапазона из шкалы RATINGS. Если None,
+            верхняя граница не ограничивается.
+    
+    Returns:
+        True если рейтинг входит в диапазон [rating_min, rating_max] включительно,
+        False в противном случае. Если rating_level пустой или None, возвращает False.
+        Если границы диапазона неверные (не найдены в RATINGS), возвращает True
+        (не фильтрует облигации с неверными границами).
     """
     if not rating_level or not str(rating_level).strip():
         return False
@@ -107,9 +150,31 @@ def is_rating_in_range(
 
 
 def get_rating_index(rating: Optional[str]) -> Optional[int]:
-    """
-    Get rating index in the rating scale. Returns None if rating is not found.
-    Supports partial matching - e.g., 'ruAA', 'BB(ru)', 'AA+' will match 'AA', 'BB', 'AA+' from RATINGS list.
+    """Получает индекс рейтинга в шкале рейтингов.
+    
+    Определяет позицию рейтинга в списке RATINGS. Поддерживает частичное совпадение,
+    что позволяет находить рейтинги даже если они содержат дополнительные символы
+    или индикаторы рынка.
+    
+    Args:
+        rating: Строка с рейтингом для поиска. Может быть None или пустой строкой.
+            Поддерживает частичное совпадение (например, 'ruAA', 'BB(ru)', 'AA+'
+            совпадут с 'AA', 'BB', 'AA+' из списка RATINGS).
+    
+    Returns:
+        Индекс рейтинга в списке RATINGS (0 для наивысшего рейтинга AAA) или None,
+        если рейтинг не найден. При поиске сначала проверяется точное совпадение,
+        затем частичное совпадение (более длинные рейтинги проверяются первыми).
+    
+    Examples:
+        >>> get_rating_index("AAA")
+        0
+        >>> get_rating_index("AA+")
+        1
+        >>> get_rating_index("ruAA")
+        2
+        >>> get_rating_index("Invalid")
+        None
     """
     if rating is None or not rating:
         return None
@@ -131,10 +196,36 @@ def get_rating_index(rating: Optional[str]) -> Optional[int]:
 
 
 def filter_bonds(bonds: List[BondListItem], filters: BondFilters) -> List[BondListItem]:
-    """
-    Apply filters to bond list.
+    """Применяет фильтры к списку облигаций.
     
-    Translates Streamlit filtering logic to backend service.
+    Выполняет фильтрацию списка облигаций по различным критериям, указанным
+    в объекте BondFilters. Применяет все активные фильтры последовательно,
+    возвращая только те облигации, которые соответствуют всем критериям.
+    
+    Поддерживаемые фильтры:
+        - Диапазон процента купона (coupon_min, coupon_max)
+        - Диапазон доходности к погашению (yield_min, yield_max)
+        - Диапазон доходности купона к цене (coupon_yield_min, coupon_yield_max)
+        - Диапазон даты погашения (matdate_from, matdate_to)
+        - Уровень листинга (listlevel)
+        - Валюта (faceunit)
+        - Тип облигации (bondtype)
+        - Вид облигации (bondtype43)
+        - Диапазон рейтинга (rating_min, rating_max)
+    
+    Args:
+        bonds: Список облигаций для фильтрации. Каждый элемент должен быть
+            экземпляром класса BondListItem.
+        filters: Объект BondFilters с параметрами фильтрации. Если параметр
+            фильтра None или пустой список, фильтр не применяется.
+    
+    Returns:
+        Отфильтрованный список облигаций, соответствующих всем указанным критериям.
+        Если все фильтры не заданы, возвращает исходный список.
+    
+    Note:
+        Поиск по тексту (search filter) обрабатывается на клиентской стороне
+        и не выполняется на сервере.
     """
     filtered = bonds
     
@@ -155,9 +246,17 @@ def filter_bonds(bonds: List[BondListItem], filters: BondFilters) -> List[BondLi
     # Coupon yield to price range (calculated: (COUPONVALUE / (PREVPRICE × FACEVALUE / 100)) × payments_per_year × 100)
     if filters.coupon_yield_min is not None or filters.coupon_yield_max is not None:
         def calc_coupon_yield(bond: BondListItem) -> Optional[float]:
-            """
-            Calculate coupon yield to current price.
-            Formula: (COUPONVALUE / (PREVPRICE × FACEVALUE / 100)) × (number of payments per year) × 100
+            """Вычисляет доходность купона к текущей цене.
+            
+            Рассчитывает доходность купона облигации к текущей цене на основе
+            формулы: (COUPONVALUE / (PREVPRICE × FACEVALUE / 100)) × (количество выплат в год) × 100.
+            
+            Args:
+                bond: Объект облигации для расчета доходности.
+            
+            Returns:
+                Доходность купона к цене в процентах или None, если не все необходимые
+                данные доступны или равны нулю.
             """
             if (bond.COUPONVALUE is not None and 
                 bond.PREVPRICE is not None and 

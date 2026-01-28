@@ -2,7 +2,9 @@ import logging
 from typing import Optional
 from pathlib import Path
 
-from app.services.db_refresher import DBBonds, DBCoupon, DBkbd
+from app.repository.bonds_data_manager import BondsDataManager
+from app.repository.db_coupon import DBCoupon
+from app.repository.db_kbd import DBkbd
 
 
 class DBOrchestrator:
@@ -54,7 +56,7 @@ class DBOrchestrator:
             True если миграция выполнена успешно, False в случае ошибки
         """
         try:
-            db_bonds = DBBonds(db_path=self.db_path, data_dir=self.data_dir)
+            db_bonds = BondsDataManager(db_path=self.db_path, data_dir=self.data_dir)
             result = db_bonds.refresh()
             
             if result:

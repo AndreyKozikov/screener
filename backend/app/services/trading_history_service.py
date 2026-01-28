@@ -1,6 +1,8 @@
-"""
-Сервис скачивания истории торгов по облигациям с API Мосбиржи.
-Данные сохраняются в bonds_trading_history.json (ключ — secid).
+"""Сервис для загрузки истории торгов по облигациям из API Мосбиржи.
+
+Этот модуль содержит класс TradingHistoryService для загрузки истории торгов
+по облигациям из API Московской биржи. Данные сохраняются в bonds_trading_history.json
+(ключ — secid) и обновляются инкрементально.
 """
 
 import sys
@@ -16,15 +18,31 @@ import orjson
 from app.utils.logger import get_data_update_logger
 
 
-MOEX_HISTORY_URL = (
+MOEX_HISTORY_URL: str = (
     "https://iss.moex.com/iss/history/engines/stock/markets/bonds"
     "/securities/{secid}.json"
 )
-HISTORY_FILENAME = "bonds_trading_history.json"
-DEFAULT_FROM_DATE = date(2000, 1, 1)  # дата начала загрузки при отсутствии файла или данных по облигации
+"""Базовый URL API Мосбиржи для получения истории торгов по облигациям."""
+
+HISTORY_FILENAME: str = "bonds_trading_history.json"
+"""Имя файла для хранения истории торгов по облигациям."""
+
+DEFAULT_FROM_DATE: date = date(2000, 1, 1)
+"""Дата начала загрузки при отсутствии файла или данных по облигации."""
 
 
 def _parse_date(s: Optional[str]) -> Optional[date]:
+    """Парсит строку даты в объект date.
+    
+    Преобразует строку с датой в формате YYYY-MM-DD в объект date.
+    Обрабатывает некорректные значения и специальное значение "0000-00-00".
+    
+    Args:
+        s: Строка с датой в формате YYYY-MM-DD или None.
+    
+    Returns:
+        Объект date или None, если строка некорректна, пуста или равна "0000-00-00".
+    """
     if not s or s == "0000-00-00":
         return None
     try:
@@ -34,18 +52,55 @@ def _parse_date(s: Optional[str]) -> Optional[date]:
 
 
 def _date_str(d: date) -> str:
+    """Преобразует объект date в строку формата YYYY-MM-DD.
+    
+    Args:
+        d: Объект date для преобразования.
+    
+    Returns:
+        Строка с датой в формате YYYY-MM-DD.
+    """
     return d.strftime("%Y-%m-%d")
 
 
 class TradingHistoryService:
+    """Сервис для загрузки истории торгов по облигациям из API Мосбиржи.
+    
+    Класс обеспечивает загрузку истории торгов по облигациям из API Московской биржи,
+    сохранение данных в JSON файл и инкрементальное обновление данных. Поддерживает
+    загрузку истории для одной облигации или массовую загрузку для всех облигаций
+    из bonds.json.
+    
+    Attributes:
+        data_dir: Путь к директории с JSON файлами данных.
+    """
+    
     def __init__(self, data_dir: Path):
+        """Инициализирует сервис для работы с историей торгов.
+        
+        Args:
+            data_dir: Путь к директории с JSON файлами данных.
+        """
         self.data_dir = Path(data_dir)
 
     def _history_path(self) -> Path:
+        """Получает путь к файлу истории торгов.
+        
+        Returns:
+            Путь к файлу bonds_trading_history.json в директории данных.
+        """
         return self.data_dir / HISTORY_FILENAME
 
     def _load_all_secids(self) -> List[str]:
-        """Загружает из bonds.json все SECID облигаций (из securities.data)."""
+        """Загружает из bonds.json все SECID облигаций.
+        
+        Загружает файл bonds.json и извлекает все уникальные SECID из секции
+        securities.data. Используется для массовой загрузки истории торгов.
+        
+        Returns:
+            Отсортированный список уникальных SECID облигаций. Если файл не существует
+            или колонка SECID отсутствует, возвращает пустой список.
+        """
         path = self.data_dir / "bonds.json"
         with open(path, "rb") as f:
             data = orjson.loads(f.read())
@@ -66,10 +121,18 @@ class TradingHistoryService:
         return sorted(set(out))
 
     def load_history_file(self) -> Dict[str, Dict[str, Any]]:
-        """
-        Читает bonds_trading_history.json.
-        По каждому secid хранится только секция history: columns (заголовки), data (данные).
-        Формат: { secid: { "columns": [...], "data": [[...], ...] } }.
+        """Читает bonds_trading_history.json.
+        
+        Загружает данные истории торгов из файла bonds_trading_history.json.
+        По каждому secid хранится только секция history: columns (заголовки) и data (данные).
+        Метаданные и курсор не сохраняются.
+        
+        Returns:
+            Словарь с данными истории торгов, где ключ - SECID облигации, значение -
+            словарь с ключами:
+            - columns: Список названий колонок таблицы истории
+            - data: Список списков с данными строк истории торгов
+            Если файл не существует или некорректен, возвращает пустой словарь.
         """
         path = self._history_path()
         if not path.exists():
@@ -90,9 +153,15 @@ class TradingHistoryService:
         return out
 
     def save_history_file(self, data: Dict[str, Dict[str, Any]]) -> None:
-        """
-        Сохраняет в bonds_trading_history.json только данные из секции history:
-        columns — заголовки таблицы, data — строки. Ни metadata, ни cursor не сохраняются.
+        """Сохраняет данные истории торгов в bonds_trading_history.json.
+        
+        Записывает данные в файл bonds_trading_history.json с форматированием
+        (отступы и перенос строки). Сохраняет только данные из секции history:
+        columns (заголовки таблицы) и data (строки). Метаданные и курсор не сохраняются.
+        
+        Args:
+            data: Словарь с данными истории торгов, где ключ - SECID облигации,
+                значение - словарь с ключами "columns" и "data".
         """
         path = self._history_path()
         raw = orjson.dumps(
@@ -102,7 +171,19 @@ class TradingHistoryService:
         path.write_bytes(raw)
 
     def _last_tradedate(self, history: Dict[str, Any]) -> Optional[date]:
-        """Последняя дата торгов в истории (максимальная TRADEDATE)."""
+        """Получает последнюю дату торгов в истории.
+        
+        Находит максимальную дату торгов (TRADEDATE) среди всех записей в истории.
+        Используется для определения начальной даты при инкрементальном обновлении.
+        
+        Args:
+            history: Словарь с данными истории торгов, содержащий ключи "columns"
+                и "data".
+        
+        Returns:
+            Объект date с последней датой торгов или None, если колонка TRADEDATE
+            отсутствует или история пуста.
+        """
         cols = history.get("columns") or []
         data_rows = history.get("data") or []
         try:
@@ -121,9 +202,25 @@ class TradingHistoryService:
     def get_from_till(
         self, secid: str
     ) -> Tuple[str, str, bool]:
-        """
-        Определяет from, till и признак «дописываем».
-        Возвращает (from_YYYY_MM_DD, till_YYYY_MM_DD, is_append).
+        """Определяет диапазон дат для загрузки истории торгов.
+        
+        Определяет начальную (from) и конечную (till) даты для загрузки истории торгов
+        и признак дописывания данных (is_append). Если данных нет, использует
+        DEFAULT_FROM_DATE как начальную дату. Если данные есть, начинает с последней
+        даты торгов + 1 день.
+        
+        Args:
+            secid: Идентификатор облигации (SECID) для определения диапазона дат.
+        
+        Returns:
+            Кортеж из трех элементов:
+            - from_YYYY_MM_DD: Начальная дата диапазона в формате YYYY-MM-DD
+            - till_YYYY_MM_DD: Конечная дата диапазона в формате YYYY-MM-DD (текущая дата)
+            - is_append: Флаг дописывания данных (True если данные существуют, False если первая загрузка)
+        
+        Note:
+            Если последняя дата в истории больше текущей даты (битая/будущая дата),
+            используется DEFAULT_FROM_DATE как начальная дата.
         """
         logger = get_data_update_logger()
         today = date.today()
@@ -168,7 +265,19 @@ class TradingHistoryService:
     def _build_moex_url(
         self, secid: str, from_: str, till: str, start: int
     ) -> str:
-        """Формирует URL запроса к MOEX history API."""
+        """Формирует URL запроса к API истории торгов Мосбиржи.
+        
+        Создает URL для загрузки истории торгов по облигации с параметрами пагинации.
+        
+        Args:
+            secid: Идентификатор облигации (SECID) для запроса истории.
+            from_: Начальная дата диапазона в формате YYYY-MM-DD.
+            till: Конечная дата диапазона в формате YYYY-MM-DD.
+            start: Смещение для пагинации (номер первой записи для загрузки).
+        
+        Returns:
+            Полный URL с параметрами запроса для загрузки истории торгов.
+        """
         base = MOEX_HISTORY_URL.format(secid=secid)
         params = {"from": from_, "till": till, "start": start}
         return f"{base}?{urlencode(params)}"
@@ -176,7 +285,25 @@ class TradingHistoryService:
     def _fetch_moex_page(
         self, secid: str, from_: str, till: str, start: int
     ) -> Dict[str, Any]:
-        """Один запрос к MOEX history API."""
+        """Выполняет один запрос к API истории торгов Мосбиржи.
+        
+        Выполняет HTTP GET запрос к API Мосбиржи для получения одной страницы
+        истории торгов по облигации с указанными параметрами пагинации.
+        
+        Args:
+            secid: Идентификатор облигации (SECID) для запроса истории.
+            from_: Начальная дата диапазона в формате YYYY-MM-DD.
+            till: Конечная дата диапазона в формате YYYY-MM-DD.
+            start: Смещение для пагинации (номер первой записи для загрузки).
+        
+        Returns:
+            Словарь с ответом API Мосбиржи в формате JSON, содержащий секции
+            history и history.cursor.
+        
+        Raises:
+            URLError: Если не удалось выполнить HTTP запрос (сетевая ошибка, таймаут).
+            orjson.JSONDecodeError: Если ответ не является валидным JSON.
+        """
         url = self._build_moex_url(secid, from_, till, start)
         req = Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urlopen(req, timeout=60) as resp:
@@ -186,10 +313,22 @@ class TradingHistoryService:
     def _parse_history_response(
         self, payload: Dict[str, Any]
     ) -> Tuple[List[str], List[List[Any]], int, int, int]:
-        """
-        Из ответа MOEX извлекает history (columns, data) и history.cursor
-        (INDEX, TOTAL, PAGESIZE).
-        Возвращает (columns, data, index, total, pagesize).
+        """Извлекает данные истории торгов из ответа API Мосбиржи.
+        
+        Парсит ответ API Мосбиржи и извлекает данные из секций history (columns, data)
+        и history.cursor (INDEX, TOTAL, PAGESIZE) для управления пагинацией.
+        
+        Args:
+            payload: Словарь с ответом API Мосбиржи в формате JSON.
+        
+        Returns:
+            Кортеж из пяти элементов:
+            - columns: Список названий колонок таблицы истории
+            - data: Список списков с данными строк истории торгов
+            - index: Текущий индекс пагинации (INDEX из cursor)
+            - total: Общее количество записей (TOTAL из cursor)
+            - pagesize: Размер страницы (PAGESIZE из cursor)
+            Если секция cursor отсутствует или некорректна, возвращает (columns, data, 0, 0, 0).
         """
         hist = payload.get("history") or {}
         cols = list(hist.get("columns") or [])
@@ -218,7 +357,24 @@ class TradingHistoryService:
         new_columns: List[str],
         new_data: List[List[Any]],
     ) -> Tuple[List[str], List[List[Any]]]:
-        """Объединяет старую и новую историю по TRADEDATE, убирает дубликаты, сортирует."""
+        """Объединяет старую и новую историю торгов, убирает дубликаты и сортирует.
+        
+        Объединяет существующие и новые данные истории торгов по дате торгов (TRADEDATE),
+        удаляет дубликаты (по TRADEDATE) и сортирует результат по дате торгов.
+        
+        Args:
+            existing_columns: Список названий колонок существующей истории.
+            existing_data: Список списков с данными существующей истории.
+            new_columns: Список названий колонок новой истории.
+            new_data: Список списков с данными новой истории.
+        
+        Returns:
+            Кортеж из двух элементов:
+            - columns: Список названий колонок (из existing_columns)
+            - merged_data: Отсортированный список списков с объединенными данными
+              без дубликатов по TRADEDATE
+            Если колонка TRADEDATE отсутствует, возвращает объединенные данные без сортировки.
+        """
         try:
             idx = existing_columns.index("TRADEDATE")
         except ValueError:
@@ -334,11 +490,24 @@ class TradingHistoryService:
         }
 
     def download_history_all(self) -> Dict[str, Any]:
-        """
-        Скачивает историю торгов по всем облигациям из bonds.json.
-        Список secid берётся из файла. При отсутствии файла или данных
-        по облигации стартуем с DEFAULT_FROM_DATE (2000-01-01).
-        Возвращает: updated, failed, total, errors.
+        """Загружает историю торгов по всем облигациям из bonds.json.
+        
+        Выполняет массовую загрузку истории торгов для всех облигаций из файла bonds.json.
+        Список SECID извлекается из секции securities.data. Для каждой облигации выполняется
+        инкрементальная загрузка (при отсутствии данных стартует с DEFAULT_FROM_DATE).
+        
+        Returns:
+            Словарь с результатом массовой загрузки, содержащий:
+            - updated: Количество успешно обновленных облигаций
+            - failed: Количество облигаций с ошибками при загрузке
+            - total: Общее количество облигаций для обработки
+            - errors: Список словарей с ошибками, каждый содержит:
+              - secid: Идентификатор облигации с ошибкой
+              - error: Сообщение об ошибке
+        
+        Note:
+            Ошибки при загрузке отдельных облигаций не прерывают процесс.
+            Все ошибки собираются и возвращаются в списке errors.
         """
         logger = get_data_update_logger()
         secids = self._load_all_secids()
@@ -382,11 +551,27 @@ _trading_history_service: Optional[TradingHistoryService] = None
 
 
 def init_trading_history_service(data_dir: Path) -> None:
+    """Инициализирует singleton экземпляр сервиса истории торгов.
+    
+    Создает глобальный экземпляр TradingHistoryService с указанной директорией данных.
+    Должен быть вызван перед использованием get_trading_history_service().
+    
+    Args:
+        data_dir: Путь к директории с JSON файлами данных.
+    """
     global _trading_history_service
     _trading_history_service = TradingHistoryService(Path(data_dir))
 
 
 def get_trading_history_service() -> TradingHistoryService:
+    """Получает singleton экземпляр сервиса истории торгов.
+    
+    Returns:
+        Экземпляр TradingHistoryService для работы с историей торгов по облигациям.
+    
+    Raises:
+        RuntimeError: Если сервис не был инициализирован через init_trading_history_service().
+    """
     if _trading_history_service is None:
         raise RuntimeError(
             "TradingHistoryService не инициализирован. "

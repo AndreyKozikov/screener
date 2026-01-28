@@ -1,8 +1,8 @@
-"""
-Service for loading and managing Central Bank of Russia (CBR) key rate data.
+"""Сервис для загрузки и управления данными ключевой ставки ЦБ РФ.
 
-Loads key rate data from CBR HTML page, parses it using pandas.read_html,
-and saves to JSON file in data directory.
+Этот модуль содержит класс KeyRateService для загрузки данных ключевой ставки
+Центрального банка Российской Федерации с HTML страницы, парсинга данных с помощью
+pandas.read_html и сохранения в JSON файл в директории данных.
 """
 import json
 from datetime import date, datetime
@@ -17,35 +17,52 @@ from app.utils.logger import get_data_update_logger
 
 
 class KeyRateService:
-    """Service for handling CBR key rate data"""
+    """Сервис для работы с данными ключевой ставки ЦБ РФ.
     
-    # Base URL for CBR key rate page
-    CBR_KEYRATE_URL = "https://www.cbr.ru/hd_base/keyrate/"
+    Класс обеспечивает загрузку данных ключевой ставки Центрального банка РФ
+    с HTML страницы, парсинг данных с помощью pandas.read_html и сохранение
+    в JSON файл. Поддерживает инкрементальное обновление данных (загрузка только
+    новых записей с последней даты).
     
-    # Default start date if file doesn't exist or is corrupted
-    DEFAULT_START_DATE = date(2013, 9, 17)  # 17.09.2013
+    Attributes:
+        CBR_KEYRATE_URL: Базовый URL страницы ключевой ставки ЦБ РФ.
+        DEFAULT_START_DATE: Дата по умолчанию для начала загрузки данных
+            (17.09.2013 - дата введения ключевой ставки).
+        KEYRATE_FILENAME: Имя JSON файла для хранения данных.
+        data_dir: Путь к директории с данными.
+        keyrate_file: Путь к файлу для хранения данных ключевой ставки.
+        logger: Логгер для записи событий и ошибок.
+    """
     
-    # JSON file name
-    KEYRATE_FILENAME = "keyrate.json"
+    CBR_KEYRATE_URL: str = "https://www.cbr.ru/hd_base/keyrate/"
+    """Базовый URL страницы ключевой ставки ЦБ РФ."""
+    
+    DEFAULT_START_DATE: date = date(2013, 9, 17)
+    """Дата по умолчанию для начала загрузки данных (17.09.2013)."""
+    
+    KEYRATE_FILENAME: str = "keyrate.json"
+    """Имя JSON файла для хранения данных ключевой ставки."""
     
     def __init__(self, data_dir: Path):
-        """
-        Initialize KeyRateService.
+        """Инициализирует сервис для работы с ключевой ставкой ЦБ РФ.
         
         Args:
-            data_dir: Path to data directory where JSON file will be stored
+            data_dir: Путь к директории с данными, где будет храниться JSON файл.
         """
         self.data_dir = data_dir
         self.keyrate_file = data_dir / self.KEYRATE_FILENAME
         self.logger = get_data_update_logger()
     
     def _load_keyrate_data(self) -> Dict[str, float]:
-        """
-        Load key rate data from JSON file.
+        """Загружает данные ключевой ставки из JSON файла.
+        
+        Загружает данные из файла keyrate.json. Обрабатывает ошибки чтения
+        и поврежденные файлы.
         
         Returns:
-            Dictionary with date (YYYY-MM-DD) as key and rate (float) as value.
-            Empty dict if file doesn't exist or is corrupted.
+            Словарь с данными ключевой ставки, где ключ - дата в формате YYYY-MM-DD,
+            значение - ключевая ставка (float) в процентах. Если файл не существует
+            или поврежден, возвращает пустой словарь.
         """
         self.logger.info(f"[KEYRATE SERVICE] Loading key rate data from file: {self.keyrate_file}")
         
@@ -74,12 +91,15 @@ class KeyRateService:
             )
             return {}
     
-    def _save_keyrate_data(self, data: Dict[str, float]):
-        """
-        Save key rate data to JSON file.
+    def _save_keyrate_data(self, data: Dict[str, float]) -> None:
+        """Сохраняет данные ключевой ставки в JSON файл.
+        
+        Записывает данные в файл keyrate.json с форматированием (отступы).
+        Данные сортируются по дате для лучшей читаемости.
         
         Args:
-            data: Dictionary with date (YYYY-MM-DD) as key and rate (float) as value
+            data: Словарь с данными ключевой ставки, где ключ - дата в формате
+                YYYY-MM-DD, значение - ключевая ставка (float) в процентах.
         """
         entries_count = len(data)
         self.logger.info(
@@ -96,11 +116,14 @@ class KeyRateService:
         self.logger.info(f"[KEYRATE SERVICE] File saved successfully, size: {file_size} bytes")
     
     def _get_last_date_in_data(self) -> Optional[date]:
-        """
-        Get the last (most recent) date from existing data.
+        """Получает последнюю (наиболее свежую) дату из существующих данных.
+        
+        Загружает данные из файла и находит максимальную дату среди всех записей.
+        Используется для определения начальной даты при инкрементальном обновлении.
         
         Returns:
-            Last date as date object, or None if no data exists
+            Объект date с последней датой из данных или None, если данных нет
+            или все даты некорректны.
         """
         data = self._load_keyrate_data()
         
@@ -129,15 +152,17 @@ class KeyRateService:
         return last_date
     
     def _build_url(self, date_from: date, date_to: date) -> str:
-        """
-        Build CBR key rate URL with query parameters.
+        """Формирует URL страницы ключевой ставки ЦБ РФ с параметрами запроса.
+        
+        Создает URL для загрузки данных ключевой ставки за указанный диапазон дат.
+        Параметры запроса включают даты начала и конца диапазона в формате DD.MM.YYYY.
         
         Args:
-            date_from: Start date (format: DD.MM.YYYY)
-            date_to: End date (format: DD.MM.YYYY)
+            date_from: Начальная дата диапазона (преобразуется в формат DD.MM.YYYY).
+            date_to: Конечная дата диапазона (преобразуется в формат DD.MM.YYYY).
         
         Returns:
-            Complete URL with query parameters
+            Полный URL с параметрами запроса для загрузки данных ключевой ставки.
         """
         params = {
             "UniDbQuery.Posted": "True",
@@ -150,20 +175,32 @@ class KeyRateService:
         return url
     
     def _fetch_and_parse_keyrate(self, date_from: date, date_to: date) -> Dict[str, float]:
-        """
-        Fetch key rate data from CBR HTML page and parse it.
+        """Загружает данные ключевой ставки с HTML страницы ЦБ РФ и парсит их.
+        
+        Выполняет HTTP запрос к странице ключевой ставки ЦБ РФ, парсит HTML таблицу
+        с помощью pandas.read_html и извлекает данные о ключевой ставке за указанный
+        диапазон дат. Обрабатывает русские форматы чисел (запятая как разделитель
+        дробной части, пробел как разделитель тысяч).
         
         Args:
-            date_from: Start date for data range
-            date_to: End date for data range
+            date_from: Начальная дата диапазона для загрузки данных.
+            date_to: Конечная дата диапазона для загрузки данных.
         
         Returns:
-            Dictionary with date (YYYY-MM-DD) as key and rate (float) as value
+            Словарь с данными ключевой ставки, где ключ - дата в формате YYYY-MM-DD,
+            значение - ключевая ставка (float) в процентах.
         
         Raises:
-            ValueError: If table structure doesn't match expected format
-            requests.RequestException: If HTTP request fails
-            Exception: For other parsing errors
+            RuntimeError: Если не удалось загрузить страницу (сетевая ошибка, таймаут)
+                или если не удалось распарсить HTML таблицы.
+            ValueError: Если структура таблицы не соответствует ожидаемому формату
+                (отсутствуют необходимые колонки "Дата" и "Ставка") или если не удалось
+                распарсить даты или значения ставок.
+        
+        Note:
+            Ожидается, что HTML страница содержит таблицу с колонками "Дата" и "Ставка".
+            Даты в таблице должны быть в формате DD.MM.YYYY, ставки - числа с запятой
+            как разделителем дробной части.
         """
         url = self._build_url(date_from, date_to)
         
@@ -276,22 +313,29 @@ class KeyRateService:
         return result
     
     def load_keyrate_data(self) -> Dict[str, float]:
-        """
-        Load key rate data from CBR and update local file.
+        """Загружает данные ключевой ставки из ЦБ РФ и обновляет локальный файл.
         
-        This method:
-        1. Loads existing data from JSON file
-        2. Determines date_from (last date in file or default)
-        3. Sets date_to to current date
-        4. Fetches new data from CBR
-        5. Merges new data with existing data
-        6. Saves updated data to file
+        Выполняет инкрементальное обновление данных ключевой ставки. Загружает только
+        новые данные с последней даты из существующего файла до текущей даты.
+        
+        Последовательность выполнения:
+            1. Загружает существующие данные из JSON файла
+            2. Определяет date_from (последняя дата в файле или дата по умолчанию)
+            3. Устанавливает date_to на текущую дату
+            4. Загружает новые данные из ЦБ РФ за диапазон [date_from, date_to]
+            5. Объединяет новые данные с существующими (новые данные перезаписывают старые)
+            6. Сохраняет обновленные данные в файл
         
         Returns:
-            Dictionary with all key rate data (date -> rate)
+            Словарь со всеми данными ключевой ставки, где ключ - дата в формате
+            YYYY-MM-DD, значение - ключевая ставка (float) в процентах.
         
         Raises:
-            RuntimeError: If data cannot be fetched or parsed
+            RuntimeError: Если не удалось загрузить или распарсить данные из ЦБ РФ.
+        
+        Note:
+            Если файл не существует или пуст, используется DEFAULT_START_DATE
+            (17.09.2013) как начальная дата для загрузки всех исторических данных.
         """
         self.logger.info("[KEYRATE SERVICE] Starting key rate data load...")
         
@@ -340,26 +384,27 @@ class KeyRateService:
 _keyrate_service: Optional[KeyRateService] = None
 
 
-def init_keyrate_service(data_dir: Path):
-    """
-    Initialize global keyrate service instance.
+def init_keyrate_service(data_dir: Path) -> None:
+    """Инициализирует singleton экземпляр сервиса ключевой ставки.
+    
+    Создает глобальный экземпляр KeyRateService с указанной директорией данных.
+    Должен быть вызван перед использованием get_keyrate_service().
     
     Args:
-        data_dir: Path to data directory
+        data_dir: Путь к директории с JSON файлами данных.
     """
     global _keyrate_service
     _keyrate_service = KeyRateService(data_dir)
 
 
 def get_keyrate_service() -> KeyRateService:
-    """
-    Get global keyrate service instance.
+    """Получает singleton экземпляр сервиса ключевой ставки.
     
     Returns:
-        KeyRateService instance
+        Экземпляр KeyRateService для работы с данными ключевой ставки ЦБ РФ.
     
     Raises:
-        RuntimeError: If service not initialized
+        RuntimeError: Если сервис не был инициализирован через init_keyrate_service().
     """
     if _keyrate_service is None:
         raise RuntimeError("KeyRateService not initialized. Call init_keyrate_service() first.")

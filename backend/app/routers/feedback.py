@@ -1,3 +1,10 @@
+"""Роутеры для обработки обратной связи от пользователей.
+
+Этот модуль содержит роутеры FastAPI для обработки HTTP запросов с предложениями
+по улучшению приложения от пользователей. Сохраняет обратную связь в JSON файл
+для последующего анализа.
+"""
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from typing import Dict, Any
@@ -9,27 +16,45 @@ import os
 # from app.services.email_service import send_feedback_email
 
 router = APIRouter(prefix="/api", tags=["feedback"])
+"""Роутер FastAPI для обработки запросов обратной связи."""
 
 
 class FeedbackRequest(BaseModel):
-    """Request model for feedback submission"""
+    """Модель запроса для отправки обратной связи.
+    
+    Attributes:
+        text: Текст предложения по улучшению приложения (1-3000 символов).
+        tab_name: Название вкладки, где было отправлено предложение.
+    """
     text: str = Field(..., min_length=1, max_length=3000, description="Feedback text")
     tab_name: str = Field(..., description="Name of the tab where feedback was submitted")
 
 
 class FeedbackResponse(BaseModel):
-    """Response model for feedback submission"""
+    """Модель ответа для отправки обратной связи.
+    
+    Attributes:
+        success: Флаг успешной отправки обратной связи.
+        feedback_id: Идентификатор сохраненного предложения.
+        message: Сообщение о результате операции.
+    """
     success: bool
     feedback_id: int
     message: str = "Feedback submitted successfully"
 
 
-# Path to feedback JSON file
-FEEDBACK_FILE = Path(__file__).parent.parent / "data" / "feedback.json"
+FEEDBACK_FILE: Path = Path(__file__).parent.parent / "data" / "feedback.json"
+"""Путь к файлу для хранения обратной связи от пользователей."""
 
 
-def ensure_feedback_file():
-    """Ensure feedback.json file exists with proper structure"""
+
+
+def ensure_feedback_file() -> None:
+    """Обеспечивает существование файла feedback.json с правильной структурой.
+    
+    Создает файл feedback.json с начальной структурой, если он не существует.
+    Создает директорию для файла при необходимости.
+    """
     if not FEEDBACK_FILE.exists():
         # Create directory if it doesn't exist
         FEEDBACK_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -43,7 +68,15 @@ def ensure_feedback_file():
 
 
 def get_next_feedback_id() -> int:
-    """Get the next feedback ID by reading existing file"""
+    """Получает следующий ID для обратной связи.
+    
+    Читает существующий файл feedback.json и определяет максимальный ID из всех
+    существующих записей. Возвращает следующий доступный ID.
+    
+    Returns:
+        Следующий доступный ID для обратной связи. Если файл не существует или
+        пуст, возвращает 1.
+    """
     ensure_feedback_file()
     
     try:
@@ -64,7 +97,17 @@ def get_next_feedback_id() -> int:
 
 
 def save_feedback(feedback_id: int, text: str, tab_name: str) -> None:
-    """Save feedback to JSON file"""
+    """Сохраняет обратную связь в JSON файл.
+    
+    Сохраняет текст обратной связи и метаданные (название вкладки, временная метка)
+    отдельно в файл feedback.json. Текст сохраняется в секции feedback_texts,
+    метаданные - в секции feedback_metadata.
+    
+    Args:
+        feedback_id: Идентификатор обратной связи для сохранения.
+        text: Текст предложения по улучшению приложения.
+        tab_name: Название вкладки, где было отправлено предложение.
+    """
     ensure_feedback_file()
     
     # Read existing data
@@ -101,12 +144,24 @@ def save_feedback(feedback_id: int, text: str, tab_name: str) -> None:
 
 @router.post("/feedback", response_model=FeedbackResponse)
 async def submit_feedback(feedback: FeedbackRequest):
-    """
-    Submit feedback/suggestion for improvements.
+    """Отправляет предложение по улучшению приложения.
     
-    Stores feedback text and metadata (tab name, timestamp) separately in JSON file.
-    Email notification is disabled.
-    Returns the assigned feedback ID.
+    Сохраняет текст предложения и метаданные (название вкладки, временная метка)
+    отдельно в JSON файл. Присваивает уникальный ID предложению и возвращает его
+    в ответе. Уведомления по email отключены.
+    
+    Args:
+        feedback: Объект FeedbackRequest с текстом предложения и названием вкладки.
+    
+    Returns:
+        Объект FeedbackResponse с результатом отправки, содержащий:
+        - success: Флаг успешной отправки (True)
+        - feedback_id: Идентификатор сохраненного предложения
+        - message: Сообщение об успешной отправке
+    
+    Raises:
+        HTTPException: Если произошла ошибка при сохранении обратной связи
+            (статус 500).
     """
     try:
         # Get next feedback ID

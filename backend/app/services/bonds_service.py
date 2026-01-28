@@ -1,13 +1,16 @@
-# noqa: D100
-"""
-Сервисный слой выгрузки облигаций (чистая архитектура).
+"""Сервисный слой для работы с облигациями.
 
-Получает параметры от роутера, вызывает DBBonds.select() для выборки данных
+Этот модуль реализует бизнес-логику для получения и фильтрации списка облигаций.
+Получает параметры от роутера, вызывает BondsRepository.select() для выборки данных
 с применением всех фильтров на уровне БД, преобразует строки в BondListItem,
 применяет фильтр по эмитенту (если указан), и возвращает готовый ответ для API.
 
-Вся фильтрация облигаций (кроме фильтрации по эмитенту) выполняется в методе
-DBBonds.select() на уровне SQL для повышения производительности.
+Основные функции:
+    get_bonds_list(): Получение списка облигаций с применением фильтров.
+
+Note:
+    Вся фильтрация облигаций (кроме фильтрации по эмитенту) выполняется в методе
+    BondsRepository.select() на уровне SQL для повышения производительности.
 """
 
 from datetime import date
@@ -19,12 +22,25 @@ import orjson
 from app.models.bond import BondListItem
 from app.models.filters import BondFilters
 from app.models.responses import BondsListResponse
-from app.services.db_refresher import DBBonds, DBCoupon
+from app.repository.bonds_repository import BondsRepository
+from app.repository.db_coupon import DBCoupon
 from app.services.emitent_service import get_emitent_service
 
 
 def _load_mappings(data_dir: Path) -> Tuple[Dict[int, str], Dict[int, str]]:
-    """Загружает маппинги bond_type/bond_kind и строит обратные словари id -> str."""
+    """Загружает маппинги типов и видов облигаций и строит обратные словари.
+    
+    Загружает маппинги из JSON файлов bonds_type_mapping.json и bonds_type43_mapping.json
+    и создает обратные словари для преобразования числовых ID в строковые значения.
+    
+    Args:
+        data_dir: Путь к директории с JSON файлами маппингов.
+    
+    Returns:
+        Кортеж из двух словарей:
+        - type_rev: Обратный маппинг типов облигаций (ID -> строка).
+        - kind_rev: Обратный маппинг видов облигаций (ID -> строка).
+    """
     type_rev: Dict[int, str] = {}
     kind_rev: Dict[int, str] = {}
 
@@ -54,6 +70,18 @@ def _load_mappings(data_dir: Path) -> Tuple[Dict[int, str], Dict[int, str]]:
 
 
 def _parse_date(s: Optional[str]) -> Optional[date]:
+    """Парсит строку даты в объект date.
+    
+    Преобразует строку с датой в формате ISO (YYYY-MM-DD) в объект date.
+    Обрабатывает некорректные значения и пустые строки.
+    
+    Args:
+        s: Строка с датой в формате ISO (YYYY-MM-DD) или None.
+            Если строка содержит "0000-00-00" или пустая, возвращает None.
+    
+    Returns:
+        Объект date или None, если строка некорректна, пуста или равна "0000-00-00".
+    """
     if not s or not isinstance(s, str) or s.strip() in ("", "0000-00-00"):
         return None
     try:
@@ -63,18 +91,21 @@ def _parse_date(s: Optional[str]) -> Optional[date]:
 
 
 def _find_closest_coupon(coupons: List[Dict[str, Any]], current_date: date) -> Optional[Dict[str, Any]]:
-    """
-    Находит будущий купон с наиболее близкой датой к текущей дате.
+    """Находит будущий купон с наиболее близкой датой к текущей дате.
     
     Поскольку фильтрация на уровне БД уже возвращает только будущие купоны
     (coupondate >= current_date), выбирается купон с минимальной датой.
     
     Args:
-        coupons: Список словарей с данными купонов (уже отфильтрованных по дате)
-        current_date: Текущая дата для сравнения (используется для документации)
+        coupons: Список словарей с данными купонов. Каждый словарь должен содержать
+            поле "coupondate" в формате YYYY-MM-DD. Список уже отфильтрован по дате
+            (все купоны имеют дату >= current_date).
+        current_date: Текущая дата для сравнения. Используется для документации,
+            так как фильтрация уже выполнена на уровне БД.
     
     Returns:
-        Словарь с данными ближайшего будущего купона или None, если список пуст
+        Словарь с данными ближайшего будущего купона (с минимальной датой) или None,
+        если список пуст или не содержит валидных дат.
     """
     if not coupons:
         return None
@@ -105,19 +136,21 @@ def _get_coupons_for_bonds(
     secids: List[str],
     current_date: date
 ) -> Dict[str, Optional[float]]:
-    """
-    Получает значения купонов из таблицы coupons для списка облигаций.
+    """Получает значения купонов из таблицы coupons для списка облигаций.
     
-    Для каждой облигации выбирается купон с наиболее близкой датой к текущей дате,
-    и извлекается значение из поля value.
+    Для каждой облигации запрашивает купоны с датой >= current_date, выбирает
+    купон с наиболее близкой датой к текущей дате и извлекает значение из поля value.
     
     Args:
-        db: Экземпляр DBBonds для работы с БД
-        secids: Список идентификаторов облигаций
-        current_date: Текущая дата для фильтрации и выбора ближайшего купона
+        db: Экземпляр DBCoupon для работы с таблицей coupons в БД.
+        secids: Список идентификаторов облигаций (SECID) для получения купонов.
+        current_date: Текущая дата для фильтрации купонов (выбираются только
+            будущие купоны с датой >= current_date).
     
     Returns:
-        Словарь, где ключ - secid, значение - значение купона из поля value или None
+        Словарь, где ключ - SECID облигации, значение - значение купона из поля value
+        (преобразованное в float) или None, если купон не найден или значение отсутствует.
+        В случае ошибки при запросе к БД возвращает пустой словарь.
     """
     if not secids:
         return {}
@@ -172,7 +205,22 @@ def _row_to_bond_list_item(
     type_rev: Dict[int, str],
     kind_rev: Dict[int, str],
 ) -> BondListItem:
-    """Преобразует сырую строку БД в BondListItem с учётом вычисляемых полей."""
+    """Преобразует сырую строку из БД в объект BondListItem.
+    
+    Выполняет преобразование данных облигации из формата базы данных (словарь)
+    в объект модели BondListItem. Вычисляет производные поля (coupon_period из
+    coupon_frequency, duration_days из duration_years) и применяет обратные маппинги
+    для преобразования ID типов и видов облигаций в строковые значения.
+    
+    Args:
+        row: Словарь с данными облигации из таблицы bonds. Должен содержать все
+            необходимые поля таблицы (secid, name, rating, current_price, и т.д.).
+        type_rev: Обратный маппинг типов облигаций (ID -> строка).
+        kind_rev: Обратный маппинг видов облигаций (ID -> строка).
+    
+    Returns:
+        Объект BondListItem с данными облигации, готовый для использования в API.
+    """
     maturity_date = _parse_date(row.get("maturity_date"))
     coupon_freq = row.get("coupon_frequency")
     coupon_period: Optional[int] = None
@@ -246,15 +294,38 @@ def get_bonds_list(
     db_path: Optional[Path] = None,
     data_dir: Optional[Path] = None,
 ) -> BondsListResponse:
-    """
-    Выгрузка списка облигаций с фильтрами.
-
-    Вызывает DBBonds.select() для получения данных с применением всех фильтров на уровне БД.
-    Преобразует сырые данные из БД в BondListItem, применяет фильтр по эмитенту
-    (если указан), и возвращает BondsListResponse.
+    """Получает список облигаций с применением фильтров.
     
-    Вся фильтрация облигаций (кроме фильтрации по эмитенту) выполняется в методе
-    DBBonds.select() на уровне SQL для повышения производительности.
+    Основная функция сервисного слоя для получения списка облигаций. Вызывает
+    BondsRepository.select() для получения данных с применением всех фильтров на уровне БД.
+    Преобразует сырые данные из БД в BondListItem, загружает данные о купонах,
+    применяет фильтр по эмитенту (если указан), и возвращает BondsListResponse.
+    
+    Args:
+        filters: Объект BondFilters с параметрами фильтрации облигаций.
+            Включает фильтры по проценту купона, доходности, дате погашения,
+            уровню листинга, валюте, типу облигации, виду облигации и рейтингу.
+        emitent_title: Опциональное название эмитента для фильтрации облигаций.
+            Если указано, возвращаются только облигации указанного эмитента.
+        exclude_spob: Если True, исключает облигации с режимом торгов SPOB.
+        db_path: Опциональный путь к файлу базы данных. Если не указан,
+            используется путь по умолчанию.
+        data_dir: Опциональный путь к директории с JSON файлами данных.
+            Если не указан, используется путь по умолчанию.
+    
+    Returns:
+        Объект BondsListResponse с отфильтрованным списком облигаций, содержащий:
+        - total: Общее количество облигаций в БД (без фильтров).
+        - filtered: Количество облигаций после применения всех фильтров.
+        - skip: Смещение для пагинации (всегда 0).
+        - limit: Лимит записей (равен filtered).
+        - bonds: Список объектов BondListItem с данными облигаций.
+    
+    Note:
+        Вся фильтрация облигаций (кроме фильтрации по эмитенту) выполняется в методе
+        BondsRepository.select() на уровне SQL для повышения производительности. Фильтрация
+        по эмитенту выполняется в сервисном слое, так как требует дополнительных данных
+        из таблицы эмитентов.
     """
     if data_dir is None:
         backend = Path(__file__).resolve().parent.parent.parent
@@ -263,20 +334,35 @@ def get_bonds_list(
 
     type_rev, kind_rev = _load_mappings(data_dir)
 
-    db = DBBonds(db_path=db_path, data_dir=data_dir)
+    db = BondsRepository(db_path=db_path)
 
     # Используем универсальный метод select, который применяет все фильтры на уровне БД
     # Фронтенд теперь отправляет ID напрямую, преобразование не требуется
     # bondtype и bondtype43 уже содержат ID (числа), которые передаются напрямую в SQL-запрос
-    raw = db.select(
-        filters=filters,
-        bond_type_ids=filters.bondtype,
-        bond_kind_ids=filters.bondtype43,
-        exclude_spob=exclude_spob,
-    )
-
+    try:
+        raw = db.select(
+            filters=filters,
+            bond_type_ids=filters.bondtype,
+            bond_kind_ids=filters.bondtype43,
+            exclude_spob=exclude_spob,
+        )
+    except sqlite3.OperationalError as e:
+        # Если таблица не существует, возвращаем пустой список
+        # Это может произойти, если база данных не была инициализирована
+        if "no such table" in str(e).lower() or "no such table: bonds" in str(e).lower():
+            raw = []
+        else:
+            raise
+    
     # total — число всех облигаций в БД (без фильтров), для совместимости с API
-    total = db.count_bonds(exclude_spob=False)
+    try:
+        total = db.count_bonds(exclude_spob=False)
+    except sqlite3.OperationalError as e:
+        # Если таблица не существует, возвращаем 0
+        if "no such table" in str(e).lower() or "no such table: bonds" in str(e).lower():
+            total = 0
+        else:
+            raise
 
     # Преобразуем в BondListItem
     bonds: List[BondListItem] = []

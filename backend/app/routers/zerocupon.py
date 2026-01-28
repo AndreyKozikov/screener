@@ -1,3 +1,11 @@
+"""Роутеры для работы с кривой бескупонной доходности (БКДЦТ).
+
+Этот модуль содержит роутеры FastAPI для обработки HTTP запросов, связанных
+с данными кривой бескупонной доходности от Мосбиржи. Включает endpoints для
+получения данных с фильтрацией по датам, экспорта данных в форматах JSON и
+Markdown, а также обновления данных из API Мосбиржи.
+"""
+
 import os
 import re
 import asyncio
@@ -13,14 +21,21 @@ import json
 import httpx
 
 from app.utils.logger import get_data_update_logger
-from app.services.db_orchestrator import DBOrchestrator
+from app.repository.db_orchestrator import DBOrchestrator
 from app.services.kbd_service import get_kbd_service
 
 router = APIRouter(prefix="/api/zerocupon", tags=["zerocupon"])
+"""Роутер FastAPI для обработки запросов к API кривой бескупонной доходности."""
+
+
 
 
 def _get_zerocupon_path() -> Path:
-    """Get path to zerocupon.csv file."""
+    """Получает путь к файлу zerocupon.csv.
+    
+    Returns:
+        Путь к файлу zerocupon.csv в директории data проекта.
+    """
     # Script is in backend/app/routers/, data is in backend/app/data/
     data_dir = Path(__file__).parent.parent / "data"
     csv_path = data_dir / "zerocupon.csv"
@@ -32,11 +47,39 @@ async def get_zerocupon_data(
     date_from: Optional[str] = Query(None, description="Start date in DD.MM.YYYY format"),
     date_to: Optional[str] = Query(None, description="End date in DD.MM.YYYY format"),
 ):
-    """
-    Get zero-coupon yield curve data filtered by date range.
+    """Получает данные кривой бескупонной доходности с фильтрацией по диапазону дат.
     
-    Returns data as JSON array of records from database.
-    By default returns data for the last year.
+    Загружает данные из базы данных через KBD сервис и применяет фильтрацию по
+    диапазону дат. По умолчанию возвращает данные за последний год, если даты
+    не указаны. Фильтрует выходные дни (суббота и воскресенье) и исключает
+    колонку с периодом 30 лет из результатов.
+    
+    Args:
+        date_from: Начальная дата диапазона в формате DD.MM.YYYY (включительно).
+            Если не указана, используется дата год назад от текущей даты.
+        date_to: Конечная дата диапазона в формате DD.MM.YYYY (включительно).
+            Если не указана, используется текущая дата.
+    
+    Returns:
+        Словарь с отфильтрованными данными, содержащий:
+        - data: Список словарей с записями кривой доходности, каждая содержит:
+          - Дата: Дата в формате DD.MM.YYYY
+          - Время: Время расчета (если доступно)
+          - Срок X.Y лет: Доходность для срока до погашения X.Y лет
+            (в процентах годовых) для различных периодов
+        - count: Количество записей после фильтрации
+        - date_from: Начальная дата фильтра
+        - date_to: Конечная дата фильтра
+        Записи отсортированы по дате в порядке убывания (от новых к старым).
+    
+    Raises:
+        HTTPException: Если сервис KBD не инициализирован (статус 503),
+            если произошла ошибка при загрузке данных (статус 500).
+    
+    Note:
+        Данные загружаются из базы данных через KBD сервис. Выходные дни
+        (суббота и воскресенье) автоматически исключаются из результатов.
+        Колонка с периодом 30 лет исключается из отображения и расчетов.
     """
     try:
         # Get KBD service
@@ -151,11 +194,39 @@ async def download_zerocupon_json(
     date_from: Optional[str] = Query(None, description="Start date in DD.MM.YYYY format"),
     date_to: Optional[str] = Query(None, description="End date in DD.MM.YYYY format"),
 ):
-    """
-    Download zero-coupon yield curve data as JSON file.
+    """Скачивает данные кривой бескупонной доходности в формате JSON.
     
-    Returns filtered data as JSON file with LLM-friendly structure.
-    By default returns data for the last year.
+    Загружает данные из CSV файла, применяет фильтрацию по диапазону дат и возвращает
+    данные в формате JSON с удобной для языковых моделей структурой. По умолчанию
+    возвращает данные за последний год, если даты не указаны.
+    
+    Args:
+        date_from: Начальная дата диапазона в формате DD.MM.YYYY (включительно).
+            Если не указана, используется дата год назад от текущей даты.
+        date_to: Конечная дата диапазона в формате DD.MM.YYYY (включительно).
+            Если не указана, используется текущая дата.
+    
+    Returns:
+        HTTP Response с JSON файлом для скачивания, содержащим:
+        - metadata: Метаданные экспорта (название, описание, период, количество записей,
+          дата экспорта, список периодов)
+        - field_descriptions: Описания полей данных
+        - data: Список записей, каждая содержит:
+          - date: Дата в формате DD.MM.YYYY
+          - time: Время расчета (если доступно)
+          - yield_curve: Словарь значений доходности по срокам до погашения
+            (ключи - сроки в годах, значения - доходность в процентах годовых)
+    
+    Raises:
+        HTTPException: Если файл zerocupon.csv не найден (статус 404),
+            если формат даты некорректен (статус 400),
+            если данные не найдены для указанного диапазона (статус 404),
+            или если произошла ошибка при генерации JSON (статус 500).
+    
+    Note:
+        Выходные дни (суббота и воскресенье) автоматически исключаются из результатов.
+        Колонка с периодом 30 лет исключается из экспорта. Имя файла формируется
+        автоматически: zerocupon_DD-MM-YYYY_DD-MM-YYYY.json или zerocupon_last_year.json.
     """
     csv_path = _get_zerocupon_path()
     
@@ -347,11 +418,40 @@ async def download_zerocupon_markdown(
     date_from: Optional[str] = Query(None, description="Start date in DD.MM.YYYY format"),
     date_to: Optional[str] = Query(None, description="End date in DD.MM.YYYY format"),
 ):
-    """
-    Download zero-coupon yield curve data as Markdown file.
+    """Скачивает данные кривой бескупонной доходности в формате Markdown.
     
-    Returns filtered data as Markdown table with formatted yield curve data.
-    By default returns data for the last year.
+    Загружает данные из CSV файла, применяет фильтрацию по диапазону дат и возвращает
+    данные в формате Markdown таблицы. По умолчанию возвращает данные за последний год,
+    если даты не указаны.
+    
+    Args:
+        date_from: Начальная дата диапазона в формате DD.MM.YYYY (включительно).
+            Если не указана, используется дата год назад от текущей даты.
+        date_to: Конечная дата диапазона в формате DD.MM.YYYY (включительно).
+            Если не указана, используется текущая дата.
+    
+    Returns:
+        HTTP Response с Markdown файлом для скачивания, содержащим:
+        - Заголовок "# Кривая бескупонной доходности (БКДЦТ)"
+        - Секцию метаданных с периодом данных, количеством записей и датой экспорта
+        - Таблицу Markdown с колонками:
+          - Дата: Дата в формате DD.MM.YYYY
+          - Время: Время расчета (если доступно)
+          - Срок X.Y лет: Доходность для срока до погашения X.Y лет
+            (форматируется с 4 знаками после запятой)
+        - Секцию описания с пояснениями полей
+        Записи отсортированы по дате в порядке убывания (от новых к старым).
+    
+    Raises:
+        HTTPException: Если файл zerocupon.csv не найден (статус 404),
+            если формат даты некорректен (статус 400),
+            если данные не найдены для указанного диапазона (статус 404),
+            или если произошла ошибка при генерации Markdown (статус 500).
+    
+    Note:
+        Выходные дни (суббота и воскресенье) автоматически исключаются из результатов.
+        Колонка с периодом 30 лет исключается из экспорта. Имя файла формируется
+        автоматически: zerocupon_DD-MM-YYYY_DD-MM-YYYY.md или zerocupon_last_year.md.
     """
     csv_path = _get_zerocupon_path()
     
@@ -554,9 +654,18 @@ async def download_zerocupon_markdown(
 
 
 def _parse_jsonp_response(text: str) -> Dict[str, Any]:
-    """
-    Parse JSONP response from MOEX API.
-    Removes JSON_CALLBACK wrapper and extracts JSON data.
+    """Парсит JSONP ответ от API Мосбиржи.
+    
+    Удаляет обертку JSON_CALLBACK и извлекает JSON данные.
+    
+    Args:
+        text: Текст JSONP ответа от API Мосбиржи.
+    
+    Returns:
+        Словарь с распарсенными JSON данными.
+    
+    Raises:
+        ValueError: Если не удалось распарсить JSON данные.
     """
     # Remove JSON_CALLBACK wrapper: JSON_CALLBACK(...) -> ...
     # Match pattern: JSON_CALLBACK( ... )
@@ -576,9 +685,17 @@ def _parse_jsonp_response(text: str) -> Dict[str, Any]:
 
 
 def _get_last_date_from_csv(csv_path: Path) -> Optional[datetime]:
-    """
-    Get the last date from CSV file.
-    Returns None if file is empty or doesn't exist.
+    """Получает последнюю дату из CSV файла.
+    
+    Читает первую строку CSV файла (самая свежая дата находится вверху) и возвращает
+    дату в формате datetime.
+    
+    Args:
+        csv_path: Путь к CSV файлу с данными кривой доходности.
+    
+    Returns:
+        Объект datetime с последней датой из файла, или None если файл не существует,
+        пуст или не содержит валидных дат.
     """
     if not csv_path.exists():
         return None
@@ -602,9 +719,20 @@ def _get_last_date_from_csv(csv_path: Path) -> Optional[datetime]:
 
 
 def _fetch_zerocupon_data_for_date(target_date: datetime) -> Optional[List[Dict[str, Any]]]:
-    """
-    Fetch zero-coupon yield curve data from MOEX API for a specific date.
-    Returns list of yield data items or None if request fails.
+    """Загружает данные кривой бескупонной доходности из API Мосбиржи для указанной даты.
+    
+    Выполняет HTTP запрос к API Мосбиржи для получения данных кривой доходности
+    за указанную дату. Парсит JSONP ответ и извлекает данные yearyields.
+    
+    Args:
+        target_date: Дата для загрузки данных кривой доходности.
+    
+    Returns:
+        Список словарей с данными доходности по периодам, или None если запрос
+        не удался или данные недоступны. Каждый словарь содержит:
+        - period: Период до погашения (в годах)
+        - value: Значение доходности (в процентах годовых)
+        - tradetime: Время торгов
     """
     # Format date as YYYY-MM-DD
     date_str = target_date.strftime("%Y-%m-%d")
@@ -632,9 +760,24 @@ def _fetch_zerocupon_data_for_date(target_date: datetime) -> Optional[List[Dict[
         return None
 
 
-def _add_data_to_csv(csv_path: Path, date_obj: datetime, time_str: str, yields_data: List[Dict[str, Any]]):
-    """
-    Add new row to CSV file with yield curve data.
+def _add_data_to_csv(csv_path: Path, date_obj: datetime, time_str: str, yields_data: List[Dict[str, Any]]) -> None:
+    """Добавляет новую строку в CSV файл с данными кривой доходности.
+    
+    Создает новую строку с данными кривой доходности и добавляет ее в начало CSV файла
+    (самые свежие данные находятся вверху). Если файл не существует, создает новый
+    с заголовками колонок.
+    
+    Args:
+        csv_path: Путь к CSV файлу для сохранения данных.
+        date_obj: Дата расчета кривой доходности.
+        time_str: Время расчета в формате HH:MM:SS.
+        yields_data: Список словарей с данными доходности по периодам, каждый содержит:
+            - period: Период до погашения (в годах)
+            - value: Значение доходности (в процентах годовых)
+    
+    Note:
+        Период 30 лет исключается из сохранения. Значения доходности форматируются
+        с 2 знаками после запятой, используется точка как разделитель десятичных знаков.
     """
     # Map period values to column names
     # Note: 30 years period is excluded from calculations and display
@@ -690,9 +833,26 @@ def _add_data_to_csv(csv_path: Path, date_obj: datetime, time_str: str, yields_d
 
 
 def refresh_zerocupon_data() -> Dict[str, Any]:
-    """
-    Refresh zero-coupon yield curve data from MOEX API.
-    Checks last date in CSV and fetches missing data up to yesterday.
+    """Обновляет данные кривой бескупонной доходности из API Мосбиржи.
+    
+    Проверяет последнюю дату в CSV файле и загружает недостающие данные до вчерашнего дня.
+    Выполняет инкрементальное обновление - загружает только новые данные. Пропускает
+    выходные дни (суббота и воскресенье).
+    
+    Returns:
+        Словарь с результатом обновления, содержащий:
+        - status: Статус операции ("ok")
+        - message: Сообщение о результате обновления
+        - last_date: Последняя дата в CSV файле до обновления (в формате DD.MM.YYYY)
+        - start_date: Начальная дата диапазона загрузки (в формате DD.MM.YYYY)
+        - end_date: Конечная дата диапазона загрузки (в формате DD.MM.YYYY)
+        - dates_fetched: Количество успешно загруженных дат
+        - dates_failed: Количество дат с ошибками загрузки
+    
+    Note:
+        Если данных нет в CSV файле, начинает загрузку с даты 30 дней назад.
+        Если start_date > end_date (данные актуальны), возвращает сообщение
+        "Data is up to date" без загрузки данных.
     """
     logger = get_data_update_logger()
     logger.info("[REFRESH ZEROCOUPON] Starting zerocupon data refresh")
@@ -771,12 +931,35 @@ def refresh_zerocupon_data() -> Dict[str, Any]:
 async def refresh_zerocupon(
     update_zero_coupon_curve: bool = Query(False, description="Update zero coupon curve data in database after file save")
 ):
-    """
-    Refresh zero-coupon yield curve data from MOEX API.
-    Fetches missing data from the last date in CSV up to yesterday.
+    """Обновляет данные кривой бескупонной доходности из API Мосбиржи.
     
-    If update_zero_coupon_curve is True, after successfully downloading and saving data to file,
-    updates the database table kbd using the orchestrator.
+    Выполняет двухэтапное обновление:
+    1. Загружает недостающие данные из API Мосбиржи с последней даты в CSV до вчерашнего дня
+       и сохраняет их в CSV файл.
+    2. Синхронизирует данные из CSV файла в базу данных через DBOrchestrator.
+    
+    Args:
+        update_zero_coupon_curve: Если True, после успешного сохранения данных в файл
+            обновляет таблицу kbd в базе данных через orchestrator.migrate("kbd").
+            По умолчанию False.
+    
+    Returns:
+        Словарь с результатом обновления, содержащий:
+        - status: Статус операции ("ok")
+        - message: Сообщение о результате обновления
+        - last_date: Последняя дата в CSV файле до обновления
+        - start_date: Начальная дата диапазона загрузки
+        - end_date: Конечная дата диапазона загрузки
+        - dates_fetched: Количество успешно загруженных дат
+        - dates_failed: Количество дат с ошибками загрузки
+        - database_updated: Флаг успешного обновления базы данных (True/False)
+    
+    Raises:
+        HTTPException: Если произошла ошибка при обновлении данных (статус 500).
+    
+    Note:
+        Параметр update_zero_coupon_curve оставлен для обратной совместимости, но
+        обновление базы данных выполняется всегда после успешного сохранения файла.
     """
     logger = get_data_update_logger()
     logger.info(f"[API /zerocupon/refresh] Received request to refresh zerocupon data (update_zero_coupon_curve={update_zero_coupon_curve})")

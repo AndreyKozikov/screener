@@ -1,3 +1,10 @@
+"""Сервис для работы с курсами валют от ЦБ РФ.
+
+Этот модуль содержит класс CurrencyService для загрузки, кэширования и управления
+курсами валют из API Центрального банка Российской Федерации. Данные сохраняются
+в JSON файл и обновляются при необходимости.
+"""
+
 import xml.etree.ElementTree as ET
 from datetime import date, datetime
 from pathlib import Path
@@ -12,22 +19,54 @@ from app.utils.logger import get_data_update_logger
 
 
 class CurrencyService:
-    """Service for handling currency exchange rates from CBR"""
+    """Сервис для работы с курсами валют от ЦБ РФ.
     
-    # Currency codes we're interested in
-    INTERESTED_CURRENCIES = ['EUR', 'USD', 'CNY']
+    Класс обеспечивает загрузку курсов валют из API Центрального банка РФ,
+    кэширование данных в JSON файл и управление обновлением данных. Поддерживает
+    получение курсов для конкретной даты с автоматическим поиском ближайших
+    доступных курсов при отсутствии данных.
     
-    # Base URL for CBR currency rates API
-    CBR_BASE_URL = "https://www.cbr.ru/scripts/XML_daily.asp"
+    Attributes:
+        INTERESTED_CURRENCIES: Список кодов валют, которые интересуют приложение
+            (EUR, USD, CNY).
+        CBR_BASE_URL: Базовый URL API ЦБ РФ для получения курсов валют.
+        data_dir: Путь к директории с данными.
+        currency_file: Путь к файлу для хранения курсов валют.
+        _currency_cache: Кэш загруженных данных о курсах валют.
+        logger: Логгер для записи событий и ошибок.
+    """
+    
+    INTERESTED_CURRENCIES: List[str] = ['EUR', 'USD', 'CNY']
+    """Список кодов валют, которые интересуют приложение."""
+    
+    CBR_BASE_URL: str = "https://www.cbr.ru/scripts/XML_daily.asp"
+    """Базовый URL API ЦБ РФ для получения курсов валют."""
     
     def __init__(self, data_dir: Path):
+        """Инициализирует сервис для работы с курсами валют.
+        
+        Args:
+            data_dir: Путь к директории с JSON файлами данных.
+        """
         self.data_dir = data_dir
         self.currency_file = data_dir / "currency_rates.json"
         self._currency_cache: Optional[List[Dict[str, Any]]] = None
         self.logger = get_data_update_logger()
     
     def _load_currency_data(self) -> List[Dict[str, Any]]:
-        """Load currency rates data from JSON file"""
+        """Загружает данные о курсах валют из JSON файла.
+        
+        Загружает данные из файла currency_rates.json с кэшированием. При первом
+        вызове загружает данные из файла и сохраняет в кэш. При последующих вызовах
+        возвращает данные из кэша.
+        
+        Returns:
+            Список словарей с данными о курсах валют. Каждый словарь содержит:
+            - date: Дата в формате YYYY-MM-DD
+            - source_date: Дата из ответа API ЦБ РФ
+            - rates: Словарь с курсами валют (ключ - код валюты, значение - данные курса)
+            Если файл не существует или поврежден, возвращает пустой список.
+        """
         if self._currency_cache is not None:
             self.logger.info("[CURRENCY SERVICE] Using cached currency data (in-memory cache)")
             return self._currency_cache
@@ -63,8 +102,12 @@ class CurrencyService:
         
         return self._currency_cache
     
-    def _save_currency_data(self):
-        """Save currency rates data to JSON file"""
+    def _save_currency_data(self) -> None:
+        """Сохраняет данные о курсах валют в JSON файл.
+        
+        Записывает кэшированные данные в файл currency_rates.json с форматированием
+        (отступы и перенос строки). Создает директорию для файла при необходимости.
+        """
         if self._currency_cache is None:
             self._currency_cache = []
         
@@ -81,7 +124,15 @@ class CurrencyService:
         self.logger.info(f"[CURRENCY SERVICE] File saved successfully, size: {file_size} bytes")
     
     def _has_rates_for_date(self, target_date: date) -> bool:
-        """Check if currency rates exist for the given date"""
+        """Проверяет, существуют ли курсы валют для указанной даты.
+        
+        Args:
+            target_date: Дата для проверки наличия курсов.
+        
+        Returns:
+            True если в кэше есть запись с курсами для указанной даты,
+            False в противном случае.
+        """
         currency_data = self._load_currency_data()
         
         target_date_str = target_date.isoformat()
@@ -93,17 +144,34 @@ class CurrencyService:
         return False
     
     def _fetch_rates_from_cbr(self, target_date: date) -> Dict[str, Any]:
-        """
-        Fetch currency rates from CBR API for the given date.
+        """Загружает курсы валют из API ЦБ РФ для указанной даты.
+        
+        Выполняет HTTP запрос к API Центрального банка РФ для получения курсов валют
+        на указанную дату. Парсит XML ответ и извлекает курсы для интересующих валют
+        (EUR, USD, CNY). Рассчитывает курс за 1 единицу валюты с учетом номинала.
         
         Args:
-            target_date: Date to fetch rates for
-            
+            target_date: Дата для получения курсов валют.
+        
         Returns:
-            Dictionary with date and rates for interested currencies
-            
+            Словарь с данными о курсах валют, содержащий:
+            - date: Дата в формате YYYY-MM-DD
+            - source_date: Дата из ответа API ЦБ РФ (атрибут Date элемента ValCurs)
+            - rates: Словарь с курсами валют. Ключ - код валюты (EUR, USD, CNY),
+              значение - словарь с данными курса:
+              - code: Код валюты
+              - rate: Курс за 1 единицу валюты в рублях
+              - nominal: Номинал валюты
+              - original_value: Исходное значение курса из API
+        
         Raises:
-            RuntimeError: If fetch or parsing fails
+            RuntimeError: Если не удалось загрузить данные (сетевая ошибка, таймаут)
+                или если не удалось распарсить XML ответ.
+        
+        Note:
+            API ЦБ РФ возвращает XML в кодировке windows-1251. Метод автоматически
+            определяет кодировку и декодирует ответ. Курсы рассчитываются за 1 единицу
+            валюты с учетом номинала (например, если номинал 10, то курс делится на 10).
         """
         # Format date as DD/MM/YYYY for CBR API
         date_str = target_date.strftime("%d/%m/%Y")
@@ -194,15 +262,18 @@ class CurrencyService:
             raise RuntimeError(f"Failed to fetch currency rates: {exc}") from exc
     
     def _find_previous_rates(self, target_date: date, currency_data: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-        """
-        Find the nearest previous entry with non-empty rates.
+        """Находит ближайшую предыдущую запись с непустыми курсами.
+        
+        Ищет в списке записей о курсах валют запись с датой <= target_date, которая
+        содержит непустые курсы. Возвращает самую свежую из таких записей.
         
         Args:
-            target_date: Date to search backwards from
-            currency_data: List of currency rate entries
-            
+            target_date: Дата, от которой выполняется поиск назад.
+            currency_data: Список записей о курсах валют для поиска.
+        
         Returns:
-            Dictionary with rates if found, None otherwise
+            Словарь с данными о курсах валют (содержит date, source_date, rates)
+            или None, если не найдено ни одной записи с непустыми курсами.
         """
         target_date_str = target_date.isoformat()
         
@@ -238,20 +309,30 @@ class CurrencyService:
         return most_recent_entry
     
     def get_rates(self, target_date: Optional[date] = None, force_refresh: bool = False) -> Dict[str, Any]:
-        """
-        Get currency rates for the given date.
+        """Получает курсы валют для указанной даты.
         
-        If rates don't exist for the date and force_refresh is True,
-        fetches from CBR API and saves to file.
-        
-        If rates don't exist or are empty, returns the nearest previous entry with rates.
+        Загружает курсы валют из кэша (JSON файл) или из API ЦБ РФ, если данные
+        отсутствуют, устарели или запрошено принудительное обновление. Если курсы
+        для указанной даты отсутствуют или пусты, возвращает ближайшую предыдущую
+        запись с непустыми курсами.
         
         Args:
-            target_date: Date to get rates for (defaults to today)
-            force_refresh: If True, force fetch from CBR API even if data exists
-            
+            target_date: Дата для получения курсов. Если не указана, используется
+                сегодняшняя дата.
+            force_refresh: Если True, принудительно загружает курсы из API ЦБ РФ,
+                игнорируя кэш. По умолчанию False.
+        
         Returns:
-            Dictionary with date and rates for interested currencies (EUR, USD, CNY)
+            Словарь с данными о курсах валют, содержащий:
+            - date: Дата в формате YYYY-MM-DD
+            - source_date: Дата из ответа API ЦБ РФ (может быть пустой строкой)
+            - rates: Словарь с курсами валют для интересующих валют (EUR, USD, CNY)
+            Если курсы не найдены, возвращается структура с пустым словарем rates.
+        
+        Note:
+            При отсутствии курсов для указанной даты выполняется поиск ближайшей
+            предыдущей записи с непустыми курсами. Это позволяет использовать актуальные
+            курсы даже если для конкретной даты данные отсутствуют.
         """
         if target_date is None:
             target_date = date.today()
@@ -349,14 +430,22 @@ class CurrencyService:
         return fresh_data
     
     def refresh_rates(self, target_date: Optional[date] = None) -> Dict[str, Any]:
-        """
-        Force refresh currency rates for the given date from CBR API.
+        """Принудительно обновляет курсы валют для указанной даты из API ЦБ РФ.
+        
+        Выполняет принудительную загрузку курсов валют из API ЦБ РФ для указанной даты
+        и сохраняет их в файл. Используется для ручного обновления данных.
         
         Args:
-            target_date: Date to refresh rates for (defaults to today)
-            
+            target_date: Дата для обновления курсов. Если не указана, используется
+                сегодняшняя дата.
+        
         Returns:
-            Dictionary with refresh result
+            Словарь с результатом обновления, содержащий:
+            - status: Статус операции ("ok" или "error")
+            - date: Дата в формате YYYY-MM-DD
+            - rates_count: Количество загруженных курсов валют (при успехе)
+            - error: Сообщение об ошибке (при ошибке)
+            - updated: Флаг успешного обновления (True или False)
         """
         if target_date is None:
             target_date = date.today()
@@ -388,14 +477,28 @@ class CurrencyService:
 _currency_service: Optional[CurrencyService] = None
 
 
-def init_currency_service(data_dir: Path):
-    """Initialize the currency service singleton"""
+def init_currency_service(data_dir: Path) -> None:
+    """Инициализирует singleton экземпляр сервиса курсов валют.
+    
+    Создает глобальный экземпляр CurrencyService с указанной директорией данных.
+    Должен быть вызван перед использованием get_currency_service().
+    
+    Args:
+        data_dir: Путь к директории с JSON файлами данных.
+    """
     global _currency_service
     _currency_service = CurrencyService(data_dir)
 
 
 def get_currency_service() -> CurrencyService:
-    """Get the currency service instance"""
+    """Получает singleton экземпляр сервиса курсов валют.
+    
+    Returns:
+        Экземпляр CurrencyService для работы с курсами валют.
+    
+    Raises:
+        RuntimeError: Если сервис не был инициализирован через init_currency_service().
+    """
     if _currency_service is None:
         raise RuntimeError("Currency service not initialized")
     return _currency_service

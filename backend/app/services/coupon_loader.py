@@ -1,3 +1,10 @@
+"""Загрузчик данных о купонах облигаций из кэша.
+
+Этот модуль содержит класс CouponLoader для загрузки и кэширования данных о купонах
+из файла coupons_data.json. Предоставляет методы для получения значения ближайшего
+купона и типа купона для облигации.
+"""
+
 from datetime import date, datetime
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -6,15 +13,41 @@ import orjson
 
 
 class CouponLoader:
-    """Helper service for loading coupon data from coupons_data.json"""
+    """Вспомогательный сервис для загрузки данных о купонах из coupons_data.json.
+    
+    Класс обеспечивает загрузку данных о купонах облигаций из JSON файла с кэшированием
+    для повышения производительности. Предоставляет методы для получения значения
+    ближайшего купона и типа купона для облигации.
+    
+    Attributes:
+        data_dir: Путь к директории с данными.
+        coupons_file: Путь к файлу coupons_data.json.
+        _coupons_cache: Кэш загруженных данных о купонах.
+    """
     
     def __init__(self, data_dir: Path):
+        """Инициализирует загрузчик купонов.
+        
+        Args:
+            data_dir: Путь к директории с JSON файлами данных.
+        """
         self.data_dir = data_dir
         self.coupons_file = data_dir / "coupons_data.json"
         self._coupons_cache: Optional[Dict[str, Dict]] = None
     
     def _load_coupons_data(self) -> Dict[str, Dict]:
-        """Load coupons data from JSON file"""
+        """Загружает данные о купонах из JSON файла.
+        
+        Загружает данные из файла coupons_data.json с кэшированием. При первом вызове
+        загружает данные из файла и сохраняет в кэш. При последующих вызовах возвращает
+        данные из кэша.
+        
+        Returns:
+            Словарь с данными о купонах. Ключ - SECID облигации, значение - словарь
+            с данными облигации из секции "bonds" файла coupons_data.json.
+            Если файл не существует или произошла ошибка при загрузке, возвращает
+            пустой словарь.
+        """
         if self._coupons_cache is not None:
             return self._coupons_cache
         
@@ -35,7 +68,17 @@ class CouponLoader:
     
     @staticmethod
     def _parse_date(date_str: str) -> Optional[date]:
-        """Parse date string from various formats"""
+        """Парсит строку даты в объект date.
+        
+        Преобразует строку с датой в формате YYYY-MM-DD в объект date.
+        Обрабатывает некорректные значения и специальное значение "0000-00-00".
+        
+        Args:
+            date_str: Строка с датой в формате YYYY-MM-DD.
+        
+        Returns:
+            Объект date или None, если строка некорректна, пуста или равна "0000-00-00".
+        """
         if not date_str or date_str == "0000-00-00":
             return None
         
@@ -45,15 +88,22 @@ class CouponLoader:
             return None
     
     def get_nearest_coupon_value(self, secid: str, current_date: Optional[date] = None) -> Optional[float]:
-        """
-        Get coupon value (value in rubles) from the nearest coupon date to current date.
+        """Получает значение купона из ближайшего по дате купона.
+        
+        Находит купон с наиболее близкой датой к текущей дате (может быть как будущим,
+        так и прошедшим) и возвращает значение из поля value (сумма купона в рублях).
         
         Args:
-            secid: Security ID
-            current_date: Current date (defaults to today)
-            
+            secid: Идентификатор облигации (SECID) для поиска купонов.
+            current_date: Текущая дата для сравнения. Если не указана, используется
+                сегодняшняя дата.
+        
         Returns:
-            Coupon value (value) from nearest coupon in rubles, or None if not found
+            Значение купона (value) из ближайшего купона в рублях или None, если:
+            - Облигация не найдена в данных
+            - У облигации нет купонов
+            - Не удалось распарсить дату купона
+            - Значение купона отсутствует или некорректно
         """
         if current_date is None:
             current_date = date.today()
@@ -104,14 +154,19 @@ class CouponLoader:
         return None
     
     def get_coupon_type(self, secid: str) -> Optional[str]:
-        """
-        Get coupon type (FIX or FLOAT) from amortizations section.
+        """Получает тип купона из секции амортизаций.
+        
+        Извлекает тип купона (FIX или FLOAT) из первой амортизации облигации.
+        Все амортизации облигации имеют одинаковый тип купона.
         
         Args:
-            secid: Security ID
-            
+            secid: Идентификатор облигации (SECID) для поиска типа купона.
+        
         Returns:
-            Coupon type (FIX or FLOAT) from amortizations, or None if not found
+            Тип купона ("FIX" или "FLOAT") или None, если:
+            - Облигация не найдена в данных
+            - У облигации нет амортизаций
+            - Тип купона отсутствует или не является "FIX" или "FLOAT"
         """
         coupons_data = self._load_coupons_data()
         
@@ -129,8 +184,12 @@ class CouponLoader:
         
         return coupon_type if coupon_type in ("FIX", "FLOAT") else None
     
-    def clear_cache(self):
-        """Clear the coupons cache"""
+    def clear_cache(self) -> None:
+        """Очищает кэш данных о купонах.
+        
+        Сбрасывает внутренний кэш, что приведет к повторной загрузке данных
+        из файла при следующем обращении к методу _load_coupons_data().
+        """
         self._coupons_cache = None
 
 
@@ -138,13 +197,25 @@ class CouponLoader:
 _coupon_loader: Optional[CouponLoader] = None
 
 
-def init_coupon_loader(data_dir: Path):
-    """Initialize the coupon loader singleton"""
+def init_coupon_loader(data_dir: Path) -> None:
+    """Инициализирует singleton экземпляр загрузчика купонов.
+    
+    Создает глобальный экземпляр CouponLoader с указанной директорией данных.
+    Должен быть вызван перед использованием get_coupon_loader().
+    
+    Args:
+        data_dir: Путь к директории с JSON файлами данных.
+    """
     global _coupon_loader
     _coupon_loader = CouponLoader(data_dir)
 
 
 def get_coupon_loader() -> Optional[CouponLoader]:
-    """Get the coupon loader instance"""
+    """Получает singleton экземпляр загрузчика купонов.
+    
+    Returns:
+        Экземпляр CouponLoader или None, если загрузчик не был инициализирован
+        через init_coupon_loader().
+    """
     return _coupon_loader
 

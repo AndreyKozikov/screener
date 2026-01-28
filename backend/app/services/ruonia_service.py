@@ -1,3 +1,10 @@
+"""Сервис для работы с данными индикатора RUONIA от ЦБ РФ.
+
+Этот модуль содержит класс RuoniaService для загрузки данных индикатора RUONIA
+(индикатор однодневной ставки межбанковского кредитования) из ЦБ РФ. Данные
+загружаются из Excel файла, парсятся и сохраняются в JSON файл.
+"""
+
 import tempfile
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -12,21 +19,49 @@ from app.utils.logger import get_data_update_logger
 
 
 class RuoniaService:
-    """Service for handling RUONIA rate data from CBR"""
+    """Сервис для работы с данными индикатора RUONIA от ЦБ РФ.
     
-    # Base URL for CBR RUONIA Excel download
-    CBR_RUONIA_BASE_URL = "https://www.cbr.ru/Queries/UniDbQuery/DownloadExcel/14315"
+    Класс обеспечивает загрузку данных индикатора RUONIA из Excel файла ЦБ РФ,
+    парсинг данных с помощью pandas и сохранение в JSON файл. Поддерживает
+    инкрементальное обновление данных (загрузка только новых записей с последней даты).
     
-    # Default start date if no data exists yet
-    DEFAULT_START_DATE = date(2010, 1, 11)
+    Attributes:
+        CBR_RUONIA_BASE_URL: Базовый URL для загрузки Excel файла RUONIA из ЦБ РФ.
+        DEFAULT_START_DATE: Дата по умолчанию для начала загрузки данных
+            (11.01.2010 - дата начала публикации RUONIA).
+        data_dir: Путь к директории с данными.
+        ruonia_file: Путь к файлу для хранения данных RUONIA.
+        logger: Логгер для записи событий и ошибок.
+    """
+    
+    CBR_RUONIA_BASE_URL: str = "https://www.cbr.ru/Queries/UniDbQuery/DownloadExcel/14315"
+    """Базовый URL для загрузки Excel файла RUONIA из ЦБ РФ."""
+    
+    DEFAULT_START_DATE: date = date(2010, 1, 11)
+    """Дата по умолчанию для начала загрузки данных (11.01.2010)."""
     
     def __init__(self, data_dir: Path):
+        """Инициализирует сервис для работы с индикатором RUONIA.
+        
+        Args:
+            data_dir: Путь к директории с данными, где будет храниться JSON файл.
+        """
         self.data_dir = data_dir
         self.ruonia_file = data_dir / "ruonia.json"
         self.logger = get_data_update_logger()
     
     def _load_ruonia_data(self) -> Dict[str, Dict[str, Any]]:
-        """Load RUONIA data from JSON file"""
+        """Загружает данные RUONIA из JSON файла.
+        
+        Загружает данные из файла ruonia.json. Обрабатывает ошибки чтения
+        и поврежденные файлы.
+        
+        Returns:
+            Словарь с данными RUONIA, где ключ - дата в формате YYYY-MM-DD,
+            значение - словарь с данными строки из Excel файла (все колонки).
+            Если файл не существует или поврежден, возвращает пустой словарь
+            и создает новый файл.
+        """
         self.logger.info(f"[RUONIA SERVICE] Loading RUONIA data from file: {self.ruonia_file}")
         
         if not self.ruonia_file.exists():
@@ -59,8 +94,16 @@ class RuoniaService:
             self._save_ruonia_data(empty_data)
             return empty_data
     
-    def _save_ruonia_data(self, data: Dict[str, Dict[str, Any]]):
-        """Save RUONIA data to JSON file"""
+    def _save_ruonia_data(self, data: Dict[str, Dict[str, Any]]) -> None:
+        """Сохраняет данные RUONIA в JSON файл.
+        
+        Записывает данные в файл ruonia.json с форматированием (отступы и перенос строки).
+        Создает директорию для файла при необходимости.
+        
+        Args:
+            data: Словарь с данными RUONIA, где ключ - дата в формате YYYY-MM-DD,
+                значение - словарь с данными строки из Excel файла.
+        """
         entries_count = len(data)
         self.logger.info(f"[RUONIA SERVICE] Saving {entries_count} RUONIA entries to file: {self.ruonia_file}")
         
@@ -74,7 +117,18 @@ class RuoniaService:
         self.logger.info(f"[RUONIA SERVICE] File saved successfully, size: {file_size} bytes")
     
     def _get_last_date_from_data(self, ruonia_data: Dict[str, Dict[str, Any]]) -> Optional[date]:
-        """Get the latest date from existing RUONIA data"""
+        """Получает последнюю (наиболее свежую) дату из существующих данных RUONIA.
+        
+        Находит максимальную дату среди всех записей в словаре данных. Используется
+        для определения начальной даты при инкрементальном обновлении.
+        
+        Args:
+            ruonia_data: Словарь с данными RUONIA, где ключи - даты в формате YYYY-MM-DD.
+        
+        Returns:
+            Объект date с последней датой из данных или None, если данных нет
+            или все даты некорректны.
+        """
         if not ruonia_data:
             return None
         
@@ -94,11 +148,22 @@ class RuoniaService:
         return last_date
     
     def _format_date_for_url(self, date_obj: date, format_type: str = "ddmmyyyy") -> str:
-        """Format date for URL parameters
+        """Форматирует дату для параметров URL.
+        
+        Преобразует объект date в строку в формате, требуемом API ЦБ РФ для
+        различных параметров запроса.
         
         Args:
-            date_obj: Date object to format
-            format_type: "ddmmyyyy" for From/To (DD.MM.YYYY) or "mmddyyyy" for FromDate/ToDate (MM/DD/YYYY)
+            date_obj: Объект date для форматирования.
+            format_type: Тип формата:
+                - "ddmmyyyy": Формат DD.MM.YYYY для параметров From/To
+                - "mmddyyyy": Формат MM/DD/YYYY для параметров FromDate/ToDate
+        
+        Returns:
+            Строка с датой в указанном формате.
+        
+        Raises:
+            ValueError: Если указан неизвестный тип формата.
         """
         if format_type == "ddmmyyyy":
             return date_obj.strftime("%d.%m.%Y")
@@ -108,7 +173,19 @@ class RuoniaService:
             raise ValueError(f"Unknown format_type: {format_type}")
     
     def _build_download_url(self, from_date: date, to_date: date) -> str:
-        """Build URL for downloading RUONIA Excel file from CBR"""
+        """Формирует URL для загрузки Excel файла RUONIA из ЦБ РФ.
+        
+        Создает URL для загрузки данных RUONIA за указанный диапазон дат.
+        Параметры запроса включают даты начала и конца диапазона в различных форматах
+        (DD.MM.YYYY для From/To и MM/DD/YYYY для FromDate/ToDate).
+        
+        Args:
+            from_date: Начальная дата диапазона для загрузки данных.
+            to_date: Конечная дата диапазона для загрузки данных.
+        
+        Returns:
+            Полный URL с параметрами запроса для загрузки Excel файла RUONIA.
+        """
         params = {
             "Posted": "True",
             "From": self._format_date_for_url(from_date, "ddmmyyyy"),
@@ -123,7 +200,25 @@ class RuoniaService:
         return url
     
     def _download_excel_file(self, url: str) -> Path:
-        """Download Excel file from URL and save to temporary file"""
+        """Загружает Excel файл по URL и сохраняет во временный файл.
+        
+        Выполняет HTTP запрос к указанному URL для загрузки Excel файла RUONIA
+        и сохраняет его во временный файл для последующего парсинга.
+        
+        Args:
+            url: URL для загрузки Excel файла RUONIA из ЦБ РФ.
+        
+        Returns:
+            Путь к временному файлу с загруженным Excel файлом.
+        
+        Raises:
+            RuntimeError: Если не удалось загрузить файл (сетевая ошибка, таймаут)
+                или если произошла ошибка при сохранении файла.
+        
+        Note:
+            Временный файл должен быть удален после использования. Удаление выполняется
+            в методе _parse_excel_file() в блоке finally.
+        """
         self.logger.info(f"[RUONIA SERVICE] Downloading Excel file from: {url}")
         
         try:
@@ -159,7 +254,27 @@ class RuoniaService:
             raise RuntimeError(f"Failed to download RUONIA Excel file: {exc}") from exc
     
     def _parse_excel_file(self, excel_path: Path) -> Dict[str, Dict[str, Any]]:
-        """Parse Excel file and convert to dictionary with DT as key"""
+        """Парсит Excel файл и преобразует в словарь с DT как ключом.
+        
+        Загружает Excel файл с помощью pandas.read_excel, извлекает данные из колонки DT
+        (дата) и преобразует каждую строку в словарь. Обрабатывает различные форматы дат
+        и NaN значения.
+        
+        Args:
+            excel_path: Путь к Excel файлу для парсинга.
+        
+        Returns:
+            Словарь с данными RUONIA, где ключ - дата в формате YYYY-MM-DD (из колонки DT),
+            значение - словарь с данными строки (все колонки из Excel файла).
+            NaN значения преобразуются в None для JSON сериализации.
+        
+        Raises:
+            RuntimeError: Если не удалось загрузить или распарсить Excel файл.
+            ValueError: Если колонка DT отсутствует в Excel файле.
+        
+        Note:
+            После парсинга временный файл автоматически удаляется в блоке finally.
+        """
         self.logger.info(f"[RUONIA SERVICE] Parsing Excel file: {excel_path}")
         
         try:
@@ -237,14 +352,38 @@ class RuoniaService:
                 self.logger.warning(f"[RUONIA SERVICE] WARNING: Could not delete temporary file: {exc}")
     
     def update_ruonia_data(self) -> Dict[str, Any]:
-        """
-        Update RUONIA data by downloading from CBR and merging with existing data.
+        """Обновляет данные RUONIA путем загрузки из ЦБ РФ и объединения с существующими данными.
         
-        Checks if data file exists before starting. If file doesn't exist,
-        sets start date to 11.01.2010.
+        Выполняет инкрементальное обновление данных RUONIA. Загружает только новые данные
+        с последней даты из существующего файла до текущей даты. Если файл не существует,
+        использует дату по умолчанию (11.01.2010) для начала загрузки всех исторических данных.
+        
+        Последовательность выполнения:
+            1. Проверяет существование файла данных
+            2. Загружает существующие данные из JSON файла
+            3. Определяет date_from (последняя дата в файле + 1 день или дата по умолчанию)
+            4. Устанавливает date_to на текущую дату
+            5. Загружает Excel файл из ЦБ РФ за диапазон [date_from, date_to]
+            6. Парсит Excel файл и извлекает данные
+            7. Объединяет новые данные с существующими (новые данные перезаписывают старые)
+            8. Сохраняет обновленные данные в файл
         
         Returns:
-            Dictionary with update result
+            Словарь с результатом обновления, содержащий:
+            - status: Статус операции ("ok" или "error")
+            - message: Сообщение о результате обновления
+            - from_date: Начальная дата диапазона загрузки (при успехе)
+            - to_date: Конечная дата диапазона загрузки (при успехе)
+            - new_entries: Количество новых записей (при успехе)
+            - updated_entries: Количество обновленных записей (при успехе)
+            - total_entries: Общее количество записей после обновления (при успехе)
+            - entries_count: Общее количество записей (если нет новых данных)
+            - error: Сообщение об ошибке (при ошибке)
+            - updated: Флаг успешного обновления (True или False)
+        
+        Note:
+            Если from_date > to_date (нет новых данных для загрузки), возвращается
+            результат с updated=False и сообщением "No new data to download".
         """
         self.logger.info("[RUONIA SERVICE] Starting RUONIA data update")
         
@@ -333,11 +472,13 @@ class RuoniaService:
             }
     
     def get_ruonia_data(self) -> Dict[str, Dict[str, Any]]:
-        """
-        Get all RUONIA data.
+        """Получает все данные RUONIA.
+        
+        Загружает все данные RUONIA из JSON файла и возвращает их в виде словаря.
         
         Returns:
-            Dictionary with dates as keys and row data as values
+            Словарь с данными RUONIA, где ключ - дата в формате YYYY-MM-DD,
+            значение - словарь с данными строки из Excel файла (все колонки).
         """
         return self._load_ruonia_data()
 
@@ -346,14 +487,28 @@ class RuoniaService:
 _ruonia_service: Optional[RuoniaService] = None
 
 
-def init_ruonia_service(data_dir: Path):
-    """Initialize the RUONIA service singleton"""
+def init_ruonia_service(data_dir: Path) -> None:
+    """Инициализирует singleton экземпляр сервиса RUONIA.
+    
+    Создает глобальный экземпляр RuoniaService с указанной директорией данных.
+    Должен быть вызван перед использованием get_ruonia_service().
+    
+    Args:
+        data_dir: Путь к директории с JSON файлами данных.
+    """
     global _ruonia_service
     _ruonia_service = RuoniaService(data_dir)
 
 
 def get_ruonia_service() -> RuoniaService:
-    """Get the RUONIA service instance"""
+    """Получает singleton экземпляр сервиса RUONIA.
+    
+    Returns:
+        Экземпляр RuoniaService для работы с данными индикатора RUONIA.
+    
+    Raises:
+        RuntimeError: Если сервис не был инициализирован через init_ruonia_service().
+    """
     if _ruonia_service is None:
         raise RuntimeError("RUONIA service not initialized")
     return _ruonia_service

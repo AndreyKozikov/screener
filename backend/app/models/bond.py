@@ -1,11 +1,62 @@
+"""Модели данных облигаций.
+
+Этот модуль содержит модели данных для представления информации об облигациях
+в различных форматах: упрощенный список для таблиц, детальная информация,
+секции данных о ценных бумагах и рыночных данных.
+"""
+
 from datetime import date
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field
 
 
-# List item (simplified for table display)
 class BondListItem(BaseModel):
-    """Simplified bond data for list/table view"""
+    """Упрощенная модель облигации для отображения в списке/таблице.
+    
+    Содержит основные поля облигации, необходимые для отображения в таблице
+    на фронтенде. Включает базовую информацию о ценной бумаге, купонах,
+    рейтингах и вычисляемые поля для удобства отображения.
+    
+    Attributes:
+        SECID: Идентификатор ценной бумаги (обязательное поле).
+        BOARDID: Идентификатор режима торгов.
+        SHORTNAME: Краткое наименование облигации.
+        SECNAME: Полное наименование ценной бумаги.
+        ISIN: ISIN код облигации.
+        COUPONPERCENT: Процентная ставка купона.
+        MATDATE: Дата погашения облигации.
+        STATUS: Статус облигации.
+        TRADINGSTATUS: Статус торгов.
+        FACEVALUE: Номинальная стоимость облигации.
+        PREVPRICE: Предыдущая цена облигации.
+        YIELDATPREVWAPRICE: Доходность к погашению по предыдущей средневзвешенной цене.
+        NEXTCOUPON: Дата следующей выплаты купона.
+        BOARDNAME: Наименование режима торгов.
+        CALLOPTIONDATE: Дата опциона на досрочный выкуп (call option).
+        PUTOPTIONDATE: Дата опциона на досрочную продажу (put option).
+        ACCRUEDINT: Накопленный купонный доход (НКД).
+        COUPONPERIOD: Период купона в днях.
+        COUPONVALUE: Сумма купона в рублях из данных о купонных выплатах.
+        DURATION: Дюрация облигации в днях (из marketdata_yields).
+        DURATIONWAPRICE: Дюрация по средневзвешенной цене в днях.
+        CURRENCYID: Валюта торговли.
+        FACEUNIT: Валюта номинала.
+        LISTLEVEL: Уровень листинга (1, 2, 3 и т.д.).
+        RATING_AGENCY: Название рейтингового агентства (краткое название на русском).
+        RATING_LEVEL: Уровень рейтинга (наихудший рейтинг из всех доступных).
+        RATINGS: Список всех рейтингов облигации.
+        BONDTYPE: Тип облигации (из bonds_emitent.json).
+        BONDTYPE43: Вид облигации (BONDTYPE из bonds.json, индекс 43).
+        COUPON_TYPE: Тип купона (FIX или FLOAT) из coupons_data.json.
+        COUPON_YIELD_TO_PRICE: Доходность купона к текущей цене в процентах (вычисляемое поле).
+        COUPON_FREQUENCY: Число выплат купона в год (вычисляемое поле).
+        DURATION_YEARS: Дюрация в годах (вычисляемое поле).
+    
+    Note:
+        Вычисляемые поля (COUPON_YIELD_TO_PRICE, COUPON_FREQUENCY, DURATION_YEARS)
+        рассчитываются на бэкенде в соответствии с принципами чистой архитектуры.
+        Фронтенд только отображает эти значения.
+    """
     SECID: str
     BOARDID: str
     SHORTNAME: str
@@ -42,12 +93,67 @@ class BondListItem(BaseModel):
     DURATION_YEARS: Optional[float] = None  # Дюрация в годах
     
     class Config:
+        """Конфигурация Pydantic модели.
+        
+        Attributes:
+            from_attributes: Разрешает создание модели из атрибутов объекта
+                (используется для совместимости с ORM).
+        """
         from_attributes = True
 
 
-# Securities section
 class BondSecurity(BaseModel):
-    """Securities section of bond data"""
+    """Модель секции данных о ценной бумаге (securities).
+    
+    Содержит полную информацию о ценной бумаге из секции "securities"
+    файла bonds.json. Включает все основные параметры облигации:
+    идентификаторы, цены, купоны, даты и дополнительные характеристики.
+    
+    Attributes:
+        SECID: Идентификатор ценной бумаги (обязательное поле).
+        BOARDID: Идентификатор режима торгов (обязательное поле).
+        SHORTNAME: Краткое наименование облигации (обязательное поле).
+        SECNAME: Полное наименование ценной бумаги.
+        PREVWAPRICE: Предыдущая средневзвешенная цена.
+        YIELDATPREVWAPRICE: Доходность к погашению по предыдущей средневзвешенной цене.
+        COUPONVALUE: Сумма купона в валюте номинала.
+        COUPONPERCENT: Процентная ставка купона.
+        NEXTCOUPON: Дата следующей выплаты купона.
+        ACCRUEDINT: Накопленный купонный доход (НКД).
+        PREVPRICE: Предыдущая цена облигации.
+        LOTSIZE: Размер лота.
+        FACEVALUE: Номинальная стоимость облигации.
+        BOARDNAME: Наименование режима торгов.
+        STATUS: Статус облигации.
+        MATDATE: Дата погашения облигации.
+        ISIN: ISIN код облигации.
+        REGNUMBER: Регистрационный номер.
+        CURRENCYID: Валюта торговли.
+        DECIMALS: Количество знаков после запятой для цены.
+        COUPONPERIOD: Период купона в днях.
+        ISSUESIZE: Объем выпуска.
+        PREVLEGALCLOSEPRICE: Предыдущая официальная цена закрытия.
+        PREVDATE: Предыдущая дата торгов.
+        REMARKS: Примечания.
+        MARKETCODE: Код рынка.
+        INSTRID: Идентификатор инструмента.
+        SECTORID: Идентификатор сектора.
+        MINSTEP: Минимальный шаг цены.
+        FACEUNIT: Валюта номинала.
+        BUYBACKPRICE: Цена обратного выкупа.
+        BUYBACKDATE: Дата обратного выкупа.
+        LATNAME: Латинское наименование.
+        ISSUESIZEPLACED: Размещенный объем выпуска.
+        LISTLEVEL: Уровень листинга.
+        SECTYPE: Тип ценной бумаги.
+        OFFERDATE: Дата оферты.
+        SETTLEDATE: Дата расчетов.
+        LOTVALUE: Стоимость лота.
+        FACEVALUEONSETTLEDATE: Номинальная стоимость на дату расчетов.
+        CALLOPTIONDATE: Дата опциона на досрочный выкуп.
+        PUTOPTIONDATE: Дата опциона на досрочную продажу.
+        DATEYIELDFROMISSUER: Дата доходности от эмитента.
+    """
     SECID: str = Field(..., description="Security ID")
     BOARDID: str = Field(..., description="Board ID")
     SHORTNAME: str = Field(..., description="Short name")
@@ -94,9 +200,46 @@ class BondSecurity(BaseModel):
     DATEYIELDFROMISSUER: Optional[date] = None
 
 
-# Market data section
 class BondMarketData(BaseModel):
-    """Market data section of bond"""
+    """Модель секции рыночных данных (marketdata).
+    
+    Содержит информацию о текущих рыночных показателях облигации:
+    цены покупки/продажи, объемы торгов, изменения цен и другие
+    рыночные метрики из секции "marketdata" файла bonds.json.
+    
+    Attributes:
+        SECID: Идентификатор ценной бумаги (обязательное поле).
+        BOARDID: Идентификатор режима торгов (обязательное поле).
+        BID: Цена покупки (bid).
+        OFFER: Цена продажи (offer).
+        SPREAD: Спред между ценой покупки и продажи.
+        BIDDEPTH: Глубина стакана по покупке (количество заявок).
+        OFFERDEPTH: Глубина стакана по продаже (количество заявок).
+        OPEN: Цена открытия торгов.
+        LOW: Минимальная цена за торговую сессию.
+        HIGH: Максимальная цена за торговую сессию.
+        LAST: Последняя цена сделки.
+        LASTCHANGE: Изменение последней цены в абсолютных единицах.
+        LASTCHANGEPRCNT: Изменение последней цены в процентах.
+        QTY: Количество в последней сделке.
+        VALUE: Объем сделок в валюте инструмента.
+        VALUE_USD: Объем сделок в долларах США.
+        WAPRICE: Средневзвешенная цена.
+        LASTCNGTOLASTWAPRICE: Изменение последней цены относительно средневзвешенной.
+        WAPTOPREVWAPRICEPRCNT: Изменение средневзвешенной цены относительно предыдущей в процентах.
+        WAPTOPREVWAPRICE: Изменение средневзвешенной цены относительно предыдущей в абсолютных единицах.
+        CLOSEPRICE: Цена закрытия.
+        MARKETPRICETODAY: Рыночная цена на сегодня.
+        MARKETPRICE: Текущая рыночная цена.
+        LASTTOPREVPRICE: Изменение последней цены относительно предыдущей.
+        NUMTRADES: Количество сделок за торговую сессию.
+        VOLTODAY: Объем торгов за сегодня в штуках.
+        VALTODAY: Объем торгов за сегодня в валюте инструмента.
+        VALTODAY_USD: Объем торгов за сегодня в долларах США.
+        ETFSETTLEPRICE: Расчетная цена для ETF.
+        TRADINGSTATUS: Статус торгов.
+        UPDATETIME: Время последнего обновления данных.
+    """
     SECID: str
     BOARDID: str
     BID: Optional[float] = None
@@ -130,9 +273,26 @@ class BondMarketData(BaseModel):
     UPDATETIME: Optional[str] = None
 
 
-# Combined bond detail response
 class BondDetail(BaseModel):
-    """Complete bond information with all sections"""
+    """Модель полной информации об облигации со всеми секциями данных.
+    
+    Объединяет данные из всех секций файла bonds.json: securities,
+    marketdata и marketdata_yields. Используется для детального просмотра
+    информации об облигации на фронтенде.
+    
+    Attributes:
+        securities: Словарь со всеми полями секции "securities".
+            Используется гибкая структура для размещения всех возможных полей.
+        marketdata: Словарь с данными секции "marketdata" (опционально).
+            Содержит текущие рыночные показатели облигации.
+        marketdata_yields: Список словарей с данными секции "marketdata_yields" (опционально).
+            Содержит данные о доходностях по различным ценам и срокам.
+    
+    Note:
+        Используются словари Dict[str, Any] вместо строгих моделей для гибкости,
+        так как структура данных из MOEX API может изменяться и содержать
+        дополнительные поля, не описанные в моделях.
+    """
     securities: Dict[str, Any]  # Flexible to accommodate all fields
     marketdata: Optional[Dict[str, Any]] = None
     marketdata_yields: Optional[List[Dict[str, Any]]] = None

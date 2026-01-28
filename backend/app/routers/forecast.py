@@ -1,3 +1,10 @@
+"""Роутеры для работы с прогнозными данными.
+
+Этот модуль содержит роутеры FastAPI для обработки HTTP запросов, связанных
+с прогнозными данными. Включает endpoints для получения списка доступных дат,
+данных прогноза для конкретной даты и экспорта данных в JSON формате.
+"""
+
 import json
 from pathlib import Path
 from typing import List, Optional
@@ -5,17 +12,34 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 
 router = APIRouter(prefix="/api/forecast", tags=["forecast"])
+"""Роутер FastAPI для обработки запросов к API прогнозных данных."""
+
+
 
 
 def _get_forecast_path() -> Path:
-    """Get path to forecast JSON file."""
+    """Получает путь к файлу прогнозных данных.
+    
+    Returns:
+        Путь к файлу forecast_251024.json в директории data проекта.
+    """
     project_root = Path(__file__).parent.parent.parent.parent
     json_path = project_root / "data" / "forecast_251024.json"
     return json_path
 
 
 def _load_forecast_data() -> dict:
-    """Load forecast data from JSON file."""
+    """Загружает прогнозные данные из JSON файла.
+    
+    Загружает данные из файла forecast_251024.json и возвращает их в виде словаря.
+    
+    Returns:
+        Словарь с прогнозными данными из JSON файла.
+    
+    Raises:
+        HTTPException: Если файл не существует (статус 404) или если произошла
+            ошибка при чтении файла (статус 500).
+    """
     json_path = _get_forecast_path()
     
     if not json_path.exists():
@@ -30,9 +54,18 @@ def _load_forecast_data() -> dict:
 
 @router.get("/dates")
 async def get_available_dates():
-    """
-    Get list of available forecast dates.
-    Returns dates sorted in descending order (newest first).
+    """Получает список доступных дат прогнозных данных.
+    
+    Извлекает все ключи-даты из файла прогнозных данных (исключая ключ "названия")
+    и возвращает их отсортированными в порядке убывания (от новых к старым).
+    
+    Returns:
+        Словарь с ключом "dates", содержащий список дат в формате YYYY-MM-DD,
+        отсортированных в порядке убывания.
+    
+    Raises:
+        HTTPException: Если файл прогнозных данных не найден или поврежден
+            (статус 404 или 500).
     """
     data = _load_forecast_data()
     
@@ -47,9 +80,25 @@ async def get_available_dates():
 async def get_forecast_data(
     date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format. If not provided, returns latest available date.")
 ):
-    """
-    Get forecast data for a specific date.
-    If date is not provided, returns data for the latest available date.
+    """Получает прогнозные данные для указанной даты.
+    
+    Загружает прогнозные данные для указанной даты из файла forecast_251024.json.
+    Если дата не указана, возвращает данные для последней доступной даты.
+    
+    Args:
+        date: Дата в формате YYYY-MM-DD для получения прогнозных данных.
+            Если не указана, используется последняя доступная дата.
+    
+    Returns:
+        Словарь с прогнозными данными, содержащий:
+        - date: Дата в формате YYYY-MM-DD
+        - names: Словарь с маппингом названий полей (ключ "названия" из файла)
+        - data: Данные прогноза для указанной даты
+    
+    Raises:
+        HTTPException: Если файл прогнозных данных не найден (статус 404),
+            если данные для указанной даты не найдены (статус 404),
+            или если произошла ошибка при чтении файла (статус 500).
     """
     data = _load_forecast_data()
     
@@ -82,9 +131,34 @@ async def get_forecast_data(
 async def export_forecast_json(
     dates: Optional[str] = Query(None, description="Comma-separated dates in YYYY-MM-DD format. If not provided, exports latest available date.")
 ):
-    """
-    Export forecast data as JSON.
-    Returns JSON with dates as top-level keys and Russian field names as keys.
+    """Экспортирует прогнозные данные в формате JSON.
+    
+    Экспортирует прогнозные данные для указанных дат в формате JSON с русскими
+    названиями полей. Возвращает файл для скачивания.
+    
+    Args:
+        dates: Строка с датами через запятую в формате YYYY-MM-DD для экспорта.
+            Если не указана, экспортируется последняя доступная дата.
+    
+    Returns:
+        HTTP Response с JSON файлом для скачивания, содержащим:
+        - Ключи верхнего уровня: даты в формате YYYY-MM-DD
+        - Для каждой даты:
+          - дата_заседания: Дата заседания
+          - дата_публикации: Дата публикации
+          - основные_показатели: Словарь с основными показателями по годам
+            (ключи - русские названия полей из маппинга)
+          - платёжный_баланс: Словарь с показателями платежного баланса по годам
+            (ключи - русские названия полей из маппинга)
+    
+    Raises:
+        HTTPException: Если файл прогнозных данных не найден (статус 404),
+            если данные для указанной даты не найдены (статус 404),
+            или если произошла ошибка при чтении файла (статус 500).
+    
+    Note:
+        Имя файла формируется автоматически: forecast_YYYY_MM_DD.json для одной даты
+        или forecast_N_dates.json для нескольких дат.
     """
     data = _load_forecast_data()
     names = data.get("названия", {})

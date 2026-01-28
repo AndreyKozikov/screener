@@ -1,3 +1,10 @@
+"""Роутеры для работы с облигациями и купонами.
+
+Этот модуль содержит роутеры FastAPI для обработки HTTP запросов, связанных
+с облигациями и купонами. Включает endpoints для получения списка облигаций,
+детальной информации об облигациях, данных о купонах и обновления данных.
+"""
+
 import asyncio
 
 from fastapi import APIRouter, HTTPException, Query
@@ -11,11 +18,14 @@ from app.models.coupons import BondCouponsResponse, CouponsListResponse, Multipl
 from app.services.data_loader import get_data_loader
 from app.services.bonds_service import get_bonds_list
 from app.services.coupon_service import get_coupon_service
-from app.services.db_orchestrator import DBOrchestrator
+from app.repository.db_orchestrator import DBOrchestrator
 from app.config import settings
 from app.utils.logger import get_data_update_logger
 
 router = APIRouter(prefix="/api/bonds", tags=["bonds"])
+"""Роутер FastAPI для обработки запросов к API облигаций."""
+
+
 
 
 @router.get("/", response_model=BondsListResponse)
@@ -37,19 +47,45 @@ async def list_bonds(
     emitent_title: Optional[str] = Query(None, description="Filter by emitent title"),
     exclude_spob: Optional[bool] = Query(False, description="Exclude bonds with trading mode SPOB"),
 ):
-    """
-    Выгрузка списка облигаций с фильтрами (чистая архитектура).
-
-    Роутер: валидирует query-параметры, вызывает сервисный слой, возвращает JSON.
-    Сервис: вызывает DBBonds.select() для получения данных с применением всех фильтров
-    на уровне БД, преобразует данные в формат для фронта, применяет фильтр по эмитенту
-    (если указан). Поиск (search) выполняется на клиенте.
-
-    Вся фильтрация облигаций (кроме фильтрации по эмитенту) выполняется в методе
-    DBBonds.select() на уровне SQL для повышения производительности.
-
-    Фильтры: coupon, yield, coupon_yield, matdate, listlevel, faceunit,
-    bondtype (ID), bondtype43 (ID), rating_min/max, emitent_title, exclude_spob.
+    """Получает список облигаций с применением фильтров.
+    
+    Роутер валидирует query-параметры, вызывает сервисный слой и возвращает JSON
+    с отфильтрованным списком облигаций. Сервис вызывает BondsRepository.select() для
+    получения данных с применением всех фильтров на уровне БД, преобразует данные
+    в формат для фронтенда и применяет фильтр по эмитенту (если указан).
+    
+    Args:
+        coupon_min: Минимальный процент купона (0-100).
+        coupon_max: Максимальный процент купона (0-100).
+        yield_min: Минимальная доходность к погашению (0-100).
+        yield_max: Максимальная доходность к погашению (0-100).
+        coupon_yield_min: Минимальная доходность купона к цене (0-100).
+        coupon_yield_max: Максимальная доходность купона к цене (0-100).
+        matdate_from: Начальная дата погашения (включительно).
+        matdate_to: Конечная дата погашения (включительно).
+        listlevel: Список уровней листинга для фильтрации.
+        faceunit: Список валют для фильтрации (например, ["SUR", "USD"]).
+        bondtype: Список ID типов облигаций из bond_type_mapping
+            (1=exchange_bond, 2=ofz_bond, и т.д.).
+        bondtype43: Список ID видов облигаций из bond_type43_mapping
+            (1=Амортизируемые облигации, 6=Фикс с известным купоном, и т.д.).
+        rating_min: Минимальный рейтинг для фильтрации (из шкалы рейтингов).
+        rating_max: Максимальный рейтинг для фильтрации (из шкалы рейтингов).
+        emitent_title: Название эмитента для фильтрации облигаций.
+        exclude_spob: Если True, исключает облигации с режимом торгов SPOB.
+    
+    Returns:
+        Объект BondsListResponse с отфильтрованным списком облигаций, содержащий:
+        - total: Общее количество облигаций в БД (без фильтров)
+        - filtered: Количество облигаций после применения всех фильтров
+        - skip: Смещение для пагинации (всегда 0)
+        - limit: Лимит записей (равен filtered)
+        - bonds: Список объектов BondListItem с данными облигаций
+    
+    Note:
+        Вся фильтрация облигаций (кроме фильтрации по эмитенту) выполняется в методе
+        BondsRepository.select() на уровне SQL для повышения производительности. Поиск (search)
+        выполняется на клиентской стороне и не поддерживается через этот endpoint.
     """
     filters = BondFilters(
         coupon_min=coupon_min,
@@ -80,9 +116,26 @@ async def list_bonds(
 
 @router.post("/refresh")
 async def refresh_bonds_data():
-    """
-    Download the latest bonds dataset from MOEX and refresh cached data.
-    Also clears metadata cache (columns and descriptions) to ensure fresh data.
+    """Загружает последний набор данных об облигациях из MOEX и обновляет кэш.
+    
+    Выполняет HTTP запрос к API MOEX для получения актуальных данных об облигациях,
+    сохраняет данные в файл bonds.json и обновляет таблицу bonds в базе данных.
+    Также очищает кэш метаданных (колонки и описания полей) для обеспечения
+    актуальности данных.
+    
+    Returns:
+        Словарь с результатом обновления, содержащий:
+        - status: Статус операции ("ok")
+        - updated: Словарь с информацией о загруженном наборе данных:
+          - securities: Количество записей в секции securities
+          - marketdata: Количество записей в секции marketdata
+          - marketdata_yields: Количество записей в секции marketdata_yields
+        - source: URL источника данных
+        - metadata_cache_cleared: Флаг очистки кэша метаданных (True)
+    
+    Raises:
+        HTTPException: Если не удалось загрузить данные из MOEX (статус 502)
+            или произошла ошибка при обновлении базы данных.
     """
     logger = get_data_update_logger()
     logger.info(f"[API /bonds/refresh] Received request to refresh bonds data from {settings.MOEX_BONDS_URL}")
@@ -123,10 +176,22 @@ async def refresh_bonds_data():
 
 @router.get("/{secid}", response_model=BondDetail)
 async def get_bond_detail(secid: str):
-    """
-    Get detailed information for a specific bond by SECID.
+    """Получает детальную информацию об облигации по SECID.
     
-    Returns complete bond data including securities, marketdata, and yields.
+    Загружает полные данные об облигации из кэша DataLoader, включая данные из
+    секций securities, marketdata и marketdata_yields.
+    
+    Args:
+        secid: Идентификатор облигации (SECID) для получения детальной информации.
+    
+    Returns:
+        Объект BondDetail с полными данными об облигации, включающий:
+        - securities: Данные из секции securities
+        - marketdata: Данные из секции marketdata
+        - marketdata_yields: Список данных из секции marketdata_yields
+    
+    Raises:
+        HTTPException: Если облигация с указанным SECID не найдена (статус 404).
     """
     loader = get_data_loader()
     details = await loader.get_bond_details()
@@ -140,18 +205,32 @@ async def get_bond_detail(secid: str):
 
 @router.post("/refresh-coupons")
 async def refresh_coupons_data(force_refresh: bool = Query(False, description="Force refresh all coupons, ignoring cache (last_updated date)")):
-    """
-    Refresh coupons data for all bonds from bonds.json file.
+    """Обновляет данные о купонах для всех облигаций из файла bonds.json.
     
-    Reads SECID from bonds.json and updates coupon data for each bond
-    by fetching from MOEX API. All processing is done on the backend.
+    Читает список SECID из файла bonds.json и обновляет данные о купонах для каждой
+    облигации путем загрузки из API MOEX. После успешного обновления синхронизирует
+    данные с таблицей coupons в базе данных.
     
     Args:
-        force_refresh: If True, force refresh all coupons regardless of cache (ignore last_updated date).
-                      If False, only refresh coupons that are stale (older than 14 days).
+        force_refresh: Если True, принудительно обновляет все купоны независимо от кэша
+            (игнорирует дату last_updated). Если False, обновляет только устаревшие купоны
+            (старше 14 дней).
     
     Returns:
-        Dictionary with refresh statistics: total, updated, errors, skipped
+        Словарь со статистикой обновления, содержащий:
+        - status: Статус операции ("ok")
+        - total_bonds: Общее количество облигаций для обработки
+        - updated: Количество успешно обновленных облигаций
+        - errors: Количество ошибок при обновлении
+        - skipped: Количество пропущенных облигаций (отсутствует SECID)
+    
+    Raises:
+        HTTPException: Если произошла критическая ошибка при обновлении данных
+            (статус 500).
+    
+    Note:
+        Ошибки при обновлении отдельных облигаций не прерывают процесс. Все ошибки
+        логируются, и обработка продолжается для остальных облигаций.
     """
     logger = get_data_update_logger()
     if force_refresh:
@@ -268,16 +347,37 @@ async def get_bond_coupons(
     secids: Optional[List[str]] = Query(None, description="List of secids for batch request (alternative to path parameter)"),
     force_refresh: bool = Query(False, description="Force refresh from MOEX API")
 ):
-    """
-    Get coupon payments data for one or multiple bonds by SECID.
+    """Получает данные о купонах для одной или нескольких облигаций по SECID.
     
-    Supports two modes:
-    1. Single bond: Use path parameter `{secid}` (e.g., /api/bonds/RU000A0ZZYQ2/coupons)
-    2. Multiple bonds: Use query parameter `secids` (e.g., /api/bonds/any/coupons?secids=RU000A0ZZYQ2&secids=RU000A0ZZYQ3)
+    Поддерживает два режима работы:
+    1. Одна облигация: Используется path параметр `{secid}`
+       (например, /api/bonds/RU000A0ZZYQ2/coupons)
+    2. Несколько облигаций: Используется query параметр `secids`
+       (например, /api/bonds/any/coupons?secids=RU000A0ZZYQ2&secids=RU000A0ZZYQ3)
     
-    When `secids` query parameter is provided, it takes precedence over path parameter.
-    Returns list of coupons with coupondate, value (sum), and valueprc (rate).
-    If data is missing or older than 14 days, automatically downloads from MOEX API.
+    Args:
+        secid: Идентификатор облигации (SECID) из path параметра.
+            Используется если не указан query параметр secids.
+        secids: Опциональный список SECID для пакетного запроса.
+            Если указан, имеет приоритет над path параметром secid.
+        force_refresh: Если True, принудительно загружает данные из API MOEX,
+            игнорируя кэш. По умолчанию False.
+    
+    Returns:
+        Объект CouponsListResponse со списком купонов, содержащий:
+        - coupons: Список объектов Coupon с данными купонов (coupondate, value, valueprc)
+        - coupon_type: Тип купона ("FIX" или "FLOAT") или None
+    
+    Raises:
+        HTTPException: Если указаны некорректные secids (статус 400),
+            если данные не найдены (статус 404), или если произошла ошибка
+            при загрузке данных (статус 502 или 500).
+    
+    Note:
+        Если данные отсутствуют или старше 14 дней, автоматически выполняется
+        загрузка из API MOEX (если force_refresh=False). При использовании
+        query параметра secids возвращаются данные для первой облигации из списка
+        (для обратной совместимости).
     """
     try:
         coupon_service = get_coupon_service()
@@ -364,15 +464,29 @@ async def get_bond_coupons(
 async def get_bonds_coupons_batch(
     secids: List[str] = Query(..., description="List of secids for batch request", min_length=1)
 ):
-    """
-    Get coupon payments data for multiple bonds by SECID list.
+    """Получает данные о купонах для нескольких облигаций по списку SECID.
     
-    Returns coupons grouped by secid. Each entry contains:
-    - secid: Security ID
-    - coupons: List of coupon payments
-    - coupon_type: FIX or FLOAT (if available)
+    Выполняет пакетную загрузку данных о купонах для списка облигаций.
+    Возвращает купоны, сгруппированные по secid.
     
-    Example: /api/bonds/coupons/batch?secids=RU000A0ZZYQ2&secids=RU000A0ZZYQ3
+    Args:
+        secids: Список идентификаторов облигаций (SECID) для получения купонов.
+            Должен содержать хотя бы один элемент. Дубликаты автоматически удаляются.
+    
+    Returns:
+        Объект MultipleCouponsResponse со списком данных по облигациям, где каждый
+        элемент содержит:
+        - secid: Идентификатор облигации
+        - coupons: Список объектов Coupon с данными купонов
+        - coupon_type: Тип купона ("FIX" или "FLOAT") или None, если недоступен
+    
+    Raises:
+        HTTPException: Если все secids некорректны (статус 400) или если произошла
+            ошибка при загрузке данных (статус 500).
+    
+    Note:
+        Для облигаций, данные о купонах которых не найдены, возвращается пустой
+        список купонов с coupon_type=None.
     """
     try:
         # Validate secids list

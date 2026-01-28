@@ -1,3 +1,10 @@
+"""Роутеры для работы с данными эмитентов.
+
+Этот модуль содержит роутеры FastAPI для обработки HTTP запросов, связанных
+с данными эмитентов облигаций. Включает endpoints для получения списка эмитентов,
+информации об эмитенте по SECID и массового обновления данных эмитентов.
+"""
+
 import asyncio
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional, List
@@ -9,14 +16,24 @@ from app.utils.logger import get_data_update_logger
 from typing import Dict, Any
 
 router = APIRouter(prefix="/api/emitent", tags=["emitent"])
+"""Роутер FastAPI для обработки запросов к API эмитентов."""
+
+
 
 
 @router.get("/list")
 async def list_emitents() -> Dict[str, List[str]]:
-    """
-    Get list of all unique emitent titles.
+    """Получает список всех уникальных названий эмитентов.
     
-    Returns dictionary with list of unique emitent titles sorted alphabetically.
+    Загружает все облигации из кэша DataLoader и извлекает уникальные названия
+    эмитентов из кэша данных эмитентов. Возвращает отсортированный список.
+    
+    Returns:
+        Словарь с ключом "emitents", содержащий отсортированный список уникальных
+        названий эмитентов.
+    
+    Raises:
+        HTTPException: Если произошла ошибка при загрузке данных (статус 500).
     """
     try:
         emitent_service = get_emitent_service()
@@ -57,15 +74,27 @@ async def list_emitents() -> Dict[str, List[str]]:
 
 @router.get("/{secid}", response_model=EmitentInfo)
 async def get_emitent_by_secid(secid: str):
-    """
-    Get emitent information by SECID.
+    """Получает информацию об эмитенте по SECID облигации.
     
-    First, gets ISIN from bonds data by SECID.
-    Then, searches for emitent data in bonds_emitent.json by ISIN.
-    If not found, fetches data from MOEX API and saves to bonds_emitent.json.
+    Сначала получает ISIN облигации из данных bonds.json по SECID. Затем ищет
+    данные эмитента в кэше bonds_emitent.json по SECID. Если данные не найдены
+    в кэше, загружает их из API MOEX по ISIN и сохраняет в bonds_emitent.json.
+    
+    Args:
+        secid: Идентификатор облигации (SECID) для получения данных эмитента.
     
     Returns:
-        EmitentInfo with fields: is_traded, emitent_title, emitent_inn, type
+        Объект EmitentInfo с данными эмитента, содержащий:
+        - is_traded: Флаг торговли облигацией
+        - emitent_title: Название эмитента
+        - emitent_inn: ИНН эмитента
+        - type: Тип облигации
+        - cci_rating_companies: Список рейтингов эмитента
+    
+    Raises:
+        HTTPException: Если ISIN не найден для SECID (статус 404),
+            если данные эмитента не найдены (статус 404),
+            или если произошла ошибка при загрузке данных (статус 500).
     """
     try:
         # Get emitent service
@@ -108,14 +137,25 @@ async def get_emitent_by_secid(secid: str):
 
 @router.post("/refresh")
 async def refresh_emitents_data() -> Dict[str, Any]:
-    """
-    Refresh emitent data for all bonds from bonds.json file.
+    """Обновляет данные эмитентов для всех облигаций из файла bonds.json.
     
-    Reads SECID and ISIN from bonds.json and updates emitent data for each bond
-    by fetching from MOEX API. All processing is done on the backend.
+    Читает SECID и ISIN из файла bonds.json и обновляет данные эмитентов для каждой
+    облигации путем загрузки из API MOEX. Все обработка выполняется на бэкенде.
     
     Returns:
-        Dictionary with refresh statistics: total, updated, errors, skipped
+        Словарь со статистикой обновления, содержащий:
+        - status: Статус операции ("ok")
+        - total: Общее количество облигаций для обработки
+        - updated: Количество успешно обновленных записей
+        - errors: Количество ошибок при обновлении
+        - skipped: Количество пропущенных облигаций (отсутствует ISIN)
+    
+    Raises:
+        HTTPException: Если произошла ошибка при обновлении данных (статус 500).
+    
+    Note:
+        Ошибки при обновлении отдельных облигаций не прерывают процесс. Все ошибки
+        логируются, и обработка продолжается для остальных облигаций.
     """
     logger = get_data_update_logger()
     logger.info("[API /emitent/refresh] Received request to refresh emitents data")
