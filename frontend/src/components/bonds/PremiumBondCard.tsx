@@ -31,7 +31,6 @@ import { getRatingColor } from './BondsTable';
 
 interface PremiumBondCardProps {
   bondDetail: BondDetailType;
-  couponType?: string | null;  // FIX or FLOAT
 }
 
 /**
@@ -40,7 +39,7 @@ interface PremiumBondCardProps {
  * Displays a premium, compact card with key bond information
  * including identification, key metrics, coupon info, volume, and rating
  */
-export const PremiumBondCard: React.FC<PremiumBondCardProps> = ({ bondDetail, couponType: couponTypeProp }) => {
+export const PremiumBondCard: React.FC<PremiumBondCardProps> = ({ bondDetail }) => {
   const securities = bondDetail?.securities;
   const market = bondDetail?.marketdata;
   const [emitentInfo, setEmitentInfo] = useState<EmitentInfo | null>(null);
@@ -124,7 +123,7 @@ export const PremiumBondCard: React.FC<PremiumBondCardProps> = ({ bondDetail, co
   const couponValue = typeof securities?.COUPONVALUE === 'number' ? securities.COUPONVALUE : null;
   const nextCoupon = typeof securities?.NEXTCOUPON === 'string' ? securities.NEXTCOUPON : null;
   const couponPeriod = typeof securities?.COUPONPERIOD === 'number' ? securities.COUPONPERIOD : null;
-  const couponType = couponTypeProp ?? null;
+  const couponType: string | null = null;  // Недоступен из БД
 
   // Volume and issue
   const faceUnit = typeof securities?.FACEUNIT === 'string' ? securities.FACEUNIT : null;

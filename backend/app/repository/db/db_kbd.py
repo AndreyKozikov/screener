@@ -45,7 +45,7 @@ class DBkbd:
         """
         if db_path is None:
             # Определяем путь относительно текущего файла
-            backend_dir = Path(__file__).parent.parent.parent
+            backend_dir = Path(__file__).parent.parent.parent.parent
             db_path = str(backend_dir / "db" / "bonds.db")
         
         self.db_path = Path(db_path)
@@ -233,7 +233,7 @@ class DBkbd:
             FileNotFoundError: Если файл zerocupon.csv не найден.
         """
         # Определяем путь к файлу относительно текущего файла
-        backend_dir = Path(__file__).parent.parent.parent
+        backend_dir = Path(__file__).parent.parent.parent.parent
         data_dir = backend_dir / "app" / "data"
         csv_path = data_dir / "zerocupon.csv"
         

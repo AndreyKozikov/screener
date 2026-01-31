@@ -99478,5 +99478,140 @@
         "rating_level_name_short_ru": "BBB-|ru|"
       }
     ]
+  },
+  "RU000A10E6D0": {
+    "secid": "RU000A10E6D0",
+    "shortname": "iВУШ 1P5",
+    "regnumber": "4B02-05-00075-L-001P",
+    "name": "ВУШ БО 001P-05",
+    "isin": "RU000A10E6D0",
+    "is_traded": 1,
+    "emitent_id": 13592,
+    "emitent_title": "Общество с ограниченной ответственностью \"ВУШ\"",
+    "emitent_inn": "9717068640",
+    "emitent_okpo": "28757710",
+    "type": "exchange_bond",
+    "group": "stock_bonds",
+    "primary_boardid": "TQCB",
+    "marketprice_boardid": "TQCB",
+    "cci_rating_companies": [
+      {
+        "agency_id": 3,
+        "agency_name_short_ru": "АКРА",
+        "rating_book_id": 1,
+        "rating_level_id": 7,
+        "rating_date": "2025-04-07 00:00:00",
+        "rating_publicate_date": "2025-04-07 00:00:00",
+        "rating_level_name_short_ru": "A-(RU)"
+      }
+    ]
+  },
+  "RU000A10CZX3": {
+    "secid": "RU000A10CZX3",
+    "shortname": "СбКИБ1P268",
+    "regnumber": "6-268-01793-A-001P",
+    "name": "Сбер CIB-SN-IND-001S-268",
+    "isin": "RU000A10CZX3",
+    "is_traded": 1,
+    "emitent_id": 33,
+    "emitent_title": "Акционерное общество \"Сбербанк КИБ\"",
+    "emitent_inn": "7710048970",
+    "emitent_okpo": "11522828",
+    "type": "corporate_bond",
+    "group": "stock_bonds",
+    "primary_boardid": "TQCB",
+    "marketprice_boardid": "TQCB",
+    "cci_rating_companies": [
+      {
+        "agency_id": 3,
+        "agency_name_short_ru": "АКРА",
+        "rating_book_id": 1,
+        "rating_level_id": 1,
+        "rating_date": "2026-01-28 00:00:00",
+        "rating_publicate_date": "2026-01-28 00:00:00",
+        "rating_level_name_short_ru": "AAA(RU)"
+      },
+      {
+        "agency_id": 4,
+        "agency_name_short_ru": "Эксперт РА",
+        "rating_book_id": 18,
+        "rating_level_id": 233,
+        "rating_date": "2026-01-27 00:00:00",
+        "rating_publicate_date": "2026-01-27 00:00:00",
+        "rating_level_name_short_ru": "ruAAA"
+      }
+    ]
+  },
+  "RU000A10CZY1": {
+    "secid": "RU000A10CZY1",
+    "shortname": "СбКИБ1P269",
+    "regnumber": "6-269-01793-A-001P",
+    "name": "Сбер CIB-SN-IND-001S-269",
+    "isin": "RU000A10CZY1",
+    "is_traded": 1,
+    "emitent_id": 33,
+    "emitent_title": "Акционерное общество \"Сбербанк КИБ\"",
+    "emitent_inn": "7710048970",
+    "emitent_okpo": "11522828",
+    "type": "corporate_bond",
+    "group": "stock_bonds",
+    "primary_boardid": "TQCB",
+    "marketprice_boardid": "TQCB",
+    "cci_rating_companies": [
+      {
+        "agency_id": 3,
+        "agency_name_short_ru": "АКРА",
+        "rating_book_id": 1,
+        "rating_level_id": 1,
+        "rating_date": "2026-01-28 00:00:00",
+        "rating_publicate_date": "2026-01-28 00:00:00",
+        "rating_level_name_short_ru": "AAA(RU)"
+      },
+      {
+        "agency_id": 4,
+        "agency_name_short_ru": "Эксперт РА",
+        "rating_book_id": 18,
+        "rating_level_id": 233,
+        "rating_date": "2026-01-27 00:00:00",
+        "rating_publicate_date": "2026-01-27 00:00:00",
+        "rating_level_name_short_ru": "ruAAA"
+      }
+    ]
+  },
+  "RU000A10E630": {
+    "secid": "RU000A10E630",
+    "shortname": "Газпнф5P4R",
+    "regnumber": "4B02-04-00146-A-004P",
+    "name": "Газпром нефть 005P-04R",
+    "isin": "RU000A10E630",
+    "is_traded": 1,
+    "emitent_id": 1039,
+    "emitent_title": "Публичное акционерное общество \"Газпром нефть\"",
+    "emitent_inn": "5504036333",
+    "emitent_okpo": "42045241",
+    "type": "exchange_bond",
+    "group": "stock_bonds",
+    "primary_boardid": "TQCB",
+    "marketprice_boardid": "TQCB",
+    "cci_rating_companies": [
+      {
+        "agency_id": 3,
+        "agency_name_short_ru": "АКРА",
+        "rating_book_id": 1,
+        "rating_level_id": 1,
+        "rating_date": "2025-04-09 00:00:00",
+        "rating_publicate_date": "2025-04-09 00:00:00",
+        "rating_level_name_short_ru": "AAA(RU)"
+      },
+      {
+        "agency_id": 4,
+        "agency_name_short_ru": "Эксперт РА",
+        "rating_book_id": 18,
+        "rating_level_id": 233,
+        "rating_date": "2025-06-23 00:00:00",
+        "rating_publicate_date": "2025-06-23 00:00:00",
+        "rating_level_name_short_ru": "ruAAA"
+      }
+    ]
   }
 }

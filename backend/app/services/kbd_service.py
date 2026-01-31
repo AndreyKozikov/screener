@@ -9,7 +9,7 @@ from typing import Dict, List, Optional, Any
 from pathlib import Path
 import logging
 
-from app.repository.db_kbd import DBkbd
+from app.repository.db.db_kbd import DBkbd
 
 
 class KbdService:

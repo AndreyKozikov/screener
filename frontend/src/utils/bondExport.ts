@@ -130,7 +130,7 @@ export const exportSelectedBonds = async (secids: string[]): Promise<void> => {
 
   // Load coupons for all bonds in parallel
   const couponsPromises = secids.map(secid => 
-    fetchBondCoupons(secid).catch(() => ({ coupons: [] as Coupon[], coupon_type: null }))
+    fetchBondCoupons(secid).catch(() => ({ coupons: [] as Coupon[] }))
   );
   const couponsResponses = await Promise.all(couponsPromises);
 
@@ -142,7 +142,6 @@ export const exportSelectedBonds = async (secids: string[]): Promise<void> => {
     const secid = secids[i];
     const couponsResponse = couponsResponses[i];
     const coupons = couponsResponse?.coupons || [];
-    const couponType = couponsResponse && 'coupon_type' in couponsResponse ? couponsResponse.coupon_type : null;
 
     // Get bond name from securities data
     const bondName = 
@@ -177,11 +176,6 @@ export const exportSelectedBonds = async (secids: string[]): Promise<void> => {
       }));
     } else {
       payload.Купоны = [];
-    }
-
-    // Add coupon type (Тип купона)
-    if (couponType) {
-      payload['Тип купона'] = couponType === 'FIX' ? 'постоянный' : couponType === 'FLOAT' ? 'плавающий' : couponType;
     }
 
     exportData[bondName] = payload;

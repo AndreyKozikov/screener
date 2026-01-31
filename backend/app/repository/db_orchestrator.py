@@ -1,10 +1,13 @@
 import logging
-from typing import Optional
 from pathlib import Path
+from typing import Optional
 
-from app.repository.bonds_data_manager import BondsDataManager
-from app.repository.db_coupon import DBCoupon
-from app.repository.db_kbd import DBkbd
+from app.core.bond_transformer import BondTransformer
+from app.repository.db.bonds_repository import BondsRepository
+from app.repository.db.db_coupon import DBCoupon
+from app.repository.db.db_kbd import DBkbd
+from app.repository.files.file_storage import FileStorage
+from app.utils.logger import get_data_update_logger
 
 
 class DBOrchestrator:
@@ -49,24 +52,38 @@ class DBOrchestrator:
             return False
     
     def _migrate_bonds(self) -> bool:
-        """
-        Выполняет миграцию данных облигаций в базу данных.
-        
+        """Выполняет миграцию данных облигаций в базу данных.
+
+        Загружает данные из JSON через FileStorage и BondTransformer,
+        преобразует их и вставляет в таблицу bonds через BondsRepository.refresh().
+
         Returns:
-            True если миграция выполнена успешно, False в случае ошибки
+            True если миграция выполнена успешно, False в случае ошибки.
         """
+        data_log = get_data_update_logger()
         try:
-            db_bonds = BondsDataManager(db_path=self.db_path, data_dir=self.data_dir)
-            result = db_bonds.refresh()
-            
+            data_log.info("[API /bonds/refresh] Начало сохранения данных облигаций в БД (таблица bonds)")
+            data_dir = self.data_dir or (Path(__file__).resolve().parent.parent / "data")
+            storage = FileStorage()
+            transformer = BondTransformer(data_dir, storage)
+            raw_bonds = transformer.prepare_bonds_for_db()
+            data_log.info("[API /bonds/refresh] Загружено из JSON (MOEX): %s облигаций", len(raw_bonds))
+            self.logger.info("Загружено %s облигаций из JSON-файлов", len(raw_bonds))
+            ready_bonds = transformer.transform_batch(raw_bonds)
+            data_log.info("[API /bonds/refresh] Преобразовано для таблицы bonds: %s записей", len(ready_bonds))
+            self.logger.info("Преобразовано %s облигаций для вставки в БД", len(ready_bonds))
+            repo = BondsRepository(db_path=self.db_path)
+            result = repo.refresh(ready_bonds)
             if result:
+                data_log.info("[API /bonds/refresh] Данные успешно сохранены в таблицу bonds (база: %s)", self.db_path)
                 self.logger.info("Миграция данных облигаций выполнена успешно")
             else:
+                data_log.warning("[API /bonds/refresh] Сохранение в таблицу bonds завершилось с ошибкой")
                 self.logger.warning("Миграция данных облигаций завершилась с ошибкой")
-            
             return result
         except Exception as e:
-            self.logger.error(f"Ошибка при миграции данных облигаций: {str(e)}", exc_info=True)
+            data_log.error("[API /bonds/refresh] Ошибка при сохранении в таблицу bonds: %s", e, exc_info=True)
+            self.logger.error("Ошибка при миграции данных облигаций: %s", e, exc_info=True)
             return False
     
     def _migrate_coupons(self) -> bool:

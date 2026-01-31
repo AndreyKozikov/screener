@@ -251,19 +251,12 @@ export const fetchBondsCoupons = async (
     // Convert response to Map for easy lookup
     const result = new Map<string, CouponsListResponse>();
     response.data.data.forEach((item) => {
-      result.set(item.secid, {
-        coupons: item.coupons,
-        coupon_type: item.coupon_type,
-      });
+      result.set(item.secid, { coupons: item.coupons });
     });
 
-    // Ensure all requested secids are in the result (even if empty)
     uniqueSecids.forEach((secid) => {
       if (!result.has(secid)) {
-        result.set(secid, {
-          coupons: [],
-          coupon_type: null,
-        });
+        result.set(secid, { coupons: [] });
       }
     });
 

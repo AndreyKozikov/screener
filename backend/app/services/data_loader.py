@@ -2,46 +2,58 @@
 
 Этот модуль содержит класс DataLoader для загрузки и кэширования данных об облигациях
 из JSON файлов. Обеспечивает загрузку данных облигаций, рейтингов, типов облигаций
-и метаданных (маппинги колонок, описания полей).
+и метаданных (маппинги колонок, описания полей). Координирует обновление данных
+через MoexClient и FileStorage.
 """
 
 from datetime import date, datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Any
-from urllib.error import URLError
-from urllib.request import Request, urlopen
 
 import orjson
 
 from app.models.bond import BondListItem
-from app.services.coupon_loader import get_coupon_loader
+from app.repository.files.file_storage import FileStorage
 from app.services.bond_filter import get_rating_index
+from app.services.coupon_loader import get_coupon_loader
+from app.services.moex_client import MoexClient
 from app.utils.logger import get_data_update_logger
 
 
 class DataLoader:
     """Загрузчик данных из JSON файлов с кэшированием.
-    
+
     Класс обеспечивает загрузку данных об облигациях из JSON файлов (bonds.json,
     bonds_rating.json, bonds_emitent.json) с кэшированием для повышения производительности.
-    Предоставляет методы для получения списка облигаций, детальной информации об облигациях,
-    маппингов колонок и описаний полей.
-    
+    Координирует обновление данных: получение от MoexClient -> сохранение через FileStorage
+    -> обновление локального кэша.
+
     Attributes:
         data_dir: Путь к директории с JSON файлами данных.
+        _moex_client: Клиент для загрузки данных с MOEX.
+        _file_storage: Хранилище для чтения/записи JSON файлов.
         _bonds_cache: Кэш списка облигаций (BondListItem).
         _details_cache: Кэш детальной информации об облигациях.
         _columns_cache: Кэш маппингов колонок (поле -> отображаемое имя).
         _descriptions_cache: Кэш описаний полей.
     """
-    
-    def __init__(self, data_dir: Path):
+
+    def __init__(
+        self,
+        data_dir: Path,
+        moex_client: Optional[MoexClient] = None,
+        file_storage: Optional[FileStorage] = None,
+    ):
         """Инициализирует загрузчик данных.
-        
+
         Args:
             data_dir: Путь к директории с JSON файлами данных.
+            moex_client: Клиент для загрузки данных с MOEX. Если None, создаётся экземпляр по умолчанию.
+            file_storage: Хранилище для чтения/записи JSON. Если None, создаётся экземпляр по умолчанию.
         """
-        self.data_dir = data_dir
+        self.data_dir = Path(data_dir)
+        self._moex_client = moex_client if moex_client is not None else MoexClient()
+        self._file_storage = file_storage if file_storage is not None else FileStorage()
         self._bonds_cache: Optional[List[BondListItem]] = None
         self._details_cache: Optional[Dict[str, Dict]] = None
         self._columns_cache: Optional[Dict[str, str]] = None
@@ -107,97 +119,62 @@ class DataLoader:
     
     def refresh_bonds_dataset(self, source_url: str) -> Dict[str, int]:
         """Загружает последний набор данных об облигациях из внешнего источника.
-        
-        Выполняет HTTP запрос к указанному URL для получения актуальных данных об
-        облигациях в формате JSON. Сохраняет данные в файл bonds.json и обновляет
-        кэши для немедленного использования новых данных.
-        
+
+        Координирует обновление: получает данные от MoexClient, сохраняет через
+        FileStorage, обновляет локальный кэш.
+
         Args:
             source_url: URL для загрузки JSON данных об облигациях.
                 Ожидается формат, совместимый с bonds.json (содержит секции
                 securities, marketdata, marketdata_yields).
-        
+
         Returns:
             Словарь с информацией о загруженном наборе данных, содержащий:
             - securities: Количество записей в секции securities
             - marketdata: Количество записей в секции marketdata
             - marketdata_yields: Количество записей в секции marketdata_yields
-        
+
         Raises:
             RuntimeError: Если не удалось загрузить данные (сетевая ошибка, таймаут)
                 или если получен некорректный JSON.
             OSError: Если не удалось записать данные в файл bonds.json.
-        
+
         Note:
             После загрузки данных также выполняется запись в корневой файл bonds.json
             для совместимости с вспомогательными инструментами (например, Streamlit app).
             Ошибка записи корневого файла не прерывает процесс обновления.
         """
         logger = get_data_update_logger()
-        logger.info(f"[REFRESH BONDS] Starting bonds dataset refresh from {source_url}")
-        
-        request = Request(source_url, headers={"User-Agent": "Mozilla/5.0"})
-        
-        try:
-            logger.info(f"[REFRESH BONDS] Attempting to download data from {source_url}")
-            with urlopen(request, timeout=30) as response:
-                raw_payload = response.read()
-            logger.info(f"[REFRESH BONDS] Successfully downloaded {len(raw_payload)} bytes")
-        except URLError as exc:
-            logger.error(f"[REFRESH BONDS] Failed to download bonds data from {source_url}: {exc}")
-            raise RuntimeError(f"Failed to download bonds data: {exc}") from exc
-        
-        try:
-            logger.info("[REFRESH BONDS] Parsing JSON payload")
-            payload = orjson.loads(raw_payload)
-            logger.info("[REFRESH BONDS] Successfully parsed JSON payload")
-        except orjson.JSONDecodeError as exc:
-            logger.error(f"[REFRESH BONDS] Failed to parse JSON payload: {exc}")
-            raise RuntimeError("Received invalid JSON while refreshing bonds data") from exc
-        
-        serialized = orjson.dumps(
-            payload,
-            option=orjson.OPT_INDENT_2 | orjson.OPT_APPEND_NEWLINE,
-        )
-        
+        logger.info("[REFRESH BONDS] Starting bonds dataset refresh from %s", source_url)
+
+        payload = self._moex_client.fetch_bonds_json(source_url)
+
         bonds_path = self.data_dir / "bonds.json"
-        try:
-            logger.info(f"[REFRESH BONDS] Writing data to {bonds_path}")
-            bonds_path.write_bytes(serialized)
-            logger.info(f"[REFRESH BONDS] Successfully wrote data to {bonds_path}")
-        except OSError as exc:
-            logger.error(f"[REFRESH BONDS] Failed to write data to {bonds_path}: {exc}")
-            raise
-        
-        # Keep root-level bonds.json in sync for auxiliary tools (e.g., Streamlit app)
+        logger.info("[REFRESH BONDS] Writing data to %s", bonds_path)
+        self._file_storage.write_json(bonds_path, payload, indent=True, append_newline=True)
+
         root_bonds_path = self.data_dir.parents[2] / "bonds.json"
         try:
-            logger.info(f"[REFRESH BONDS] Writing data to root bonds.json: {root_bonds_path}")
-            root_bonds_path.write_bytes(serialized)
-            logger.info(f"[REFRESH BONDS] Successfully wrote data to root bonds.json")
+            logger.info("[REFRESH BONDS] Writing data to root bonds.json: %s", root_bonds_path)
+            self._file_storage.write_json(root_bonds_path, payload, indent=True, append_newline=True)
         except OSError as exc:
-            logger.warning(f"[REFRESH BONDS] Failed to write root bonds.json (non-critical): {exc}")
-            # If we fail to write the auxiliary file, continue without interrupting the refresh flow
-            pass
-        
-        # Reset caches and reload data from disk
+            logger.warning("[REFRESH BONDS] Failed to write root bonds.json (non-critical): %s", exc)
+
         logger.info("[REFRESH BONDS] Clearing caches and reloading data")
         self._bonds_cache = None
         self._details_cache = None
         self._load_bonds_data()
         logger.info("[REFRESH BONDS] Data reloaded successfully")
-        
+
         securities = len(payload.get("securities", {}).get("data", []))
         marketdata = len(payload.get("marketdata", {}).get("data", []))
-        yields = len(payload.get("marketdata_yields", {}).get("data", []))
-        
+        yields_count = len(payload.get("marketdata_yields", {}).get("data", []))
         summary = {
             "securities": securities,
             "marketdata": marketdata,
-            "marketdata_yields": yields,
+            "marketdata_yields": yields_count,
         }
-        
-        logger.info(f"[REFRESH BONDS] Refresh completed successfully. Summary: {summary}")
+        logger.info("[REFRESH BONDS] Refresh completed successfully. Summary: %s", summary)
         return summary
     
     def _load_bonds_data(self) -> None:
@@ -220,13 +197,17 @@ class DataLoader:
         logger = get_data_update_logger()
         bonds_path = self.data_dir / "bonds.json"
         
-        logger.info(f"[LOAD BONDS DATA] Starting to load bonds data from {bonds_path}")
+        logger.info("[LOAD BONDS DATA] Starting to load bonds data from %s", bonds_path)
         try:
-            with open(bonds_path, 'rb') as f:
-                data = orjson.loads(f.read())
-            logger.info(f"[LOAD BONDS DATA] Successfully loaded JSON file from {bonds_path}")
-        except (IOError, orjson.JSONDecodeError) as exc:
-            logger.error(f"[LOAD BONDS DATA] Failed to load bonds.json from {bonds_path}: {type(exc).__name__}: {exc}")
+            data = self._file_storage.read_json(bonds_path)
+            logger.info("[LOAD BONDS DATA] Successfully loaded JSON file from %s", bonds_path)
+        except (OSError, orjson.JSONDecodeError) as exc:
+            logger.error(
+                "[LOAD BONDS DATA] Failed to load bonds.json from %s: %s: %s",
+                bonds_path,
+                type(exc).__name__,
+                exc,
+            )
             raise
         
         # Parse securities section
@@ -459,9 +440,7 @@ class DataLoader:
             Если файл не существует или некорректен, возвращает пустой словарь.
         """
         columns_path = self.data_dir / "columns.json"
-        
-        with open(columns_path, 'rb') as f:
-            data = orjson.loads(f.read())
+        data = self._file_storage.read_json(columns_path)
         
         mapping = {}
         
@@ -493,9 +472,7 @@ class DataLoader:
             Если файл не существует или некорректен, может вызвать исключение.
         """
         desc_path = self.data_dir / "describe.json"
-        
-        with open(desc_path, 'rb') as f:
-            return orjson.loads(f.read())
+        return self._file_storage.read_json(desc_path)
     
     def clear_bonds_cache(self) -> None:
         """Очищает кэш облигаций для принудительной перезагрузки.
@@ -569,8 +546,7 @@ class DataLoader:
             return ratings_map
         
         try:
-            with open(ratings_path, 'rb') as f:
-                ratings_data = orjson.loads(f.read())
+            ratings_data = self._file_storage.read_json(ratings_path)
             
             print(f"[DATA LOADER] Loaded ratings for {len(ratings_data)} bonds")
             
@@ -703,8 +679,7 @@ class DataLoader:
             return bondtype_map
         
         try:
-            with open(emitent_path, 'rb') as f:
-                emitent_data = orjson.loads(f.read())
+            emitent_data = self._file_storage.read_json(emitent_path)
             
             print(f"[DATA LOADER] Loaded emitent data for {len(emitent_data)} bonds")
             
@@ -769,15 +744,20 @@ _data_loader: Optional[DataLoader] = None
 
 def init_data_loader(data_dir: Path) -> None:
     """Инициализирует singleton экземпляр загрузчика данных.
-    
-    Создает глобальный экземпляр DataLoader с указанной директорией данных.
-    Должен быть вызван перед использованием get_data_loader().
-    
+
+    Создаёт глобальный экземпляр DataLoader с указанной директорией данных
+    и внедрёнными MoexClient и FileStorage. Должен быть вызван перед
+    использованием get_data_loader().
+
     Args:
         data_dir: Путь к директории с JSON файлами данных.
     """
     global _data_loader
-    _data_loader = DataLoader(data_dir)
+    _data_loader = DataLoader(
+        data_dir,
+        moex_client=MoexClient(),
+        file_storage=FileStorage(),
+    )
 
 
 def get_data_loader() -> DataLoader:

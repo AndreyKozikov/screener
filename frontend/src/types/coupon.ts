@@ -3,8 +3,6 @@
  */
 
 export interface Coupon {
-  // Removed duplicate fields: isin, name, issuevalue, primary_boardid, secid, coupon_type
-  // These are now only in amortizations section
   coupondate: string | null;
   recorddate: string | null;
   startdate: string | null;
@@ -18,13 +16,11 @@ export interface Coupon {
 
 export interface CouponsListResponse {
   coupons: Coupon[];
-  coupon_type?: string | null;  // FIX or FLOAT from amortizations section
 }
 
 export interface CouponsBySecid {
   secid: string;
   coupons: Coupon[];
-  coupon_type?: string | null;
 }
 
 export interface MultipleCouponsResponse {

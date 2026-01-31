@@ -12,6 +12,8 @@ from datetime import datetime
 
 import orjson
 
+from app.utils.coupon_utils import COUPON_STORAGE_FIELDS
+
 
 class DBCoupon:
     """Репозиторий для работы с базой данных купонов облигаций.
@@ -41,7 +43,7 @@ class DBCoupon:
         """
         if db_path is None:
             # Определяем путь относительно текущего файла
-            backend_dir = Path(__file__).parent.parent.parent
+            backend_dir = Path(__file__).parent.parent.parent.parent
             db_path = str(backend_dir / "db" / "bonds.db")
         
         self.db_path = Path(db_path)
@@ -208,7 +210,7 @@ class DBCoupon:
             orjson.JSONDecodeError: Если JSON файл некорректен или поврежден.
         """
         # Определяем путь к файлу относительно текущего файла
-        backend_dir = Path(__file__).parent.parent.parent
+        backend_dir = Path(__file__).parent.parent.parent.parent
         data_dir = backend_dir / "app" / "data"
         coupons_path = data_dir / "coupons_data.json"
         
@@ -498,4 +500,48 @@ class DBCoupon:
             self.logger.error(f"Ошибка при fetch_coupons_raw: {e}", exc_info=True)
             raise
 
+    def fetch_coupons_for_frontend(
+        self,
+        secids: Optional[List[str]] = None
+    ) -> List[Dict[str, Any]]:
+        """Выбирает из БД только поля купона, ожидаемые фронтендом.
+
+        Выполняет SELECT только нужных колонок. Возвращает сырые данные
+        без преобразований. Секid включён для группировки при batch-запросах.
+
+        Args:
+            secids: Список SECID для выборки. Если None или пусто — без фильтра.
+
+        Returns:
+            Список словарей: secid + coupondate, recorddate, startdate,
+            initialfacevalue, facevalue, faceunit, value, valueprc, value_rub.
+            Без иных полей. Сортировка: secid, coupondate.
+        """
+        if not self._table_exists("coupons"):
+            self.logger.warning("Таблица coupons не существует, fetch_coupons_for_frontend возвращает []")
+            return []
+
+        columns = ", ".join(("secid",) + COUPON_STORAGE_FIELDS)
+        sql = f"SELECT {columns} FROM coupons"
+        conditions = []
+        params: List[Any] = []
+
+        if secids and len(secids) > 0:
+            placeholders = ",".join("?" * len(secids))
+            conditions.append(f"secid IN ({placeholders})")
+            params.extend(secids)
+        if conditions:
+            sql += " WHERE " + " AND ".join(conditions)
+        sql += " ORDER BY secid, coupondate"
+
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute(sql, params)
+                rows = cursor.fetchall()
+                return [dict(row) for row in rows]
+        except sqlite3.Error as e:
+            self.logger.error(f"Ошибка при fetch_coupons_for_frontend: {e}", exc_info=True)
+            raise
 

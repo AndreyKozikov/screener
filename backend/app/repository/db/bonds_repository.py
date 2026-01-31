@@ -9,8 +9,9 @@ import logging
 from pathlib import Path
 from typing import Optional, Dict, List, Any, Tuple
 
-from app.repository.constants import RATINGS_ORDER
 from app.models.filters import BondFilters
+from app.repository.db.constants import RATINGS_ORDER
+from app.utils.logger import get_data_update_logger
 
 
 class BondsRepository:
@@ -39,7 +40,7 @@ class BondsRepository:
         """
         if db_path is None:
             # Определяем путь относительно текущего файла
-            backend_dir = Path(__file__).parent.parent.parent
+            backend_dir = Path(__file__).parent.parent.parent.parent
             db_path = backend_dir / "db" / "bonds.db"
         
         self.db_path = db_path
@@ -610,4 +611,164 @@ class BondsRepository:
                 return int(cursor.fetchone()[0])
         except Exception as e:
             self.logger.error(f"Ошибка при count_bonds: {e}", exc_info=True)
+            raise
+
+    def refresh(self, bonds: List[Dict[str, Any]]) -> bool:
+        """Создаёт или обновляет таблицу bonds из готовых данных.
+
+        Принимает список уже преобразованных словарей для вставки в таблицу bonds.
+        Создаёт таблицу при отсутствии и выполняет INSERT OR REPLACE.
+
+        Args:
+            bonds: Список словарей с данными облигаций (ключи — имена колонок таблицы bonds).
+
+        Returns:
+            True если операция выполнена успешно, False в случае ошибки.
+        """
+        data_log = get_data_update_logger()
+        try:
+            self._ensure_db_directory()
+            if not self._table_exists("bonds"):
+                data_log.info("[API /bonds/refresh] Таблица bonds не существует, создаём структуру таблицы")
+                self.logger.info("Таблица bonds не существует, создаём её")
+                self._create_bonds_table()
+            else:
+                data_log.info("[API /bonds/refresh] Таблица bonds существует, обновляем данные (INSERT OR REPLACE)")
+                self.logger.info("Таблица bonds существует, обновляем данные")
+            self._insert_or_replace_bonds(bonds)
+            data_log.info("[API /bonds/refresh] В таблицу bonds записано записей: %s (база: %s)", len(bonds), self.db_path)
+            self.logger.info("Таблица bonds успешно создана/обновлена в базе данных: %s", self.db_path)
+            return True
+        except Exception as e:
+            data_log.error("[API /bonds/refresh] Ошибка при записи в таблицу bonds: %s", e, exc_info=True)
+            self.logger.error("Ошибка при создании/обновлении таблицы bonds: %s", e, exc_info=True)
+            return False
+
+    def _ensure_db_directory(self) -> None:
+        """Создаёт директорию для базы данных, если она не существует."""
+        db_dir = self.db_path.parent
+        db_dir.mkdir(parents=True, exist_ok=True)
+        self.logger.debug("Директория для БД проверена/создана: %s", db_dir)
+
+    def _table_exists(self, table_name: str) -> bool:
+        """Проверяет существование таблицы в базе данных.
+
+        Args:
+            table_name: Имя таблицы для проверки.
+
+        Returns:
+            True если таблица существует, False в противном случае.
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                    (table_name,),
+                )
+                return cursor.fetchone() is not None
+        except Exception as e:
+            self.logger.error("Ошибка при проверке существования таблицы: %s", e)
+            return False
+
+    def _create_bonds_table(self) -> None:
+        """Создаёт таблицу bonds с заданной структурой.
+
+        Определяет схему таблицы bonds со всеми необходимыми колонками
+        для хранения данных об облигациях. Выполняет CREATE TABLE IF NOT EXISTS.
+        """
+        create_table_sql = """
+        CREATE TABLE IF NOT EXISTS bonds (
+            secid TEXT PRIMARY KEY,
+            boardid TEXT,
+            isin TEXT,
+            name TEXT,
+            rating TEXT,
+            current_price REAL,
+            coupon_yield_to_price REAL,
+            yield_to_maturity REAL,
+            face_value REAL,
+            currency TEXT,
+            coupon_value REAL,
+            coupon_percent REAL,
+            coupon_frequency REAL,
+            accrued_interest REAL,
+            duration_years REAL,
+            has_put_option INTEGER,
+            has_call_option INTEGER,
+            maturity_date TEXT,
+            listing_level INTEGER,
+            bond_type INTEGER,
+            bond_kind INTEGER,
+            offer_date TEXT
+        )
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(create_table_sql)
+            conn.commit()
+        self.logger.debug("SQL запрос CREATE TABLE для bonds выполнен успешно")
+
+    def _insert_or_replace_bonds(self, bonds: List[Dict[str, Any]]) -> None:
+        """Вставляет или заменяет записи в таблице bonds.
+
+        Выполняет массовую вставку данных облигаций в таблицу bonds используя
+        INSERT OR REPLACE INTO. Все операции выполняются в рамках одной транзакции.
+
+        Args:
+            bonds: Список словарей с данными облигаций для вставки/обновления.
+                Каждый словарь должен содержать все поля таблицы bonds.
+
+        Raises:
+            Exception: При ошибках вставки данных.
+        """
+        if not bonds:
+            self.logger.warning("Нет данных для вставки")
+            return
+        insert_sql = """
+        INSERT OR REPLACE INTO bonds (
+            secid, boardid, isin, name, rating, current_price, coupon_yield_to_price,
+            yield_to_maturity, face_value, currency, coupon_value, coupon_percent,
+            coupon_frequency, accrued_interest, duration_years, has_put_option,
+            has_call_option, maturity_date, listing_level, bond_type, bond_kind, offer_date
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                for bond in bonds:
+                    cursor.execute(
+                        insert_sql,
+                        (
+                            bond.get("secid"),
+                            bond.get("boardid"),
+                            bond.get("isin"),
+                            bond.get("name"),
+                            bond.get("rating"),
+                            bond.get("current_price"),
+                            bond.get("coupon_yield_to_price"),
+                            bond.get("yield_to_maturity"),
+                            bond.get("face_value"),
+                            bond.get("currency"),
+                            bond.get("coupon_value"),
+                            bond.get("coupon_percent"),
+                            bond.get("coupon_frequency"),
+                            bond.get("accrued_interest"),
+                            bond.get("duration_years"),
+                            bond.get("has_put_option"),
+                            bond.get("has_call_option"),
+                            bond.get("maturity_date"),
+                            bond.get("listing_level"),
+                            bond.get("bond_type"),
+                            bond.get("bond_kind"),
+                            bond.get("offer_date"),
+                        ),
+                    )
+                conn.commit()
+                data_log = get_data_update_logger()
+                data_log.info("[API /bonds/refresh] INSERT OR REPLACE в bonds завершён: %s записей", len(bonds))
+                self.logger.info("Успешно вставлено/обновлено %s записей в таблицу bonds", len(bonds))
+        except Exception as e:
+            get_data_update_logger().error("[API /bonds/refresh] Ошибка INSERT в таблицу bonds: %s", e, exc_info=True)
+            self.logger.error("Ошибка при вставке данных в таблицу bonds: %s", e, exc_info=True)
             raise

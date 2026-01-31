@@ -5,7 +5,7 @@
 
 Модули:
     bond: Модели данных облигаций (BondListItem, BondDetail, BondSecurity, BondMarketData)
-    coupons: Модели данных купонов (Coupon, Amortization, Offer)
+    coupons: Модели данных купонов (Coupon, Offer)
     emitent: Модели данных эмитентов (EmitentInfo)
     filters: Модели фильтров для поиска облигаций (BondFilters)
     responses: Модели ответов API (BondsListResponse, ErrorResponse и др.)

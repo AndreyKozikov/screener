@@ -14,7 +14,7 @@ from datetime import date
 from app.models.bond import BondDetail
 from app.models.filters import BondFilters
 from app.models.responses import BondsListResponse
-from app.models.coupons import BondCouponsResponse, CouponsListResponse, MultipleCouponsResponse, CouponsBySecid
+from app.models.coupons import CouponsListResponse, MultipleCouponsResponse, CouponsBySecid
 from app.services.data_loader import get_data_loader
 from app.services.bonds_service import get_bonds_list
 from app.services.coupon_service import get_coupon_service
@@ -364,9 +364,7 @@ async def get_bond_coupons(
             игнорируя кэш. По умолчанию False.
     
     Returns:
-        Объект CouponsListResponse со списком купонов, содержащий:
-        - coupons: Список объектов Coupon с данными купонов (coupondate, value, valueprc)
-        - coupon_type: Тип купона ("FIX" или "FLOAT") или None
+        Объект CouponsListResponse со списком купонов.
     
     Raises:
         HTTPException: Если указаны некорректные secids (статус 400),
@@ -422,36 +420,25 @@ async def get_bond_coupons(
             
             bond_data = batch_data[target_secid]
             coupons_data = bond_data.get("coupons", [])
-            coupon_type = bond_data.get("coupon_type")
             
-            # Convert dicts to Coupon models
             from app.models.coupons import Coupon
             coupons = [Coupon(**coupon) for coupon in coupons_data]
             
-            return CouponsListResponse(coupons=coupons, coupon_type=coupon_type)
+            return CouponsListResponse(coupons=coupons)
         
-        # Single bond mode: use path parameter
-        # Get full coupon data to access amortizations with coupon_type
+        # Single bond mode
         full_coupon_data = await asyncio.to_thread(
             coupon_service.get_coupons,
             secid,
             force_refresh
         )
         
-        # Extract coupons and coupon_type
         coupons_data = full_coupon_data.get("coupons", [])
-        amortizations = full_coupon_data.get("amortizations", [])
         
-        # Get coupon_type from amortizations (all amortizations have the same coupon_type)
-        coupon_type = None
-        if amortizations and len(amortizations) > 0:
-            coupon_type = amortizations[0].get("coupon_type")
-        
-        # Convert dicts to Coupon models
         from app.models.coupons import Coupon
         coupons = [Coupon(**coupon) for coupon in coupons_data]
         
-        return CouponsListResponse(coupons=coupons, coupon_type=coupon_type)
+        return CouponsListResponse(coupons=coupons)
     except HTTPException:
         raise
     except RuntimeError as exc:
@@ -474,19 +461,7 @@ async def get_bonds_coupons_batch(
             Должен содержать хотя бы один элемент. Дубликаты автоматически удаляются.
     
     Returns:
-        Объект MultipleCouponsResponse со списком данных по облигациям, где каждый
-        элемент содержит:
-        - secid: Идентификатор облигации
-        - coupons: Список объектов Coupon с данными купонов
-        - coupon_type: Тип купона ("FIX" или "FLOAT") или None, если недоступен
-    
-    Raises:
-        HTTPException: Если все secids некорректны (статус 400) или если произошла
-            ошибка при загрузке данных (статус 500).
-    
-    Note:
-        Для облигаций, данные о купонах которых не найдены, возвращается пустой
-        список купонов с coupon_type=None.
+        Объект MultipleCouponsResponse со списком данных по облигациям.
     """
     try:
         # Validate secids list
@@ -522,23 +497,10 @@ async def get_bonds_coupons_batch(
             if secid in batch_data:
                 bond_data = batch_data[secid]
                 coupons_data = bond_data.get("coupons", [])
-                coupon_type = bond_data.get("coupon_type")
-                
-                # Convert dicts to Coupon models
                 coupons = [Coupon(**coupon) for coupon in coupons_data]
-                
-                result_data.append(CouponsBySecid(
-                    secid=secid,
-                    coupons=coupons,
-                    coupon_type=coupon_type
-                ))
+                result_data.append(CouponsBySecid(secid=secid, coupons=coupons))
             else:
-                # Return empty coupons for missing secids
-                result_data.append(CouponsBySecid(
-                    secid=secid,
-                    coupons=[],
-                    coupon_type=None
-                ))
+                result_data.append(CouponsBySecid(secid=secid, coupons=[]))
         
         return MultipleCouponsResponse(data=result_data)
     except HTTPException:

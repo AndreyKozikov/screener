@@ -145,7 +145,6 @@ export const BondDetails: React.FC = () => {
   
   // Coupons state
   const [coupons, setCoupons] = useState<Coupon[]>([]);
-  const [couponType, setCouponType] = useState<string | null>(null);  // FIX or FLOAT
   const [isLoadingCoupons, setIsLoadingCoupons] = useState(false);
   const [couponsError, setCouponsError] = useState<string | null>(null);
   
@@ -165,7 +164,6 @@ export const BondDetails: React.FC = () => {
       setBondDetail(null);
       setError(null);
       setCoupons([]);
-      setCouponType(null);
       setCouponsError(null);
       setActiveTab(0);
       prevCouponsCountRef.current = 0;
@@ -199,35 +197,6 @@ export const BondDetails: React.FC = () => {
       isCancelled = true;
     };
   }, [selectedBondId]);
-
-  // Load coupon_type when bond is selected (needed for "Основные данные" tab)
-  useEffect(() => {
-    if (!selectedBondId || couponType !== null) {
-      return;
-    }
-
-    let isCancelled = false;
-    const currentSecIdRef = selectedBondId;
-
-    const loadCouponType = async () => {
-      try {
-        const couponsMap = await fetchBondsCoupons([currentSecIdRef]);
-        const response = couponsMap.get(currentSecIdRef);
-        if (!isCancelled && currentSecIdRef === selectedBondId && response) {
-          setCouponType(response.coupon_type || null);
-        }
-      } catch (err) {
-        // Silently fail - coupon_type is optional
-        console.warn('Failed to load coupon_type:', err);
-      }
-    };
-
-    void loadCouponType();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [selectedBondId, couponType]);
 
   // Load coupons when tab changes to "Купонные выплаты"
   useEffect(() => {
@@ -265,7 +234,6 @@ export const BondDetails: React.FC = () => {
         if (!isCancelled && currentSecIdRef === selectedBondId && response) {
           const hasCouponsNow = response.coupons.length > 0;
           setCoupons(response.coupons);
-          setCouponType(response.coupon_type || null);
           
           if (hasCouponsNow) {
             prevCouponsCountRef.current = response.coupons.length;
@@ -580,7 +548,7 @@ export const BondDetails: React.FC = () => {
                 )}
               </AccordionSummary>
               <AccordionDetails sx={{ p: 0 }}>
-                <PremiumBondCard bondDetail={bondDetail} couponType={couponType} />
+                <PremiumBondCard bondDetail={bondDetail} />
               </AccordionDetails>
             </Accordion>
 
@@ -745,11 +713,6 @@ export const BondDetails: React.FC = () => {
                       { field: 'COUPONVALUE', value: securities?.COUPONVALUE ?? null },
                       { field: 'ACCRUEDINT', value: securities?.ACCRUEDINT ?? null },
                       { field: 'NEXTCOUPON', value: securities?.NEXTCOUPON ?? null, label: 'Дата следующего купона' },
-                      { 
-                        field: 'COUPONTYPE', 
-                        value: couponType === 'FIX' ? 'постоянный' : couponType === 'FLOAT' ? 'плавающий' : null,
-                        label: 'Тип купона'
-                      },
                     ])}
 
                     {renderSection('Сроки', [

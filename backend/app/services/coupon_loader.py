@@ -1,8 +1,8 @@
 """Загрузчик данных о купонах облигаций из кэша.
 
 Этот модуль содержит класс CouponLoader для загрузки и кэширования данных о купонах
-из файла coupons_data.json. Предоставляет методы для получения значения ближайшего
-купона и типа купона для облигации.
+из файла coupons_data.json. Предоставляет метод для получения значения ближайшего
+купона для облигации.
 """
 
 from datetime import date, datetime
@@ -16,8 +16,8 @@ class CouponLoader:
     """Вспомогательный сервис для загрузки данных о купонах из coupons_data.json.
     
     Класс обеспечивает загрузку данных о купонах облигаций из JSON файла с кэшированием
-    для повышения производительности. Предоставляет методы для получения значения
-    ближайшего купона и типа купона для облигации.
+    для повышения производительности. Предоставляет метод для получения значения
+    ближайшего купона для облигации.
     
     Attributes:
         data_dir: Путь к директории с данными.
@@ -152,37 +152,6 @@ class CouponLoader:
                 return None
         
         return None
-    
-    def get_coupon_type(self, secid: str) -> Optional[str]:
-        """Получает тип купона из секции амортизаций.
-        
-        Извлекает тип купона (FIX или FLOAT) из первой амортизации облигации.
-        Все амортизации облигации имеют одинаковый тип купона.
-        
-        Args:
-            secid: Идентификатор облигации (SECID) для поиска типа купона.
-        
-        Returns:
-            Тип купона ("FIX" или "FLOAT") или None, если:
-            - Облигация не найдена в данных
-            - У облигации нет амортизаций
-            - Тип купона отсутствует или не является "FIX" или "FLOAT"
-        """
-        coupons_data = self._load_coupons_data()
-        
-        if secid not in coupons_data:
-            return None
-        
-        bond_data = coupons_data[secid]
-        amortizations = bond_data.get("amortizations", [])
-        
-        if not amortizations:
-            return None
-        
-        # Get coupon_type from first amortization (all amortizations have the same coupon_type)
-        coupon_type = amortizations[0].get("coupon_type")
-        
-        return coupon_type if coupon_type in ("FIX", "FLOAT") else None
     
     def clear_cache(self) -> None:
         """Очищает кэш данных о купонах.
