@@ -15,8 +15,7 @@ from app.services.coupon_loader import get_coupon_loader
 from app.services.data_loader import get_data_loader
 from app.services.moex_client import MoexClient
 from app.utils.coupon_utils import to_frontend_coupon
-
-COUPONS_DATA_DIR: Path = Path(__file__).parent.parent / "data"
+from config.paths import DATA_DIR as COUPONS_DATA_DIR
 
 
 class CouponService:
@@ -47,7 +46,8 @@ class CouponService:
         """
         self._moex_client = moex_client or MoexClient()
         self._file_storage = file_storage or FileStorage()
-        self._coupons_path = Path(data_dir) / "coupons_data.json"
+        from config.paths import COUPONS_DATA_JSON
+        self._coupons_path = Path(data_dir) / COUPONS_DATA_JSON
         self._file_storage.ensure_coupons_exists(self._coupons_path)
 
     def _is_data_stale(self, last_updated: str) -> bool:

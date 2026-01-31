@@ -13,6 +13,7 @@ from datetime import datetime
 import orjson
 
 from app.utils.coupon_utils import COUPON_STORAGE_FIELDS
+from config.paths import COUPONS_DATA_JSON, DATA_DIR, DB_PATH
 
 
 class DBCoupon:
@@ -42,10 +43,7 @@ class DBCoupon:
             logger: Логгер для записи событий и ошибок.
         """
         if db_path is None:
-            # Определяем путь относительно текущего файла
-            backend_dir = Path(__file__).parent.parent.parent.parent
-            db_path = str(backend_dir / "db" / "bonds.db")
-        
+            db_path = str(DB_PATH)
         self.db_path = Path(db_path)
         self.logger = logging.getLogger(__name__)
     
@@ -209,13 +207,9 @@ class DBCoupon:
             FileNotFoundError: Если файл coupons_data.json не найден.
             orjson.JSONDecodeError: Если JSON файл некорректен или поврежден.
         """
-        # Определяем путь к файлу относительно текущего файла
-        backend_dir = Path(__file__).parent.parent.parent.parent
-        data_dir = backend_dir / "app" / "data"
-        coupons_path = data_dir / "coupons_data.json"
-        
+        coupons_path = DATA_DIR / COUPONS_DATA_JSON
         if not coupons_path.exists():
-            error_msg = f"Файл coupons_data.json не найден: {coupons_path}"
+            error_msg = f"Файл {COUPONS_DATA_JSON} не найден: {coupons_path}"
             self.logger.error(error_msg)
             raise FileNotFoundError(error_msg)
         

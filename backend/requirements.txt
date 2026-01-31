@@ -1,6 +1,8 @@
 # Core Framework
 fastapi==0.118.2
 uvicorn[standard]==0.32.0
+sqlmodel==0.0.31
+alembic==1.18.3
 
 # Data Validation & Settings  
 pydantic==2.10.4

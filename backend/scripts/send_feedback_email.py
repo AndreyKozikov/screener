@@ -20,16 +20,16 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, List, Set
 
-# Add parent directory to path to import app modules
+# Add backend directory to path to import app and config modules
 SCRIPT_DIR = Path(__file__).parent.parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
 # Load .env file before importing email service
 try:
     from dotenv import load_dotenv
-    env_file = SCRIPT_DIR / ".env"
-    if env_file.exists():
-        load_dotenv(env_file)
+    from config.paths import ENV_FILE
+    if ENV_FILE.exists():
+        load_dotenv(ENV_FILE)
     else:
         load_dotenv()
 except ImportError:
@@ -37,10 +37,7 @@ except ImportError:
     print("Trying to use environment variables directly...")
 
 from app.services.email_service import send_multiple_feedback_emails
-
-# Path to feedback JSON file
-FEEDBACK_FILE = SCRIPT_DIR / "app" / "data" / "feedback.json"
-SENT_FEEDBACK_FILE = SCRIPT_DIR / "app" / "data" / "sent_feedback.json"
+from config.paths import FEEDBACK_FILE_PATH as FEEDBACK_FILE, SENT_FEEDBACK_FILE_PATH as SENT_FEEDBACK_FILE
 
 
 def load_sent_feedback_ids() -> Set[int]:

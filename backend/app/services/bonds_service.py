@@ -13,14 +13,13 @@ Note:
     BondsRepository.select() на уровне SQL для повышения производительности.
 """
 
-import sqlite3
 from datetime import date
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import orjson
 
-from app.models.bond import BondListItem
+from app.models.bond import Bond, BondListItem
 from app.models.filters import BondFilters
 from app.models.responses import BondsListResponse
 from app.repository.db.bonds_repository import BondsRepository
@@ -45,7 +44,8 @@ def _load_mappings(data_dir: Path) -> Tuple[Dict[int, str], Dict[int, str]]:
     type_rev: Dict[int, str] = {}
     kind_rev: Dict[int, str] = {}
 
-    type_path = data_dir / "bonds_type_mapping.json"
+    from config.paths import BONDS_TYPE_MAPPING_JSON, BONDS_TYPE43_MAPPING_JSON
+    type_path = data_dir / BONDS_TYPE_MAPPING_JSON
     if type_path.exists():
         try:
             data = orjson.loads(type_path.read_bytes())
@@ -56,7 +56,7 @@ def _load_mappings(data_dir: Path) -> Tuple[Dict[int, str], Dict[int, str]]:
         except Exception:
             pass
 
-    kind_path = data_dir / "bonds_type43_mapping.json"
+    kind_path = data_dir / BONDS_TYPE43_MAPPING_JSON
     if kind_path.exists():
         try:
             data = orjson.loads(kind_path.read_bytes())
@@ -91,90 +91,81 @@ def _parse_date(s: Optional[str]) -> Optional[date]:
         return None
 
 
-def _row_to_bond_list_item(
-    row: Dict[str, Any],
+def _bond_to_list_item(
+    bond: Bond,
     type_rev: Dict[int, str],
     kind_rev: Dict[int, str],
 ) -> BondListItem:
-    """Преобразует сырую строку из БД в объект BondListItem.
-    
-    Выполняет преобразование данных облигации из формата базы данных (словарь)
-    в объект модели BondListItem. Вычисляет производные поля (coupon_period из
-    coupon_frequency, duration_days из duration_years) и применяет обратные маппинги
-    для преобразования ID типов и видов облигаций в строковые значения.
-    
+    """Преобразует объект Bond из БД в BondListItem для API.
+
+    Вычисляет производные поля (COUPONPERIOD из coupon_frequency, DURATION в днях
+    из duration_years) и применяет обратные маппинги типов/видов облигаций.
+
     Args:
-        row: Словарь с данными облигации из таблицы bonds. Должен содержать все
-            необходимые поля таблицы (secid, name, rating, current_price, и т.д.).
+        bond: Объект Bond из bonds_repository.select().
         type_rev: Обратный маппинг типов облигаций (ID -> строка).
         kind_rev: Обратный маппинг видов облигаций (ID -> строка).
-    
+
     Returns:
-        Объект BondListItem с данными облигации, готовый для использования в API.
+        Объект BondListItem для ответа API.
     """
-    maturity_date = _parse_date(row.get("maturity_date"))
-    coupon_freq = row.get("coupon_frequency")
+    maturity_date = _parse_date(bond.maturity_date)
     coupon_period: Optional[int] = None
-    if coupon_freq is not None and isinstance(coupon_freq, (int, float)) and float(coupon_freq) > 0:
+    if bond.coupon_frequency is not None and bond.coupon_frequency > 0:
         try:
-            coupon_period = int(round(365 / float(coupon_freq)))
+            coupon_period = int(round(365 / float(bond.coupon_frequency)))
         except (ValueError, ZeroDivisionError):
             pass
 
-    duration_years = row.get("duration_years")
     duration_days: Optional[float] = None
-    if duration_years is not None and isinstance(duration_years, (int, float)):
+    if bond.duration_years is not None:
         try:
-            duration_days = float(duration_years) * 365
+            duration_days = float(bond.duration_years) * 365
         except (ValueError, TypeError):
             pass
 
-    rating = (row.get("rating") or "").strip() or None
+    rating = (bond.rating or "").strip() or None
     ratings: Optional[List[Dict[str, Any]]] = None
     if rating:
-        ratings = [
-            {"rating_level_name_short_ru": rating, "agency_name_short_ru": ""},
-        ]
+        ratings = [{"rating_level_name_short_ru": rating, "agency_name_short_ru": ""}]
 
-    bond_type_id = row.get("bond_type")
-    bond_kind_id = row.get("bond_kind")
-    bondtype = type_rev.get(bond_type_id) if isinstance(bond_type_id, int) else None
-    bondtype43 = kind_rev.get(bond_kind_id) if isinstance(bond_kind_id, int) else None
+    bondtype = type_rev.get(bond.bond_type) if isinstance(bond.bond_type, int) else None
+    bondtype43 = kind_rev.get(bond.bond_kind) if isinstance(bond.bond_kind, int) else None
 
     return BondListItem(
-        SECID=str(row.get("secid") or ""),
-        BOARDID=str(row.get("boardid") or ""),
-        SHORTNAME=str(row.get("name") or ""),
-        SECNAME=str(row.get("name") or "") or None,
-        ISIN=str(row.get("isin") or "").strip() or None,
-        COUPONPERCENT=float(row.get("coupon_percent")) if row.get("coupon_percent") is not None else None,
+        SECID=str(bond.secid or ""),
+        BOARDID=str(bond.boardid or ""),
+        SHORTNAME=str(bond.name or ""),
+        SECNAME=str(bond.name or "") or None,
+        ISIN=(bond.isin or "").strip() or None,
+        COUPONPERCENT=bond.coupon_percent,
         MATDATE=maturity_date,
         STATUS=None,
         TRADINGSTATUS=None,
-        FACEVALUE=float(row.get("face_value")) if row.get("face_value") is not None else None,
-        PREVPRICE=float(row.get("current_price")) if row.get("current_price") is not None else None,
-        YIELDATPREVWAPRICE=float(row.get("yield_to_maturity")) if row.get("yield_to_maturity") is not None else None,
+        FACEVALUE=bond.face_value,
+        PREVPRICE=bond.current_price,
+        YIELDATPREVWAPRICE=bond.yield_to_maturity,
         NEXTCOUPON=None,
         BOARDNAME=None,
         CALLOPTIONDATE=None,
         PUTOPTIONDATE=None,
-        ACCRUEDINT=float(row.get("accrued_interest")) if row.get("accrued_interest") is not None else None,
+        ACCRUEDINT=bond.accrued_interest,
         COUPONPERIOD=coupon_period,
-        COUPONVALUE=float(row.get("coupon_value")) if row.get("coupon_value") is not None else None,
+        COUPONVALUE=bond.coupon_value,
         DURATION=duration_days,
         DURATIONWAPRICE=None,
-        CURRENCYID=str(row.get("currency") or "").strip() or None,
-        FACEUNIT=str(row.get("currency") or "").strip() or None,
-        LISTLEVEL=int(row.get("listing_level")) if row.get("listing_level") is not None else None,
+        CURRENCYID=(bond.currency or "").strip() or None,
+        FACEUNIT=(bond.currency or "").strip() or None,
+        LISTLEVEL=bond.listing_level,
         RATING_AGENCY=None,
         RATING_LEVEL=rating,
         RATINGS=ratings,
         BONDTYPE=bondtype,
         BONDTYPE43=bondtype43,
         COUPON_TYPE=None,
-        COUPON_YIELD_TO_PRICE=float(row.get("coupon_yield_to_price")) if row.get("coupon_yield_to_price") is not None else None,
-        COUPON_FREQUENCY=int(row.get("coupon_frequency")) if row.get("coupon_frequency") is not None else None,
-        DURATION_YEARS=float(row.get("duration_years")) if row.get("duration_years") is not None else None,
+        COUPON_YIELD_TO_PRICE=bond.coupon_yield_to_price,
+        COUPON_FREQUENCY=int(bond.coupon_frequency) if bond.coupon_frequency is not None else None,
+        DURATION_YEARS=bond.duration_years,
     )
 
 
@@ -219,47 +210,40 @@ def get_bonds_list(
         из таблицы эмитентов.
     """
     if data_dir is None:
-        backend = Path(__file__).resolve().parent.parent.parent
-        data_dir = backend / "app" / "data"
+        from config.paths import DATA_DIR
+        data_dir = DATA_DIR
     data_dir = Path(data_dir)
 
     type_rev, kind_rev = _load_mappings(data_dir)
 
     db = BondsRepository(db_path=db_path)
 
-    # Используем универсальный метод select, который применяет все фильтры на уровне БД
-    # Фронтенд теперь отправляет ID напрямую, преобразование не требуется
-    # bondtype и bondtype43 уже содержат ID (числа), которые передаются напрямую в SQL-запрос
+    # Выборка через SQLModel API; возвращаются объекты Bond
     try:
-        raw = db.select(
+        bond_rows = db.select(
             filters=filters,
             bond_type_ids=filters.bondtype,
             bond_kind_ids=filters.bondtype43,
             exclude_spob=exclude_spob,
         )
-    except sqlite3.OperationalError as e:
-        # Если таблица не существует, возвращаем пустой список
-        # Это может произойти, если база данных не была инициализирована
-        if "no such table" in str(e).lower() or "no such table: bonds" in str(e).lower():
-            raw = []
+    except Exception as e:
+        if "no such table" in str(e).lower():
+            bond_rows = []
         else:
             raise
-    
-    # total — число всех облигаций в БД (без фильтров), для совместимости с API
+
     try:
         total = db.count_bonds(exclude_spob=False)
-    except sqlite3.OperationalError as e:
-        # Если таблица не существует, возвращаем 0
-        if "no such table" in str(e).lower() or "no such table: bonds" in str(e).lower():
+    except Exception as e:
+        if "no such table" in str(e).lower():
             total = 0
         else:
             raise
 
-    # Преобразуем в BondListItem
-    bonds: List[BondListItem] = []
-    for r in raw:
+    bonds = []
+    for bond in bond_rows:
         try:
-            bonds.append(_row_to_bond_list_item(r, type_rev, kind_rev))
+            bonds.append(_bond_to_list_item(bond, type_rev, kind_rev))
         except Exception:
             continue
 

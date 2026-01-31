@@ -14,22 +14,25 @@ from app.services.ruonia_service import init_ruonia_service
 from app.services.keyrate_service import init_keyrate_service
 from app.services.trading_history_service import init_trading_history_service
 from app.services.kbd_service import init_kbd_service
-from app.config import settings
+from config.settings import settings
+from app.core.database_init import run_migrations
+from config.paths import DATA_DIR
 
 
 # Lifespan context manager for startup/shutdown events
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Startup: Apply Alembic migrations (bonds table structure)
+    run_migrations()
     # Startup: Initialize data loaders
-    data_dir = Path(__file__).parent / "app" / "data"
-    init_data_loader(data_dir)
-    init_coupon_loader(data_dir)
-    init_emitent_service(data_dir)
-    init_rating_service(data_dir)
-    init_currency_service(data_dir)
-    init_ruonia_service(data_dir)
-    init_keyrate_service(data_dir)
-    init_trading_history_service(data_dir)
+    init_data_loader(DATA_DIR)
+    init_coupon_loader(DATA_DIR)
+    init_emitent_service(DATA_DIR)
+    init_rating_service(DATA_DIR)
+    init_currency_service(DATA_DIR)
+    init_ruonia_service(DATA_DIR)
+    init_keyrate_service(DATA_DIR)
+    init_trading_history_service(DATA_DIR)
     # Initialize KBD service (uses database, not data_dir)
     init_kbd_service()
     yield
@@ -103,7 +106,7 @@ if __name__ == "__main__":
     import multiprocessing
     
     # Для production используйте Gunicorn с несколькими workers:
-    # gunicorn -c gunicorn_config.py main:app
+    # gunicorn -c config/gunicorn_config.py main:app
     #
     # Для разработки можно использовать uvicorn напрямую,
     # но лучше указать workers для тестирования параллельной обработки

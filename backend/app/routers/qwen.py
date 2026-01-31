@@ -13,7 +13,7 @@ import tempfile
 import json
 import asyncio
 from pathlib import Path
-from app.config import settings
+from config.settings import settings
 
 router = APIRouter(prefix="/api/qwen", tags=["qwen"])
 """Роутер FastAPI для обработки запросов к API Qwen AI."""

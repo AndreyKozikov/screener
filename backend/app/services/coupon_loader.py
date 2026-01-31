@@ -31,8 +31,9 @@ class CouponLoader:
         Args:
             data_dir: Путь к директории с JSON файлами данных.
         """
+        from config.paths import COUPONS_DATA_JSON
         self.data_dir = data_dir
-        self.coupons_file = data_dir / "coupons_data.json"
+        self.coupons_file = data_dir / COUPONS_DATA_JSON
         self._coupons_cache: Optional[Dict[str, Dict]] = None
     
     def _load_coupons_data(self) -> Dict[str, Dict]:

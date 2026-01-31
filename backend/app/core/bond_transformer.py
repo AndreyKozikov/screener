@@ -1,8 +1,9 @@
-"""Преобразование данных облигаций из JSON в формат таблицы БД.
+"""Центральный модуль расчётной логики облигаций.
 
-Этот модуль содержит класс BondTransformer для загрузки маппингов,
-объединения данных из нескольких JSON-файлов и преобразования
-сырых данных облигаций в строки таблицы bonds.
+Содержит класс BondTransformer: загрузка маппингов, объединение данных из JSON,
+расчёт доходности, дюрации, рейтингов, флагов оферт и преобразование сырых
+данных в объекты Bond для сохранения в БД. Вся бизнес-логика расчётов
+сосредоточена здесь; в БД сохраняются только физически рассчитанные значения.
 """
 
 import logging
@@ -10,7 +11,16 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from app.models.bond import Bond
 from app.repository.files.file_storage import FileStorage
+from config.paths import (
+    BONDS_EMITENT_JSON,
+    BONDS_JSON,
+    BONDS_RATING_JSON,
+    BONDS_TYPE_MAPPING_JSON,
+    BONDS_TYPE43_MAPPING_JSON,
+    COUPONS_DATA_JSON,
+)
 from app.services.bond_filter import get_rating_index, standardize_rating
 from app.services.emitent_service import get_emitent_service
 
@@ -52,7 +62,7 @@ class BondTransformer:
         type_mapping: Dict[str, int] = {}
         kind_mapping: Dict[str, int] = {}
 
-        type_path = self.data_dir / "bonds_type_mapping.json"
+        type_path = self.data_dir / BONDS_TYPE_MAPPING_JSON
         if type_path.exists():
             try:
                 data = self.storage.read_json(type_path)
@@ -62,7 +72,7 @@ class BondTransformer:
             except Exception as e:
                 self.logger.warning("Ошибка при загрузке маппинга типов: %s", e)
 
-        kind_path = self.data_dir / "bonds_type43_mapping.json"
+        kind_path = self.data_dir / BONDS_TYPE43_MAPPING_JSON
         if kind_path.exists():
             try:
                 data = self.storage.read_json(kind_path)
@@ -88,7 +98,7 @@ class BondTransformer:
             готовых для передачи в transform_batch.
         """
         bonds_data: List[Dict[str, Any]] = []
-        bonds_path = self.data_dir / "bonds.json"
+        bonds_path = self.data_dir / BONDS_JSON
 
         if not bonds_path.exists():
             self.logger.error("Файл bonds.json не найден: %s", bonds_path)
@@ -200,7 +210,7 @@ class BondTransformer:
             Словарь, где ключ — SECID, значение — словарь с ключом "all_ratings".
         """
         ratings_map: Dict[str, Dict[str, Any]] = {}
-        path = self.data_dir / "bonds_rating.json"
+        path = self.data_dir / BONDS_RATING_JSON
         if not path.exists():
             return ratings_map
         try:
@@ -232,7 +242,7 @@ class BondTransformer:
             Словарь, где ключ — SECID, значение — словарь с данными эмитента.
         """
         emitent_map: Dict[str, Dict[str, Any]] = {}
-        path = self.data_dir / "bonds_emitent.json"
+        path = self.data_dir / BONDS_EMITENT_JSON
         if not path.exists():
             return emitent_map
         try:
@@ -252,7 +262,7 @@ class BondTransformer:
             Словарь, где ключ — SECID, значение — словарь с данными о купонах.
         """
         coupons_map: Dict[str, Dict[str, Any]] = {}
-        path = self.data_dir / "coupons_data.json"
+        path = self.data_dir / COUPONS_DATA_JSON
         if not path.exists():
             return coupons_map
         try:
@@ -341,15 +351,17 @@ class BondTransformer:
         except (ZeroDivisionError, TypeError):
             return None
 
-    def transform_bond_data(
+    def transform_to_bond(
         self,
         raw_data: Dict[str, Any],
         type_mapping: Dict[str, int],
         kind_mapping: Dict[str, int],
-    ) -> Optional[Dict[str, Any]]:
-        """Преобразует данные из JSON в формат строки таблицы bonds.
+    ) -> Optional[Bond]:
+        """Преобразует сырые данные в объект Bond со всеми рассчитанными показателями.
 
-        Вычисляет производные поля и применяет маппинги типов и видов облигаций.
+        Выполняет все расчёты: рейтинг, частота купона, дюрация в годах,
+        флаги оферт, доходность купона к цене, маппинг типов/видов, даты.
+        Возвращает полностью заполненный Bond для сохранения в БД.
 
         Args:
             raw_data: Словарь с сырыми данными облигации из JSON.
@@ -357,7 +369,7 @@ class BondTransformer:
             kind_mapping: Маппинг видов облигаций (строка -> ID).
 
         Returns:
-            Словарь для вставки в таблицу bonds или None, если SECID отсутствует.
+            Объект Bond с рассчитанными полями или None, если SECID отсутствует.
         """
         secid = raw_data.get("SECID")
         if not secid:
@@ -430,47 +442,50 @@ class BondTransformer:
         maturity_date = _fmt_date(raw_data.get("MATDATE"))
         offer_date = _fmt_date(raw_data.get("OFFERDATE"))
 
-        return {
-            "secid": secid,
-            "boardid": raw_data.get("BOARDID"),
-            "isin": raw_data.get("ISIN"),
-            "name": raw_data.get("SHORTNAME") or raw_data.get("SECNAME"),
-            "rating": rating,
-            "current_price": current_price,
-            "coupon_yield_to_price": coupon_yield_to_price,
-            "yield_to_maturity": yield_to_maturity,
-            "face_value": raw_data.get("FACEVALUE"),
-            "currency": raw_data.get("FACEUNIT"),
-            "coupon_value": coupon_value,
-            "coupon_percent": raw_data.get("COUPONPERCENT"),
-            "coupon_frequency": coupon_frequency,
-            "accrued_interest": raw_data.get("ACCRUEDINT"),
-            "duration_years": duration_years,
-            "has_put_option": has_put_option,
-            "has_call_option": has_call_option,
-            "maturity_date": maturity_date,
-            "listing_level": raw_data.get("LISTLEVEL"),
-            "bond_type": bond_type,
-            "bond_kind": bond_kind,
-            "offer_date": offer_date,
-        }
+        return Bond(
+            secid=secid,
+            boardid=raw_data.get("BOARDID"),
+            isin=raw_data.get("ISIN"),
+            name=raw_data.get("SHORTNAME") or raw_data.get("SECNAME"),
+            rating=rating,
+            current_price=current_price,
+            coupon_yield_to_price=coupon_yield_to_price,
+            yield_to_maturity=yield_to_maturity,
+            face_value=face_value,
+            currency=raw_data.get("FACEUNIT"),
+            coupon_value=coupon_value,
+            coupon_percent=raw_data.get("COUPONPERCENT"),
+            coupon_frequency=coupon_frequency,
+            accrued_interest=raw_data.get("ACCRUEDINT"),
+            duration_years=duration_years,
+            has_put_option=has_put_option,
+            has_call_option=has_call_option,
+            maturity_date=maturity_date,
+            listing_level=raw_data.get("LISTLEVEL"),
+            bond_type=bond_type,
+            bond_kind=bond_kind,
+            offer_date=offer_date,
+        )
 
-    def transform_batch(self, raw_bonds_list: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Преобразует список сырых облигаций в список строк для таблицы bonds.
+    def transform_batch(self, raw_bonds_list: List[Dict[str, Any]]) -> List[Bond]:
+        """Преобразует список сырых облигаций в список объектов Bond.
+
+        Для каждой записи выполняет все расчёты через transform_to_bond
+        и возвращает готовые объекты для сохранения в БД.
 
         Args:
             raw_bonds_list: Список словарей с сырыми данными (результат prepare_bonds_for_db).
 
         Returns:
-            Список словарей, готовых для вставки в таблицу bonds.
+            Список объектов Bond, готовых для передачи в bonds_repository.save_bonds.
         """
         type_mapping, kind_mapping = self.load_mappings()
-        result: List[Dict[str, Any]] = []
+        result: List[Bond] = []
         for bond_data in raw_bonds_list:
             try:
-                row = self.transform_bond_data(bond_data, type_mapping, kind_mapping)
-                if row:
-                    result.append(row)
+                bond = self.transform_to_bond(bond_data, type_mapping, kind_mapping)
+                if bond:
+                    result.append(bond)
             except Exception as e:
                 self.logger.warning(
                     "Ошибка при преобразовании облигации %s: %s",

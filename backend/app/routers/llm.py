@@ -12,7 +12,7 @@ import httpx
 import tempfile
 import json
 from pathlib import Path
-from app.config import settings
+from config.settings import settings
 
 router = APIRouter(prefix="/api/llm", tags=["llm"])
 """Роутер FastAPI для обработки запросов к API языковых моделей."""

@@ -24,13 +24,10 @@ except ImportError:
 
 # Load .env file if dotenv is available
 if load_dotenv:
-    # Try to load .env from backend directory
-    backend_dir = Path(__file__).parent.parent.parent
-    env_file = backend_dir / ".env"
-    if env_file.exists():
-        load_dotenv(env_file, override=True)
+    from config.paths import ENV_FILE
+    if ENV_FILE.exists():
+        load_dotenv(ENV_FILE, override=True)
     else:
-        # Fallback to current directory
         load_dotenv(override=True)
 
 SENDGRID_API_KEY: str = os.getenv("SENDGRID_API_KEY", "")

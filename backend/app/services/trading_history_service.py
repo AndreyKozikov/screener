@@ -16,16 +16,8 @@ from urllib.request import Request, urlopen
 import orjson
 
 from app.utils.logger import get_data_update_logger
+from config.paths import HISTORY_JSON, MOEX_HISTORY_URL
 
-
-MOEX_HISTORY_URL: str = (
-    "https://iss.moex.com/iss/history/engines/stock/markets/bonds"
-    "/securities/{secid}.json"
-)
-"""Базовый URL API Мосбиржи для получения истории торгов по облигациям."""
-
-HISTORY_FILENAME: str = "bonds_trading_history.json"
-"""Имя файла для хранения истории торгов по облигациям."""
 
 DEFAULT_FROM_DATE: date = date(2000, 1, 1)
 """Дата начала загрузки при отсутствии файла или данных по облигации."""
@@ -89,7 +81,7 @@ class TradingHistoryService:
         Returns:
             Путь к файлу bonds_trading_history.json в директории данных.
         """
-        return self.data_dir / HISTORY_FILENAME
+        return self.data_dir / HISTORY_JSON
 
     def _load_all_secids(self) -> List[str]:
         """Загружает из bonds.json все SECID облигаций.

@@ -30,9 +30,10 @@ class KbdService:
         
         Args:
             db_path: Путь к файлу базы данных SQLite. Если не указан,
-                используется путь по умолчанию: backend/db/bonds.db
+                используется путь из config.paths.DB_PATH.
         """
-        self.db_kbd = DBkbd(db_path=db_path)
+        from config.paths import DB_PATH
+        self.db_kbd = DBkbd(db_path=db_path if db_path is not None else str(DB_PATH))
         self.logger = logging.getLogger(__name__)
         
         self.reverse_column_mapping: Dict[str, str] = {

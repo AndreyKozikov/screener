@@ -4,7 +4,7 @@
 для валидации и сериализации данных облигаций, купонов, эмитентов и фильтров.
 
 Модули:
-    bond: Модели данных облигаций (BondListItem, BondDetail, BondSecurity, BondMarketData)
+    bond: Модели данных облигаций (Bond — SQLModel таблица bonds; BondListItem, BondDetail, BondSecurity, BondMarketData)
     coupons: Модели данных купонов (Coupon, Offer)
     emitent: Модели данных эмитентов (EmitentInfo)
     filters: Модели фильтров для поиска облигаций (BondFilters)

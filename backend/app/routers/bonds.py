@@ -19,7 +19,7 @@ from app.services.data_loader import get_data_loader
 from app.services.bonds_service import get_bonds_list
 from app.services.coupon_service import get_coupon_service
 from app.repository.db_orchestrator import DBOrchestrator
-from app.config import settings
+from config.settings import settings
 from app.utils.logger import get_data_update_logger
 
 router = APIRouter(prefix="/api/bonds", tags=["bonds"])

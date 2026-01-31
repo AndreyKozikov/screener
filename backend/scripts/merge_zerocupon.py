@@ -71,13 +71,19 @@ def _rename_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def main() -> None:
-	script_dir = os.path.abspath(os.path.dirname(__file__))
-	# Script is in backend/scripts/, data is in backend/app/data/
-	data_dir = os.path.join(script_dir, "..", "app", "data")
-	data_dir = os.path.abspath(data_dir)
+	# Путь к данным из конфигурации проекта
+	import sys
+	from pathlib import Path
+	backend_dir = Path(__file__).resolve().parent.parent
+	script_dir = Path(__file__).resolve().parent
+	if str(backend_dir) not in sys.path:
+		sys.path.insert(0, str(backend_dir))
+	from config.paths import DATA_DIR, ZEROCOUPON_CSV
+	data_dir = str(DATA_DIR)
+	script_dir_str = str(script_dir)
 
 	# collect ZIPs in the same folder as script (or can be in data_dir)
-	zip_files_script = [os.path.join(script_dir, f) for f in os.listdir(script_dir) if f.lower().endswith(".zip")]
+	zip_files_script = [os.path.join(script_dir_str, f) for f in os.listdir(script_dir_str) if f.lower().endswith(".zip")]
 	zip_files_data = [os.path.join(data_dir, f) for f in os.listdir(data_dir) if f.lower().endswith(".zip")]
 	zip_files = zip_files_script + zip_files_data
 	
@@ -105,7 +111,7 @@ def main() -> None:
 		base_df = base_df.merge(to_join, on=["Дата", "Время"], how="outer")
 
 	# Save result CSV in data directory
-	out_path = os.path.join(data_dir, "zerocupon.csv")
+	out_path = os.path.join(data_dir, ZEROCOUPON_CSV)
 
 	# normalize date and time columns to DD.MM.YYYY and HH:MM:SS
 	if "Дата" in base_df.columns:

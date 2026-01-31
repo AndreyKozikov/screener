@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Optional
 
 from app.core.bond_transformer import BondTransformer
+from config.paths import DATA_DIR as DEFAULT_DATA_DIR, DB_PATH as DEFAULT_DB_PATH
 from app.repository.db.bonds_repository import BondsRepository
 from app.repository.db.db_coupon import DBCoupon
 from app.repository.db.db_kbd import DBkbd
@@ -21,8 +22,8 @@ class DBOrchestrator:
             db_path: Путь к файлу базы данных. Если не указан, используется backend/db/bonds.db
             data_dir: Путь к директории с JSON-файлами. Если не указан, используется backend/app/data
         """
-        self.db_path = db_path
-        self.data_dir = data_dir
+        self.db_path = db_path if db_path is not None else DEFAULT_DB_PATH
+        self.data_dir = data_dir if data_dir is not None else DEFAULT_DATA_DIR
         self.logger = logging.getLogger(__name__)
     
     def migrate(self, migration_type: str) -> bool:
@@ -63,7 +64,7 @@ class DBOrchestrator:
         data_log = get_data_update_logger()
         try:
             data_log.info("[API /bonds/refresh] Начало сохранения данных облигаций в БД (таблица bonds)")
-            data_dir = self.data_dir or (Path(__file__).resolve().parent.parent / "data")
+            data_dir = self.data_dir
             storage = FileStorage()
             transformer = BondTransformer(data_dir, storage)
             raw_bonds = transformer.prepare_bonds_for_db()
@@ -75,7 +76,6 @@ class DBOrchestrator:
             repo = BondsRepository(db_path=self.db_path)
             result = repo.refresh(ready_bonds)
             if result:
-                data_log.info("[API /bonds/refresh] Данные успешно сохранены в таблицу bonds (база: %s)", self.db_path)
                 self.logger.info("Миграция данных облигаций выполнена успешно")
             else:
                 data_log.warning("[API /bonds/refresh] Сохранение в таблицу bonds завершилось с ошибкой")
@@ -94,7 +94,7 @@ class DBOrchestrator:
             True если миграция выполнена успешно, False в случае ошибки
         """
         try:
-            db_path_str = str(self.db_path) if self.db_path else None
+            db_path_str = str(self.db_path)
             db_coupon = DBCoupon(db_path=db_path_str)
             db_coupon.refresh("coupons")
             
@@ -148,7 +148,7 @@ class DBOrchestrator:
             True если миграция выполнена успешно, False в случае ошибки
         """
         try:
-            db_path_str = str(self.db_path) if self.db_path else None
+            db_path_str = str(self.db_path)
             db_kbd = DBkbd(db_path=db_path_str)
             db_kbd.refresh("kbd")
             

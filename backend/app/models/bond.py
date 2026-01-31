@@ -1,13 +1,72 @@
 """Модели данных облигаций.
 
 Этот модуль содержит модели данных для представления информации об облигациях
-в различных форматах: упрощенный список для таблиц, детальная информация,
-секции данных о ценных бумагах и рыночных данных.
+в различных форматах: SQLModel-модель для таблицы БД (Bond), упрощенный список
+для API (BondListItem), детальная информация, секции данных о ценных бумагах
+и рыночных данных.
 """
 
 from datetime import date
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field
+from sqlmodel import SQLModel, Field as SQLField
+
+
+class Bond(SQLModel, table=True):
+    """Модель облигации для таблицы bonds в базе данных.
+
+    SQLModel-модель с физически рассчитанными значениями. Все расчёты
+    (доходность, дюрация, рейтинг, флаги оферт) выполняются в bond_transformer
+    до сохранения. SECID — первичный ключ.
+
+    Attributes:
+        secid: Идентификатор ценной бумаги (первичный ключ).
+        boardid: Идентификатор режима торгов.
+        isin: ISIN код облигации.
+        name: Краткое наименование облигации.
+        rating: Стандартизированный рейтинг (наихудший из доступных).
+        current_price: Текущая цена.
+        coupon_yield_to_price: Доходность купона к текущей цене (%).
+        yield_to_maturity: Доходность к погашению (%).
+        face_value: Номинальная стоимость.
+        currency: Валюта номинала.
+        coupon_value: Сумма купона.
+        coupon_percent: Процентная ставка купона.
+        coupon_frequency: Число выплат купона в год.
+        accrued_interest: Накопленный купонный доход.
+        duration_years: Дюрация в годах (рассчитанная).
+        has_put_option: Наличие оферты на продажу (1/0).
+        has_call_option: Наличие оферты на выкуп (1/0).
+        maturity_date: Дата погашения.
+        listing_level: Уровень листинга.
+        bond_type: ID типа облигации (маппинг).
+        bond_kind: ID вида облигации (маппинг).
+        offer_date: Дата оферты.
+    """
+    __tablename__ = "bonds"
+
+    secid: str = SQLField(primary_key=True, max_length=64)
+    boardid: Optional[str] = SQLField(default=None, max_length=32)
+    isin: Optional[str] = SQLField(default=None, max_length=32)
+    name: Optional[str] = SQLField(default=None)
+    rating: Optional[str] = SQLField(default=None, max_length=32)
+    current_price: Optional[float] = SQLField(default=None)
+    coupon_yield_to_price: Optional[float] = SQLField(default=None)
+    yield_to_maturity: Optional[float] = SQLField(default=None)
+    face_value: Optional[float] = SQLField(default=None)
+    currency: Optional[str] = SQLField(default=None, max_length=16)
+    coupon_value: Optional[float] = SQLField(default=None)
+    coupon_percent: Optional[float] = SQLField(default=None)
+    coupon_frequency: Optional[float] = SQLField(default=None)
+    accrued_interest: Optional[float] = SQLField(default=None)
+    duration_years: Optional[float] = SQLField(default=None)
+    has_put_option: Optional[int] = SQLField(default=None)
+    has_call_option: Optional[int] = SQLField(default=None)
+    maturity_date: Optional[str] = SQLField(default=None, max_length=10)
+    listing_level: Optional[int] = SQLField(default=None)
+    bond_type: Optional[int] = SQLField(default=None)
+    bond_kind: Optional[int] = SQLField(default=None)
+    offer_date: Optional[str] = SQLField(default=None, max_length=10)
 
 
 class BondListItem(BaseModel):

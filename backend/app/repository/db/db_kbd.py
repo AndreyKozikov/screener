@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Optional, Dict, List, Any
 from datetime import datetime
 
+from config.paths import DATA_DIR, DB_PATH, ZEROCOUPON_CSV
+
 
 class DBkbd:
     """Репозиторий для работы с базой данных кривой бескупонной доходности (KBD).
@@ -44,10 +46,7 @@ class DBkbd:
             column_mapping: Словарь маппинга русских заголовков CSV на английские столбцы БД.
         """
         if db_path is None:
-            # Определяем путь относительно текущего файла
-            backend_dir = Path(__file__).parent.parent.parent.parent
-            db_path = str(backend_dir / "db" / "bonds.db")
-        
+            db_path = str(DB_PATH)
         self.db_path = Path(db_path)
         self.logger = logging.getLogger(__name__)
         
@@ -232,13 +231,9 @@ class DBkbd:
         Raises:
             FileNotFoundError: Если файл zerocupon.csv не найден.
         """
-        # Определяем путь к файлу относительно текущего файла
-        backend_dir = Path(__file__).parent.parent.parent.parent
-        data_dir = backend_dir / "app" / "data"
-        csv_path = data_dir / "zerocupon.csv"
-        
+        csv_path = DATA_DIR / ZEROCOUPON_CSV
         if not csv_path.exists():
-            error_msg = f"Файл zerocupon.csv не найден: {csv_path}"
+            error_msg = f"Файл {ZEROCOUPON_CSV} не найден: {csv_path}"
             self.logger.error(error_msg)
             raise FileNotFoundError(error_msg)
         

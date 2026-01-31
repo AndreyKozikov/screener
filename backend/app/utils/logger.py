@@ -16,9 +16,8 @@ def setup_data_update_logger(log_dir: Optional[Path] = None) -> logging.Logger:
         Configured logger instance.
     """
     if log_dir is None:
-        # Default to backend/logs directory
-        backend_dir = Path(__file__).parent.parent.parent
-        log_dir = backend_dir / "logs"
+        from config.paths import BACKEND_DIR
+        log_dir = BACKEND_DIR / "logs"
     
     # Create log directory if it doesn't exist
     log_dir.mkdir(parents=True, exist_ok=True)

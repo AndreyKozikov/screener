@@ -8,10 +8,10 @@ export default defineConfig({
     host: '0.0.0.0', // Listen on all interfaces for external access
     port: 5173,
     cors: true, // Enable CORS for all origins
-    // Проксирование API запросов на бэкенд
+    // Проксирование API запросов на бэкенд (127.0.0.1 вместо localhost — избегаем IPv6 на Windows)
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: 'http://127.0.0.1:8000',
         changeOrigin: true,
         secure: false,
         // Важно: не используем rewrite, так как бэкенд ожидает /api в пути
@@ -20,7 +20,7 @@ export default defineConfig({
           // Устанавливаем правильный host header
           proxy.on('proxyReq', (proxyReq, req) => {
             // Убеждаемся, что Host header установлен правильно
-            proxyReq.setHeader('Host', 'localhost:8000');
+            proxyReq.setHeader('Host', '127.0.0.1:8000');
             // Логируем для отладки
             const targetUrl = `${options.target}${req.url}`;
             console.log('[Vite Proxy] Request:', req.method, req.url);

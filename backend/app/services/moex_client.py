@@ -12,8 +12,7 @@ import orjson
 
 from app.utils.coupon_utils import clean_string_value, extract_coupon_for_storage
 from app.utils.logger import get_data_update_logger
-
-BONDIZATION_BASE_URL = "https://iss.moex.com/iss/securities/{secid}/bondization.json"
+from config.paths import MOEX_BONDIZATION_BASE_URL, MOEX_COUPONS_QUERY
 
 
 class MoexClient:
@@ -95,10 +94,7 @@ class MoexClient:
         Raises:
             RuntimeError: При сетевой ошибке, таймауте или некорректном формате ответа.
         """
-        url = (
-            f"{BONDIZATION_BASE_URL.format(secid=secid)}"
-            "?iss.json=extended&iss.meta=off&iss.only=coupons&lang=ru&limit=unlimited"
-        )
+        url = f"{MOEX_BONDIZATION_BASE_URL.format(secid=secid)}{MOEX_COUPONS_QUERY}"
         request = Request(url, headers={"User-Agent": self.user_agent})
 
         try:
