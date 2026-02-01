@@ -71,12 +71,16 @@ interface ComparisonRow {
   coupon: string;
   couponToPrice: string;
   regularDuration: string;
+  /** Raw numeric duration for chart (avoids locale parseFloat issues) */
+  regularDurationNum: number | null;
   duration: string;
   convexity: string;
   priceChange: string;
   spread: string;
   gSpread: string;
   zSpread: string;
+  /** Raw numeric Z-spread in % for chart (avoids locale parseFloat issues) */
+  zSpreadNum: number | null;
   secid: string;
 }
 
@@ -787,12 +791,14 @@ export const SpreadAnalysis: React.FC = () => {
           coupon,
           couponToPrice: couponToPriceStr,
           regularDuration: regularDurationStr,
+          regularDurationNum: regularDuration,
           duration: durationStr,
           convexity,
           priceChange,
           spread: '—',
           gSpread: '—',
           zSpread: '—',
+          zSpreadNum: null,
           secid: bond.SECID,
         };
       });
@@ -865,6 +871,7 @@ export const SpreadAnalysis: React.FC = () => {
       // Calculate Z-spread for fixed coupon bonds without embedded options
       // Z-spread is calculated only for bonds that meet the criteria
       let zSpreadStr = '—';
+      let zSpreadNum: number | null = null;
       if (isFixedCouponBond(bond)) {
         const coupons = couponsData.get(bond.SECID);
         if (coupons && coupons.length > 0) {
@@ -872,6 +879,7 @@ export const SpreadAnalysis: React.FC = () => {
           const currentDate = new Date();
           const zSpread = calculateZSpread(bond, coupons, zerocuponData, currentDate);
           zSpreadStr = formatGSpread(zSpread); // Use same formatting function as G-spread
+          zSpreadNum = zSpread;
         }
       }
       
@@ -884,33 +892,33 @@ export const SpreadAnalysis: React.FC = () => {
         coupon,
         couponToPrice: couponToPriceStr,
         regularDuration: regularDurationStr,
+        regularDurationNum: regularDuration,
         duration: durationStr,
         convexity,
         priceChange,
         spread: spreadStr,
         gSpread: gSpreadStr,
         zSpread: zSpreadStr,
+        zSpreadNum,
         secid: bond.SECID,
       };
     });
   }, [bonds, zerocuponData, couponsData, isLoadingCoupons]);
 
-  // Calculate default domains for chart
+  // Calculate default domains for chart (use raw numeric values to avoid locale parseFloat issues)
   const defaultDomains = useMemo(() => {
     if (comparisonData.length === 0) return { x: undefined, y: undefined };
     
     const points = comparisonData
       .filter(row => {
-        const duration = parseFloat(row.regularDuration);
-        const hasZSpread = row.zSpread && row.zSpread !== '—';
-        return hasZSpread && !isNaN(duration) && duration > 0;
+        const dur = row.regularDurationNum;
+        const hasZSpread = row.zSpreadNum !== null && row.zSpreadNum !== undefined;
+        return hasZSpread && dur !== null && dur !== undefined && dur > 0;
       })
-      .map(row => {
-        const zSpreadStr = row.zSpread.replace('%', '').replace('+', '').trim();
-        const zSpreadPercent = parseFloat(zSpreadStr);
-        const duration = parseFloat(row.regularDuration);
-        return { duration, zSpreadBps: isNaN(zSpreadPercent) ? 0 : zSpreadPercent * 100 };
-      })
+      .map(row => ({
+        duration: row.regularDurationNum!,
+        zSpreadBps: (row.zSpreadNum ?? 0) * 100,
+      }))
       .filter(p => !isNaN(p.duration) && !isNaN(p.zSpreadBps));
     
     if (points.length === 0) return { x: undefined, y: undefined };
@@ -1083,36 +1091,27 @@ export const SpreadAnalysis: React.FC = () => {
     if (comparisonData.length === 0) return { points: [], trendLine: [], outliers: [] };
 
     // Filter and prepare data: only bonds with valid Z-spread and duration
+    // Use raw numeric values (regularDurationNum, zSpreadNum) to avoid locale parseFloat issues
     const points = comparisonData
       .filter(row => {
-        const duration = parseFloat(row.regularDuration);
-        const hasZSpread = row.zSpread && row.zSpread !== '—';
-        return hasZSpread && !isNaN(duration) && duration > 0;
+        const dur = row.regularDurationNum;
+        const hasZSpread = row.zSpreadNum !== null && row.zSpreadNum !== undefined;
+        return hasZSpread && dur !== null && dur !== undefined && dur > 0;
       })
       .map(row => {
-        // Parse Z-spread value (e.g., "+1.23%" or "-1.23%")
-        const zSpreadStr = row.zSpread.replace('%', '').replace('+', '').trim();
-        const zSpreadPercent = parseFloat(zSpreadStr);
-        
-        if (isNaN(zSpreadPercent)) {
-          return null;
-        }
-
-        // Convert Z-spread from percentage to basis points (1% = 100 bps)
+        const duration = row.regularDurationNum!;
+        const zSpreadPercent = row.zSpreadNum!;
         const zSpreadBps = zSpreadPercent * 100;
-        
-        const duration = parseFloat(row.regularDuration);
 
         return {
           duration,
-          zSpreadBps, // Z-spread in basis points
-          zSpreadPercent, // Z-spread in percentage
+          zSpreadBps,
+          zSpreadPercent,
           ticker: row.ticker,
           name: row.name,
           secid: row.secid,
         };
       })
-      .filter((point): point is NonNullable<typeof point> => point !== null)
       .sort((a, b) => a.duration - b.duration); // Sort by duration
 
     if (points.length === 0) return { points: [], trendLine: [], outliers: [] };
@@ -1772,7 +1771,7 @@ export const SpreadAnalysis: React.FC = () => {
                           </ButtonGroup>
                         </Box>
                         <Typography variant="body2" color="text.secondary" sx={{ mb: 2, flexShrink: 0 }}>
-                          График показывает зависимость Z-спредов (в базисных пунктах) от дюрации. Z-спред — это постоянная надбавка, которую необходимо добавить ко всем спот-ставкам кривой бескупонной доходности, чтобы теоретическая цена облигации равнялась рыночной цене. Зеленые точки — потенциально недооцененные облигации (выше линии тренда на 15+ б.п.), красные — переоцененные (ниже линии тренда на 15+ б.п.). Управление: ползунок внизу для выбора диапазона, кнопки для зума. Для перемещения графика зажмите Ctrl/Cmd + левая кнопка мыши, среднюю кнопку мыши или просто перетащите, когда график увеличен.
+                          График показывает зависимость Z-спредов (в базисных пунктах) от дюрации Маколея (ось X — дюрация в годах). Z-спред — это постоянная надбавка, которую необходимо добавить ко всем спот-ставкам кривой бескупонной доходности, чтобы теоретическая цена облигации равнялась рыночной цене. Зеленые точки — потенциально недооцененные облигации (выше линии тренда на 15+ б.п.), красные — переоцененные (ниже линии тренда на 15+ б.п.). Управление: ползунок внизу для выбора диапазона, кнопки для зума. Для перемещения графика зажмите Ctrl/Cmd + левая кнопка мыши, среднюю кнопку мыши или просто перетащите, когда график увеличен.
                         </Typography>
                         <Box 
                           ref={chartContainerRef}
@@ -1813,8 +1812,8 @@ export const SpreadAnalysis: React.FC = () => {
                               <XAxis
                                 type="number"
                                 dataKey="duration"
-                                name="Срок до погашения"
-                                label={{ value: 'Срок до погашения (лет)', position: 'insideBottom', offset: -10 }}
+                                name="Дюрация"
+                                label={{ value: 'Дюрация (лет)', position: 'insideBottom', offset: -10 }}
                                 tick={{ fontSize: 12 }}
                                 domain={xDomain || defaultDomains.x || ['dataMin - 0.5', 'dataMax + 0.5']}
                                 allowDataOverflow={true}
@@ -1850,7 +1849,7 @@ export const SpreadAnalysis: React.FC = () => {
                                           Тикер: {data.ticker}
                                         </Typography>
                                         <Typography variant="body2" color="text.secondary">
-                                          Срок до погашения: {data.duration.toFixed(2)} лет
+                                          Дюрация: {data.duration.toFixed(2)} лет
                                         </Typography>
                                         <Typography variant="body2" color="text.secondary">
                                           Z-Спред: {data.zSpreadBps > 0 ? '+' : ''}{data.zSpreadBps.toFixed(1)} б.п.
