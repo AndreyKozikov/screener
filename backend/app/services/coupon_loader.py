@@ -85,74 +85,8 @@ class CouponLoader:
         
         try:
             return datetime.strptime(date_str, "%Y-%m-%d").date()
-        except (ValueError, TypeError):
+        except ValueError:
             return None
-    
-    def get_nearest_coupon_value(self, secid: str, current_date: Optional[date] = None) -> Optional[float]:
-        """Получает значение купона из ближайшего по дате купона.
-        
-        Находит купон с наиболее близкой датой к текущей дате (может быть как будущим,
-        так и прошедшим) и возвращает значение из поля value (сумма купона в рублях).
-        
-        Args:
-            secid: Идентификатор облигации (SECID) для поиска купонов.
-            current_date: Текущая дата для сравнения. Если не указана, используется
-                сегодняшняя дата.
-        
-        Returns:
-            Значение купона (value) из ближайшего купона в рублях или None, если:
-            - Облигация не найдена в данных
-            - У облигации нет купонов
-            - Не удалось распарсить дату купона
-            - Значение купона отсутствует или некорректно
-        """
-        if current_date is None:
-            current_date = date.today()
-        
-        coupons_data = self._load_coupons_data()
-        
-        if secid not in coupons_data:
-            return None
-        
-        bond_data = coupons_data[secid]
-        coupons = bond_data.get("coupons", [])
-        
-        if not coupons:
-            return None
-        
-        # Find the nearest coupon date (future or past)
-        nearest_coupon = None
-        min_delta = None
-        
-        for coupon in coupons:
-            coupon_date_str = coupon.get("coupondate")
-            if not coupon_date_str:
-                continue
-            
-            coupon_date = self._parse_date(coupon_date_str)
-            if not coupon_date:
-                continue
-            
-            # Calculate absolute difference in days
-            delta = abs((coupon_date - current_date).days)
-            
-            if min_delta is None or delta < min_delta:
-                min_delta = delta
-                nearest_coupon = coupon
-        
-        if nearest_coupon is None:
-            return None
-        
-        # Use value (coupon amount in original currency) to match what's shown in coupons tab
-        coupon_value = nearest_coupon.get("value")
-        
-        if coupon_value is not None:
-            try:
-                return float(coupon_value)
-            except (ValueError, TypeError):
-                return None
-        
-        return None
     
     def clear_cache(self) -> None:
         """Очищает кэш данных о купонах.

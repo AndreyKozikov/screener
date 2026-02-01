@@ -15,9 +15,13 @@ from app.models.bond import BondDetail
 from app.models.filters import BondFilters
 from app.models.responses import BondsListResponse
 from app.models.coupons import CouponsListResponse, MultipleCouponsResponse, CouponsBySecid
-from app.services.data_loader import get_data_loader
-from app.services.bonds_service import get_bonds_list
+from app.services.bonds_service import (
+    get_bond_detail as get_bond_detail_from_db,
+    get_bonds_list,
+    refresh_bonds_data as do_refresh_bonds_data,
+)
 from app.services.coupon_service import get_coupon_service
+from app.services.data_loader import get_data_loader
 from app.repository.db_orchestrator import DBOrchestrator
 from config.settings import settings
 from app.utils.logger import get_data_update_logger
@@ -80,7 +84,7 @@ async def list_bonds(
         - filtered: Количество облигаций после применения всех фильтров
         - skip: Смещение для пагинации (всегда 0)
         - limit: Лимит записей (равен filtered)
-        - bonds: Список объектов BondListItem с данными облигаций
+        - bonds: Список объектов BondScreenerDTO с данными облигаций
     
     Note:
         Вся фильтрация облигаций (кроме фильтрации по эмитенту) выполняется в методе
@@ -115,14 +119,14 @@ async def list_bonds(
     return result
 
 @router.post("/refresh")
-async def refresh_bonds_data():
+async def refresh_bonds_endpoint():
     """Загружает последний набор данных об облигациях из MOEX и обновляет кэш.
-    
+
     Выполняет HTTP запрос к API MOEX для получения актуальных данных об облигациях,
     сохраняет данные в файл bonds.json и обновляет таблицу bonds в базе данных.
     Также очищает кэш метаданных (колонки и описания полей) для обеспечения
     актуальности данных.
-    
+
     Returns:
         Словарь с результатом обновления, содержащий:
         - status: Статус операции ("ok")
@@ -132,75 +136,63 @@ async def refresh_bonds_data():
           - marketdata_yields: Количество записей в секции marketdata_yields
         - source: URL источника данных
         - metadata_cache_cleared: Флаг очистки кэша метаданных (True)
-    
+
     Raises:
         HTTPException: Если не удалось загрузить данные из MOEX (статус 502)
             или произошла ошибка при обновлении базы данных.
     """
     logger = get_data_update_logger()
-    logger.info(f"[API /bonds/refresh] Received request to refresh bonds data from {settings.MOEX_BONDS_URL}")
-    
-    loader = get_data_loader()
-    
+    logger.info("[API /bonds/refresh] Received request to refresh bonds data")
     try:
-        summary = await asyncio.to_thread(
-            loader.refresh_bonds_dataset,
-            settings.MOEX_BONDS_URL,
-        )
-        logger.info(f"[API /bonds/refresh] Bonds dataset refresh completed successfully: {summary}")
-        
-        # Update database table structure and data after successful file save
-        orchestrator = DBOrchestrator()
-        db_refresh_result = await asyncio.to_thread(orchestrator.migrate, "bonds")
-        if db_refresh_result:
-            logger.info("[API /bonds/refresh] Database table bonds refreshed successfully")
-        else:
-            logger.warning("[API /bonds/refresh] Database table bonds refresh failed, but bonds.json was saved successfully")
-        
-        # Also clear metadata cache to ensure columns and descriptions are reloaded
-        loader.clear_metadata_cache()
-        logger.info("[API /bonds/refresh] Metadata cache cleared")
+        result = await asyncio.to_thread(do_refresh_bonds_data)
+        logger.info("[API /bonds/refresh] Bonds data refresh completed: %s", result)
+        return result
     except RuntimeError as exc:
-        logger.error(f"[API /bonds/refresh] Failed to refresh bonds data: {exc}")
+        logger.error(
+            "[API /bonds/refresh] Failed to refresh bonds data (RuntimeError): %s",
+            exc,
+            exc_info=True,
+        )
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    
-    result = {
-        "status": "ok",
-        "updated": summary,
-        "source": settings.MOEX_BONDS_URL,
-        "metadata_cache_cleared": True,
-    }
-    logger.info(f"[API /bonds/refresh] Returning success response: {result}")
-    return result
+    except Exception as exc:
+        logger.exception(
+            "[API /bonds/refresh] Unexpected error during bonds refresh: %s: %s",
+            type(exc).__name__,
+            exc,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"{type(exc).__name__}: {str(exc)}",
+        ) from exc
 
 
 @router.get("/{secid}", response_model=BondDetail)
 async def get_bond_detail(secid: str):
     """Получает детальную информацию об облигации по SECID.
-    
-    Загружает полные данные об облигации из кэша DataLoader, включая данные из
-    секций securities, marketdata и marketdata_yields.
-    
+
+    Загружает данные из БД (Bond, BondSecurity, BondMarketData), преобразует
+    в BondDetailDTO и возвращает.
+
     Args:
         secid: Идентификатор облигации (SECID) для получения детальной информации.
-    
+
     Returns:
-        Объект BondDetail с полными данными об облигации, включающий:
-        - securities: Данные из секции securities
-        - marketdata: Данные из секции marketdata
-        - marketdata_yields: Список данных из секции marketdata_yields
-    
+        Объект BondDetail (BondDetailDTO) с полными данными об облигации:
+        - securities: Данные секции securities (UPPERCASE ключи)
+        - marketdata: Данные секции marketdata или None
+        - marketdata_yields: Список данных секции marketdata_yields
+
     Raises:
         HTTPException: Если облигация с указанным SECID не найдена (статус 404).
     """
-    loader = get_data_loader()
-    details = await loader.get_bond_details()
-    
-    if secid not in details:
+    dto = await asyncio.to_thread(get_bond_detail_from_db, secid)
+    if dto is None:
         raise HTTPException(status_code=404, detail=f"Bond {secid} not found")
-    
-    bond_data = details[secid]
-    return BondDetail(**bond_data)
+    return BondDetail(
+        securities=dto.securities,
+        marketdata=dto.marketdata,
+        marketdata_yields=dto.marketdata_yields,
+    )
 
 
 @router.post("/refresh-coupons")

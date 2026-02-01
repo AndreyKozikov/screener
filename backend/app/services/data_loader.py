@@ -14,7 +14,7 @@ import orjson
 
 from app.models.bond import BondListItem
 from app.repository.files.file_storage import FileStorage
-from app.services.bond_filter import get_rating_index
+from app.utils.rating_utils import get_rating_index
 from app.services.coupon_loader import get_coupon_loader
 from app.services.moex_client import MoexClient
 from app.utils.logger import get_data_update_logger
@@ -276,22 +276,13 @@ class DataLoader:
                     "DURATION": None,  # Will be set from marketdata
                     "DURATIONWAPRICE": None,  # Will be set from marketdata_yields
                     "CURRENCYID": bond_dict.get("CURRENCYID"),
-                    "FACEUNIT": bond_dict.get("FACEUNIT"),
                     "LISTLEVEL": self._parse_int(bond_dict.get("LISTLEVEL")),
                     "BONDTYPE43": bondtype43_value,  # Вид облигации из bonds.json
                 }
                 
                 list_item = BondListItem(**list_item_data)
                 
-                # Try to get coupon value from coupons data if available
-                coupon_loader = get_coupon_loader()
-                if coupon_loader is not None:
-                    nearest_coupon_value = coupon_loader.get_nearest_coupon_value(
-                        list_item.SECID
-                    )
-                    # Set COUPONVALUE with coupon value from coupons data if found
-                    if nearest_coupon_value is not None:
-                        list_item.COUPONVALUE = nearest_coupon_value
+                # COUPONVALUE теперь берётся из securities (bond_dict), удалён вызов coupon_loader
                 
                 bonds_list.append(list_item)
             except Exception as e:

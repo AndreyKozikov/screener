@@ -45,13 +45,10 @@ export const KeyRateTable: React.FC = () => {
   const [dateFrom, setDateFrom] = useState<Dayjs | null>(null);
   const [dateTo, setDateTo] = useState<Dayjs | null>(null);
 
-  // Helper function to format dayjs date to DD.MM.YYYY string
-  const formatDateToString = (date: Dayjs | null): string | null => {
-    if (!date) return null;
-    return date.format('DD.MM.YYYY');
-  };
+  // ISO date string (YYYY-MM-DD) for API params from/till
+  const toISO = (d: Dayjs | null): string | null => (d ? d.format('YYYY-MM-DD') : null);
 
-  // Helper function to format date from YYYY-MM-DD to DD.MM.YYYY
+  // Display: YYYY-MM-DD -> DD.MM.YYYY
   const formatDateForDisplay = (dateStr: string): string => {
     if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
       const [year, month, day] = dateStr.split('-');
@@ -60,33 +57,24 @@ export const KeyRateTable: React.FC = () => {
     return dateStr;
   };
 
-  // Set default date range (60 days ago to today) and load data
   useEffect(() => {
     const today = dayjs();
     const sixtyDaysAgo = today.subtract(60, 'day');
-
     setDateFrom(sixtyDaysAgo);
     setDateTo(today);
 
-    // Load data with default dates
     const loadDefaultData = async () => {
       try {
         setIsLoading(true);
         setError(null);
-        const fromStr = formatDateToString(sixtyDaysAgo);
-        const toStr = formatDateToString(today);
-        if (!fromStr || !toStr) return;
-        
-        const response = await fetchKeyRateData(fromStr, toStr);
-        console.log('Key rate data loaded:', response.count, 'records');
-        setData(response.data);
+        const fromISO = toISO(sixtyDaysAgo);
+        const toISOStr = toISO(today);
+        if (!fromISO || !toISOStr) return;
+        const records = await fetchKeyRateData(fromISO, toISOStr);
+        setData(records);
       } catch (err) {
         console.error('Error loading key rate data:', err);
-        if (err instanceof Error) {
-          setError(err.message);
-        } else {
-          setError('Не удалось загрузить данные ключевой ставки');
-        }
+        setError(err instanceof Error ? err.message : 'Не удалось загрузить данные ключевой ставки');
       } finally {
         setIsLoading(false);
       }
@@ -97,24 +85,17 @@ export const KeyRateTable: React.FC = () => {
 
   const loadData = useCallback(async () => {
     if (!dateFrom || !dateTo) return;
-
     try {
       setIsLoading(true);
       setError(null);
-      const fromStr = formatDateToString(dateFrom);
-      const toStr = formatDateToString(dateTo);
-      if (!fromStr || !toStr) return;
-      
-      const response = await fetchKeyRateData(fromStr, toStr);
-      console.log('Key rate data loaded:', response.count, 'records');
-      setData(response.data);
+      const fromISO = toISO(dateFrom);
+      const toISOStr = toISO(dateTo);
+      if (!fromISO || !toISOStr) return;
+      const records = await fetchKeyRateData(fromISO, toISOStr);
+      setData(records);
     } catch (err) {
       console.error('Error loading key rate data:', err);
-      if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError('Не удалось загрузить данные ключевой ставки');
-      }
+      setError(err instanceof Error ? err.message : 'Не удалось загрузить данные ключевой ставки');
     } finally {
       setIsLoading(false);
     }
@@ -122,19 +103,13 @@ export const KeyRateTable: React.FC = () => {
 
   const handleDownloadMarkdown = useCallback(async () => {
     if (!dateFrom || !dateTo) return;
-    
     try {
-      const fromStr = formatDateToString(dateFrom);
-      const toStr = formatDateToString(dateTo);
-      if (!fromStr || !toStr) return;
-      
-      await downloadKeyRateMarkdown(fromStr, toStr);
+      const fromISO = toISO(dateFrom);
+      const toISOStr = toISO(dateTo);
+      if (!fromISO || !toISOStr) return;
+      await downloadKeyRateMarkdown(fromISO, toISOStr);
     } catch (err) {
-      if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError('Не удалось скачать файл');
-      }
+      setError(err instanceof Error ? err.message : 'Не удалось скачать файл');
     }
   }, [dateFrom, dateTo]);
 

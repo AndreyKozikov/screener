@@ -8,40 +8,42 @@
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 
-from .bond import BondListItem
+from .bonds_dto import BondScreenerDTO
+from .kbd_DTO import KbdDTO, KbdDataResponse
 
 
 class BondsListResponse(BaseModel):
     """Модель ответа API для эндпоинта получения списка облигаций.
-    
+
     Используется для возврата отфильтрованного и отпагинированного списка
     облигаций с метаданными о количестве записей. Содержит информацию
-    для корректной работы пагинации на фронтенде.
-    
+    для корректной работы пагинации на фронтенде. Элементы списка bonds —
+    легковесные DTO (BondScreenerDTO) только с полями для таблицы скринера.
+
     Attributes:
         total: Общее количество облигаций в базе данных (до применения фильтров).
         filtered: Количество облигаций после применения всех фильтров.
         skip: Количество пропущенных записей (параметр пагинации из запроса).
         limit: Максимальное количество записей в ответе (параметр пагинации из запроса).
-        bonds: Список объектов BondListItem с данными об облигациях.
+        bonds: Список объектов BondScreenerDTO с данными об облигациях.
             Количество элементов в списке не превышает значение limit.
-    
+
     Examples:
         Пример ответа для запроса первой страницы из 50 записей:
-        
+
         >>> response = BondsListResponse(
         ...     total=1000,
         ...     filtered=250,
         ...     skip=0,
         ...     limit=50,
-        ...     bonds=[...]  # список из 50 облигаций
+        ...     bonds=[...]  # список из 50 BondScreenerDTO
         ... )
     """
     total: int
     filtered: int
     skip: int
     limit: int
-    bonds: List[BondListItem]
+    bonds: List[BondScreenerDTO]
 
 
 class ColumnMapping(BaseModel):

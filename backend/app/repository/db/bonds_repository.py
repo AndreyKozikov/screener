@@ -12,7 +12,7 @@ from typing import Any, List, Optional, Tuple
 from sqlalchemy import func, or_, and_
 from sqlmodel import Session, create_engine, select
 
-from app.models.bond import Bond
+from app.models.bond import Bond, BondMarketData, BondMarketDataYield, BondSecurity
 from app.models.filters import BondFilters
 from app.repository.db.constants import RATINGS_ORDER
 from app.utils.logger import get_data_update_logger
@@ -340,6 +340,157 @@ class BondsRepository:
         except Exception as e:
             self.logger.error("Ошибка при count_bonds: %s", e, exc_info=True)
             raise
+
+    def save_bond_securities(self, securities: List[BondSecurity]) -> bool:
+        """Выполняет пакетный upsert записей BondSecurity по secid.
+
+        Args:
+            securities: Список объектов BondSecurity для вставки/обновления.
+
+        Returns:
+            True при успешном сохранении, False при ошибке.
+        """
+        if not securities:
+            self.logger.debug("Нет данных BondSecurity для вставки")
+            return True
+        data_log = get_data_update_logger()
+        try:
+            with Session(self._engine) as session:
+                for sec in securities:
+                    session.merge(sec)
+                session.commit()
+            data_log.info(
+                "[API /bonds/refresh] В таблицу bondsecurity записано: %s записей",
+                len(securities),
+            )
+            self.logger.info(
+                "Успешно вставлено/обновлено %s записей в таблицу bondsecurity",
+                len(securities),
+            )
+            return True
+        except Exception as e:
+            data_log.error(
+                "[API /bonds/refresh] Ошибка при записи в bondsecurity: %s",
+                e,
+                exc_info=True,
+            )
+            self.logger.error("Ошибка при сохранении BondSecurity: %s", e, exc_info=True)
+            return False
+
+    def save_bond_market_data(self, market_data_list: List[BondMarketData]) -> bool:
+        """Выполняет пакетный upsert записей BondMarketData по secid.
+
+        Args:
+            market_data_list: Список объектов BondMarketData для вставки/обновления.
+
+        Returns:
+            True при успешном сохранении, False при ошибке.
+        """
+        if not market_data_list:
+            self.logger.debug("Нет данных BondMarketData для вставки")
+            return True
+        data_log = get_data_update_logger()
+        try:
+            with Session(self._engine) as session:
+                for md in market_data_list:
+                    session.merge(md)
+                session.commit()
+            data_log.info(
+                "[API /bonds/refresh] В таблицу bondmarketdata записано: %s записей",
+                len(market_data_list),
+            )
+            self.logger.info(
+                "Успешно вставлено/обновлено %s записей в таблицу bondmarketdata",
+                len(market_data_list),
+            )
+            return True
+        except Exception as e:
+            data_log.error(
+                "[API /bonds/refresh] Ошибка при записи в bondmarketdata: %s",
+                e,
+                exc_info=True,
+            )
+            self.logger.error(
+                "Ошибка при сохранении BondMarketData: %s", e, exc_info=True
+            )
+            return False
+
+    def save_bond_market_data_yields(
+        self, yields_list: List[BondMarketDataYield]
+    ) -> bool:
+        """Выполняет пакетный upsert записей BondMarketDataYield по secid.
+
+        Args:
+            yields_list: Список объектов BondMarketDataYield для вставки/обновления.
+
+        Returns:
+            True при успешном сохранении, False при ошибке.
+        """
+        if not yields_list:
+            self.logger.debug("Нет данных BondMarketDataYield для вставки")
+            return True
+        data_log = get_data_update_logger()
+        try:
+            with Session(self._engine) as session:
+                for y in yields_list:
+                    session.merge(y)
+                session.commit()
+            data_log.info(
+                "[API /bonds/refresh] В таблицу bondmarketdatayield записано: %s записей",
+                len(yields_list),
+            )
+            self.logger.info(
+                "Успешно вставлено/обновлено %s записей в таблицу bondmarketdatayield",
+                len(yields_list),
+            )
+            return True
+        except Exception as e:
+            data_log.error(
+                "[API /bonds/refresh] Ошибка при записи в bondmarketdatayield: %s",
+                e,
+                exc_info=True,
+            )
+            self.logger.error(
+                "Ошибка при сохранении BondMarketDataYield: %s", e, exc_info=True
+            )
+            return False
+
+    def get_bond_detail_by_secid(
+        self, secid: str
+    ) -> Optional[
+        Tuple[
+            Bond,
+            Optional[BondSecurity],
+            Optional[BondMarketData],
+            Optional[BondMarketDataYield],
+        ]
+    ]:
+        """Получает Bond, BondSecurity, BondMarketData и BondMarketDataYield по secid.
+
+        Args:
+            secid: Идентификатор ценной бумаги.
+
+        Returns:
+            Кортеж (Bond, BondSecurity|None, BondMarketData|None, BondMarketDataYield|None)
+            или None, если Bond не найден.
+        """
+        try:
+            with Session(self._engine) as session:
+                bond = session.get(Bond, secid)
+                if bond is None:
+                    return None
+                security = session.get(BondSecurity, secid)
+                market_data = session.get(BondMarketData, secid)
+                market_data_yield = session.get(BondMarketDataYield, secid)
+                return (bond, security, market_data, market_data_yield)
+        except Exception as e:
+            self.logger.error(
+                "Ошибка при получении деталей облигации %s: %s",
+                secid,
+                e,
+                exc_info=True,
+            )
+            return None
 
     def refresh(self, bonds: List[Bond]) -> bool:
         """Сохраняет список готовых объектов Bond в таблицу bonds (upsert по SECID).

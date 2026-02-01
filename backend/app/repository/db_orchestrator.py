@@ -6,7 +6,7 @@ from app.core.bond_transformer import BondTransformer
 from config.paths import DATA_DIR as DEFAULT_DATA_DIR, DB_PATH as DEFAULT_DB_PATH
 from app.repository.db.bonds_repository import BondsRepository
 from app.repository.db.db_coupon import DBCoupon
-from app.repository.db.db_kbd import DBkbd
+from app.repository.db.db_kbd import KbdRepository
 from app.repository.files.file_storage import FileStorage
 from app.utils.logger import get_data_update_logger
 
@@ -55,36 +55,83 @@ class DBOrchestrator:
     def _migrate_bonds(self) -> bool:
         """Выполняет миграцию данных облигаций в базу данных.
 
-        Загружает данные из JSON через FileStorage и BondTransformer,
-        преобразует их и вставляет в таблицу bonds через BondsRepository.refresh().
+        Пайплайн: загрузка данных через BondTransformer.prepare_bonds_for_db(),
+        расчёт и преобразование в объекты Bond через transform_batch(),
+        сохранение Bond в таблицу bonds, BondSecurity в bondsecurity,
+        BondMarketData в bondmarketdata, BondMarketDataYield в bondmarketdatayield
+        через BondsRepository.
+        Все поля объединённой модели Bond (исходные и расчётные) персистятся в БД.
 
         Returns:
             True если миграция выполнена успешно, False в случае ошибки.
         """
         data_log = get_data_update_logger()
         try:
-            data_log.info("[API /bonds/refresh] Начало сохранения данных облигаций в БД (таблица bonds)")
+            data_log.info(
+                "[API /bonds/refresh] Начало сохранения данных облигаций в БД "
+                "(таблицы bonds, bondsecurity, bondmarketdata, bondmarketdatayield)"
+            )
             data_dir = self.data_dir
             storage = FileStorage()
             transformer = BondTransformer(data_dir, storage)
             raw_bonds = transformer.prepare_bonds_for_db()
-            data_log.info("[API /bonds/refresh] Загружено из JSON (MOEX): %s облигаций", len(raw_bonds))
+            data_log.info(
+                "[API /bonds/refresh] Загружено из JSON (MOEX): %s облигаций",
+                len(raw_bonds),
+            )
             self.logger.info("Загружено %s облигаций из JSON-файлов", len(raw_bonds))
             ready_bonds = transformer.transform_batch(raw_bonds)
-            data_log.info("[API /bonds/refresh] Преобразовано для таблицы bonds: %s записей", len(ready_bonds))
+            data_log.info(
+                "[API /bonds/refresh] Преобразовано для таблицы bonds: %s записей",
+                len(ready_bonds),
+            )
             self.logger.info("Преобразовано %s облигаций для вставки в БД", len(ready_bonds))
             repo = BondsRepository(db_path=self.db_path)
             result = repo.refresh(ready_bonds)
-            if result:
-                self.logger.info("Миграция данных облигаций выполнена успешно")
-            else:
-                data_log.warning("[API /bonds/refresh] Сохранение в таблицу bonds завершилось с ошибкой")
+            if not result:
+                data_log.warning(
+                    "[API /bonds/refresh] Сохранение в таблицу bonds завершилось с ошибкой"
+                )
                 self.logger.warning("Миграция данных облигаций завершилась с ошибкой")
-            return result
+                return False
+            bond_securities = transformer.transform_to_bond_securities_batch(raw_bonds)
+            bond_market_data = transformer.transform_to_bond_market_data_batch(raw_bonds)
+            bond_market_data_yields = transformer.transform_to_bond_market_data_yields_batch(
+                raw_bonds
+            )
+            data_log.info(
+                "[API /bonds/refresh] Преобразовано BondSecurity: %s, BondMarketData: %s, "
+                "BondMarketDataYield: %s",
+                len(bond_securities),
+                len(bond_market_data),
+                len(bond_market_data_yields),
+            )
+            sec_ok = repo.save_bond_securities(bond_securities)
+            md_ok = repo.save_bond_market_data(bond_market_data)
+            yields_ok = repo.save_bond_market_data_yields(bond_market_data_yields)
+            if not sec_ok:
+                data_log.warning(
+                    "[API /bonds/refresh] Сохранение в bondsecurity завершилось с ошибкой"
+                )
+            if not md_ok:
+                data_log.warning(
+                    "[API /bonds/refresh] Сохранение в bondmarketdata завершилось с ошибкой"
+                )
+            if not yields_ok:
+                data_log.warning(
+                    "[API /bonds/refresh] Сохранение в bondmarketdatayield завершилось с ошибкой"
+                )
+            overall = result and sec_ok and md_ok and yields_ok
+            if overall:
+                self.logger.info("Миграция данных облигаций выполнена успешно")
+            return overall
         except Exception as e:
-            data_log.error("[API /bonds/refresh] Ошибка при сохранении в таблицу bonds: %s", e, exc_info=True)
-            self.logger.error("Ошибка при миграции данных облигаций: %s", e, exc_info=True)
-            return False
+            data_log.exception(
+                "[API /bonds/refresh] Ошибка при сохранении в таблицу bonds: %s",
+                e,
+            )
+            self.logger.exception("Ошибка при миграции данных облигаций: %s", e)
+            raise
     
     def _migrate_coupons(self) -> bool:
         """
@@ -142,21 +189,11 @@ class DBOrchestrator:
     
     def _migrate_kbd(self) -> bool:
         """
-        Выполняет миграцию данных кривой бескупонной доходности в базу данных.
-        
-        Returns:
-            True если миграция выполнена успешно, False в случае ошибки
+        Резерв для типа миграции "kbd". Таблица kbd создаётся Alembic;
+        данные загружаются через API в эндпоинте /api/zerocupon/refresh.
         """
-        try:
-            db_path_str = str(self.db_path)
-            db_kbd = DBkbd(db_path=db_path_str)
-            db_kbd.refresh("kbd")
-            
-            self.logger.info("Миграция данных кривой бескупонной доходности выполнена успешно")
-            return True
-        except Exception as e:
-            self.logger.error(f"Ошибка при миграции данных кривой бескупонной доходности: {str(e)}", exc_info=True)
-            return False
+        self.logger.info("Миграция kbd: таблица управляется Alembic, данные — через API")
+        return True
     
     def update_kbd(
         self,

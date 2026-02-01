@@ -6,187 +6,88 @@
 Markdown, а также обновления данных из API Мосбиржи.
 """
 
-import os
-import re
 import asyncio
-import math
-from pathlib import Path
-from datetime import date, datetime, timedelta
-from typing import List, Optional, Dict, Any
+import json
+import re
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
+
+import httpx
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
-import pandas as pd
-import io
-import json
-import httpx
 
 from app.utils.logger import get_data_update_logger
-from app.repository.db_orchestrator import DBOrchestrator
+from app.repository.db.db_kbd import KbdRepository
 from app.services.kbd_service import get_kbd_service
+from app.models.kbd_DTO import KbdDataResponse
+from app.models.kbd_model import DBkbd
+from config.paths import DB_PATH
 
 router = APIRouter(prefix="/api/zerocupon", tags=["zerocupon"])
 """Роутер FastAPI для обработки запросов к API кривой бескупонной доходности."""
 
+# Маппинг period из API (годы) в поля модели DBkbd
+_API_PERIOD_TO_TERM = {
+    0.25: "term_0_25", 0.5: "term_0_5", 0.75: "term_0_75", 1.0: "term_1_0",
+    2.0: "term_2_0", 3.0: "term_3_0", 5.0: "term_5_0", 7.0: "term_7_0",
+    10.0: "term_10_0", 15.0: "term_15_0", 20.0: "term_20_0", 30.0: "term_30_0",
+}
 
 
+def _api_yields_to_dbkbd(
+    date_obj: datetime,
+    time_str: str,
+    yields_data: List[Dict[str, Any]],
+) -> Optional[DBkbd]:
+    """Преобразует ответ API Мосбиржи (yearyields) в одну запись DBkbd."""
+    date_sql = date_obj.strftime("%Y-%m-%d")
+    # Время в формате HH:MM:SS
+    if " " in time_str:
+        time_str = time_str.split(" ")[-1]
+    if len(time_str.split(":")) == 2:
+        time_str = time_str + ":00"
+    kwargs: Dict[str, Any] = {"date": date_sql, "time": time_str}
+    for key in _API_PERIOD_TO_TERM.values():
+        kwargs[key] = None
+    for item in yields_data:
+        period = item.get("period")
+        value = item.get("value")
+        if period in _API_PERIOD_TO_TERM and value is not None:
+            try:
+                kwargs[_API_PERIOD_TO_TERM[period]] = float(value)
+            except (TypeError, ValueError):
+                pass
+    return DBkbd(**kwargs)
 
-def _get_zerocupon_path() -> Path:
-    """Получает путь к файлу zerocupon.csv.
-    
-    Returns:
-        Путь к файлу zerocupon.csv в директории data проекта.
-    """
-    # Script is in backend/app/routers/, data is in backend/app/data/
-    data_dir = Path(__file__).parent.parent / "data"
-    csv_path = data_dir / "zerocupon.csv"
-    return csv_path
 
-
-@router.get("/data")
+@router.get("/data", response_model=KbdDataResponse)
 async def get_zerocupon_data(
     date_from: Optional[str] = Query(None, description="Start date in DD.MM.YYYY format"),
     date_to: Optional[str] = Query(None, description="End date in DD.MM.YYYY format"),
 ):
     """Получает данные кривой бескупонной доходности с фильтрацией по диапазону дат.
     
-    Загружает данные из базы данных через KBD сервис и применяет фильтрацию по
-    диапазону дат. По умолчанию возвращает данные за последний год, если даты
-    не указаны. Фильтрует выходные дни (суббота и воскресенье) и исключает
-    колонку с периодом 30 лет из результатов.
-    
-    Args:
-        date_from: Начальная дата диапазона в формате DD.MM.YYYY (включительно).
-            Если не указана, используется дата год назад от текущей даты.
-        date_to: Конечная дата диапазона в формате DD.MM.YYYY (включительно).
-            Если не указана, используется текущая дата.
-    
-    Returns:
-        Словарь с отфильтрованными данными, содержащий:
-        - data: Список словарей с записями кривой доходности, каждая содержит:
-          - Дата: Дата в формате DD.MM.YYYY
-          - Время: Время расчета (если доступно)
-          - Срок X.Y лет: Доходность для срока до погашения X.Y лет
-            (в процентах годовых) для различных периодов
-        - count: Количество записей после фильтрации
-        - date_from: Начальная дата фильтра
-        - date_to: Конечная дата фильтра
-        Записи отсортированы по дате в порядке убывания (от новых к старым).
-    
-    Raises:
-        HTTPException: Если сервис KBD не инициализирован (статус 503),
-            если произошла ошибка при загрузке данных (статус 500).
-    
-    Note:
-        Данные загружаются из базы данных через KBD сервис. Выходные дни
-        (суббота и воскресенье) автоматически исключаются из результатов.
-        Колонка с периодом 30 лет исключается из отображения и расчетов.
+    Загружает из БД только колонки для фронта (без срока 30 лет), фильтрует выходные.
+    По умолчанию — данные за последний год.
     """
-    try:
-        # Get KBD service
-        kbd_service = get_kbd_service()
-        if not kbd_service:
-            raise HTTPException(
-                status_code=503,
-                detail="KBD service is not initialized. Please ensure the database is available."
-            )
-        
-        # Determine date filters
-        # If no dates provided, default to last year
-        if not date_from and not date_to:
-            one_year_ago = datetime.now() - timedelta(days=365)
-            date_from = one_year_ago.strftime("%d.%m.%Y")
-            date_to = datetime.now().strftime("%d.%m.%Y")
-        
-        # Get formatted data from database with date filtering at SQL level
-        formatted_data = kbd_service.get_kbd_data_formatted(date_from=date_from, date_to=date_to)
-        
-        if not formatted_data:
-            return {
-                "data": [],
-                "count": 0,
-                "date_from": date_from,
-                "date_to": date_to,
-            }
-        
-        # Convert to DataFrame for further processing (weekend filtering, etc.)
-        df = pd.DataFrame(formatted_data)
-        
-        # Check if "Дата" column exists
-        if "Дата" not in df.columns:
-            raise HTTPException(status_code=500, detail="Database data missing 'Дата' column")
-        
-        # Parse date column for display formatting (already in DD.MM.YYYY format from service)
-        df["Дата"] = pd.to_datetime(df["Дата"], dayfirst=True, errors="coerce")
-        
-        # Remove rows with invalid dates
-        df = df[df["Дата"].notna()]
-        
-        # Check if DataFrame is empty after date parsing
-        if df.empty:
-            return {
-                "data": [],
-                "count": 0,
-                "date_from": date_from,
-                "date_to": date_to,
-            }
-        
-        # Check if DataFrame is empty after date filtering
-        if df.empty:
-            return {
-                "data": [],
-                "count": 0,
-                "date_from": date_from,
-                "date_to": date_to,
-            }
-        
-        # Filter out weekends (Saturday=5, Sunday=6)
-        # Only keep weekdays (Monday=0 through Friday=4)
-        df = df[df["Дата"].dt.weekday < 5]
-        
-        # Check if DataFrame is empty after weekend filtering
-        if df.empty:
-            return {
-                "data": [],
-                "count": 0,
-                "date_from": date_from,
-                "date_to": date_to,
-            }
-        
-        # Format date back to DD.MM.YYYY for response
-        df["Дата"] = df["Дата"].dt.strftime("%d.%m.%Y")
-        
-        # Exclude 30 years column from display and calculations
-        columns_to_exclude = [col for col in df.columns if "30" in col and "лет" in col]
-        if columns_to_exclude:
-            df = df.drop(columns=columns_to_exclude)
-        
-        # Convert to records (list of dicts)
-        records = df.to_dict(orient="records")
-        
-        # Replace all NaN, NaT, and inf values with None for proper JSON serialization
-        for record in records:
-            for key, value in record.items():
-                if pd.isna(value):
-                    record[key] = None
-                elif isinstance(value, float):
-                    if math.isnan(value) or math.isinf(value):
-                        record[key] = None
-        
-        return {
-            "data": records,
-            "count": len(records),
-            "date_from": date_from,
-            "date_to": date_to,
-        }
-    
-    except HTTPException:
-        # Re-raise HTTP exceptions as-is
-        raise
-    except Exception as e:
-        # Log the full error for debugging
-        import traceback
-        error_detail = f"Error reading zerocupon data: {str(e)}\n{traceback.format_exc()}"
-        raise HTTPException(status_code=500, detail=error_detail)
+    kbd_service = get_kbd_service()
+    if not kbd_service:
+        raise HTTPException(
+            status_code=503,
+            detail="KBD service is not initialized. Please ensure the database is available."
+        )
+    if not date_from and not date_to:
+        one_year_ago = datetime.now() - timedelta(days=365)
+        date_from = one_year_ago.strftime("%d.%m.%Y")
+        date_to = datetime.now().strftime("%d.%m.%Y")
+
+    data = kbd_service.get_kbd_data_formatted(date_from=date_from, date_to=date_to)
+    return KbdDataResponse(
+        data=data,
+        count=len(data),
+        date_from=date_from,
+        date_to=date_to,
+    )
 
 
 @router.get("/download")
@@ -194,223 +95,61 @@ async def download_zerocupon_json(
     date_from: Optional[str] = Query(None, description="Start date in DD.MM.YYYY format"),
     date_to: Optional[str] = Query(None, description="End date in DD.MM.YYYY format"),
 ):
-    """Скачивает данные кривой бескупонной доходности в формате JSON.
-    
-    Загружает данные из CSV файла, применяет фильтрацию по диапазону дат и возвращает
-    данные в формате JSON с удобной для языковых моделей структурой. По умолчанию
-    возвращает данные за последний год, если даты не указаны.
-    
-    Args:
-        date_from: Начальная дата диапазона в формате DD.MM.YYYY (включительно).
-            Если не указана, используется дата год назад от текущей даты.
-        date_to: Конечная дата диапазона в формате DD.MM.YYYY (включительно).
-            Если не указана, используется текущая дата.
-    
-    Returns:
-        HTTP Response с JSON файлом для скачивания, содержащим:
-        - metadata: Метаданные экспорта (название, описание, период, количество записей,
-          дата экспорта, список периодов)
-        - field_descriptions: Описания полей данных
-        - data: Список записей, каждая содержит:
-          - date: Дата в формате DD.MM.YYYY
-          - time: Время расчета (если доступно)
-          - yield_curve: Словарь значений доходности по срокам до погашения
-            (ключи - сроки в годах, значения - доходность в процентах годовых)
-    
-    Raises:
-        HTTPException: Если файл zerocupon.csv не найден (статус 404),
-            если формат даты некорректен (статус 400),
-            если данные не найдены для указанного диапазона (статус 404),
-            или если произошла ошибка при генерации JSON (статус 500).
-    
-    Note:
-        Выходные дни (суббота и воскресенье) автоматически исключаются из результатов.
-        Колонка с периодом 30 лет исключается из экспорта. Имя файла формируется
-        автоматически: zerocupon_DD-MM-YYYY_DD-MM-YYYY.json или zerocupon_last_year.json.
-    """
-    csv_path = _get_zerocupon_path()
-    
-    if not csv_path.exists():
-        raise HTTPException(status_code=404, detail="zerocupon.csv file not found")
-    
-    try:
-        # Read CSV with semicolon separator
-        df = pd.read_csv(csv_path, sep=";", encoding="utf-8-sig", decimal=".")
-        
-        # Check if DataFrame is empty
-        if df.empty:
-            raise HTTPException(status_code=404, detail="CSV file is empty")
-        
-        # Check if "Дата" column exists
-        if "Дата" not in df.columns:
-            raise HTTPException(status_code=500, detail="CSV file missing 'Дата' column")
-        
-        # Parse date column
-        df["Дата"] = pd.to_datetime(df["Дата"], dayfirst=True, errors="coerce")
-        
-        # Remove rows with invalid dates
-        df = df[df["Дата"].notna()]
-        
-        # Check if DataFrame is empty after date parsing
-        if df.empty:
-            raise HTTPException(status_code=404, detail="No valid dates found in CSV file")
-        
-        # Convert all numeric columns (except Дата and Время) to float
-        for col in df.columns:
-            if col not in ["Дата", "Время"]:
-                df[col] = pd.to_numeric(
-                    df[col].astype(str).str.replace(",", ".", regex=False),
-                    errors="coerce"
-                )
-        
-        # Filter by date range
+    """Скачивает данные кривой бескупонной доходности в формате JSON. Данные из БД."""
+    kbd_service = get_kbd_service()
+    if not kbd_service:
+        raise HTTPException(status_code=503, detail="KBD service is not initialized.")
+    if not date_from and not date_to:
+        one_year_ago = datetime.now() - timedelta(days=365)
+        date_from = one_year_ago.strftime("%d.%m.%Y")
+        date_to = datetime.now().strftime("%d.%m.%Y")
+    dtos = kbd_service.get_kbd_data_formatted(date_from=date_from, date_to=date_to)
+    periods = [0.25, 0.5, 0.75, 1.0, 2.0, 3.0, 5.0, 7.0, 10.0, 15.0, 20.0]
+    term_to_period = {"term_0_25": "0.25", "term_0_5": "0.5", "term_0_75": "0.75", "term_1_0": "1.0",
+                      "term_2_0": "2.0", "term_3_0": "3.0", "term_5_0": "5.0", "term_7_0": "7.0",
+                      "term_10_0": "10.0", "term_15_0": "15.0", "term_20_0": "20.0"}
+    data_records = []
+    for dto in dtos:
+        yield_curve = {}
+        for term_attr, period_key in term_to_period.items():
+            val = getattr(dto, term_attr, None)
+            if val is not None:
+                yield_curve[period_key] = val
+        data_records.append({
+            "date": dto.date,
+            "time": dto.time,
+            "yield_curve": yield_curve,
+        })
+    metadata = {
+        "title": "Кривая бескупонной доходности",
+        "description": "Данные кривой бескупонной доходности (БКДЦТ) с различными сроками до погашения",
+        "date_from": date_from or "автоматически (последний год)",
+        "date_to": date_to or "автоматически (сегодня)",
+        "record_count": len(data_records),
+        "export_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "periods": periods,
+    }
+    field_descriptions = {
+        "date": "Дата расчета кривой доходности в формате DD.MM.YYYY",
+        "time": "Время расчета (если доступно)",
+        "yield_curve": "Словарь значений доходности по срокам до погашения (в годах). Ключи - сроки в годах, значения - доходность в процентах годовых",
+    }
+    export_data = {"metadata": metadata, "field_descriptions": field_descriptions, "data": data_records}
+    json_str = json.dumps(export_data, ensure_ascii=False, indent=2)
+    filename = "zerocupon"
+    if date_from or date_to:
         if date_from:
-            try:
-                date_from_dt = datetime.strptime(date_from, "%d.%m.%Y")
-                df = df[df["Дата"] >= date_from_dt]
-            except ValueError:
-                raise HTTPException(status_code=400, detail="Invalid date_from format. Use DD.MM.YYYY")
-        
+            filename += f"_{date_from.replace('.', '-')}"
         if date_to:
-            try:
-                date_to_dt = datetime.strptime(date_to, "%d.%m.%Y")
-                date_to_dt = date_to_dt.replace(hour=23, minute=59, second=59)
-                df = df[df["Дата"] <= date_to_dt]
-            except ValueError:
-                raise HTTPException(status_code=400, detail="Invalid date_to format. Use DD.MM.YYYY")
-        
-        # If no dates provided, default to last year
-        if not date_from and not date_to:
-            one_year_ago = datetime.now() - timedelta(days=365)
-            df = df[df["Дата"] >= one_year_ago]
-        
-        # Check if DataFrame is empty after date filtering
-        if df.empty:
-            raise HTTPException(status_code=404, detail="No data found for the specified date range")
-        
-        # Filter out weekends (Saturday=5, Sunday=6)
-        # Only keep weekdays (Monday=0 through Friday=4)
-        df = df[df["Дата"].dt.weekday < 5]
-        
-        # Check if DataFrame is empty after weekend filtering
-        if df.empty:
-            raise HTTPException(status_code=404, detail="No weekday data found for the specified date range")
-        
-        # Format date back to DD.MM.YYYY for display
-        df["Дата"] = df["Дата"].dt.strftime("%d.%m.%Y")
-        
-        # Exclude 30 years column from display and calculations
-        columns_to_exclude = [col for col in df.columns if "30" in col and "лет" in col]
-        if columns_to_exclude:
-            df = df.drop(columns=columns_to_exclude)
-        
-        # Replace NaN with None for proper JSON serialization
-        df = df.where(pd.notnull(df), None)
-        
-        # Build LLM-friendly JSON structure
-        # Extract period columns (all except Дата and Время)
-        period_columns = [col for col in df.columns if col not in ["Дата", "Время"]]
-        
-        # Extract period values (years) from column names like "Срок 0.25 лет"
-        def extract_period_years(col_name: str) -> Optional[float]:
-            """Extract numeric period value from column name like 'Срок 0.25 лет'"""
-            import re
-            match = re.search(r'(\d+\.?\d*)', col_name)
-            if match:
-                try:
-                    return float(match.group(1))
-                except ValueError:
-                    return None
-            return None
-        
-        # Build data array
-        data_records = []
-        for _, row in df.iterrows():
-            record: Dict[str, Any] = {
-                "date": row["Дата"],
-                "time": row["Время"] if pd.notna(row["Время"]) else None,
-                "yield_curve": {}
-            }
-            
-            # Add yield values by period (in years)
-            for col in period_columns:
-                period_years = extract_period_years(col)
-                if period_years is not None:
-                    value = row[col]
-                    # Check for NaN, None, and inf values
-                    if pd.notna(value) and value is not None:
-                        try:
-                            float_value = float(value)
-                            # Check for NaN and inf
-                            if not (math.isnan(float_value) or math.isinf(float_value)):
-                                record["yield_curve"][str(period_years)] = float_value
-                        except (ValueError, TypeError):
-                            # Skip invalid values
-                            pass
-            
-            data_records.append(record)
-        
-        # Build metadata
-        periods_list = []
-        for col in period_columns:
-            period = extract_period_years(col)
-            if period is not None:
-                periods_list.append(period)
-        
-        metadata = {
-            "title": "Кривая бескупонной доходности",
-            "description": "Данные кривой бескупонной доходности (БКДЦТ) с различными сроками до погашения",
-            "date_from": date_from or "автоматически (последний год)",
-            "date_to": date_to or "автоматически (сегодня)",
-            "record_count": len(data_records),
-            "export_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "periods": sorted(periods_list)
-        }
-        
-        # Build field descriptions
-        field_descriptions = {
-            "date": "Дата расчета кривой доходности в формате DD.MM.YYYY",
-            "time": "Время расчета (если доступно)",
-            "yield_curve": "Словарь значений доходности по срокам до погашения (в годах). Ключи - сроки в годах, значения - доходность в процентах годовых"
-        }
-        
-        # Build final JSON structure
-        export_data = {
-            "metadata": metadata,
-            "field_descriptions": field_descriptions,
-            "data": data_records
-        }
-        
-        # Convert to JSON string with proper formatting
-        json_str = json.dumps(export_data, ensure_ascii=False, indent=2)
-        
-        # Generate filename with date range
-        filename = "zerocupon"
-        if date_from or date_to:
-            if date_from:
-                filename += f"_{date_from.replace('.', '-')}"
-            if date_to:
-                filename += f"_{date_to.replace('.', '-')}"
-        else:
-            filename += "_last_year"
-        filename += ".json"
-        
-        return Response(
-            content=json_str,
-            media_type="application/json; charset=utf-8",
-            headers={
-                "Content-Disposition": f'attachment; filename="{filename}"',
-            },
-        )
-    
-    except HTTPException:
-        # Re-raise HTTP exceptions as-is
-        raise
-    except Exception as e:
-        # Log the full error for debugging
-        import traceback
-        error_detail = f"Error generating JSON download: {str(e)}\n{traceback.format_exc()}"
-        raise HTTPException(status_code=500, detail=error_detail)
+            filename += f"_{date_to.replace('.', '-')}"
+    else:
+        filename += "_last_year"
+    filename += ".json"
+    return Response(
+        content=json_str,
+        media_type="application/json; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/download/markdown")
@@ -418,239 +157,64 @@ async def download_zerocupon_markdown(
     date_from: Optional[str] = Query(None, description="Start date in DD.MM.YYYY format"),
     date_to: Optional[str] = Query(None, description="End date in DD.MM.YYYY format"),
 ):
-    """Скачивает данные кривой бескупонной доходности в формате Markdown.
-    
-    Загружает данные из CSV файла, применяет фильтрацию по диапазону дат и возвращает
-    данные в формате Markdown таблицы. По умолчанию возвращает данные за последний год,
-    если даты не указаны.
-    
-    Args:
-        date_from: Начальная дата диапазона в формате DD.MM.YYYY (включительно).
-            Если не указана, используется дата год назад от текущей даты.
-        date_to: Конечная дата диапазона в формате DD.MM.YYYY (включительно).
-            Если не указана, используется текущая дата.
-    
-    Returns:
-        HTTP Response с Markdown файлом для скачивания, содержащим:
-        - Заголовок "# Кривая бескупонной доходности (БКДЦТ)"
-        - Секцию метаданных с периодом данных, количеством записей и датой экспорта
-        - Таблицу Markdown с колонками:
-          - Дата: Дата в формате DD.MM.YYYY
-          - Время: Время расчета (если доступно)
-          - Срок X.Y лет: Доходность для срока до погашения X.Y лет
-            (форматируется с 4 знаками после запятой)
-        - Секцию описания с пояснениями полей
-        Записи отсортированы по дате в порядке убывания (от новых к старым).
-    
-    Raises:
-        HTTPException: Если файл zerocupon.csv не найден (статус 404),
-            если формат даты некорректен (статус 400),
-            если данные не найдены для указанного диапазона (статус 404),
-            или если произошла ошибка при генерации Markdown (статус 500).
-    
-    Note:
-        Выходные дни (суббота и воскресенье) автоматически исключаются из результатов.
-        Колонка с периодом 30 лет исключается из экспорта. Имя файла формируется
-        автоматически: zerocupon_DD-MM-YYYY_DD-MM-YYYY.md или zerocupon_last_year.md.
-    """
-    csv_path = _get_zerocupon_path()
-    
-    if not csv_path.exists():
-        raise HTTPException(status_code=404, detail="zerocupon.csv file not found")
-    
-    try:
-        # Read CSV with semicolon separator
-        df = pd.read_csv(csv_path, sep=";", encoding="utf-8-sig", decimal=".")
-        
-        # Check if DataFrame is empty
-        if df.empty:
-            raise HTTPException(status_code=404, detail="CSV file is empty")
-        
-        # Check if "Дата" column exists
-        if "Дата" not in df.columns:
-            raise HTTPException(status_code=500, detail="CSV file missing 'Дата' column")
-        
-        # Parse date column
-        df["Дата"] = pd.to_datetime(df["Дата"], dayfirst=True, errors="coerce")
-        
-        # Remove rows with invalid dates
-        df = df[df["Дата"].notna()]
-        
-        # Check if DataFrame is empty after date parsing
-        if df.empty:
-            raise HTTPException(status_code=404, detail="No valid dates found in CSV file")
-        
-        # Convert all numeric columns (except Дата and Время) to float
-        for col in df.columns:
-            if col not in ["Дата", "Время"]:
-                df[col] = pd.to_numeric(
-                    df[col].astype(str).str.replace(",", ".", regex=False),
-                    errors="coerce"
-                )
-        
-        # Filter by date range
+    """Скачивает данные кривой бескупонной доходности в формате Markdown. Данные из БД."""
+    kbd_service = get_kbd_service()
+    if not kbd_service:
+        raise HTTPException(status_code=503, detail="KBD service is not initialized.")
+    if not date_from and not date_to:
+        one_year_ago = datetime.now() - timedelta(days=365)
+        date_from = one_year_ago.strftime("%d.%m.%Y")
+        date_to = datetime.now().strftime("%d.%m.%Y")
+    dtos = kbd_service.get_kbd_data_formatted(date_from=date_from, date_to=date_to)
+    period_cols = ["Срок 0.25 лет", "Срок 0.5 лет", "Срок 0.75 лет", "Срок 1.0 лет", "Срок 2.0 лет",
+                   "Срок 3.0 лет", "Срок 5.0 лет", "Срок 7.0 лет", "Срок 10.0 лет", "Срок 15.0 лет", "Срок 20.0 лет"]
+    header_cols = ["Дата", "Время"] + period_cols
+    markdown_lines = [
+        "# Кривая бескупонной доходности (БКДЦТ)",
+        "",
+        "## Метаданные",
+        "",
+        f"- **Период данных:** {date_from or 'автоматически (последний год)'} - {date_to or 'автоматически (сегодня)'}",
+        f"- **Количество записей:** {len(dtos)}",
+        f"- **Дата экспорта:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        "",
+        "## Данные",
+        "",
+        "| " + " | ".join(header_cols) + " |",
+        "| " + " | ".join(["---"] * len(header_cols)) + " |",
+    ]
+    for dto in dtos:
+        row = [dto.date or "", dto.time or ""]
+        for attr in ["term_0_25", "term_0_5", "term_0_75", "term_1_0", "term_2_0", "term_3_0",
+                     "term_5_0", "term_7_0", "term_10_0", "term_15_0", "term_20_0"]:
+            v = getattr(dto, attr, None)
+            row.append(f"{v:.4f}" if v is not None else "")
+        markdown_lines.append("| " + " | ".join(row) + " |")
+    markdown_lines.extend([
+        "",
+        "## Описание",
+        "",
+        "Данные кривой бескупонной доходности (БКДЦТ) с различными сроками до погашения.",
+        "",
+        "- **Дата:** Дата расчета кривой доходности",
+        "- **Время:** Время расчета (если доступно)",
+        "- **Срок X.Y лет:** Доходность для срока до погашения X.Y лет (в процентах годовых)",
+        "",
+    ])
+    filename = "zerocupon"
+    if date_from or date_to:
         if date_from:
-            try:
-                date_from_dt = datetime.strptime(date_from, "%d.%m.%Y")
-                df = df[df["Дата"] >= date_from_dt]
-            except ValueError:
-                raise HTTPException(status_code=400, detail="Invalid date_from format. Use DD.MM.YYYY")
-        
+            filename += f"_{date_from.replace('.', '-')}"
         if date_to:
-            try:
-                date_to_dt = datetime.strptime(date_to, "%d.%m.%Y")
-                date_to_dt = date_to_dt.replace(hour=23, minute=59, second=59)
-                df = df[df["Дата"] <= date_to_dt]
-            except ValueError:
-                raise HTTPException(status_code=400, detail="Invalid date_to format. Use DD.MM.YYYY")
-        
-        # If no dates provided, default to last year
-        if not date_from and not date_to:
-            one_year_ago = datetime.now() - timedelta(days=365)
-            df = df[df["Дата"] >= one_year_ago]
-        
-        # Check if DataFrame is empty after date filtering
-        if df.empty:
-            raise HTTPException(status_code=404, detail="No data found for the specified date range")
-        
-        # Filter out weekends (Saturday=5, Sunday=6)
-        # Only keep weekdays (Monday=0 through Friday=4)
-        df = df[df["Дата"].dt.weekday < 5]
-        
-        # Check if DataFrame is empty after weekend filtering
-        if df.empty:
-            raise HTTPException(status_code=404, detail="No weekday data found for the specified date range")
-        
-        # Format date back to DD.MM.YYYY for display
-        df["Дата"] = df["Дата"].dt.strftime("%d.%m.%Y")
-        
-        # Exclude 30 years column from display and calculations
-        columns_to_exclude = [col for col in df.columns if "30" in col and "лет" in col]
-        if columns_to_exclude:
-            df = df.drop(columns=columns_to_exclude)
-        
-        # Replace NaN with empty string for markdown
-        df = df.fillna("")
-        
-        # Extract period columns (all except Дата and Время)
-        period_columns = [col for col in df.columns if col not in ["Дата", "Время"]]
-        
-        # Sort period columns by numeric value
-        def extract_period_years(col_name: str) -> Optional[float]:
-            """Extract numeric period value from column name like 'Срок 0.25 лет'"""
-            match = re.search(r'(\d+\.?\d*)', col_name)
-            if match:
-                try:
-                    return float(match.group(1))
-                except ValueError:
-                    return None
-            return None
-        
-        # Sort period columns
-        period_columns_sorted = sorted(
-            period_columns,
-            key=lambda x: extract_period_years(x) or 0
-        )
-        
-        # Build markdown content
-        markdown_lines = []
-        
-        # Header
-        markdown_lines.append("# Кривая бескупонной доходности (БКДЦТ)")
-        markdown_lines.append("")
-        
-        # Metadata
-        markdown_lines.append("## Метаданные")
-        markdown_lines.append("")
-        markdown_lines.append(f"- **Период данных:** {date_from or 'автоматически (последний год)'} - {date_to or 'автоматически (сегодня)'}")
-        markdown_lines.append(f"- **Количество записей:** {len(df)}")
-        markdown_lines.append(f"- **Дата экспорта:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        markdown_lines.append("")
-        
-        # Table header
-        markdown_lines.append("## Данные")
-        markdown_lines.append("")
-        
-        # Build table header
-        header_cols = ["Дата", "Время"] + period_columns_sorted
-        markdown_lines.append("| " + " | ".join(header_cols) + " |")
-        
-        # Build table separator
-        separator = "| " + " | ".join(["---"] * len(header_cols)) + " |"
-        markdown_lines.append(separator)
-        
-        # Build table rows
-        for _, row in df.iterrows():
-            row_values = []
-            
-            # Date
-            date_val = str(row["Дата"]) if pd.notna(row["Дата"]) else ""
-            row_values.append(date_val)
-            
-            # Time
-            time_val = str(row["Время"]) if pd.notna(row["Время"]) and row["Время"] != "" else ""
-            row_values.append(time_val)
-            
-            # Period values
-            for col in period_columns_sorted:
-                val = row[col]
-                if pd.notna(val) and val != "":
-                    try:
-                        # Format as number with 4 decimal places
-                        num_val = float(val)
-                        if not (math.isnan(num_val) or math.isinf(num_val)):
-                            row_values.append(f"{num_val:.4f}")
-                        else:
-                            row_values.append("")
-                    except (ValueError, TypeError):
-                        row_values.append("")
-                else:
-                    row_values.append("")
-            
-            markdown_lines.append("| " + " | ".join(row_values) + " |")
-        
-        markdown_lines.append("")
-        
-        # Footer with description
-        markdown_lines.append("## Описание")
-        markdown_lines.append("")
-        markdown_lines.append("Данные кривой бескупонной доходности (БКДЦТ) с различными сроками до погашения.")
-        markdown_lines.append("")
-        markdown_lines.append("- **Дата:** Дата расчета кривой доходности")
-        markdown_lines.append("- **Время:** Время расчета (если доступно)")
-        markdown_lines.append("- **Срок X.Y лет:** Доходность для срока до погашения X.Y лет (в процентах годовых)")
-        markdown_lines.append("")
-        
-        # Convert to string
-        markdown_content = "\n".join(markdown_lines)
-        
-        # Generate filename with date range
-        filename = "zerocupon"
-        if date_from or date_to:
-            if date_from:
-                filename += f"_{date_from.replace('.', '-')}"
-            if date_to:
-                filename += f"_{date_to.replace('.', '-')}"
-        else:
-            filename += "_last_year"
-        filename += ".md"
-        
-        return Response(
-            content=markdown_content,
-            media_type="text/markdown; charset=utf-8",
-            headers={
-                "Content-Disposition": f'attachment; filename="{filename}"',
-            },
-        )
-    
-    except HTTPException:
-        # Re-raise HTTP exceptions as-is
-        raise
-    except Exception as e:
-        # Log the full error for debugging
-        import traceback
-        error_detail = f"Error generating Markdown download: {str(e)}\n{traceback.format_exc()}"
-        raise HTTPException(status_code=500, detail=error_detail)
+            filename += f"_{date_to.replace('.', '-')}"
+    else:
+        filename += "_last_year"
+    filename += ".md"
+    return Response(
+        content="\n".join(markdown_lines),
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 def _parse_jsonp_response(text: str) -> Dict[str, Any]:
@@ -682,40 +246,6 @@ def _parse_jsonp_response(text: str) -> Dict[str, Any]:
         return data
     except json.JSONDecodeError as e:
         raise ValueError(f"Failed to parse JSON: {str(e)}")
-
-
-def _get_last_date_from_csv(csv_path: Path) -> Optional[datetime]:
-    """Получает последнюю дату из CSV файла.
-    
-    Читает первую строку CSV файла (самая свежая дата находится вверху) и возвращает
-    дату в формате datetime.
-    
-    Args:
-        csv_path: Путь к CSV файлу с данными кривой доходности.
-    
-    Returns:
-        Объект datetime с последней датой из файла, или None если файл не существует,
-        пуст или не содержит валидных дат.
-    """
-    if not csv_path.exists():
-        return None
-    
-    try:
-        df = pd.read_csv(csv_path, sep=";", encoding="utf-8-sig", nrows=10)
-        if df.empty or "Дата" not in df.columns:
-            return None
-        
-        # Parse first date (most recent is at the top)
-        first_date_str = df.iloc[0]["Дата"]
-        last_date = pd.to_datetime(first_date_str, dayfirst=True, errors="coerce")
-        
-        if pd.isna(last_date):
-            return None
-        
-        return last_date.to_pydatetime()
-    except Exception as e:
-        print(f"Error reading last date from CSV: {e}")
-        return None
 
 
 def _fetch_zerocupon_data_for_date(target_date: datetime) -> Optional[List[Dict[str, Any]]]:
@@ -760,123 +290,23 @@ def _fetch_zerocupon_data_for_date(target_date: datetime) -> Optional[List[Dict[
         return None
 
 
-def _add_data_to_csv(csv_path: Path, date_obj: datetime, time_str: str, yields_data: List[Dict[str, Any]]) -> None:
-    """Добавляет новую строку в CSV файл с данными кривой доходности.
-    
-    Создает новую строку с данными кривой доходности и добавляет ее в начало CSV файла
-    (самые свежие данные находятся вверху). Если файл не существует, создает новый
-    с заголовками колонок.
-    
-    Args:
-        csv_path: Путь к CSV файлу для сохранения данных.
-        date_obj: Дата расчета кривой доходности.
-        time_str: Время расчета в формате HH:MM:SS.
-        yields_data: Список словарей с данными доходности по периодам, каждый содержит:
-            - period: Период до погашения (в годах)
-            - value: Значение доходности (в процентах годовых)
-    
-    Note:
-        Период 30 лет исключается из сохранения. Значения доходности форматируются
-        с 2 знаками после запятой, используется точка как разделитель десятичных знаков.
-    """
-    # Map period values to column names
-    # Note: 30 years period is excluded from calculations and display
-    period_to_column = {
-        0.25: "Срок 0.25 лет",
-        0.50: "Срок 0.5 лет",
-        0.75: "Срок 0.75 лет",
-        1.00: "Срок 1.0 лет",
-        2.00: "Срок 2.0 лет",
-        3.00: "Срок 3.0 лет",
-        5.00: "Срок 5.0 лет",
-        7.00: "Срок 7.0 лет",
-        10.00: "Срок 10.0 лет",
-        15.00: "Срок 15.0 лет",
-        20.00: "Срок 20.0 лет",
-        # 30.00: "Срок 30.0 лет",  # Excluded from calculations and display
-    }
-    
-    # Create row data with all columns initialized
-    date_str = date_obj.strftime("%d.%m.%Y")
-    row_data = {"Дата": date_str, "Время": time_str}
-    
-    # Initialize all period columns with empty strings
-    for column_name in period_to_column.values():
-        row_data[column_name] = ""
-    
-    # Add yield values for each period
-    for yield_item in yields_data:
-        period = yield_item.get("period")
-        value = yield_item.get("value")
-        
-        if period in period_to_column and value is not None:
-            column_name = period_to_column[period]
-            # Format as number with 2 decimal places, using dot as decimal separator
-            row_data[column_name] = f"{float(value):.2f}"
-    
-    # Read existing CSV
-    if csv_path.exists():
-        df = pd.read_csv(csv_path, sep=";", encoding="utf-8-sig")
-    else:
-        # Create new DataFrame with headers
-        columns = ["Дата", "Время"] + list(period_to_column.values())
-        df = pd.DataFrame(columns=columns)
-    
-    # Create new row DataFrame
-    new_row = pd.DataFrame([row_data])
-    
-    # Prepend new row (most recent data at the top)
-    df = pd.concat([new_row, df], ignore_index=True)
-    
-    # Save to CSV
-    df.to_csv(csv_path, sep=";", index=False, encoding="utf-8-sig")
-
-
 def refresh_zerocupon_data() -> Dict[str, Any]:
-    """Обновляет данные кривой бескупонной доходности из API Мосбиржи.
+    """Пайплайн: скачивание данных из API Мосбиржи → преобразование в формат БД → сохранение в БД.
     
-    Проверяет последнюю дату в CSV файле и загружает недостающие данные до вчерашнего дня.
-    Выполняет инкрементальное обновление - загружает только новые данные. Пропускает
-    выходные дни (суббота и воскресенье).
-    
-    Returns:
-        Словарь с результатом обновления, содержащий:
-        - status: Статус операции ("ok")
-        - message: Сообщение о результате обновления
-        - last_date: Последняя дата в CSV файле до обновления (в формате DD.MM.YYYY)
-        - start_date: Начальная дата диапазона загрузки (в формате DD.MM.YYYY)
-        - end_date: Конечная дата диапазона загрузки (в формате DD.MM.YYYY)
-        - dates_fetched: Количество успешно загруженных дат
-        - dates_failed: Количество дат с ошибками загрузки
-    
-    Note:
-        Если данных нет в CSV файле, начинает загрузку с даты 30 дней назад.
-        Если start_date > end_date (данные актуальны), возвращает сообщение
-        "Data is up to date" без загрузки данных.
+    Определяет диапазон дат по последней записи в таблице kbd, загружает данные из API
+    по каждой дате (только будни), преобразует в DBkbd и сохраняет через KbdRepository.
     """
     logger = get_data_update_logger()
-    logger.info("[REFRESH ZEROCOUPON] Starting zerocupon data refresh")
-    
-    csv_path = _get_zerocupon_path()
-    logger.info(f"[REFRESH ZEROCOUPON] Using CSV path: {csv_path}")
-    
-    # Get last date from CSV
-    last_date = _get_last_date_from_csv(csv_path)
-    logger.info(f"[REFRESH ZEROCOUPON] Last date in CSV: {last_date.strftime('%Y-%m-%d') if last_date else 'None'}")
-    
-    # Determine start date (next day after last date, or 30 days ago if no data)
+    logger.info("[REFRESH ZEROCOUPON] Starting zerocupon data refresh (API → DB)")
+    repo = KbdRepository(db_path=DB_PATH)
+    last_date = repo.get_last_kbd_date()
+    logger.info(f"[REFRESH ZEROCOUPON] Last date in DB: {last_date.strftime('%Y-%m-%d') if last_date else 'None'}")
     if last_date:
         start_date = last_date + timedelta(days=1)
     else:
-        # If no data, start from 30 days ago
         start_date = datetime.now() - timedelta(days=30)
-    
-    # End date is yesterday (don't fetch today as data might not be available)
     end_date = datetime.now() - timedelta(days=1)
-    
     logger.info(f"[REFRESH ZEROCOUPON] Date range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
-    
-    # Skip if start_date is after end_date
     if start_date > end_date:
         logger.info("[REFRESH ZEROCOUPON] Data is up to date, no refresh needed")
         return {
@@ -885,34 +315,26 @@ def refresh_zerocupon_data() -> Dict[str, Any]:
             "last_date": last_date.strftime("%d.%m.%Y") if last_date else None,
             "dates_fetched": 0,
         }
-    
-    # Fetch data for each date
+    records: List[DBkbd] = []
     dates_fetched = 0
     dates_failed = 0
     current_date = start_date
-    
     while current_date <= end_date:
-        # Skip weekends (Saturday=5, Sunday=6)
-        if current_date.weekday() < 5:  # Monday=0, Friday=4
+        if current_date.weekday() < 5:
             yields_data = _fetch_zerocupon_data_for_date(current_date)
-            
             if yields_data and len(yields_data) > 0:
-                # Extract time from first yield item
                 time_str = yields_data[0].get("tradetime", "18:49:59")
-                # Extract only time part (HH:MM:SS)
-                if " " in time_str:
-                    time_str = time_str.split(" ")[-1]
-                
-                # Add to CSV
-                _add_data_to_csv(csv_path, current_date, time_str, yields_data)
-                dates_fetched += 1
-                logger.info(f"[REFRESH ZEROCOUPON] Fetched data for {current_date.strftime('%Y-%m-%d')}")
+                row = _api_yields_to_dbkbd(current_date, time_str, yields_data)
+                if row:
+                    records.append(row)
+                    dates_fetched += 1
+                    logger.info(f"[REFRESH ZEROCOUPON] Fetched data for {current_date.strftime('%Y-%m-%d')}")
             else:
                 dates_failed += 1
-                logger.warning(f"[REFRESH ZEROCOUPON] No data available for {current_date.strftime('%Y-%m-%d')}")
-        
+                logger.warning(f"[REFRESH ZEROCOUPON] No data for {current_date.strftime('%Y-%m-%d')}")
         current_date += timedelta(days=1)
-    
+    if records:
+        repo.save_kbd_records(records)
     result = {
         "status": "ok",
         "message": f"Fetched {dates_fetched} dates, {dates_failed} failed",
@@ -922,7 +344,6 @@ def refresh_zerocupon_data() -> Dict[str, Any]:
         "dates_fetched": dates_fetched,
         "dates_failed": dates_failed,
     }
-    
     logger.info(f"[REFRESH ZEROCOUPON] Refresh completed: {result}")
     return result
 
@@ -931,58 +352,14 @@ def refresh_zerocupon_data() -> Dict[str, Any]:
 async def refresh_zerocupon(
     update_zero_coupon_curve: bool = Query(False, description="Update zero coupon curve data in database after file save")
 ):
-    """Обновляет данные кривой бескупонной доходности из API Мосбиржи.
-    
-    Выполняет двухэтапное обновление:
-    1. Загружает недостающие данные из API Мосбиржи с последней даты в CSV до вчерашнего дня
-       и сохраняет их в CSV файл.
-    2. Синхронизирует данные из CSV файла в базу данных через DBOrchestrator.
-    
-    Args:
-        update_zero_coupon_curve: Если True, после успешного сохранения данных в файл
-            обновляет таблицу kbd в базе данных через orchestrator.migrate("kbd").
-            По умолчанию False.
-    
-    Returns:
-        Словарь с результатом обновления, содержащий:
-        - status: Статус операции ("ok")
-        - message: Сообщение о результате обновления
-        - last_date: Последняя дата в CSV файле до обновления
-        - start_date: Начальная дата диапазона загрузки
-        - end_date: Конечная дата диапазона загрузки
-        - dates_fetched: Количество успешно загруженных дат
-        - dates_failed: Количество дат с ошибками загрузки
-        - database_updated: Флаг успешного обновления базы данных (True/False)
-    
-    Raises:
-        HTTPException: Если произошла ошибка при обновлении данных (статус 500).
-    
-    Note:
-        Параметр update_zero_coupon_curve оставлен для обратной совместимости, но
-        обновление базы данных выполняется всегда после успешного сохранения файла.
-    """
+    """Обновляет данные кривой бескупонной доходности: API → преобразование → сохранение в БД."""
     logger = get_data_update_logger()
-    logger.info(f"[API /zerocupon/refresh] Received request to refresh zerocupon data (update_zero_coupon_curve={update_zero_coupon_curve})")
-    
+    logger.info("[API /zerocupon/refresh] Received request to refresh zerocupon data")
     try:
-        # Step 1: Download data from MOEX API and save to CSV file
-        logger.info("[API /zerocupon/refresh] Step 1: Downloading data from MOEX API and saving to CSV file...")
         result = await asyncio.to_thread(refresh_zerocupon_data)
-        logger.info(f"[API /zerocupon/refresh] Step 1 completed: {result}")
-        
-        # Step 2: Synchronize data from CSV file to database
-        logger.info("[API /zerocupon/refresh] Step 2: Starting database synchronization from CSV file via Orchestrator...")
-        orchestrator = DBOrchestrator()
-        db_refresh_result = await asyncio.to_thread(orchestrator.migrate, "kbd")
-        if db_refresh_result:
-            logger.info("[API /zerocupon/refresh] Step 2 completed: Database table kbd refreshed successfully")
-            result["database_updated"] = True
-        else:
-            logger.warning("[API /zerocupon/refresh] Step 2 failed: Database table kbd refresh failed, but CSV file was saved successfully")
-            result["database_updated"] = False
-        
+        result["database_updated"] = True
         return result
     except Exception as e:
-        logger.error(f"[API /zerocupon/refresh] ERROR: {type(e).__name__} - {str(e)}")
+        logger.error("[API /zerocupon/refresh] ERROR: %s - %s", type(e).__name__, str(e))
         raise HTTPException(status_code=500, detail=f"Error refreshing zerocupon data: {str(e)}")
 

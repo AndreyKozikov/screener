@@ -41,8 +41,14 @@ def setup_data_update_logger(log_dir: Optional[Path] = None) -> logging.Logger:
     )
     file_handler.setFormatter(formatter)
     
-    # Add handler to logger
+    # Console handler for errors (helps debug 500 etc. when running server)
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.ERROR)
+    console_handler.setFormatter(formatter)
+    
+    # Add handlers to logger
     logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
     
     # Prevent propagation to root logger
     logger.propagate = False

@@ -11,7 +11,9 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from app.models.bond import Bond
+import orjson
+
+from app.models.bond import Bond, BondMarketData, BondMarketDataYield, BondSecurity
 from app.repository.files.file_storage import FileStorage
 from config.paths import (
     BONDS_EMITENT_JSON,
@@ -21,7 +23,7 @@ from config.paths import (
     BONDS_TYPE43_MAPPING_JSON,
     COUPONS_DATA_JSON,
 )
-from app.services.bond_filter import get_rating_index, standardize_rating
+from app.utils.rating_utils import get_rating_index, standardize_rating
 from app.services.emitent_service import get_emitent_service
 
 
@@ -187,20 +189,8 @@ class BondTransformer:
                     rating_level_raw = worst_rating.get("rating_level_name_short_ru", "").strip()
                     bond["RATING_LEVEL"] = standardize_rating(rating_level_raw) or rating_level_raw
 
-        coupons_map = self._load_coupons_map()
-        from app.services.coupon_loader import get_coupon_loader
-
-        coupon_loader = get_coupon_loader()
-        for bond in bonds_data:
-            secid = bond.get("SECID")
-            if secid and secid in coupons_map:
-                bond_data = coupons_map[secid]
-                coupons = bond_data.get("coupons", [])
-                if coupons and coupon_loader:
-                    coupon_value = coupon_loader.get_nearest_coupon_value(secid)
-                    if coupon_value is not None:
-                        bond["COUPONVALUE"] = coupon_value
-
+        # COUPONVALUE теперь берётся из securities (bonds.json от MOEX API)
+        # bond_dict уже содержит COUPONVALUE из zip(sec_columns, row)
         return bonds_data
 
     def _load_ratings_map(self) -> Dict[str, Dict[str, Any]]:
@@ -441,23 +431,55 @@ class BondTransformer:
 
         maturity_date = _fmt_date(raw_data.get("MATDATE"))
         offer_date = _fmt_date(raw_data.get("OFFERDATE"))
+        next_coupon = _fmt_date(raw_data.get("NEXTCOUPON"))
+        call_option_date = _fmt_date(raw_data.get("CALLOPTIONDATE"))
+        put_option_date = _fmt_date(raw_data.get("PUTOPTIONDATE"))
+
+        rating_agency: Optional[str] = None
+        ratings_list = raw_data.get("RATINGS") or []
+        if isinstance(ratings_list, list) and ratings_list:
+            worst = self._get_worst_rating(ratings_list)
+            if worst:
+                rating_agency = (worst.get("agency_name_short_ru") or "").strip()
+        ratings_json: Optional[str] = None
+        if ratings_list and isinstance(ratings_list, list):
+            try:
+                ratings_json = orjson.dumps(ratings_list).decode("utf-8")
+            except (TypeError, ValueError):
+                pass
+
+        duration_waprice = raw_data.get("DURATIONWAPRICE")
+        if duration_waprice is not None and not isinstance(duration_waprice, int):
+            try:
+                duration_waprice = int(duration_waprice)
+            except (TypeError, ValueError):
+                duration_waprice = None
+
+        currency_val = raw_data.get("CURRENCYID")
+        face_unit_val = raw_data.get("FACEUNIT")
 
         return Bond(
             secid=secid,
             boardid=raw_data.get("BOARDID"),
             isin=raw_data.get("ISIN"),
             name=raw_data.get("SHORTNAME") or raw_data.get("SECNAME"),
+            secname=raw_data.get("SECNAME"),
             rating=rating,
+            rating_agency=rating_agency,
             current_price=current_price,
             coupon_yield_to_price=coupon_yield_to_price,
             yield_to_maturity=yield_to_maturity,
             face_value=face_value,
-            currency=raw_data.get("FACEUNIT"),
+            currency=currency_val,
+            face_unit=face_unit_val,
             coupon_value=coupon_value,
             coupon_percent=raw_data.get("COUPONPERCENT"),
             coupon_frequency=coupon_frequency,
+            coupon_period=raw_data.get("COUPONPERIOD"),
             accrued_interest=raw_data.get("ACCRUEDINT"),
             duration_years=duration_years,
+            duration=float(duration) if duration is not None else None,
+            duration_waprice=duration_waprice,
             has_put_option=has_put_option,
             has_call_option=has_call_option,
             maturity_date=maturity_date,
@@ -465,6 +487,13 @@ class BondTransformer:
             bond_type=bond_type,
             bond_kind=bond_kind,
             offer_date=offer_date,
+            status=raw_data.get("STATUS"),
+            trading_status=raw_data.get("TRADINGSTATUS"),
+            next_coupon=next_coupon,
+            board_name=raw_data.get("BOARDNAME"),
+            call_option_date=call_option_date,
+            put_option_date=put_option_date,
+            ratings=ratings_json,
         )
 
     def transform_batch(self, raw_bonds_list: List[Dict[str, Any]]) -> List[Bond]:
@@ -489,6 +518,245 @@ class BondTransformer:
             except Exception as e:
                 self.logger.warning(
                     "Ошибка при преобразовании облигации %s: %s",
+                    bond_data.get("SECID", "unknown"),
+                    e,
+                )
+        return result
+
+    @staticmethod
+    def _parse_date_for_security(val: Any) -> Optional[date]:
+        """Парсит значение в date для полей BondSecurity.
+
+        Args:
+            val: Строка даты (YYYY-MM-DD), date или None.
+
+        Returns:
+            date или None при некорректном значении.
+        """
+        if val is None:
+            return None
+        if isinstance(val, date):
+            return val
+        if isinstance(val, str) and val.strip() and val.strip() != "0000-00-00":
+            try:
+                return date.fromisoformat(val.strip()[:10])
+            except ValueError:
+                pass
+        return None
+
+    def transform_to_bond_security(self, raw_data: Dict[str, Any]) -> Optional[BondSecurity]:
+        """Преобразует сырые данные секции securities в объект BondSecurity.
+
+        Извлекает поля из merged bond_dict (securities). Только облигации,
+        которые будут сохранены в bonds (без SPOB), попадают в raw_data.
+
+        Args:
+            raw_data: Словарь с сырыми данными (результат prepare_bonds_for_db).
+
+        Returns:
+            BondSecurity или None, если SECID отсутствует.
+        """
+        secid = raw_data.get("SECID")
+        if not secid:
+            return None
+        return BondSecurity(
+            secid=str(secid),
+            boardid=self._safe_str(raw_data.get("BOARDID")),
+            prev_waprice=self._safe_float(raw_data.get("PREVWAPRICE")),
+            yield_at_prev_waprice=self._safe_float(raw_data.get("YIELDATPREVWAPRICE")),
+            prev_price=self._safe_float(raw_data.get("PREVPRICE")),
+            lot_size=self._safe_int(raw_data.get("LOTSIZE")),
+            reg_number=self._safe_str(raw_data.get("REGNUMBER")),
+            decimals=self._safe_int(raw_data.get("DECIMALS")),
+            issue_size=self._safe_int(raw_data.get("ISSUESIZE")),
+            prev_legal_close_price=self._safe_float(raw_data.get("PREVLEGALCLOSEPRICE")),
+            prev_date=self._parse_date_for_security(raw_data.get("PREVDATE")),
+            remarks=self._safe_str(raw_data.get("REMARKS")),
+            market_code=self._safe_str(raw_data.get("MARKETCODE")),
+            instr_id=self._safe_str(raw_data.get("INSTRID")),
+            sector_id=self._safe_str(raw_data.get("SECTORID")),
+            min_step=self._safe_float(raw_data.get("MINSTEP")),
+            face_unit=self._safe_str(raw_data.get("FACEUNIT")),
+            buyback_price=self._safe_float(raw_data.get("BUYBACKPRICE")),
+            buyback_date=self._parse_date_for_security(raw_data.get("BUYBACKDATE")),
+            lat_name=self._safe_str(raw_data.get("LATNAME")),
+            issue_size_placed=self._safe_int(raw_data.get("ISSUESIZEPLACED")),
+            sec_type=self._safe_str(raw_data.get("SECTYPE")),
+            settle_date=self._parse_date_for_security(raw_data.get("SETTLEDATE")),
+            lot_value=self._safe_float(raw_data.get("LOTVALUE")),
+            face_value_on_settle_date=self._safe_float(raw_data.get("FACEVALUEONSETTLEDATE")),
+            date_yield_from_issuer=self._parse_date_for_security(raw_data.get("DATEYIELDFROMISSUER")),
+        )
+
+    def transform_to_bond_market_data(self, raw_data: Dict[str, Any]) -> Optional[BondMarketData]:
+        """Преобразует сырые данные секции marketdata в объект BondMarketData.
+
+        Извлекает поля из merged bond_dict (секция marketdata).
+        Создаётся только для записей, у которых есть данные marketdata (merged в bond_dict).
+
+        Args:
+            raw_data: Словарь с сырыми данными (результат prepare_bonds_for_db).
+
+        Returns:
+            BondMarketData или None, если SECID отсутствует.
+        """
+        secid = raw_data.get("SECID")
+        if not secid:
+            return None
+        return BondMarketData(
+            secid=str(secid),
+            boardid=self._safe_str(raw_data.get("BOARDID")),
+            bid=self._safe_float(raw_data.get("BID")),
+            offer=self._safe_float(raw_data.get("OFFER")),
+            spread=self._safe_float(raw_data.get("SPREAD")),
+            bid_depth=self._safe_int(raw_data.get("BIDDEPTH")),
+            offer_depth=self._safe_int(raw_data.get("OFFERDEPTH")),
+            open_price=self._safe_float(raw_data.get("OPEN")),
+            low=self._safe_float(raw_data.get("LOW")),
+            high=self._safe_float(raw_data.get("HIGH")),
+            last_price=self._safe_float(raw_data.get("LAST")),
+            last_change=self._safe_float(raw_data.get("LASTCHANGE")),
+            last_change_prcnt=self._safe_float(raw_data.get("LASTCHANGEPRCNT")),
+            qty=self._safe_int(raw_data.get("QTY")),
+            value=self._safe_float(raw_data.get("VALUE")),
+            value_usd=self._safe_float(raw_data.get("VALUE_USD")),
+            waprice=self._safe_float(raw_data.get("WAPRICE")),
+            last_cnt_to_last_waprice=self._safe_float(raw_data.get("LASTCNGTOLASTWAPRICE")),
+            wap_to_prev_waprice_prcnt=self._safe_float(raw_data.get("WAPTOPREVWAPRICEPRCNT")),
+            wap_to_prev_waprice=self._safe_float(raw_data.get("WAPTOPREVWAPRICE")),
+            close_price=self._safe_float(raw_data.get("CLOSEPRICE")),
+            market_price_today=self._safe_float(raw_data.get("MARKETPRICETODAY")),
+            market_price=self._safe_float(raw_data.get("MARKETPRICE")),
+            last_to_prev_price=self._safe_float(raw_data.get("LASTTOPREVPRICE")),
+            num_trades=self._safe_int(raw_data.get("NUMTRADES")),
+            vol_today=self._safe_int(raw_data.get("VOLTODAY")),
+            val_today=self._safe_float(raw_data.get("VALTODAY")),
+            val_today_usd=self._safe_float(raw_data.get("VALTODAY_USD")),
+            etf_settle_price=self._safe_float(raw_data.get("ETFSETTLEPRICE")),
+            update_time=self._safe_str(raw_data.get("UPDATETIME")),
+        )
+
+    @staticmethod
+    def _safe_float(val: Any) -> Optional[float]:
+        """Преобразует значение в float или возвращает None."""
+        if val is None:
+            return None
+        try:
+            return float(val)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _safe_int(val: Any) -> Optional[int]:
+        """Преобразует значение в int или возвращает None."""
+        if val is None:
+            return None
+        try:
+            return int(float(val))
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _safe_str(val: Any) -> Optional[str]:
+        """Возвращает непустую строку или None."""
+        if val is None:
+            return None
+        s = str(val).strip()
+        return s if s else None
+
+    def transform_to_bond_securities_batch(
+        self, raw_bonds_list: List[Dict[str, Any]]
+    ) -> List[BondSecurity]:
+        """Преобразует список сырых облигаций в список BondSecurity."""
+        result: List[BondSecurity] = []
+        for bond_data in raw_bonds_list:
+            try:
+                obj = self.transform_to_bond_security(bond_data)
+                if obj:
+                    result.append(obj)
+            except Exception as e:
+                self.logger.warning(
+                    "Ошибка при преобразовании BondSecurity %s: %s",
+                    bond_data.get("SECID", "unknown"),
+                    e,
+                )
+        return result
+
+    def transform_to_bond_market_data_batch(
+        self, raw_bonds_list: List[Dict[str, Any]]
+    ) -> List[BondMarketData]:
+        """Преобразует список сырых облигаций в список BondMarketData."""
+        result: List[BondMarketData] = []
+        for bond_data in raw_bonds_list:
+            try:
+                obj = self.transform_to_bond_market_data(bond_data)
+                if obj:
+                    result.append(obj)
+            except Exception as e:
+                self.logger.warning(
+                    "Ошибка при преобразовании BondMarketData %s: %s",
+                    bond_data.get("SECID", "unknown"),
+                    e,
+                )
+        return result
+
+    def transform_to_bond_market_data_yield(
+        self, raw_data: Dict[str, Any]
+    ) -> Optional[BondMarketDataYield]:
+        """Преобразует сырые данные секции marketdata_yields в объект BondMarketDataYield.
+
+        Извлекает поля из merged bond_dict (yields_map). Создаётся только для записей,
+        у которых есть данные marketdata_yields (EFFECTIVEYIELD или YIELDDATETYPE).
+
+        Args:
+            raw_data: Словарь с сырыми данными (результат prepare_bonds_for_db).
+
+        Returns:
+            BondMarketDataYield или None, если SECID отсутствует или нет yields.
+        """
+        secid = raw_data.get("SECID")
+        if not secid:
+            return None
+        if raw_data.get("EFFECTIVEYIELD") is None and raw_data.get("YIELDDATETYPE") is None:
+            return None
+        return BondMarketDataYield(
+            secid=str(secid),
+            boardid=self._safe_str(raw_data.get("BOARDID")),
+            price=self._safe_float(raw_data.get("PRICE")),
+            yield_date=self._safe_str(raw_data.get("YIELDDATE")),
+            zcyc_moment=self._safe_str(raw_data.get("ZCYCMOMENT")),
+            yield_date_type=self._safe_str(raw_data.get("YIELDDATETYPE")),
+            effective_yield=self._safe_float(raw_data.get("EFFECTIVEYIELD")),
+            duration=self._safe_int(raw_data.get("DURATION")),
+            zspread_bp=self._safe_int(raw_data.get("ZSPREADBP")),
+            gspread_bp=self._safe_int(raw_data.get("GSPREADBP")),
+            waprice=self._safe_float(raw_data.get("WAPRICE")),
+            effective_yield_waprice=self._safe_float(raw_data.get("EFFECTIVEYIELDWAPRICE")),
+            duration_waprice=self._safe_int(raw_data.get("DURATIONWAPRICE")),
+            ir=self._safe_float(raw_data.get("IR")),
+            icpi=self._safe_float(raw_data.get("ICPI")),
+            bei=self._safe_float(raw_data.get("BEI")),
+            cbr=self._safe_float(raw_data.get("CBR")),
+            yield_to_offer=self._safe_float(raw_data.get("YIELDTOOFFER")),
+            yield_last_coupon=self._safe_float(raw_data.get("YIELDLASTCOUPON")),
+            trade_moment=self._safe_str(raw_data.get("TRADEMOMENT")),
+            seqnum=self._safe_int(raw_data.get("SEQNUM")),
+            systime=self._safe_str(raw_data.get("SYSTIME")),
+        )
+
+    def transform_to_bond_market_data_yields_batch(
+        self, raw_bonds_list: List[Dict[str, Any]]
+    ) -> List[BondMarketDataYield]:
+        """Преобразует список сырых облигаций в список BondMarketDataYield."""
+        result: List[BondMarketDataYield] = []
+        for bond_data in raw_bonds_list:
+            try:
+                obj = self.transform_to_bond_market_data_yield(bond_data)
+                if obj:
+                    result.append(obj)
+            except Exception as e:
+                self.logger.warning(
+                    "Ошибка при преобразовании BondMarketDataYield %s: %s",
                     bond_data.get("SECID", "unknown"),
                     e,
                 )

@@ -54,7 +54,7 @@ async def get_filter_options():
     """Получает доступные опции фильтров (уникальные значения для выпадающих списков).
     
     Загружает все облигации из кэша DataLoader и извлекает уникальные значения
-    для полей LISTLEVEL, FACEUNIT и BONDTYPE. Используется для заполнения
+    для полей LISTLEVEL, CURRENCYID (валюта) и BONDTYPE. Используется для заполнения
     выпадающих списков фильтров на фронтенде.
     
     Returns:
@@ -68,7 +68,7 @@ async def get_filter_options():
     all_bonds = await loader.get_bonds()
     
     listlevels = list(set(b.LISTLEVEL for b in all_bonds if b.LISTLEVEL is not None))
-    faceunits = list(set(b.FACEUNIT for b in all_bonds if b.FACEUNIT is not None))
+    faceunits = list(set(b.CURRENCYID for b in all_bonds if b.CURRENCYID is not None))
     bondtypes = list(set(b.BONDTYPE for b in all_bonds if b.BONDTYPE is not None))
     
     return {
