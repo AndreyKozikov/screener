@@ -40,7 +40,7 @@ async def lifespan(app: FastAPI):
     init_rating_service(DATA_DIR)
     print("[STARTUP] init_rating_service done", flush=True)
     print("[STARTUP] init_currency_service start", flush=True)
-    init_currency_service(DATA_DIR)
+    init_currency_service()
     print("[STARTUP] init_currency_service done", flush=True)
     print("[STARTUP] init_ruonia_service start", flush=True)
     init_ruonia_service(DATA_DIR)
