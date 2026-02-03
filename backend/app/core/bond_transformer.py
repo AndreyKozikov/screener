@@ -307,7 +307,7 @@ class BondTransformer:
 
         Использует RATING_LEVEL, если уже задан (стандартизация выполняется
         в prepare_bonds_for_db). Иначе вычисляет из RATINGS/emitent_data
-        без повторной стандартизации.
+        и применяет стандартизацию через standardize_rating перед возвратом.
         """
         rating_level = raw_data.get("RATING_LEVEL")
         if rating_level and str(rating_level).strip():
@@ -321,7 +321,7 @@ class BondTransformer:
         if worst:
             level = (worst.get("rating_level_name_short_ru") or "").strip()
             if level:
-                return level
+                return standardize_rating(level) or level
         return None
 
     @staticmethod

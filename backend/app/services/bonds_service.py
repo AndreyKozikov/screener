@@ -138,12 +138,7 @@ def _bond_to_screener_dto(
     rating = (bond.rating or "").strip() or None
     ratings: Optional[List[Dict[str, Any]]] = None
     if rating:
-        ratings = [{"rating_level_name_short_ru": rating, "agency_name_short_ru": ""}]
-    if getattr(bond, "ratings", None) and isinstance(bond.ratings, str):
-        try:
-            ratings = orjson.loads(bond.ratings)
-        except (orjson.JSONDecodeError, TypeError):
-            pass
+        ratings = [{"rating_level_name_short_ru": rating, "agency_name_short_ru": getattr(bond, "rating_agency", None) or ""}]
 
     bond_type_str = type_rev.get(bond.bond_type) if isinstance(bond.bond_type, int) else None
     bond_kind_str = kind_rev.get(bond.bond_kind) if isinstance(bond.bond_kind, int) else None
@@ -437,11 +432,9 @@ def _build_securities_dict(
     bond_kind_str = kind_rev.get(bond.bond_kind) if bond.bond_kind is not None else None
     sec["BONDTYPE"] = bond_type_str
     sec["BONDTYPE43"] = bond_kind_str
-    if bond.ratings:
-        try:
-            sec["RATINGS"] = orjson.loads(bond.ratings)
-        except (orjson.JSONDecodeError, TypeError):
-            sec["RATINGS"] = None
+    # Используем нормализованный рейтинг из столбца rating вместо ratings
+    if bond.rating:
+        sec["RATINGS"] = [{"rating_level_name_short_ru": bond.rating, "agency_name_short_ru": bond.rating_agency or ""}]
     else:
         sec["RATINGS"] = None
     return sec
