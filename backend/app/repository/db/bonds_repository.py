@@ -7,7 +7,7 @@ SQLModel API: выборка с фильтрами, подсчёт, пакетн
 
 import logging
 from pathlib import Path
-from typing import Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import func, or_, and_
 from sqlmodel import Session, create_engine, select
@@ -50,39 +50,55 @@ class BondsRepository:
         )
         self.logger = logging.getLogger(__name__)
 
-    def save_bonds(self, bonds: List[Bond]) -> bool:
-        """Выполняет пакетный upsert облигаций по SECID.
+    def save_bonds(self, bonds: List[Bond]) -> Dict[str, int]:
+        """Удаляет все записи из таблицы bonds и вставляет новые.
 
         Принимает список готовых объектов Bond (расчёты выполняются в
-        bond_transformer). В рамках одной транзакции выполняет merge
-        по первичному ключу (SECID).
+        bond_transformer). В рамках одной транзакции удаляет старые записи
+        и вставляет новые. Возвращает маппинг secid -> id для связанных таблиц.
 
         Args:
-            bonds: Список объектов Bond для вставки/обновления.
+            bonds: Список объектов Bond для вставки.
 
         Returns:
-            True при успешном сохранении, False при ошибке.
+            Словарь {secid: id} для связывания с дочерними таблицами.
+            Пустой словарь при ошибке или отсутствии данных.
         """
         if not bonds:
             self.logger.warning("Нет данных для вставки")
-            return True
+            return {}
         data_log = get_data_update_logger()
         try:
             with Session(self._engine) as session:
-                for bond in bonds:
-                    session.merge(bond)
+                # Удаляем все записи из таблицы bonds
+                session.exec(select(Bond)).all()
+                session.query(Bond).delete()
                 session.commit()
+                
+                # Вставляем новые записи
+                for bond in bonds:
+                    bond.id = None  # Сбрасываем id для автоинкремента
+                    session.add(bond)
+                session.commit()
+                
+                # Получаем маппинг secid -> id
+                secid_to_id: Dict[str, int] = {}
+                stmt = select(Bond.secid, Bond.id)
+                results = session.exec(stmt).all()
+                for secid, bond_id in results:
+                    secid_to_id[secid] = bond_id
+                
             data_log.info(
                 "[API /bonds/refresh] В таблицу bonds записано записей: %s (база: %s)",
                 len(bonds),
                 self.db_path,
             )
-            self.logger.info("Успешно вставлено/обновлено %s записей в таблицу bonds", len(bonds))
-            return True
+            self.logger.info("Успешно вставлено %s записей в таблицу bonds", len(bonds))
+            return secid_to_id
         except Exception as e:
             data_log.error("[API /bonds/refresh] Ошибка INSERT в таблицу bonds: %s", e, exc_info=True)
             self.logger.error("Ошибка при вставке данных в таблицу bonds: %s", e, exc_info=True)
-            return False
+            return {}
 
     def _build_where_conditions(
         self,
@@ -342,10 +358,10 @@ class BondsRepository:
             raise
 
     def save_bond_securities(self, securities: List[BondSecurity]) -> bool:
-        """Выполняет пакетный upsert записей BondSecurity по secid.
+        """Удаляет все записи из таблицы bondsecurity и вставляет новые.
 
         Args:
-            securities: Список объектов BondSecurity для вставки/обновления.
+            securities: Список объектов BondSecurity для вставки (с установленным bond_id).
 
         Returns:
             True при успешном сохранении, False при ошибке.
@@ -356,15 +372,21 @@ class BondsRepository:
         data_log = get_data_update_logger()
         try:
             with Session(self._engine) as session:
+                # Удаляем все записи из таблицы bondsecurity
+                session.query(BondSecurity).delete()
+                session.commit()
+                
+                # Вставляем новые записи
                 for sec in securities:
-                    session.merge(sec)
+                    sec.id = None  # Сбрасываем id для автоинкремента
+                    session.add(sec)
                 session.commit()
             data_log.info(
                 "[API /bonds/refresh] В таблицу bondsecurity записано: %s записей",
                 len(securities),
             )
             self.logger.info(
-                "Успешно вставлено/обновлено %s записей в таблицу bondsecurity",
+                "Успешно вставлено %s записей в таблицу bondsecurity",
                 len(securities),
             )
             return True
@@ -378,10 +400,10 @@ class BondsRepository:
             return False
 
     def save_bond_market_data(self, market_data_list: List[BondMarketData]) -> bool:
-        """Выполняет пакетный upsert записей BondMarketData по secid.
+        """Удаляет все записи из таблицы bondmarketdata и вставляет новые.
 
         Args:
-            market_data_list: Список объектов BondMarketData для вставки/обновления.
+            market_data_list: Список объектов BondMarketData для вставки (с установленным bond_id).
 
         Returns:
             True при успешном сохранении, False при ошибке.
@@ -392,15 +414,21 @@ class BondsRepository:
         data_log = get_data_update_logger()
         try:
             with Session(self._engine) as session:
+                # Удаляем все записи из таблицы bondmarketdata
+                session.query(BondMarketData).delete()
+                session.commit()
+                
+                # Вставляем новые записи
                 for md in market_data_list:
-                    session.merge(md)
+                    md.id = None  # Сбрасываем id для автоинкремента
+                    session.add(md)
                 session.commit()
             data_log.info(
                 "[API /bonds/refresh] В таблицу bondmarketdata записано: %s записей",
                 len(market_data_list),
             )
             self.logger.info(
-                "Успешно вставлено/обновлено %s записей в таблицу bondmarketdata",
+                "Успешно вставлено %s записей в таблицу bondmarketdata",
                 len(market_data_list),
             )
             return True
@@ -418,10 +446,10 @@ class BondsRepository:
     def save_bond_market_data_yields(
         self, yields_list: List[BondMarketDataYield]
     ) -> bool:
-        """Выполняет пакетный upsert записей BondMarketDataYield по secid.
+        """Удаляет все записи из таблицы bondmarketdatayield и вставляет новые.
 
         Args:
-            yields_list: Список объектов BondMarketDataYield для вставки/обновления.
+            yields_list: Список объектов BondMarketDataYield для вставки (с установленным bond_id).
 
         Returns:
             True при успешном сохранении, False при ошибке.
@@ -432,15 +460,21 @@ class BondsRepository:
         data_log = get_data_update_logger()
         try:
             with Session(self._engine) as session:
+                # Удаляем все записи из таблицы bondmarketdatayield
+                session.query(BondMarketDataYield).delete()
+                session.commit()
+                
+                # Вставляем новые записи
                 for y in yields_list:
-                    session.merge(y)
+                    y.id = None  # Сбрасываем id для автоинкремента
+                    session.add(y)
                 session.commit()
             data_log.info(
                 "[API /bonds/refresh] В таблицу bondmarketdatayield записано: %s записей",
                 len(yields_list),
             )
             self.logger.info(
-                "Успешно вставлено/обновлено %s записей в таблицу bondmarketdatayield",
+                "Успешно вставлено %s записей в таблицу bondmarketdatayield",
                 len(yields_list),
             )
             return True
@@ -476,12 +510,26 @@ class BondsRepository:
         """
         try:
             with Session(self._engine) as session:
-                bond = session.get(Bond, secid)
+                # Ищем Bond по secid
+                stmt = select(Bond).where(Bond.secid == secid)
+                bond = session.exec(stmt).first()
                 if bond is None:
                     return None
-                security = session.get(BondSecurity, secid)
-                market_data = session.get(BondMarketData, secid)
-                market_data_yield = session.get(BondMarketDataYield, secid)
+                
+                # Получаем связанные записи по bond_id
+                bond_id = bond.id
+                
+                security_stmt = select(BondSecurity).where(BondSecurity.bond_id == bond_id)
+                security = session.exec(security_stmt).first()
+                
+                market_data_stmt = select(BondMarketData).where(BondMarketData.bond_id == bond_id)
+                market_data = session.exec(market_data_stmt).first()
+                
+                market_data_yield_stmt = select(BondMarketDataYield).where(
+                    BondMarketDataYield.bond_id == bond_id
+                )
+                market_data_yield = session.exec(market_data_yield_stmt).first()
+                
                 return (bond, security, market_data, market_data_yield)
         except Exception as e:
             self.logger.error(
@@ -492,33 +540,35 @@ class BondsRepository:
             )
             return None
 
-    def refresh(self, bonds: List[Bond]) -> bool:
-        """Сохраняет список готовых объектов Bond в таблицу bonds (upsert по SECID).
+    def refresh(self, bonds: List[Bond]) -> Dict[str, int]:
+        """Сохраняет список готовых объектов Bond в таблицу bonds (DELETE + INSERT).
 
         Не создаёт таблицу — структура управляется Alembic. Вызывает save_bonds.
+        Возвращает маппинг secid -> id для связывания с дочерними таблицами.
 
         Args:
             bonds: Список объектов Bond (результат bond_transformer.transform_batch).
 
         Returns:
-            True при успешном сохранении, False при ошибке.
+            Словарь {secid: id} для связывания с дочерними таблицами.
+            Пустой словарь при ошибке.
         """
         data_log = get_data_update_logger()
         try:
             data_log.info(
-                "[API /bonds/refresh] Таблица bonds: обновляем данные (upsert по SECID), записей: %s",
+                "[API /bonds/refresh] Таблица bonds: удаляем старые и вставляем новые данные, записей: %s",
                 len(bonds),
             )
             self.logger.info("Таблица bonds: обновляем данные, записей: %s", len(bonds))
-            result = self.save_bonds(bonds)
-            if result:
+            secid_to_id = self.save_bonds(bonds)
+            if secid_to_id:
                 data_log.info("[API /bonds/refresh] Данные успешно сохранены в таблицу bonds (база: %s)", self.db_path)
                 self.logger.info("Таблица bonds успешно обновлена в базе данных: %s", self.db_path)
             else:
-                data_log.warning("[API /bonds/refresh] Сохранение в таблицу bonds завершилось с ошибкой")
-                self.logger.warning("Сохранение в таблицу bonds завершилось с ошибкой")
-            return result
+                data_log.warning("[API /bonds/refresh] Сохранение в таблицу bonds завершилось с ошибкой или пустой список")
+                self.logger.warning("Сохранение в таблицу bonds завершилось с ошибкой или пустой список")
+            return secid_to_id
         except Exception as e:
             data_log.error("[API /bonds/refresh] Ошибка при записи в таблицу bonds: %s", e, exc_info=True)
             self.logger.error("Ошибка при создании/обновлении таблицы bonds: %s", e, exc_info=True)
-            return False
+            return {}

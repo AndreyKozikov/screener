@@ -17,10 +17,11 @@ class Bond(SQLModel, table=True):
     Объединяет поля из исходного Bond и BondListItem. Все расчёты
     (доходность, дюрация, рейтинг, флаги оферт) выполняются в BondTransformer
     до сохранения. Все поля сохраняются в БД как обычные колонки (не computed).
-    Первичный ключ — secid.
+    Первичный ключ — id (autoincrement).
 
     Attributes:
-        secid: Идентификатор ценной бумаги (первичный ключ).
+        id: Автоинкрементный первичный ключ.
+        secid: Идентификатор ценной бумаги.
         boardid: Идентификатор режима торгов.
         isin: ISIN код облигации.
         name: Краткое наименование облигации.
@@ -54,11 +55,11 @@ class Bond(SQLModel, table=True):
         board_name: Наименование режима торгов.
         call_option_date: Дата опциона на досрочный выкуп (YYYY-MM-DD).
         put_option_date: Дата опциона на досрочную продажу (YYYY-MM-DD).
-        ratings: JSON-строка списка рейтингов (сериализованный список словарей).
     """
     __tablename__ = "bonds"
 
-    secid: str = SQLField(primary_key=True, max_length=64)
+    id: Optional[int] = SQLField(default=None, primary_key=True)
+    secid: str = SQLField(max_length=64)
     boardid: Optional[str] = SQLField(default=None, max_length=32)
     isin: Optional[str] = SQLField(default=None, max_length=32)
     name: Optional[str] = SQLField(default=None)
@@ -92,7 +93,6 @@ class Bond(SQLModel, table=True):
     board_name: Optional[str] = SQLField(default=None, max_length=128)
     call_option_date: Optional[str] = SQLField(default=None, max_length=10)
     put_option_date: Optional[str] = SQLField(default=None, max_length=10)
-    ratings: Optional[str] = SQLField(default=None)
 
 
 class BondListItem(BaseModel):
@@ -287,10 +287,11 @@ class BondSecurity(SQLModel, table=True):
     """Упрощённая SQLModel-модель секции данных о ценной бумаге (securities).
 
     Таблица bondsecurity. Содержит сокращённый набор полей из секции "securities".
-    Связана с таблицей bonds по полю secid (primary key и foreign key).
+    Связана с таблицей bonds по полю bond_id (foreign key на bonds.id).
 
     Attributes:
-        secid: Идентификатор ценной бумаги (primary key, FK на bonds.secid).
+        id: Автоинкрементный первичный ключ.
+        bond_id: Внешний ключ на таблицу bonds (bonds.id).
         boardid: Идентификатор режима торгов (BOARDID из секции securities).
         prev_waprice: Предыдущая средневзвешенная цена.
         yield_at_prev_waprice: Доходность к погашению по предыдущей средневзвешенной цене.
@@ -319,11 +320,8 @@ class BondSecurity(SQLModel, table=True):
     """
     __tablename__ = "bondsecurity"
 
-    secid: str = SQLField(
-        primary_key=True,
-        foreign_key="bonds.secid",
-        max_length=64
-    )
+    id: Optional[int] = SQLField(default=None, primary_key=True)
+    bond_id: Optional[int] = SQLField(default=None, foreign_key="bonds.id")
     boardid: Optional[str] = SQLField(default=None, max_length=32)
     prev_waprice: Optional[float] = SQLField(default=None)
     yield_at_prev_waprice: Optional[float] = SQLField(default=None)
@@ -430,10 +428,11 @@ class BondMarketData(SQLModel, table=True):
     """Упрощённая SQLModel-модель секции рыночных данных (marketdata).
 
     Таблица bondmarketdata. Содержит рыночные показатели облигации.
-    Связана с таблицей bonds по полю secid (primary key и foreign key).
+    Связана с таблицей bonds по полю bond_id (foreign key на bonds.id).
 
     Attributes:
-        secid: Идентификатор ценной бумаги (primary key, FK на bonds.secid).
+        id: Автоинкрементный первичный ключ.
+        bond_id: Внешний ключ на таблицу bonds (bonds.id).
         boardid: Идентификатор режима торгов (BOARDID из секции marketdata).
         bid: Цена покупки (bid).
         offer: Цена продажи (offer).
@@ -466,11 +465,8 @@ class BondMarketData(SQLModel, table=True):
     """
     __tablename__ = "bondmarketdata"
 
-    secid: str = SQLField(
-        primary_key=True,
-        foreign_key="bonds.secid",
-        max_length=64
-    )
+    id: Optional[int] = SQLField(default=None, primary_key=True)
+    bond_id: Optional[int] = SQLField(default=None, foreign_key="bonds.id")
     boardid: Optional[str] = SQLField(default=None, max_length=32)
     bid: Optional[float] = SQLField(default=None)
     offer: Optional[float] = SQLField(default=None)
@@ -508,11 +504,12 @@ class BondMarketDataYield(SQLModel, table=True):
     """SQLModel-модель секции marketdata_yields из bonds.json.
 
     Таблица bondmarketdatayield. Содержит расчёты доходности облигации.
-    Связана с таблицей bonds по полю secid (primary key и foreign key).
+    Связана с таблицей bonds по полю bond_id (foreign key на bonds.id).
     Структура соответствует секции marketdata_yields, собираемой в DataLoader._load_bonds_data().
 
     Attributes:
-        secid: Идентификатор ценной бумаги (primary key, FK на bonds.secid).
+        id: Автоинкрементный первичный ключ.
+        bond_id: Внешний ключ на таблицу bonds (bonds.id).
         boardid: Идентификатор режима торгов.
         price: Цена.
         yield_date: Дата доходности (YIELDDATE).
@@ -537,11 +534,8 @@ class BondMarketDataYield(SQLModel, table=True):
     """
     __tablename__ = "bondmarketdatayield"
 
-    secid: str = SQLField(
-        primary_key=True,
-        foreign_key="bonds.secid",
-        max_length=64
-    )
+    id: Optional[int] = SQLField(default=None, primary_key=True)
+    bond_id: Optional[int] = SQLField(default=None, foreign_key="bonds.id")
     boardid: Optional[str] = SQLField(default=None, max_length=32)
     price: Optional[float] = SQLField(default=None)
     yield_date: Optional[str] = SQLField(default=None, max_length=10)

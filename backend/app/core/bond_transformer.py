@@ -441,12 +441,6 @@ class BondTransformer:
             worst = self._get_worst_rating(ratings_list)
             if worst:
                 rating_agency = (worst.get("agency_name_short_ru") or "").strip()
-        ratings_json: Optional[str] = None
-        if ratings_list and isinstance(ratings_list, list):
-            try:
-                ratings_json = orjson.dumps(ratings_list).decode("utf-8")
-            except (TypeError, ValueError):
-                pass
 
         duration_waprice = raw_data.get("DURATIONWAPRICE")
         if duration_waprice is not None and not isinstance(duration_waprice, int):
@@ -493,7 +487,6 @@ class BondTransformer:
             board_name=raw_data.get("BOARDNAME"),
             call_option_date=call_option_date,
             put_option_date=put_option_date,
-            ratings=ratings_json,
         )
 
     def transform_batch(self, raw_bonds_list: List[Dict[str, Any]]) -> List[Bond]:
@@ -544,7 +537,9 @@ class BondTransformer:
                 pass
         return None
 
-    def transform_to_bond_security(self, raw_data: Dict[str, Any]) -> Optional[BondSecurity]:
+    def transform_to_bond_security(
+        self, raw_data: Dict[str, Any], bond_id: int
+    ) -> Optional[BondSecurity]:
         """Преобразует сырые данные секции securities в объект BondSecurity.
 
         Извлекает поля из merged bond_dict (securities). Только облигации,
@@ -552,6 +547,7 @@ class BondTransformer:
 
         Args:
             raw_data: Словарь с сырыми данными (результат prepare_bonds_for_db).
+            bond_id: ID родительской записи в таблице bonds.
 
         Returns:
             BondSecurity или None, если SECID отсутствует.
@@ -560,7 +556,7 @@ class BondTransformer:
         if not secid:
             return None
         return BondSecurity(
-            secid=str(secid),
+            bond_id=bond_id,
             boardid=self._safe_str(raw_data.get("BOARDID")),
             prev_waprice=self._safe_float(raw_data.get("PREVWAPRICE")),
             yield_at_prev_waprice=self._safe_float(raw_data.get("YIELDATPREVWAPRICE")),
@@ -588,7 +584,9 @@ class BondTransformer:
             date_yield_from_issuer=self._parse_date_for_security(raw_data.get("DATEYIELDFROMISSUER")),
         )
 
-    def transform_to_bond_market_data(self, raw_data: Dict[str, Any]) -> Optional[BondMarketData]:
+    def transform_to_bond_market_data(
+        self, raw_data: Dict[str, Any], bond_id: int
+    ) -> Optional[BondMarketData]:
         """Преобразует сырые данные секции marketdata в объект BondMarketData.
 
         Извлекает поля из merged bond_dict (секция marketdata).
@@ -596,6 +594,7 @@ class BondTransformer:
 
         Args:
             raw_data: Словарь с сырыми данными (результат prepare_bonds_for_db).
+            bond_id: ID родительской записи в таблице bonds.
 
         Returns:
             BondMarketData или None, если SECID отсутствует.
@@ -604,7 +603,7 @@ class BondTransformer:
         if not secid:
             return None
         return BondMarketData(
-            secid=str(secid),
+            bond_id=bond_id,
             boardid=self._safe_str(raw_data.get("BOARDID")),
             bid=self._safe_float(raw_data.get("BID")),
             offer=self._safe_float(raw_data.get("OFFER")),
@@ -665,13 +664,25 @@ class BondTransformer:
         return s if s else None
 
     def transform_to_bond_securities_batch(
-        self, raw_bonds_list: List[Dict[str, Any]]
+        self, raw_bonds_list: List[Dict[str, Any]], secid_to_id: Dict[str, int]
     ) -> List[BondSecurity]:
-        """Преобразует список сырых облигаций в список BondSecurity."""
+        """Преобразует список сырых облигаций в список BondSecurity.
+
+        Args:
+            raw_bonds_list: Список словарей с сырыми данными.
+            secid_to_id: Маппинг secid -> bond.id для установки FK.
+
+        Returns:
+            Список объектов BondSecurity с установленным bond_id.
+        """
         result: List[BondSecurity] = []
         for bond_data in raw_bonds_list:
             try:
-                obj = self.transform_to_bond_security(bond_data)
+                secid = bond_data.get("SECID")
+                if not secid or secid not in secid_to_id:
+                    continue
+                bond_id = secid_to_id[secid]
+                obj = self.transform_to_bond_security(bond_data, bond_id)
                 if obj:
                     result.append(obj)
             except Exception as e:
@@ -683,13 +694,25 @@ class BondTransformer:
         return result
 
     def transform_to_bond_market_data_batch(
-        self, raw_bonds_list: List[Dict[str, Any]]
+        self, raw_bonds_list: List[Dict[str, Any]], secid_to_id: Dict[str, int]
     ) -> List[BondMarketData]:
-        """Преобразует список сырых облигаций в список BondMarketData."""
+        """Преобразует список сырых облигаций в список BondMarketData.
+
+        Args:
+            raw_bonds_list: Список словарей с сырыми данными.
+            secid_to_id: Маппинг secid -> bond.id для установки FK.
+
+        Returns:
+            Список объектов BondMarketData с установленным bond_id.
+        """
         result: List[BondMarketData] = []
         for bond_data in raw_bonds_list:
             try:
-                obj = self.transform_to_bond_market_data(bond_data)
+                secid = bond_data.get("SECID")
+                if not secid or secid not in secid_to_id:
+                    continue
+                bond_id = secid_to_id[secid]
+                obj = self.transform_to_bond_market_data(bond_data, bond_id)
                 if obj:
                     result.append(obj)
             except Exception as e:
@@ -701,7 +724,7 @@ class BondTransformer:
         return result
 
     def transform_to_bond_market_data_yield(
-        self, raw_data: Dict[str, Any]
+        self, raw_data: Dict[str, Any], bond_id: int
     ) -> Optional[BondMarketDataYield]:
         """Преобразует сырые данные секции marketdata_yields в объект BondMarketDataYield.
 
@@ -710,6 +733,7 @@ class BondTransformer:
 
         Args:
             raw_data: Словарь с сырыми данными (результат prepare_bonds_for_db).
+            bond_id: ID родительской записи в таблице bonds.
 
         Returns:
             BondMarketDataYield или None, если SECID отсутствует или нет yields.
@@ -720,7 +744,7 @@ class BondTransformer:
         if raw_data.get("EFFECTIVEYIELD") is None and raw_data.get("YIELDDATETYPE") is None:
             return None
         return BondMarketDataYield(
-            secid=str(secid),
+            bond_id=bond_id,
             boardid=self._safe_str(raw_data.get("BOARDID")),
             price=self._safe_float(raw_data.get("PRICE")),
             yield_date=self._safe_str(raw_data.get("YIELDDATE")),
@@ -745,13 +769,25 @@ class BondTransformer:
         )
 
     def transform_to_bond_market_data_yields_batch(
-        self, raw_bonds_list: List[Dict[str, Any]]
+        self, raw_bonds_list: List[Dict[str, Any]], secid_to_id: Dict[str, int]
     ) -> List[BondMarketDataYield]:
-        """Преобразует список сырых облигаций в список BondMarketDataYield."""
+        """Преобразует список сырых облигаций в список BondMarketDataYield.
+
+        Args:
+            raw_bonds_list: Список словарей с сырыми данными.
+            secid_to_id: Маппинг secid -> bond.id для установки FK.
+
+        Returns:
+            Список объектов BondMarketDataYield с установленным bond_id.
+        """
         result: List[BondMarketDataYield] = []
         for bond_data in raw_bonds_list:
             try:
-                obj = self.transform_to_bond_market_data_yield(bond_data)
+                secid = bond_data.get("SECID")
+                if not secid or secid not in secid_to_id:
+                    continue
+                bond_id = secid_to_id[secid]
+                obj = self.transform_to_bond_market_data_yield(bond_data, bond_id)
                 if obj:
                     result.append(obj)
             except Exception as e:

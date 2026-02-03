@@ -459,7 +459,7 @@ def _build_marketdata_dict(
             "TRADINGSTATUS": bond.trading_status,
         }
     return {
-        "SECID": market_data.secid,
+        "SECID": bond.secid,
         "BOARDID": market_data.boardid if market_data.boardid else bond.boardid,
         "BID": market_data.bid,
         "OFFER": market_data.offer,
@@ -497,6 +497,7 @@ def _build_marketdata_dict(
 
 def _build_marketdata_yields_list_from_db(
     market_data_yield: BondMarketDataYield,
+    secid: str,
 ) -> List[Dict[str, Any]]:
     """Преобразует BondMarketDataYield в список словарей формата MOEX API.
 
@@ -504,12 +505,13 @@ def _build_marketdata_yields_list_from_db(
 
     Args:
         market_data_yield: Запись из таблицы bondmarketdatayield.
+        secid: Идентификатор ценной бумаги (из родительской записи Bond).
 
     Returns:
         Список из одного словаря с полями marketdata_yields.
     """
     entry: Dict[str, Any] = {
-        "SECID": market_data_yield.secid,
+        "SECID": secid,
         "BOARDID": market_data_yield.boardid,
         "PRICE": market_data_yield.price,
         "YIELDDATE": market_data_yield.yield_date,
@@ -564,7 +566,7 @@ def get_bond_detail(
     securities = _build_securities_dict(bond, security, type_rev, kind_rev)
     marketdata = _build_marketdata_dict(bond, market_data)
     marketdata_yields = (
-        _build_marketdata_yields_list_from_db(market_data_yield)
+        _build_marketdata_yields_list_from_db(market_data_yield, bond.secid)
         if market_data_yield is not None
         else []
     )

@@ -57,9 +57,8 @@ class DBOrchestrator:
 
         Пайплайн: загрузка данных через BondTransformer.prepare_bonds_for_db(),
         расчёт и преобразование в объекты Bond через transform_batch(),
-        сохранение Bond в таблицу bonds, BondSecurity в bondsecurity,
-        BondMarketData в bondmarketdata, BondMarketDataYield в bondmarketdatayield
-        через BondsRepository.
+        сохранение Bond в таблицу bonds (DELETE + INSERT), получение маппинга secid -> id,
+        сохранение BondSecurity, BondMarketData, BondMarketDataYield с установленным bond_id.
         Все поля объединённой модели Bond (исходные и расчётные) персистятся в БД.
 
         Returns:
@@ -87,17 +86,25 @@ class DBOrchestrator:
             )
             self.logger.info("Преобразовано %s облигаций для вставки в БД", len(ready_bonds))
             repo = BondsRepository(db_path=self.db_path)
-            result = repo.refresh(ready_bonds)
-            if not result:
+            
+            # Сохраняем bonds и получаем маппинг secid -> id
+            secid_to_id = repo.refresh(ready_bonds)
+            if not secid_to_id:
                 data_log.warning(
                     "[API /bonds/refresh] Сохранение в таблицу bonds завершилось с ошибкой"
                 )
                 self.logger.warning("Миграция данных облигаций завершилась с ошибкой")
                 return False
-            bond_securities = transformer.transform_to_bond_securities_batch(raw_bonds)
-            bond_market_data = transformer.transform_to_bond_market_data_batch(raw_bonds)
+            
+            # Преобразуем связанные таблицы с использованием маппинга secid -> id
+            bond_securities = transformer.transform_to_bond_securities_batch(
+                raw_bonds, secid_to_id
+            )
+            bond_market_data = transformer.transform_to_bond_market_data_batch(
+                raw_bonds, secid_to_id
+            )
             bond_market_data_yields = transformer.transform_to_bond_market_data_yields_batch(
-                raw_bonds
+                raw_bonds, secid_to_id
             )
             data_log.info(
                 "[API /bonds/refresh] Преобразовано BondSecurity: %s, BondMarketData: %s, "
@@ -121,7 +128,7 @@ class DBOrchestrator:
                 data_log.warning(
                     "[API /bonds/refresh] Сохранение в bondmarketdatayield завершилось с ошибкой"
                 )
-            overall = result and sec_ok and md_ok and yields_ok
+            overall = bool(secid_to_id) and sec_ok and md_ok and yields_ok
             if overall:
                 self.logger.info("Миграция данных облигаций выполнена успешно")
             return overall
