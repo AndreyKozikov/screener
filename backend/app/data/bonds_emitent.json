@@ -99613,5 +99613,32 @@
         "rating_level_name_short_ru": "ruAAA"
       }
     ]
+  },
+  "RU000A10E6Q2": {
+    "secid": "RU000A10E6Q2",
+    "shortname": "ИКС5Фи3P16",
+    "regnumber": "4B02-16-36241-R-003P",
+    "name": "ИКС 5 ФИНАНС 003P-16",
+    "isin": "RU000A10E6Q2",
+    "is_traded": 1,
+    "emitent_id": 1259,
+    "emitent_title": "Общество с ограниченной ответственностью \"ИКС 5 ФИНАНС\"",
+    "emitent_inn": "7715630469",
+    "emitent_okpo": "98982325",
+    "type": "exchange_bond",
+    "group": "stock_bonds",
+    "primary_boardid": "TQCB",
+    "marketprice_boardid": "TQCB",
+    "cci_rating_companies": [
+      {
+        "agency_id": 4,
+        "agency_name_short_ru": "Эксперт РА",
+        "rating_book_id": 18,
+        "rating_level_id": 255,
+        "rating_date": "2024-08-12 00:00:00",
+        "rating_publicate_date": "2024-08-12 00:00:00",
+        "rating_level_name_short_ru": "Отозван"
+      }
+    ]
   }
 }
