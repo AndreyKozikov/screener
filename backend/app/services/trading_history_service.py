@@ -1,11 +1,13 @@
 """Сервис для загрузки истории торгов по облигациям из API Мосбиржи.
 
-Этот модуль содержит класс TradingHistoryService для загрузки истории торгов
-по облигациям из API Московской биржи. Данные сохраняются в bonds_trading_history.json
-(ключ — secid) и обновляются инкрементально.
+Загружает историю торгов из API Московской биржи и сохраняет её в отдельную
+БД history_db.db. Поддерживает многопоточную обработку облигаций:
+пагинация по одной облигации — последовательно, запись в БД и обработка
+следующей облигации — параллельно.
 """
 
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -15,25 +17,24 @@ from urllib.request import Request, urlopen
 
 import orjson
 
+from app.models.trading_history import TradingHistoryRecord
+from app.repository.db.bonds_repository import BondsRepository
+from app.repository.db.trading_history_repository import TradingHistoryRepository
 from app.utils.logger import get_data_update_logger
-from config.paths import HISTORY_JSON, MOEX_HISTORY_URL
+from config.paths import DB_PATH, HISTORY_DB_PATH, MOEX_HISTORY_URL
 
 
 DEFAULT_FROM_DATE: date = date(2000, 1, 1)
-"""Дата начала загрузки при отсутствии файла или данных по облигации."""
-
+"""Дата начала загрузки при отсутствии данных по облигации в БД."""
 
 def _parse_date(s: Optional[str]) -> Optional[date]:
     """Парсит строку даты в объект date.
-    
-    Преобразует строку с датой в формате YYYY-MM-DD в объект date.
-    Обрабатывает некорректные значения и специальное значение "0000-00-00".
-    
+
     Args:
         s: Строка с датой в формате YYYY-MM-DD или None.
-    
+
     Returns:
-        Объект date или None, если строка некорректна, пуста или равна "0000-00-00".
+        Объект date или None, если строка некорректна или "0000-00-00".
     """
     if not s or s == "0000-00-00":
         return None
@@ -44,232 +45,167 @@ def _parse_date(s: Optional[str]) -> Optional[date]:
 
 
 def _date_str(d: date) -> str:
-    """Преобразует объект date в строку формата YYYY-MM-DD.
-    
-    Args:
-        d: Объект date для преобразования.
-    
-    Returns:
-        Строка с датой в формате YYYY-MM-DD.
-    """
+    """Преобразует объект date в строку формата YYYY-MM-DD."""
     return d.strftime("%Y-%m-%d")
 
 
-class TradingHistoryService:
-    """Сервис для загрузки истории торгов по облигациям из API Мосбиржи.
-    
-    Класс обеспечивает загрузку истории торгов по облигациям из API Московской биржи,
-    сохранение данных в JSON файл и инкрементальное обновление данных. Поддерживает
-    загрузку истории для одной облигации или массовую загрузку для всех облигаций
-    из bonds.json.
-    
-    Attributes:
-        data_dir: Путь к директории с JSON файлами данных.
+def _safe_float(val: Any) -> Optional[float]:
+    """Приводит значение к float; при ошибке возвращает None."""
+    if val is None or val == "":
+        return None
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return None
+
+
+def _row_to_record(columns: List[str], row: List[Any]) -> Optional[TradingHistoryRecord]:
+    """Преобразует строку ответа API (columns + row) в TradingHistoryRecord.
+
+    Args:
+        columns: Список названий колонок (как в ответе MOEX).
+        row: Список значений строки.
+
+    Returns:
+        TradingHistoryRecord или None, если нет обязательных полей (secid, tradedate, boardid).
     """
-    
-    def __init__(self, data_dir: Path):
-        """Инициализирует сервис для работы с историей торгов.
-        
+    col_index: Dict[str, int] = {str(c).upper(): i for i, c in enumerate(columns)}
+    n = len(row)
+
+    def _get(name: str) -> Any:
+        idx = col_index.get(name.upper())
+        if idx is None or idx >= n:
+            return None
+        return row[idx]
+
+    secid_raw = _get("SECID")
+    tradedate_raw = _get("TRADEDATE")
+    boardid_raw = _get("BOARDID")
+    if not secid_raw or not tradedate_raw or not boardid_raw:
+        return None
+    secid = str(secid_raw).strip()[:36]
+    boardid = str(boardid_raw).strip()[:12]
+    tradedate = _parse_date(str(tradedate_raw) if tradedate_raw else None)
+    if not tradedate:
+        return None
+
+    def _float(name: str) -> Optional[float]:
+        return _safe_float(_get(name))
+
+    def _date(name: str) -> Optional[date]:
+        return _parse_date(str(_get(name)) if _get(name) is not None else None)
+
+    return TradingHistoryRecord(
+        secid=secid,
+        tradedate=tradedate,
+        boardid=boardid,
+        numtrades=_float("NUMTRADES"),
+        value=_float("VALUE"),
+        legalcloseprice=_float("LEGALCLOSEPRICE"),
+        accint=_float("ACCINT"),
+        yieldclose=_float("YIELDCLOSE"),
+        open=_float("OPEN"),
+        volume=_float("VOLUME"),
+        duration=_float("DURATION"),
+        yieldatwap=_float("YIELDATWAP"),
+        iricpiclose=_float("IRICPICLOSE"),
+        couponpercent=_float("COUPONPERCENT"),
+        couponvalue=_float("COUPONVALUE"),
+        facevalue=_float("FACEVALUE"),
+        yieldtooffer=_float("YIELDTOOFFER"),
+        yieldlastcoupon=_float("YIELDLASTCOUPON"),
+        calloptionyield=_float("CALLOPTIONYIELD"),
+        calloptionduration=_float("CALLOPTIONDURATION"),
+        zspread=_float("ZSPREAD"),
+        buybackdate=_date("BUYBACKDATE"),
+        lasttradedate=_date("LASTTRADEDATE"),
+        putoptiondate=_date("PUTOPTIONDATE"),
+        dateyieldfromissuer=_date("DATEYIELDFROMISSUER"),
+        trade_session_date=_date("TRADE_SESSION_DATE"),
+    )
+
+
+class TradingHistoryService:
+    """Сервис загрузки истории торгов из API Мосбиржи с сохранением в БД.
+
+    Для каждой облигации загрузка всех страниц (пагинация) выполняется
+    последовательно; запись в history_db и запуск обработки следующей
+    облигации — параллельно (многопоточность).
+    """
+
+    def __init__(
+        self,
+        data_dir: Path,
+        db_path: Optional[Path] = None,
+        history_db_path: Optional[Path] = None,
+        history_repository: Optional[TradingHistoryRepository] = None,
+    ) -> None:
+        """Инициализирует сервис истории торгов.
+
         Args:
-            data_dir: Путь к директории с JSON файлами данных.
+            data_dir: Путь к директории данных (для совместимости, не используется для истории).
+            db_path: Путь к bonds.db для получения списка SECID.
+            history_db_path: Путь к history_db.db. Используется, если history_repository не передан.
+            history_repository: Репозиторий для history_db. Если не передан, создаётся по history_db_path.
         """
         self.data_dir = Path(data_dir)
-
-    def _history_path(self) -> Path:
-        """Получает путь к файлу истории торгов.
-        
-        Returns:
-            Путь к файлу bonds_trading_history.json в директории данных.
-        """
-        return self.data_dir / HISTORY_JSON
+        self.db_path = Path(db_path) if db_path is not None else Path(DB_PATH)
+        self._history_repo = history_repository or TradingHistoryRepository(
+            db_path=history_db_path or HISTORY_DB_PATH
+        )
+        self._history_repo.ensure_table_exists()
+        self.logger = get_data_update_logger()
 
     def _load_all_secids(self) -> List[str]:
-        """Загружает из bonds.json все SECID облигаций.
-        
-        Загружает файл bonds.json и извлекает все уникальные SECID из секции
-        securities.data. Используется для массовой загрузки истории торгов.
-        
-        Returns:
-            Отсортированный список уникальных SECID облигаций. Если файл не существует
-            или колонка SECID отсутствует, возвращает пустой список.
-        """
-        path = self.data_dir / "bonds.json"
-        with open(path, "rb") as f:
-            data = orjson.loads(f.read())
-        sec = data.get("securities", {})
-        columns = sec.get("columns", [])
-        rows = sec.get("data", [])
-        try:
-            idx_secid = columns.index("SECID")
-        except ValueError:
-            return []
-        out: List[str] = []
-        for row in rows:
-            if len(row) <= idx_secid:
-                continue
-            s = row[idx_secid]
-            if s and str(s).strip():
-                out.append(str(s).strip())
-        return sorted(set(out))
+        """Загружает из таблицы bonds все уникальные SECID облигаций."""
+        repo = BondsRepository(db_path=self.db_path)
+        return repo.get_all_secids()
 
-    def load_history_file(self) -> Dict[str, Dict[str, Any]]:
-        """Читает bonds_trading_history.json.
-        
-        Загружает данные истории торгов из файла bonds_trading_history.json.
-        По каждому secid хранится только секция history: columns (заголовки) и data (данные).
-        Метаданные и курсор не сохраняются.
-        
-        Returns:
-            Словарь с данными истории торгов, где ключ - SECID облигации, значение -
-            словарь с ключами:
-            - columns: Список названий колонок таблицы истории
-            - data: Список списков с данными строк истории торгов
-            Если файл не существует или некорректен, возвращает пустой словарь.
-        """
-        path = self._history_path()
-        if not path.exists():
-            return {}
-        with open(path, "rb") as f:
-            data = orjson.loads(f.read())
-        if not isinstance(data, dict):
-            return {}
-        out: Dict[str, Dict[str, Any]] = {}
-        for k, v in data.items():
-            if not isinstance(v, dict):
-                continue
-            # Только history: columns и data
-            cols = v.get("columns")
-            rows = v.get("data")
-            if isinstance(cols, list) and isinstance(rows, list):
-                out[k] = {"columns": cols, "data": rows}
-        return out
-
-    def save_history_file(self, data: Dict[str, Dict[str, Any]]) -> None:
-        """Сохраняет данные истории торгов в bonds_trading_history.json.
-        
-        Записывает данные в файл bonds_trading_history.json с форматированием
-        (отступы и перенос строки). Сохраняет только данные из секции history:
-        columns (заголовки таблицы) и data (строки). Метаданные и курсор не сохраняются.
-        
-        Args:
-            data: Словарь с данными истории торгов, где ключ - SECID облигации,
-                значение - словарь с ключами "columns" и "data".
-        """
-        path = self._history_path()
-        raw = orjson.dumps(
-            data,
-            option=orjson.OPT_INDENT_2 | orjson.OPT_APPEND_NEWLINE,
-        )
-        path.write_bytes(raw)
-
-    def _last_tradedate(self, history: Dict[str, Any]) -> Optional[date]:
-        """Получает последнюю дату торгов в истории.
-        
-        Находит максимальную дату торгов (TRADEDATE) среди всех записей в истории.
-        Используется для определения начальной даты при инкрементальном обновлении.
-        
-        Args:
-            history: Словарь с данными истории торгов, содержащий ключи "columns"
-                и "data".
-        
-        Returns:
-            Объект date с последней датой торгов или None, если колонка TRADEDATE
-            отсутствует или история пуста.
-        """
-        cols = history.get("columns") or []
-        data_rows = history.get("data") or []
-        try:
-            idx = cols.index("TRADEDATE")
-        except ValueError:
-            return None
-        last: Optional[date] = None
-        for row in data_rows:
-            if len(row) <= idx:
-                continue
-            d = _parse_date(row[idx])
-            if d and (last is None or d > last):
-                last = d
-        return last
-
-    def get_from_till(
-        self, secid: str
-    ) -> Tuple[str, str, bool]:
+    def get_from_till(self, secid: str) -> Tuple[str, str, bool]:
         """Определяет диапазон дат для загрузки истории торгов.
-        
-        Определяет начальную (from) и конечную (till) даты для загрузки истории торгов
-        и признак дописывания данных (is_append). Если данных нет, использует
-        DEFAULT_FROM_DATE как начальную дату. Если данные есть, начинает с последней
-        даты торгов + 1 день.
-        
-        Args:
-            secid: Идентификатор облигации (SECID) для определения диапазона дат.
-        
-        Returns:
-            Кортеж из трех элементов:
-            - from_YYYY_MM_DD: Начальная дата диапазона в формате YYYY-MM-DD
-            - till_YYYY_MM_DD: Конечная дата диапазона в формате YYYY-MM-DD (текущая дата)
-            - is_append: Флаг дописывания данных (True если данные существуют, False если первая загрузка)
-        
-        Note:
-            Если последняя дата в истории больше текущей даты (битая/будущая дата),
-            используется DEFAULT_FROM_DATE как начальная дата.
-        """
-        logger = get_data_update_logger()
-        today = date.today()
-        all_history = self.load_history_file()
-        existing = all_history.get(secid)
 
-        if not existing or not (existing.get("data")):
-            # Данных нет: from = DEFAULT_FROM_DATE, till = текущая дата
+        Берёт последнюю дату из history_db; при отсутствии данных использует
+        DEFAULT_FROM_DATE. Возвращает (from_str, till_str, is_append).
+        """
+        self.logger.info("[TRADING HISTORY] Определение диапазона дат для %s", secid)
+        today = date.today()
+        last = self._history_repo.get_last_tradedate(secid)
+
+        if not last:
             from_d = DEFAULT_FROM_DATE
             till_d = today
-            logger.info(
-                f"[TRADING HISTORY] Первая загрузка {secid}: "
-                f"from={_date_str(from_d)} (по умолчанию), till={_date_str(till_d)}"
+            self.logger.info(
+                "[TRADING HISTORY] Первая загрузка %s: from=%s (по умолчанию), till=%s",
+                secid, _date_str(from_d), _date_str(till_d),
             )
             return _date_str(from_d), _date_str(till_d), False
 
-        # Данные есть: from = последняя дата торгов + 1 день, till = текущая дата.
-        # Если last > today (битая/будущая дата в истории), игнорируем last и берём DEFAULT_FROM_DATE.
-        last = self._last_tradedate(existing)
         till_d = today
-        if not last or last > till_d:
+        if last > till_d:
+            self.logger.info(
+                "[TRADING HISTORY] %s: последняя дата в БД %s > сегодня %s, используем from=%s",
+                secid, _date_str(last), _date_str(till_d), _date_str(DEFAULT_FROM_DATE),
+            )
             from_d = DEFAULT_FROM_DATE
-            if last and last > till_d:
-                logger.info(
-                    f"[TRADING HISTORY] {secid}: последняя дата в истории {_date_str(last)} > "
-                    f"сегодня {_date_str(till_d)}, используем from={_date_str(from_d)}"
-                )
         else:
             from_d = last + timedelta(days=1)
+
         if from_d > till_d:
-            logger.info(
-                f"[TRADING HISTORY] Нет новых данных для {secid}: "
-                f"последняя дата {_date_str(last)}, till={_date_str(till_d)}"
+            self.logger.info(
+                "[TRADING HISTORY] Нет новых данных для %s: последняя дата %s, till=%s",
+                secid, _date_str(last), _date_str(till_d),
             )
             return _date_str(from_d), _date_str(till_d), True
-        logger.info(
-            f"[TRADING HISTORY] Дозапись {secid}: "
-            f"from={_date_str(from_d)}, till={_date_str(till_d)}"
+        self.logger.info(
+            "[TRADING HISTORY] Дозапись %s: from=%s, till=%s",
+            secid, _date_str(from_d), _date_str(till_d),
         )
         return _date_str(from_d), _date_str(till_d), True
 
     def _build_moex_url(
         self, secid: str, from_: str, till: str, start: int
     ) -> str:
-        """Формирует URL запроса к API истории торгов Мосбиржи.
-        
-        Создает URL для загрузки истории торгов по облигации с параметрами пагинации.
-        
-        Args:
-            secid: Идентификатор облигации (SECID) для запроса истории.
-            from_: Начальная дата диапазона в формате YYYY-MM-DD.
-            till: Конечная дата диапазона в формате YYYY-MM-DD.
-            start: Смещение для пагинации (номер первой записи для загрузки).
-        
-        Returns:
-            Полный URL с параметрами запроса для загрузки истории торгов.
-        """
+        """Формирует URL запроса к API истории торгов Мосбиржи."""
         base = MOEX_HISTORY_URL.format(secid=secid)
         params = {"from": from_, "till": till, "start": start}
         return f"{base}?{urlencode(params)}"
@@ -277,25 +213,7 @@ class TradingHistoryService:
     def _fetch_moex_page(
         self, secid: str, from_: str, till: str, start: int
     ) -> Dict[str, Any]:
-        """Выполняет один запрос к API истории торгов Мосбиржи.
-        
-        Выполняет HTTP GET запрос к API Мосбиржи для получения одной страницы
-        истории торгов по облигации с указанными параметрами пагинации.
-        
-        Args:
-            secid: Идентификатор облигации (SECID) для запроса истории.
-            from_: Начальная дата диапазона в формате YYYY-MM-DD.
-            till: Конечная дата диапазона в формате YYYY-MM-DD.
-            start: Смещение для пагинации (номер первой записи для загрузки).
-        
-        Returns:
-            Словарь с ответом API Мосбиржи в формате JSON, содержащий секции
-            history и history.cursor.
-        
-        Raises:
-            URLError: Если не удалось выполнить HTTP запрос (сетевая ошибка, таймаут).
-            orjson.JSONDecodeError: Если ответ не является валидным JSON.
-        """
+        """Выполняет один HTTP-запрос к API истории торгов Мосбиржи."""
         url = self._build_moex_url(secid, from_, till, start)
         req = Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urlopen(req, timeout=60) as resp:
@@ -305,27 +223,10 @@ class TradingHistoryService:
     def _parse_history_response(
         self, payload: Dict[str, Any]
     ) -> Tuple[List[str], List[List[Any]], int, int, int]:
-        """Извлекает данные истории торгов из ответа API Мосбиржи.
-        
-        Парсит ответ API Мосбиржи и извлекает данные из секций history (columns, data)
-        и history.cursor (INDEX, TOTAL, PAGESIZE) для управления пагинацией.
-        
-        Args:
-            payload: Словарь с ответом API Мосбиржи в формате JSON.
-        
-        Returns:
-            Кортеж из пяти элементов:
-            - columns: Список названий колонок таблицы истории
-            - data: Список списков с данными строк истории торгов
-            - index: Текущий индекс пагинации (INDEX из cursor)
-            - total: Общее количество записей (TOTAL из cursor)
-            - pagesize: Размер страницы (PAGESIZE из cursor)
-            Если секция cursor отсутствует или некорректна, возвращает (columns, data, 0, 0, 0).
-        """
+        """Извлекает columns, data и cursor (index, total, pagesize) из ответа API."""
         hist = payload.get("history") or {}
         cols = list(hist.get("columns") or [])
         data = list(hist.get("data") or [])
-
         cur = payload.get("history.cursor") or {}
         cur_data = (cur.get("data") or [[]])[0]
         cur_cols = cur.get("columns") or []
@@ -339,83 +240,35 @@ class TradingHistoryService:
             index = int(cur_data[idx_i]) if len(cur_data) > idx_i else 0
             total = int(cur_data[idx_t]) if len(cur_data) > idx_t else 0
             pagesize = int(cur_data[idx_p]) if len(cur_data) > idx_p else 0
-
         return cols, data, index, total, pagesize
 
-    def _merge_and_sort(
-        self,
-        existing_columns: List[str],
-        existing_data: List[List[Any]],
-        new_columns: List[str],
-        new_data: List[List[Any]],
-    ) -> Tuple[List[str], List[List[Any]]]:
-        """Объединяет старую и новую историю торгов, убирает дубликаты и сортирует.
-        
-        Объединяет существующие и новые данные истории торгов по дате торгов (TRADEDATE),
-        удаляет дубликаты (по TRADEDATE) и сортирует результат по дате торгов.
-        
-        Args:
-            existing_columns: Список названий колонок существующей истории.
-            existing_data: Список списков с данными существующей истории.
-            new_columns: Список названий колонок новой истории.
-            new_data: Список списков с данными новой истории.
-        
-        Returns:
-            Кортеж из двух элементов:
-            - columns: Список названий колонок (из existing_columns)
-            - merged_data: Отсортированный список списков с объединенными данными
-              без дубликатов по TRADEDATE
-            Если колонка TRADEDATE отсутствует, возвращает объединенные данные без сортировки.
-        """
-        try:
-            idx = existing_columns.index("TRADEDATE")
-        except ValueError:
-            return existing_columns, existing_data + new_data
-
-        seen: set = set()
-        out: List[List[Any]] = []
-        for row in existing_data + new_data:
-            if len(row) <= idx:
-                out.append(row)
-                continue
-            key = row[idx]
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(row)
-        out.sort(key=lambda r: (r[idx] if len(r) > idx else ""))
-        return existing_columns, out
-
     def download_history(self, secid: str) -> Dict[str, Any]:
+        """Скачивает историю торгов по одной облигации и сохраняет в history_db.
+
+        Пагинация выполняется последовательно; в конце — одна запись в БД.
+        Возвращает summary: secid, downloaded, total_records, appended.
+
+        Raises:
+            ValueError: Если secid пустой.
+            RuntimeError: При ошибке запроса или разбора ответа MOEX.
         """
-        Скачивает историю торгов по облигации, объединяет с имеющейся и сохраняет.
-        Возвращает summary: { "secid", "downloaded", "total_records", "appended" }.
-        """
-        logger = get_data_update_logger()
+        self.logger.info("[TRADING HISTORY] Старт загрузки для %s", secid)
         secid = str(secid).strip()
         if not secid:
             raise ValueError("secid не задан")
 
         from_str, till_str, is_append = self.get_from_till(secid)
-        all_history = self.load_history_file()
-        existing = all_history.get(secid) or {}
-        existing_cols = existing.get("columns") or []
-        existing_data = list(existing.get("data") or [])
-
-        # Проверка «нет новых данных»
         from_d = _parse_date(from_str)
         till_d = _parse_date(till_str)
         if from_d and till_d and from_d > till_d:
-            url = self._build_moex_url(secid, from_str, till_str, 0)
-            print(
-                f"[TRADING HISTORY] URL (пропуск, нет новых данных): {url}",
-                file=sys.stderr,
-                flush=True,
+            self.logger.info(
+                "[TRADING HISTORY] Пропуск %s: нет новых данных (from > till)",
+                secid,
             )
             return {
                 "secid": secid,
                 "downloaded": 0,
-                "total_records": len(existing_data),
+                "total_records": 0,
                 "appended": is_append,
             }
 
@@ -424,23 +277,20 @@ class TradingHistoryService:
         columns: List[str] = []
 
         while True:
-            logger.info(
-                f"[TRADING HISTORY] Запрос {secid} from={from_str} till={till_str} start={n}"
+            self.logger.info(
+                "[TRADING HISTORY] Запрос %s from=%s till=%s start=%s",
+                secid, from_str, till_str, n,
             )
-            url = self._build_moex_url(secid, from_str, till_str, n)
-            print(f"[TRADING HISTORY] URL: {url}", file=sys.stderr, flush=True)
             try:
                 payload = self._fetch_moex_page(secid, from_str, till_str, n)
             except URLError as e:
-                logger.error(f"[TRADING HISTORY] Ошибка запроса MOEX: {e}")
+                self.logger.error("[TRADING HISTORY] Ошибка запроса MOEX для %s: %s", secid, e)
                 raise RuntimeError(f"Ошибка запроса к MOEX: {e}") from e
             except orjson.JSONDecodeError as e:
-                logger.error(f"[TRADING HISTORY] Ошибка разбора JSON: {e}")
+                self.logger.error("[TRADING HISTORY] Ошибка разбора JSON для %s: %s", secid, e)
                 raise RuntimeError("Некорректный ответ MOEX") from e
 
-            cols, data, index, total, pagesize = self._parse_history_response(
-                payload
-            )
+            cols, data, index, total, pagesize = self._parse_history_response(payload)
             if cols:
                 columns = cols
             all_new_rows.extend(data)
@@ -451,79 +301,69 @@ class TradingHistoryService:
             if n >= total:
                 break
 
-        if is_append and existing_cols and all_new_rows:
-            columns, merged = self._merge_and_sort(
-                existing_cols, existing_data, columns, all_new_rows
-            )
-        elif is_append and existing_cols:
-            merged = existing_data
-            columns = existing_cols
-        else:
-            merged = all_new_rows
-            if not columns and all_new_rows:
-                raise RuntimeError(
-                    "MOEX не вернул columns для history; невозможно сохранить."
-                )
+        records: List[TradingHistoryRecord] = []
+        for row in all_new_rows:
+            rec = _row_to_record(columns, row)
+            if rec is not None:
+                records.append(rec)
 
-        # В файл пишем только history: columns + data (без metadata, cursor и т.п.)
-        record = {"columns": columns, "data": merged}
-        all_history[secid] = record
-        self.save_history_file(all_history)
-        logger.info(
-            f"[TRADING HISTORY] Сохранено {secid}: записей {len(merged)}, "
-            f"загружено в этом запуске {len(all_new_rows)}"
-        )
+        if records:
+            try:
+                self._history_repo.save_records(records)
+            except Exception as e:
+                self.logger.error(
+                    "[TRADING HISTORY] Ошибка записи в БД для %s: %s",
+                    secid, e, exc_info=True,
+                )
+                raise RuntimeError(f"Ошибка записи в БД: {e}") from e
+            self.logger.info(
+                "[TRADING HISTORY] Сохранено %s: записей в этом запуске %s",
+                secid, len(records),
+            )
 
         return {
             "secid": secid,
-            "downloaded": len(all_new_rows),
-            "total_records": len(merged),
+            "downloaded": len(records),
+            "total_records": len(records),
             "appended": is_append,
         }
 
     def download_history_all(self) -> Dict[str, Any]:
-        """Загружает историю торгов по всем облигациям из bonds.json.
-        
-        Выполняет массовую загрузку истории торгов для всех облигаций из файла bonds.json.
-        Список SECID извлекается из секции securities.data. Для каждой облигации выполняется
-        инкрементальная загрузка (при отсутствии данных стартует с DEFAULT_FROM_DATE).
-        
+        """Загружает историю торгов по всем облигациям из таблицы bonds.
+
+        Для каждой облигации: последовательная пагинация, затем запись в БД.
+        Облигации обрабатываются параллельно в пуле потоков.
+
         Returns:
-            Словарь с результатом массовой загрузки, содержащий:
-            - updated: Количество успешно обновленных облигаций
-            - failed: Количество облигаций с ошибками при загрузке
-            - total: Общее количество облигаций для обработки
-            - errors: Список словарей с ошибками, каждый содержит:
-              - secid: Идентификатор облигации с ошибкой
-              - error: Сообщение об ошибке
-        
-        Note:
-            Ошибки при загрузке отдельных облигаций не прерывают процесс.
-            Все ошибки собираются и возвращаются в списке errors.
+            Словарь: updated, failed, total, errors (список {secid, error}).
         """
-        logger = get_data_update_logger()
         secids = self._load_all_secids()
         total = len(secids)
         updated = 0
         failed = 0
         errors: List[Dict[str, str]] = []
+        logger = get_data_update_logger()
 
         def _log(msg: str) -> None:
             print(msg, file=sys.stderr, flush=True)
 
-        _log(f"[TRADING HISTORY] Старт: обновление истории торгов по {total} облигациям")
+        _log(f"[TRADING HISTORY] Старт: обновление истории торгов по {total} облигациям (многопоточность)")
 
-        for i, secid in enumerate(secids, 1):
-            try:
-                self.download_history(secid)
-                updated += 1
-                _log(f"[TRADING HISTORY] [{i}/{total}] {secid} — OK")
-            except (ValueError, RuntimeError) as e:
-                failed += 1
-                err_msg = str(e)
-                errors.append({"secid": secid, "error": err_msg})
-                logger.warning(f"[TRADING HISTORY] Ошибка для {secid}: {e}")
-                _log(f"[TRADING HISTORY] [{i}/{total}] {secid} — ОШИБКА: {err_msg}")
+        max_workers = min(32, 4 + (__import__("os").cpu_count() or 1))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_secid = {executor.submit(self.download_history, sid): sid for sid in secids}
+            for i, future in enumerate(as_completed(future_to_secid), 1):
+                secid = future_to_secid[future]
+                try:
+                    future.result()
+                    updated += 1
+                    _log(f"[TRADING HISTORY] [{i}/{total}] {secid} — OK")
+                except (ValueError, RuntimeError) as e:
+                    failed += 1
+                    err_msg = str(e)
+                    errors.append({"secid": secid, "error": err_msg})
+                    logger.warning("[TRADING HISTORY] Ошибка для %s: %s", secid, e)
+                    _log(f"[TRADING HISTORY] [{i}/{total}] {secid} — ОШИБКА: {err_msg}")
 
         summary = (
             f"[TRADING HISTORY] Готово: обновлено {updated}, ошибок {failed}, всего {total}"
@@ -542,27 +382,31 @@ class TradingHistoryService:
 _trading_history_service: Optional[TradingHistoryService] = None
 
 
-def init_trading_history_service(data_dir: Path) -> None:
-    """Инициализирует singleton экземпляр сервиса истории торгов.
-    
-    Создает глобальный экземпляр TradingHistoryService с указанной директорией данных.
-    Должен быть вызван перед использованием get_trading_history_service().
-    
+def init_trading_history_service(
+    data_dir: Path,
+    db_path: Optional[Path] = None,
+    history_db_path: Optional[Path] = None,
+) -> None:
+    """Инициализирует singleton сервиса истории торгов.
+
     Args:
-        data_dir: Путь к директории с JSON файлами данных.
+        data_dir: Директория данных (для совместимости).
+        db_path: Путь к bonds.db. По умолчанию config.paths.DB_PATH.
+        history_db_path: Путь к history_db.db. По умолчанию config.paths.HISTORY_DB_PATH.
     """
     global _trading_history_service
-    _trading_history_service = TradingHistoryService(Path(data_dir))
+    _trading_history_service = TradingHistoryService(
+        Path(data_dir),
+        db_path=db_path or DB_PATH,
+        history_db_path=history_db_path or HISTORY_DB_PATH,
+    )
 
 
 def get_trading_history_service() -> TradingHistoryService:
-    """Получает singleton экземпляр сервиса истории торгов.
-    
-    Returns:
-        Экземпляр TradingHistoryService для работы с историей торгов по облигациям.
-    
+    """Возвращает singleton экземпляр сервиса истории торгов.
+
     Raises:
-        RuntimeError: Если сервис не был инициализирован через init_trading_history_service().
+        RuntimeError: Если сервис не инициализирован через init_trading_history_service().
     """
     if _trading_history_service is None:
         raise RuntimeError(

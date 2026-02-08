@@ -6,188 +6,182 @@
 """
 
 import asyncio
-from fastapi import APIRouter, HTTPException, Query
-from typing import Optional, List
+from typing import Any, Dict, List
+
+from fastapi import APIRouter, HTTPException
 
 from app.models.emitent import EmitentInfo
-from app.services.emitent_service import get_emitent_service
+from app.repository.db.bonds_repository import BondsRepository
+from app.repository.db.emitents_repository import EmitentsRepository
 from app.services.data_loader import get_data_loader
+from app.services.emitent_service import get_emitent_service
 from app.utils.logger import get_data_update_logger
-from typing import Dict, Any
+from config.paths import DATA_DIR, DB_PATH
 
 router = APIRouter(prefix="/api/emitent", tags=["emitent"])
-"""Роутер FastAPI для обработки запросов к API эмитентов."""
-
-
 
 
 @router.get("/list")
 async def list_emitents() -> Dict[str, List[str]]:
-    """Получает список всех уникальных названий эмитентов.
-    
+    """Получает список всех уникальных названий эмитентов из БД.
+
     Загружает все облигации из кэша DataLoader и извлекает уникальные названия
-    эмитентов из кэша данных эмитентов. Возвращает отсортированный список.
-    
+    эмитентов из БД по маппингу secid -> emitent_title.
+
     Returns:
         Словарь с ключом "emitents", содержащий отсортированный список уникальных
         названий эмитентов.
-    
+
     Raises:
         HTTPException: Если произошла ошибка при загрузке данных (статус 500).
     """
     try:
         emitent_service = get_emitent_service()
         data_loader = get_data_loader()
-        
-        # Get all bonds
+
         all_bonds = await data_loader.get_bonds()
-        
-        # Collect unique emitent titles
+        secid_to_title = emitent_service.get_secid_to_emitent_title_index()
+
         emitent_titles_set = set()
-        # Access emitent data through public method (wrap in asyncio.to_thread for I/O operations)
-        emitent_data_cache = await asyncio.to_thread(emitent_service._load_emitent_data)
-        
-        # For each bond, try to get emitent title from cache
         for bond in all_bonds:
             secid = bond.SECID
-            if secid in emitent_data_cache:
-                emitent_info = emitent_data_cache[secid]
-                emitent_title = emitent_info.get("emitent_title")
+            if secid in secid_to_title:
+                emitent_title = secid_to_title[secid]
                 if emitent_title and emitent_title.strip():
                     emitent_titles_set.add(emitent_title.strip())
-        
-        # Sort and return
+
         emitent_titles = sorted(list(emitent_titles_set))
-        
-        return {
-            "emitents": emitent_titles
-        }
-        
+
+        return {"emitents": emitent_titles}
+
     except Exception as exc:
         logger = get_data_update_logger()
-        logger.error(f"[API /emitent/list] ERROR: {type(exc).__name__} - {str(exc)}")
+        logger.error("[API /emitent/list] ERROR: %s - %s", type(exc).__name__, str(exc))
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to get emitent list: {str(exc)}"
+            detail=f"Failed to get emitent list: {str(exc)}",
         ) from exc
 
 
 @router.get("/{secid}", response_model=EmitentInfo)
 async def get_emitent_by_secid(secid: str):
     """Получает информацию об эмитенте по SECID облигации.
-    
-    Сначала получает ISIN облигации из данных bonds.json по SECID. Затем ищет
-    данные эмитента в кэше bonds_emitent.json по SECID. Если данные не найдены
-    в кэше, загружает их из API MOEX по ISIN и сохраняет в bonds_emitent.json.
-    
+
+    Сначала пытается получить данные из БД. Если не найдены — загружает из API MOEX
+    по SECID, сохраняет в БД и возвращает результат.
+
     Args:
         secid: Идентификатор облигации (SECID) для получения данных эмитента.
-    
+
     Returns:
-        Объект EmitentInfo с данными эмитента, содержащий:
-        - is_traded: Флаг торговли облигацией
-        - emitent_title: Название эмитента
-        - emitent_inn: ИНН эмитента
-        - type: Тип облигации
-        - cci_rating_companies: Список рейтингов эмитента
-    
+        Объект EmitentInfo с данными эмитента.
+
     Raises:
-        HTTPException: Если ISIN не найден для SECID (статус 404),
-            если данные эмитента не найдены (статус 404),
-            или если произошла ошибка при загрузке данных (статус 500).
+        HTTPException: Если данные эмитента не найдены (404) или произошла ошибка (500).
     """
     try:
-        # Get emitent service
         emitent_service = get_emitent_service()
-        
-        # Get ISIN by SECID from bonds data
-        isin = await emitent_service.get_isin_by_secid(secid)
-        
-        if isin is None:
-            raise HTTPException(
-                status_code=404,
-                detail=f"ISIN not found for SECID: {secid}"
-            )
-        
-        # Get or fetch emitent data (wrap in asyncio.to_thread for I/O operations)
-        emitent_data = await asyncio.to_thread(
-            emitent_service.get_or_fetch_emitent,
-            secid,
-            isin
-        )
-        
+
+        emitent_data = await asyncio.to_thread(emitent_service.get_emitent_by_secid, secid)
         if emitent_data is None:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Emitent data not found for ISIN: {isin} (SECID: {secid})"
+            emitent_data = await asyncio.to_thread(
+                emitent_service.fetch_emitent_from_moex, secid
             )
-        
-        # Extract only required fields from full MOEX response
+            if emitent_data is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Emitent data not found for SECID: {secid}",
+                )
+            emitents_repo = EmitentsRepository(db_path=DB_PATH, data_dir=DATA_DIR)
+            secid_to_emitent_id = emitents_repo.refresh({secid: emitent_data})
+            if secid_to_emitent_id:
+                bonds_repo = BondsRepository(db_path=DB_PATH)
+                bonds_repo.update_emitent_ids(secid_to_emitent_id)
+
         required_fields = emitent_service.extract_required_fields(emitent_data)
         return EmitentInfo(**required_fields)
-    
+
     except HTTPException:
         raise
     except Exception as exc:
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to get emitent data for SECID {secid}: {str(exc)}"
+            detail=f"Failed to get emitent data for SECID {secid}: {str(exc)}",
         ) from exc
+
+
+def _run_emitent_pipeline_sync() -> Dict[str, Any]:
+    """Синхронный пайплайн: загрузка эмитентов из API MOEX в память, сохранение в БД.
+
+    Загружает данные из API MOEX, передаёт их в репозиторий для записи в БД,
+    обновляет поле emitent_id в таблице bonds. Промежуточные файлы не используются.
+    """
+    logger = get_data_update_logger()
+    emitent_service = get_emitent_service()
+    data_loader = get_data_loader()
+
+    bonds_details = data_loader.get_bond_details_sync()
+    if not bonds_details:
+        logger.warning("[API /emitent/refresh] No bonds details, skipping")
+        return {"status": "ok", "total": 0, "updated": 0, "errors": 0, "skipped": 0}
+
+    result = emitent_service.refresh_all_emitents(bonds_details)
+    api_data = result.get("data", {})
+    summary = {
+        "total": result.get("total", 0),
+        "updated": result.get("updated", 0),
+        "errors": result.get("errors", 0),
+        "skipped": result.get("skipped", 0),
+    }
+
+    logger.info(
+        "[API /emitent/refresh] Данные из API: total=%s, updated=%s, errors=%s, skipped=%s",
+        summary["total"],
+        summary["updated"],
+        summary["errors"],
+        summary["skipped"],
+    )
+
+    emitents_repo = EmitentsRepository(db_path=DB_PATH, data_dir=DATA_DIR)
+    secid_to_emitent_id = emitents_repo.refresh(api_data)
+
+    if secid_to_emitent_id:
+        bonds_repo = BondsRepository(db_path=DB_PATH)
+        updated_rows = bonds_repo.update_emitent_ids(secid_to_emitent_id)
+        logger.info(
+            "[API /emitent/refresh] DB: emitents/ratings saved, bonds.emitent_id updated for %s rows",
+            updated_rows,
+        )
+    else:
+        logger.warning("[API /emitent/refresh] DB: no emitents written (empty data or error)")
+
+    return {"status": "ok", **summary}
 
 
 @router.post("/refresh")
 async def refresh_emitents_data() -> Dict[str, Any]:
-    """Обновляет данные эмитентов для всех облигаций из файла bonds.json.
-    
-    Читает SECID и ISIN из файла bonds.json и обновляет данные эмитентов для каждой
-    облигации путем загрузки из API MOEX. Все обработка выполняется на бэкенде.
-    
+    """Единый пайплайн обновления данных эмитентов с сохранением в БД.
+
+    Загружает данные эмитентов из API MOEX в память, сохраняет в таблицы emitents
+    и emitent_ratings, обновляет поле emitent_id в таблице bonds. Без промежуточных файлов.
+
     Returns:
-        Словарь со статистикой обновления, содержащий:
-        - status: Статус операции ("ok")
-        - total: Общее количество облигаций для обработки
-        - updated: Количество успешно обновленных записей
-        - errors: Количество ошибок при обновлении
-        - skipped: Количество пропущенных облигаций (отсутствует ISIN)
-    
-    Raises:
-        HTTPException: Если произошла ошибка при обновлении данных (статус 500).
-    
-    Note:
-        Ошибки при обновлении отдельных облигаций не прерывают процесс. Все ошибки
-        логируются, и обработка продолжается для остальных облигаций.
+        Словарь со статистикой: status, total, updated, errors, skipped.
     """
     logger = get_data_update_logger()
-    logger.info("[API /emitent/refresh] Received request to refresh emitents data")
-    
+    logger.info("[API /emitent/refresh] Received request to refresh emitents data (API → DB)")
+
     try:
-        emitent_service = get_emitent_service()
-        data_loader = get_data_loader()
-        
-        # Get all bonds details
-        logger.info("[API /emitent/refresh] Loading bonds data...")
-        bonds_details = await data_loader.get_bond_details()
-        bonds_count = len(bonds_details)
-        logger.info(f"[API /emitent/refresh] Found {bonds_count} bonds to process")
-        
-        # Refresh all emitents (wrap in asyncio.to_thread for I/O operations)
-        summary = await asyncio.to_thread(
-            emitent_service.refresh_all_emitents,
-            bonds_details
+        result = await asyncio.to_thread(_run_emitent_pipeline_sync)
+        logger.info(
+            "[API /emitent/refresh] Pipeline completed: total=%s, updated=%s",
+            result.get("total", 0),
+            result.get("updated", 0),
         )
-        
-        logger.info(f"[API /emitent/refresh] Refresh completed: total={summary.get('total', 0)}, updated={summary.get('updated', 0)}, errors={summary.get('errors', 0)}, skipped={summary.get('skipped', 0)}")
-        
-        return {
-            "status": "ok",
-            **summary
-        }
-        
+        return result
     except Exception as exc:
-        error_type = type(exc).__name__
-        logger.error(f"[API /emitent/refresh] ERROR: {error_type} - {str(exc)}")
+        logger.error("[API /emitent/refresh] ERROR: %s - %s", type(exc).__name__, exc)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to refresh emitents: {str(exc)}"
+            detail=f"Failed to refresh emitents: {str(exc)}",
         ) from exc
-

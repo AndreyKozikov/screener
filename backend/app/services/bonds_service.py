@@ -301,9 +301,8 @@ def refresh_bonds_data(
 ) -> Dict[str, Any]:
     """Загружает данные облигаций из MOEX и сохраняет в БД.
 
-    Координирует пайплайн: загрузка через DataLoader.refresh_bonds_dataset(),
-    миграция в таблицы bonds, bondsecurity, bondmarketdata, bondmarketdatayield
-    через DBOrchestrator, очистка кэша метаданных.
+    Пайплайн: получение payload от MOEX в памяти -> заполнение кэша loader ->
+    миграция в БД тем же payload -> очистка кэша метаданных. Записи в bonds.json нет.
 
     Args:
         source_url: URL для загрузки JSON. Если None — используется settings.MOEX_BONDS_URL.
@@ -316,21 +315,35 @@ def refresh_bonds_data(
 
     Raises:
         RuntimeError: Если не удалось загрузить данные из MOEX.
+        ValueError: Если миграция вызвана без payload (внутри orchestrator).
     """
     log = get_data_update_logger()
     url = source_url or settings.MOEX_BONDS_URL
+    loader = get_data_loader()
+
     try:
-        log.info("[refresh_bonds_data] Step 1: Loading data from MOEX (%s)", url)
-        loader = get_data_loader()
-        summary = loader.refresh_bonds_dataset(url)
-        log.info("[refresh_bonds_data] Step 1 OK: Loaded %s securities", summary.get("securities", 0))
+        log.info("[refresh_bonds_data] Step 1: Loading payload from MOEX (%s)", url)
+        payload = loader.fetch_bonds_payload(url)
+        log.info(
+            "[refresh_bonds_data] Step 1 OK: Payload received, securities=%s",
+            len(payload.get("securities", {}).get("data", [])),
+        )
     except Exception as e:
         log.exception("[refresh_bonds_data] Step 1 FAILED: Load from MOEX: %s", e)
         raise
+
     try:
-        log.info("[refresh_bonds_data] Step 2: Migrating to DB")
+        log.info("[refresh_bonds_data] Step 1b: Populating loader cache from payload")
+        summary = loader.refresh_bonds_dataset(payload, source_url=url)
+        log.info("[refresh_bonds_data] Step 1b OK: Loaded %s securities", summary.get("securities", 0))
+    except Exception as e:
+        log.exception("[refresh_bonds_data] Step 1b FAILED: Populate cache: %s", e)
+        raise
+
+    try:
+        log.info("[refresh_bonds_data] Step 2: Migrating to DB (payload in memory)")
         orchestrator = DBOrchestrator(db_path=db_path, data_dir=data_dir)
-        ok = orchestrator.migrate("bonds")
+        ok = orchestrator.migrate("bonds", payload=payload)
         if not ok:
             log.warning("[refresh_bonds_data] Step 2: DB migrate returned False")
         else:
@@ -338,6 +351,7 @@ def refresh_bonds_data(
     except Exception as e:
         log.exception("[refresh_bonds_data] Step 2 FAILED: DB migration: %s", e)
         raise
+
     try:
         log.info("[refresh_bonds_data] Step 3: Clearing metadata cache")
         loader.clear_metadata_cache()
@@ -345,6 +359,7 @@ def refresh_bonds_data(
     except Exception as e:
         log.exception("[refresh_bonds_data] Step 3 FAILED: Cache clear: %s", e)
         raise
+
     return {
         "status": "ok",
         "updated": summary,

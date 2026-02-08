@@ -34,8 +34,7 @@ export interface BondListItem {
   RATING_LEVEL: string | null;  // Уровень рейтинга (worst rating)
   RATINGS?: Rating[] | null;  // All ratings for the bond
   BONDTYPE: string | null;  // Тип облигации
-  BONDTYPE43: string | null;  // Вид облигации (из bonds.json, индекс 43)
-  COUPON_TYPE: string | null;  // Тип купона (FIX или FLOAT)
+  BONDTYPE43: string | null;  // Вид облигации
   /** Вычисляемые на бэкенде поля; фронт только отображает */
   COUPON_YIELD_TO_PRICE?: number | null;  // Доходность купона к текущей цене, %
   COUPON_FREQUENCY?: number | null;      // Число выплат купона в год

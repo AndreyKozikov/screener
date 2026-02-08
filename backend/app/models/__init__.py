@@ -5,6 +5,8 @@
 
 Модули:
     bond: Модели данных облигаций (Bond — SQLModel таблица bonds; BondListItem, BondDetail, BondSecurity, BondMarketData)
+    describe: SQLModel таблица describe_fields (DescribeField)
+    describe_dto: DTO для описаний полей (DescribeDTO)
     currencyrate: SQLModel таблица currencyrate (DBcurrencyrate) — курсы валют ЦБ РФ
     keyrate: SQLModel таблица keyrate (DBkeyrate) — данные ключевой ставки ЦБ РФ
     keyrate_dto: DTO для API ключевой ставки (KeyrateDTO)
@@ -17,4 +19,5 @@
     emitent: Модели данных эмитентов (EmitentInfo)
     filters: Модели фильтров для поиска облигаций (BondFilters)
     responses: Модели ответов API (BondsListResponse, ErrorResponse и др.)
+    rating: SQLModel таблицы рейтингов (RatingAgency, BondRating, EmitentRating)
 """

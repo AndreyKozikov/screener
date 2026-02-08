@@ -1,6 +1,8 @@
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Optional
+
+from sqlmodel import Session, create_engine
 
 from app.core.bond_transformer import BondTransformer
 from config.paths import DATA_DIR as DEFAULT_DATA_DIR, DB_PATH as DEFAULT_DB_PATH
@@ -26,21 +28,23 @@ class DBOrchestrator:
         self.data_dir = data_dir if data_dir is not None else DEFAULT_DATA_DIR
         self.logger = logging.getLogger(__name__)
     
-    def migrate(self, migration_type: str) -> bool:
+    def migrate(self, migration_type: str, payload: Optional[Dict[str, Any]] = None) -> bool:
         """
         Главный метод для запуска миграции данных.
-        
+
         Args:
-            migration_type: Тип миграции (например, 'bonds' для облигаций)
-        
+            migration_type: Тип миграции (например, 'bonds' для облигаций).
+            payload: Для migration_type == "bonds" — обязательный JSON-ответ MOEX.
+                Чтение из файла не выполняется.
+
         Returns:
-            True если миграция выполнена успешно, False в случае ошибки
+            True если миграция выполнена успешно, False в случае ошибки.
         """
-        self.logger.info(f"Запуск миграции данных: {migration_type}")
-        
+        self.logger.info("Запуск миграции данных: %s", migration_type)
+
         try:
             if migration_type == "bonds":
-                return self._migrate_bonds()
+                return self._migrate_bonds(payload=payload)
             elif migration_type == "coupons":
                 return self._migrate_coupons()
             elif migration_type == "kbd":
@@ -52,18 +56,29 @@ class DBOrchestrator:
             self.logger.error(f"Ошибка при выполнении миграции {migration_type}: {str(e)}", exc_info=True)
             return False
     
-    def _migrate_bonds(self) -> bool:
+    def _migrate_bonds(self, payload: Optional[Dict[str, Any]] = None) -> bool:
         """Выполняет миграцию данных облигаций в базу данных.
 
-        Пайплайн: загрузка данных через BondTransformer.prepare_bonds_for_db(),
-        расчёт и преобразование в объекты Bond через transform_batch(),
-        сохранение Bond в таблицу bonds (DELETE + INSERT), получение маппинга secid -> id,
-        сохранение BondSecurity, BondMarketData, BondMarketDataYield с установленным bond_id.
-        Все поля объединённой модели Bond (исходные и расчётные) персистятся в БД.
+        Использует только переданный payload (ответ MOEX). Чтение из файла запрещено.
+
+        Пайплайн: transform_raw_payload(payload) -> prepare_bonds_for_db -> transform_batch
+        -> сохранение в таблицы bonds, bondsecurity, bondmarketdata, bondmarketdatayield.
+
+        Args:
+            payload: JSON-ответ MOEX (securities, marketdata, marketdata_yields).
+                Обязателен; при отсутствии возбуждается ValueError.
 
         Returns:
             True если миграция выполнена успешно, False в случае ошибки.
+
+        Raises:
+            ValueError: Если payload не передан (чтение из файла не поддерживается).
         """
+        if payload is None:
+            raise ValueError(
+                "Миграция облигаций требует payload (ответ MOEX). "
+                "Чтение из файла отключено. Передайте payload в migrate('bonds', payload=...)."
+            )
         data_log = get_data_update_logger()
         try:
             data_log.info(
@@ -72,39 +87,44 @@ class DBOrchestrator:
             )
             data_dir = self.data_dir
             storage = FileStorage()
-            transformer = BondTransformer(data_dir, storage)
-            raw_bonds = transformer.prepare_bonds_for_db()
+            engine = create_engine(
+                f"sqlite:///{self.db_path.resolve()}",
+                connect_args={"check_same_thread": False},
+                echo=False,
+            )
+            with Session(engine) as session:
+                transformer = BondTransformer(data_dir, storage, session)
+                raw_bonds = transformer.transform_raw_payload(payload)
+                raw_bonds = transformer.prepare_bonds_for_db(raw_bonds)
             data_log.info(
                 "[API /bonds/refresh] Загружено из JSON (MOEX): %s облигаций",
                 len(raw_bonds),
             )
             self.logger.info("Загружено %s облигаций из JSON-файлов", len(raw_bonds))
+
             ready_bonds = transformer.transform_batch(raw_bonds)
+
             data_log.info(
                 "[API /bonds/refresh] Преобразовано для таблицы bonds: %s записей",
                 len(ready_bonds),
             )
             self.logger.info("Преобразовано %s облигаций для вставки в БД", len(ready_bonds))
             repo = BondsRepository(db_path=self.db_path)
-            
-            # Сохраняем bonds и получаем маппинг secid -> id
-            secid_to_id = repo.refresh(ready_bonds)
-            if not secid_to_id:
+
+            # 2. Сохраняем bonds (INSERT ON CONFLICT, без DELETE)
+            bonds_ok = repo.refresh(ready_bonds)
+            if not bonds_ok:
                 data_log.warning(
                     "[API /bonds/refresh] Сохранение в таблицу bonds завершилось с ошибкой"
                 )
                 self.logger.warning("Миграция данных облигаций завершилась с ошибкой")
                 return False
-            
-            # Преобразуем связанные таблицы с использованием маппинга secid -> id
-            bond_securities = transformer.transform_to_bond_securities_batch(
-                raw_bonds, secid_to_id
-            )
-            bond_market_data = transformer.transform_to_bond_market_data_batch(
-                raw_bonds, secid_to_id
-            )
+
+            # Преобразуем связанные таблицы (secid, boardid в каждой записи, bond_id через подзапрос)
+            bond_securities = transformer.transform_to_bond_securities_batch(raw_bonds)
+            bond_market_data = transformer.transform_to_bond_market_data_batch(raw_bonds)
             bond_market_data_yields = transformer.transform_to_bond_market_data_yields_batch(
-                raw_bonds, secid_to_id
+                raw_bonds
             )
             data_log.info(
                 "[API /bonds/refresh] Преобразовано BondSecurity: %s, BondMarketData: %s, "
@@ -128,7 +148,7 @@ class DBOrchestrator:
                 data_log.warning(
                     "[API /bonds/refresh] Сохранение в bondmarketdatayield завершилось с ошибкой"
                 )
-            overall = bool(secid_to_id) and sec_ok and md_ok and yields_ok
+            overall = bonds_ok and sec_ok and md_ok and yields_ok
             if overall:
                 self.logger.info("Миграция данных облигаций выполнена успешно")
             return overall
@@ -141,21 +161,21 @@ class DBOrchestrator:
             raise
     
     def _migrate_coupons(self) -> bool:
-        """
-        Выполняет миграцию данных купонов облигаций в базу данных.
-        
+        """Создаёт таблицу coupons при отсутствии. Данные купонов — только из API MOEX.
+
+        Вызов refresh создаёт таблицу; заполнение выполняется через
+        save_coupons_bulk после загрузки с MOEX (endpoint /bonds/refresh-coupons).
+
         Returns:
-            True если миграция выполнена успешно, False в случае ошибки
+            True если таблица создана/проверена успешно, False в случае ошибки.
         """
         try:
-            db_path_str = str(self.db_path)
-            db_coupon = DBCoupon(db_path=db_path_str)
-            db_coupon.refresh("coupons")
-            
-            self.logger.info("Миграция данных купонов выполнена успешно")
+            db_coupon = DBCoupon(db_path=str(self.db_path))
+            db_coupon.refresh("coupons", secid_to_id=None)
+            self.logger.info("Таблица coupons проверена/создана")
             return True
         except Exception as e:
-            self.logger.error(f"Ошибка при миграции данных купонов: {str(e)}", exc_info=True)
+            self.logger.error("Ошибка при миграции таблицы coupons: %s", e, exc_info=True)
             return False
     
     def update_coupons(

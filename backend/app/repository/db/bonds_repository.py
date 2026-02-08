@@ -7,9 +7,10 @@ SQLModel API: выборка с фильтрами, подсчёт, пакетн
 
 import logging
 from pathlib import Path
+from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
 
-from sqlalchemy import func, or_, and_
+from sqlalchemy import delete, func, or_, and_, text
 from sqlmodel import Session, create_engine, select
 
 from app.models.bond import Bond, BondMarketData, BondMarketDataYield, BondSecurity
@@ -50,55 +51,128 @@ class BondsRepository:
         )
         self.logger = logging.getLogger(__name__)
 
-    def save_bonds(self, bonds: List[Bond]) -> Dict[str, int]:
-        """Удаляет все записи из таблицы bonds и вставляет новые.
+    @staticmethod
+    def _to_sql_date(val: Any) -> Optional[str]:
+        """Конвертирует date в строку YYYY-MM-DD для SQLite."""
+        if val is None:
+            return None
+        if isinstance(val, date):
+            return val.strftime("%Y-%m-%d")
+        return str(val) if val else None
 
-        Принимает список готовых объектов Bond (расчёты выполняются в
-        bond_transformer). В рамках одной транзакции удаляет старые записи
-        и вставляет новые. Возвращает маппинг secid -> id для связанных таблиц.
+    def save_bonds(self, bonds: List[Bond]) -> bool:
+        """Upsert облигаций: INSERT ... ON CONFLICT(secid, boardid) DO UPDATE.
+
+        Не выполняет DELETE. При конфликте по (secid, boardid) обновляет
+        рыночные данные, не затрагивая id. Сохраняет стабильность id.
 
         Args:
-            bonds: Список объектов Bond для вставки.
+            bonds: Список объектов Bond для вставки/обновления.
 
         Returns:
-            Словарь {secid: id} для связывания с дочерними таблицами.
-            Пустой словарь при ошибке или отсутствии данных.
+            True при успехе, False при ошибке или отсутствии данных.
         """
         if not bonds:
             self.logger.warning("Нет данных для вставки")
-            return {}
+            return False
         data_log = get_data_update_logger()
         try:
+            stmt = text("""
+                INSERT INTO bonds (
+                    secid, boardid, isin, name, secname, rating, rating_agency,
+                    current_price, coupon_yield_to_price, yield_to_maturity, face_value,
+                    currency, face_unit, coupon_value, coupon_percent, coupon_frequency,
+                    coupon_period, accrued_interest, duration_years, duration, duration_waprice,
+                    has_put_option, has_call_option, maturity_date, listing_level,
+                    bond_type, bond_kind, offer_date, status, trading_status, next_coupon,
+                    board_name, call_option_date, put_option_date, emitent_id
+                ) VALUES (
+                    :secid, :boardid, :isin, :name, :secname, :rating, :rating_agency,
+                    :current_price, :coupon_yield_to_price, :yield_to_maturity, :face_value,
+                    :currency, :face_unit, :coupon_value, :coupon_percent, :coupon_frequency,
+                    :coupon_period, :accrued_interest, :duration_years, :duration, :duration_waprice,
+                    :has_put_option, :has_call_option, :maturity_date, :listing_level,
+                    :bond_type, :bond_kind, :offer_date, :status, :trading_status, :next_coupon,
+                    :board_name, :call_option_date, :put_option_date, :emitent_id
+                )
+                ON CONFLICT(secid, boardid) DO UPDATE SET
+                    isin=excluded.isin, name=excluded.name, secname=excluded.secname,
+                    rating=excluded.rating, rating_agency=excluded.rating_agency,
+                    current_price=excluded.current_price,
+                    coupon_yield_to_price=excluded.coupon_yield_to_price,
+                    yield_to_maturity=excluded.yield_to_maturity,
+                    face_value=excluded.face_value, currency=excluded.currency,
+                    face_unit=excluded.face_unit, coupon_value=excluded.coupon_value,
+                    coupon_percent=excluded.coupon_percent,
+                    coupon_frequency=excluded.coupon_frequency,
+                    coupon_period=excluded.coupon_period,
+                    accrued_interest=excluded.accrued_interest,
+                    duration_years=excluded.duration_years,
+                    duration=excluded.duration,
+                    duration_waprice=excluded.duration_waprice,
+                    has_put_option=excluded.has_put_option,
+                    has_call_option=excluded.has_call_option,
+                    maturity_date=excluded.maturity_date,
+                    listing_level=excluded.listing_level,
+                    bond_type=excluded.bond_type, bond_kind=excluded.bond_kind,
+                    offer_date=excluded.offer_date, status=excluded.status,
+                    trading_status=excluded.trading_status, next_coupon=excluded.next_coupon,
+                    board_name=excluded.board_name,
+                    call_option_date=excluded.call_option_date,
+                    put_option_date=excluded.put_option_date
+            """)
             with Session(self._engine) as session:
-                # Удаляем все записи из таблицы bonds
-                session.exec(select(Bond)).all()
-                session.query(Bond).delete()
-                session.commit()
-                
-                # Вставляем новые записи
                 for bond in bonds:
-                    bond.id = None  # Сбрасываем id для автоинкремента
-                    session.add(bond)
+                    params = {
+                        "secid": bond.secid,
+                        "boardid": bond.boardid,
+                        "isin": bond.isin,
+                        "name": bond.name,
+                        "secname": bond.secname,
+                        "rating": bond.rating,
+                        "rating_agency": bond.rating_agency,
+                        "current_price": bond.current_price,
+                        "coupon_yield_to_price": bond.coupon_yield_to_price,
+                        "yield_to_maturity": bond.yield_to_maturity,
+                        "face_value": bond.face_value,
+                        "currency": bond.currency,
+                        "face_unit": bond.face_unit,
+                        "coupon_value": bond.coupon_value,
+                        "coupon_percent": bond.coupon_percent,
+                        "coupon_frequency": bond.coupon_frequency,
+                        "coupon_period": bond.coupon_period,
+                        "accrued_interest": bond.accrued_interest,
+                        "duration_years": bond.duration_years,
+                        "duration": bond.duration,
+                        "duration_waprice": bond.duration_waprice,
+                        "has_put_option": bond.has_put_option,
+                        "has_call_option": bond.has_call_option,
+                        "maturity_date": bond.maturity_date,
+                        "listing_level": bond.listing_level,
+                        "bond_type": bond.bond_type,
+                        "bond_kind": bond.bond_kind,
+                        "offer_date": bond.offer_date,
+                        "status": bond.status,
+                        "trading_status": bond.trading_status,
+                        "next_coupon": bond.next_coupon,
+                        "board_name": bond.board_name,
+                        "call_option_date": bond.call_option_date,
+                        "put_option_date": bond.put_option_date,
+                        "emitent_id": bond.emitent_id,
+                    }
+                    session.execute(stmt, params)
                 session.commit()
-                
-                # Получаем маппинг secid -> id
-                secid_to_id: Dict[str, int] = {}
-                stmt = select(Bond.secid, Bond.id)
-                results = session.exec(stmt).all()
-                for secid, bond_id in results:
-                    secid_to_id[secid] = bond_id
-                
             data_log.info(
                 "[API /bonds/refresh] В таблицу bonds записано записей: %s (база: %s)",
                 len(bonds),
                 self.db_path,
             )
             self.logger.info("Успешно вставлено %s записей в таблицу bonds", len(bonds))
-            return secid_to_id
+            return True
         except Exception as e:
             data_log.error("[API /bonds/refresh] Ошибка INSERT в таблицу bonds: %s", e, exc_info=True)
             self.logger.error("Ошибка при вставке данных в таблицу bonds: %s", e, exc_info=True)
-            return {}
+            return False
 
     def _build_where_conditions(
         self,
@@ -357,11 +431,13 @@ class BondsRepository:
             self.logger.error("Ошибка при count_bonds: %s", e, exc_info=True)
             raise
 
-    def save_bond_securities(self, securities: List[BondSecurity]) -> bool:
-        """Удаляет все записи из таблицы bondsecurity и вставляет новые.
+    def save_bond_securities(
+        self, securities: List[Dict[str, Any]]
+    ) -> bool:
+        """Удаляет все записи из bondsecurity и вставляет новые. bond_id — через подзапрос.
 
         Args:
-            securities: Список объектов BondSecurity для вставки (с установленным bond_id).
+            securities: Список словарей с secid, boardid и полями BondSecurity.
 
         Returns:
             True при успешном сохранении, False при ошибке.
@@ -370,16 +446,60 @@ class BondsRepository:
             self.logger.debug("Нет данных BondSecurity для вставки")
             return True
         data_log = get_data_update_logger()
+        stmt = text("""
+            INSERT INTO bondsecurity (
+                bond_id, boardid, prev_waprice, yield_at_prev_waprice, prev_price,
+                lot_size, reg_number, decimals, issue_size, prev_legal_close_price,
+                prev_date, remarks, market_code, instr_id, sector_id, min_step,
+                face_unit, buyback_price, buyback_date, lat_name, issue_size_placed,
+                sec_type, settle_date, lot_value, face_value_on_settle_date,
+                date_yield_from_issuer
+            )
+            SELECT
+                (SELECT id FROM bonds WHERE secid = :secid AND (
+                    (boardid IS NULL AND :boardid IS NULL) OR (boardid = :boardid)
+                ) LIMIT 1),
+                :boardid, :prev_waprice, :yield_at_prev_waprice, :prev_price,
+                :lot_size, :reg_number, :decimals, :issue_size, :prev_legal_close_price,
+                :prev_date, :remarks, :market_code, :instr_id, :sector_id, :min_step,
+                :face_unit, :buyback_price, :buyback_date, :lat_name, :issue_size_placed,
+                :sec_type, :settle_date, :lot_value, :face_value_on_settle_date,
+                :date_yield_from_issuer
+        """)
         try:
             with Session(self._engine) as session:
-                # Удаляем все записи из таблицы bondsecurity
-                session.query(BondSecurity).delete()
+                session.execute(delete(BondSecurity))
                 session.commit()
-                
-                # Вставляем новые записи
-                for sec in securities:
-                    sec.id = None  # Сбрасываем id для автоинкремента
-                    session.add(sec)
+                for rec in securities:
+                    params = {
+                        "secid": rec["secid"],
+                        "boardid": rec["boardid"],
+                        "prev_waprice": rec.get("prev_waprice"),
+                        "yield_at_prev_waprice": rec.get("yield_at_prev_waprice"),
+                        "prev_price": rec.get("prev_price"),
+                        "lot_size": rec.get("lot_size"),
+                        "reg_number": rec.get("reg_number"),
+                        "decimals": rec.get("decimals"),
+                        "issue_size": rec.get("issue_size"),
+                        "prev_legal_close_price": rec.get("prev_legal_close_price"),
+                        "prev_date": self._to_sql_date(rec.get("prev_date")),
+                        "remarks": rec.get("remarks"),
+                        "market_code": rec.get("market_code"),
+                        "instr_id": rec.get("instr_id"),
+                        "sector_id": rec.get("sector_id"),
+                        "min_step": rec.get("min_step"),
+                        "face_unit": rec.get("face_unit"),
+                        "buyback_price": rec.get("buyback_price"),
+                        "buyback_date": self._to_sql_date(rec.get("buyback_date")),
+                        "lat_name": rec.get("lat_name"),
+                        "issue_size_placed": rec.get("issue_size_placed"),
+                        "sec_type": rec.get("sec_type"),
+                        "settle_date": self._to_sql_date(rec.get("settle_date")),
+                        "lot_value": rec.get("lot_value"),
+                        "face_value_on_settle_date": rec.get("face_value_on_settle_date"),
+                        "date_yield_from_issuer": self._to_sql_date(rec.get("date_yield_from_issuer")),
+                    }
+                    session.execute(stmt, params)
                 session.commit()
             data_log.info(
                 "[API /bonds/refresh] В таблицу bondsecurity записано: %s записей",
@@ -399,11 +519,13 @@ class BondsRepository:
             self.logger.error("Ошибка при сохранении BondSecurity: %s", e, exc_info=True)
             return False
 
-    def save_bond_market_data(self, market_data_list: List[BondMarketData]) -> bool:
-        """Удаляет все записи из таблицы bondmarketdata и вставляет новые.
+    def save_bond_market_data(
+        self, market_data_list: List[Dict[str, Any]]
+    ) -> bool:
+        """Удаляет все записи из bondmarketdata и вставляет новые. bond_id — через подзапрос.
 
         Args:
-            market_data_list: Список объектов BondMarketData для вставки (с установленным bond_id).
+            market_data_list: Список словарей с secid, boardid и полями BondMarketData.
 
         Returns:
             True при успешном сохранении, False при ошибке.
@@ -412,16 +534,64 @@ class BondsRepository:
             self.logger.debug("Нет данных BondMarketData для вставки")
             return True
         data_log = get_data_update_logger()
+        stmt = text("""
+            INSERT INTO bondmarketdata (
+                bond_id, boardid, bid, offer, spread, bid_depth, offer_depth,
+                open_price, low, high, last_price, last_change, last_change_prcnt,
+                qty, value, value_usd, waprice, last_cnt_to_last_waprice,
+                wap_to_prev_waprice_prcnt, wap_to_prev_waprice, close_price,
+                market_price_today, market_price, last_to_prev_price, num_trades,
+                vol_today, val_today, val_today_usd, etf_settle_price, update_time
+            )
+            SELECT
+                (SELECT id FROM bonds WHERE secid = :secid AND (
+                    (boardid IS NULL AND :boardid IS NULL) OR (boardid = :boardid)
+                ) LIMIT 1),
+                :boardid, :bid, :offer, :spread, :bid_depth, :offer_depth,
+                :open_price, :low, :high, :last_price, :last_change, :last_change_prcnt,
+                :qty, :value, :value_usd, :waprice, :last_cnt_to_last_waprice,
+                :wap_to_prev_waprice_prcnt, :wap_to_prev_waprice, :close_price,
+                :market_price_today, :market_price, :last_to_prev_price, :num_trades,
+                :vol_today, :val_today, :val_today_usd, :etf_settle_price, :update_time
+        """)
         try:
             with Session(self._engine) as session:
-                # Удаляем все записи из таблицы bondmarketdata
-                session.query(BondMarketData).delete()
+                session.execute(delete(BondMarketData))
                 session.commit()
-                
-                # Вставляем новые записи
-                for md in market_data_list:
-                    md.id = None  # Сбрасываем id для автоинкремента
-                    session.add(md)
+                for rec in market_data_list:
+                    params = {
+                        "secid": rec["secid"],
+                        "boardid": rec["boardid"],
+                        "bid": rec.get("bid"),
+                        "offer": rec.get("offer"),
+                        "spread": rec.get("spread"),
+                        "bid_depth": rec.get("bid_depth"),
+                        "offer_depth": rec.get("offer_depth"),
+                        "open_price": rec.get("open_price"),
+                        "low": rec.get("low"),
+                        "high": rec.get("high"),
+                        "last_price": rec.get("last_price"),
+                        "last_change": rec.get("last_change"),
+                        "last_change_prcnt": rec.get("last_change_prcnt"),
+                        "qty": rec.get("qty"),
+                        "value": rec.get("value"),
+                        "value_usd": rec.get("value_usd"),
+                        "waprice": rec.get("waprice"),
+                        "last_cnt_to_last_waprice": rec.get("last_cnt_to_last_waprice"),
+                        "wap_to_prev_waprice_prcnt": rec.get("wap_to_prev_waprice_prcnt"),
+                        "wap_to_prev_waprice": rec.get("wap_to_prev_waprice"),
+                        "close_price": rec.get("close_price"),
+                        "market_price_today": rec.get("market_price_today"),
+                        "market_price": rec.get("market_price"),
+                        "last_to_prev_price": rec.get("last_to_prev_price"),
+                        "num_trades": rec.get("num_trades"),
+                        "vol_today": rec.get("vol_today"),
+                        "val_today": rec.get("val_today"),
+                        "val_today_usd": rec.get("val_today_usd"),
+                        "etf_settle_price": rec.get("etf_settle_price"),
+                        "update_time": rec.get("update_time"),
+                    }
+                    session.execute(stmt, params)
                 session.commit()
             data_log.info(
                 "[API /bonds/refresh] В таблицу bondmarketdata записано: %s записей",
@@ -444,12 +614,12 @@ class BondsRepository:
             return False
 
     def save_bond_market_data_yields(
-        self, yields_list: List[BondMarketDataYield]
+        self, yields_list: List[Dict[str, Any]]
     ) -> bool:
-        """Удаляет все записи из таблицы bondmarketdatayield и вставляет новые.
+        """Удаляет все записи из bondmarketdatayield и вставляет новые. bond_id — через подзапрос.
 
         Args:
-            yields_list: Список объектов BondMarketDataYield для вставки (с установленным bond_id).
+            yields_list: Список словарей с secid, boardid и полями BondMarketDataYield.
 
         Returns:
             True при успешном сохранении, False при ошибке.
@@ -458,16 +628,52 @@ class BondsRepository:
             self.logger.debug("Нет данных BondMarketDataYield для вставки")
             return True
         data_log = get_data_update_logger()
+        stmt = text("""
+            INSERT INTO bondmarketdatayield (
+                bond_id, boardid, price, yield_date, zcyc_moment, yield_date_type,
+                effective_yield, duration, zspread_bp, gspread_bp, waprice,
+                effective_yield_waprice, duration_waprice, ir, icpi, bei, cbr,
+                yield_to_offer, yield_last_coupon, trade_moment, seqnum, systime
+            )
+            SELECT
+                (SELECT id FROM bonds WHERE secid = :secid AND (
+                    (boardid IS NULL AND :boardid IS NULL) OR (boardid = :boardid)
+                ) LIMIT 1),
+                :boardid, :price, :yield_date, :zcyc_moment, :yield_date_type,
+                :effective_yield, :duration, :zspread_bp, :gspread_bp, :waprice,
+                :effective_yield_waprice, :duration_waprice, :ir, :icpi, :bei, :cbr,
+                :yield_to_offer, :yield_last_coupon, :trade_moment, :seqnum, :systime
+        """)
         try:
             with Session(self._engine) as session:
-                # Удаляем все записи из таблицы bondmarketdatayield
-                session.query(BondMarketDataYield).delete()
+                session.execute(delete(BondMarketDataYield))
                 session.commit()
-                
-                # Вставляем новые записи
-                for y in yields_list:
-                    y.id = None  # Сбрасываем id для автоинкремента
-                    session.add(y)
+                for rec in yields_list:
+                    params = {
+                        "secid": rec["secid"],
+                        "boardid": rec["boardid"],
+                        "price": rec.get("price"),
+                        "yield_date": rec.get("yield_date"),
+                        "zcyc_moment": rec.get("zcyc_moment"),
+                        "yield_date_type": rec.get("yield_date_type"),
+                        "effective_yield": rec.get("effective_yield"),
+                        "duration": rec.get("duration"),
+                        "zspread_bp": rec.get("zspread_bp"),
+                        "gspread_bp": rec.get("gspread_bp"),
+                        "waprice": rec.get("waprice"),
+                        "effective_yield_waprice": rec.get("effective_yield_waprice"),
+                        "duration_waprice": rec.get("duration_waprice"),
+                        "ir": rec.get("ir"),
+                        "icpi": rec.get("icpi"),
+                        "bei": rec.get("bei"),
+                        "cbr": rec.get("cbr"),
+                        "yield_to_offer": rec.get("yield_to_offer"),
+                        "yield_last_coupon": rec.get("yield_last_coupon"),
+                        "trade_moment": rec.get("trade_moment"),
+                        "seqnum": rec.get("seqnum"),
+                        "systime": rec.get("systime"),
+                    }
+                    session.execute(stmt, params)
                 session.commit()
             data_log.info(
                 "[API /bonds/refresh] В таблицу bondmarketdatayield записано: %s записей",
@@ -540,35 +746,163 @@ class BondsRepository:
             )
             return None
 
-    def refresh(self, bonds: List[Bond]) -> Dict[str, int]:
-        """Сохраняет список готовых объектов Bond в таблицу bonds (DELETE + INSERT).
+    def update_emitent_ids(self, secid_to_emitent_id: Dict[str, int]) -> int:
+        """Обновляет поле emitent_id в таблице bonds по маппингу secid -> emitent_id.
+
+        Вызывается после сохранения эмитентов в БД (пайплайн обновления эмитентов),
+        чтобы связать облигации с записью в таблице emitents.
+
+        Args:
+            secid_to_emitent_id: Словарь {secid: emitent_id}, где emitent_id — id из emitents.
+
+        Returns:
+            Суммарное количество обновлённых строк в таблице bonds.
+        """
+        if not secid_to_emitent_id:
+            return 0
+        stmt = text("UPDATE bonds SET emitent_id = :emitent_id WHERE secid = :secid")
+        total_updated = 0
+        try:
+            with Session(self._engine) as session:
+                for secid, emitent_id in secid_to_emitent_id.items():
+                    result = session.execute(stmt, {"emitent_id": emitent_id, "secid": secid})
+                    if result.rowcount is not None:
+                        total_updated += result.rowcount
+                session.commit()
+            self.logger.info(
+                "Обновлено emitent_id для %s записей bonds (по %s secid)",
+                total_updated,
+                len(secid_to_emitent_id),
+            )
+            return total_updated
+        except Exception as e:
+            self.logger.error(
+                "Ошибка при обновлении emitent_id в bonds: %s", e, exc_info=True
+            )
+            return 0
+
+    def get_id_secid_list(self) -> List[Tuple[int, str]]:
+        """Возвращает список пар (id, secid) для всех облигаций одним запросом.
+
+        Используется при обновлении купонов: одна выборка для построения
+        маппинга secid → id и итерации по облигациям без дополнительных
+        запросов к БД.
+
+        Returns:
+            Список кортежей (bond_id, secid). Пустой список при ошибке или
+            отсутствии записей.
+        """
+        stmt = select(Bond.id, Bond.secid)
+        try:
+            with Session(self._engine) as session:
+                rows = session.exec(stmt).all()
+                return [(int(r.id), str(r.secid)) for r in rows]
+        except Exception as e:
+            self.logger.error("Ошибка при get_id_secid_list: %s", e, exc_info=True)
+            return []
+
+    def get_bond_id_by_secid(self, secid: str) -> Optional[int]:
+        """Возвращает bond_id (id в таблице bonds) по SECID облигации.
+
+        Используется при сохранении купонов после загрузки из API MOEX для
+        одной облигации.
+
+        Args:
+            secid: Идентификатор облигации (SECID).
+
+        Returns:
+            Id записи в таблице bonds или None, если облигация не найдена.
+        """
+        if not secid or not str(secid).strip():
+            return None
+        stmt = select(Bond.id).where(Bond.secid == secid.strip())
+        try:
+            with Session(self._engine) as session:
+                row = session.exec(stmt).first()
+                return int(row) if row is not None else None
+        except Exception as e:
+            self.logger.error("Ошибка при get_bond_id_by_secid(%s): %s", secid, e, exc_info=True)
+            return None
+
+    def get_all_secids(self) -> List[str]:
+        """Возвращает отсортированный список уникальных SECID из таблицы bonds.
+
+        Используется для массовой загрузки истории торгов: один запрос к БД
+        вместо чтения bonds.json.
+
+        Returns:
+            Отсортированный список уникальных непустых SECID. Пустой список
+            при ошибке или отсутствии записей.
+        """
+        stmt = select(Bond.secid)
+        try:
+            with Session(self._engine) as session:
+                rows = session.exec(stmt).all()
+                secids = [str(r).strip() for r in rows if r and str(r).strip()]
+                return sorted(set(secids))
+        except Exception as e:
+            self.logger.error("Ошибка при get_all_secids: %s", e, exc_info=True)
+            return []
+
+    def get_bonds_for_ratings_pipeline(
+        self,
+    ) -> List[Tuple[int, str, Optional[int]]]:
+        """Возвращает список облигаций для пайплайна рейтингов.
+
+        Извлекает id, secid и moex_emitent_id (emitents.moex_id) для каждой
+        облигации. Пропускает записи без secid.
+
+        Returns:
+            Список кортежей (bond_id, secid, moex_emitent_id).
+            moex_emitent_id — MOEX ID эмитента (EMITTER_ID) или None.
+        """
+        stmt = text("""
+            SELECT b.id, b.secid, e.moex_id
+            FROM bonds b
+            LEFT JOIN emitents e ON e.id = b.emitent_id
+            WHERE b.secid IS NOT NULL AND TRIM(b.secid) != ''
+        """)
+        try:
+            with Session(self._engine) as session:
+                rows = session.execute(stmt).fetchall()
+            return [
+                (int(r[0]), str(r[1]).strip(), int(r[2]) if r[2] is not None else None)
+                for r in rows
+            ]
+        except Exception as e:
+            self.logger.error(
+                "Ошибка при get_bonds_for_ratings_pipeline: %s", e, exc_info=True
+            )
+            return []
+
+    def refresh(self, bonds: List[Bond]) -> bool:
+        """Сохраняет список готовых объектов Bond в таблицу bonds (INSERT ON CONFLICT).
 
         Не создаёт таблицу — структура управляется Alembic. Вызывает save_bonds.
-        Возвращает маппинг secid -> id для связывания с дочерними таблицами.
+        Не выполняет DELETE; использует upsert для сохранения стабильности id.
 
         Args:
             bonds: Список объектов Bond (результат bond_transformer.transform_batch).
 
         Returns:
-            Словарь {secid: id} для связывания с дочерними таблицами.
-            Пустой словарь при ошибке.
+            True при успехе, False при ошибке.
         """
         data_log = get_data_update_logger()
         try:
             data_log.info(
-                "[API /bonds/refresh] Таблица bonds: удаляем старые и вставляем новые данные, записей: %s",
+                "[API /bonds/refresh] Таблица bonds: upsert данных, записей: %s",
                 len(bonds),
             )
             self.logger.info("Таблица bonds: обновляем данные, записей: %s", len(bonds))
-            secid_to_id = self.save_bonds(bonds)
-            if secid_to_id:
+            ok = self.save_bonds(bonds)
+            if ok:
                 data_log.info("[API /bonds/refresh] Данные успешно сохранены в таблицу bonds (база: %s)", self.db_path)
                 self.logger.info("Таблица bonds успешно обновлена в базе данных: %s", self.db_path)
             else:
                 data_log.warning("[API /bonds/refresh] Сохранение в таблицу bonds завершилось с ошибкой или пустой список")
                 self.logger.warning("Сохранение в таблицу bonds завершилось с ошибкой или пустой список")
-            return secid_to_id
+            return ok
         except Exception as e:
             data_log.error("[API /bonds/refresh] Ошибка при записи в таблицу bonds: %s", e, exc_info=True)
             self.logger.error("Ошибка при создании/обновлении таблицы bonds: %s", e, exc_info=True)
-            return {}
+            return False

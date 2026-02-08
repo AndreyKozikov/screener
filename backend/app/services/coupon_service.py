@@ -1,57 +1,48 @@
 """Сервис-оркестратор для работы с данными о купонах облигаций.
 
-Модуль содержит класс CouponService, координирующий загрузку данных из API MOEX,
-файлового хранилища и базы данных. Отвечает за бизнес-логику обновления и
-предоставления данных о купонах.
+Модуль содержит класс CouponService, координирующий загрузку данных из API MOEX
+и базы данных. Единственный источник истины для купонов — таблица coupons;
+чтение и запись только через DBCoupon.
 """
 
 from datetime import date, datetime
-from pathlib import Path
 from typing import Dict, List, Optional
 
+from app.repository.db.bonds_repository import BondsRepository
 from app.repository.db.db_coupon import DBCoupon
-from app.repository.files.file_storage import FileStorage
-from app.services.coupon_loader import get_coupon_loader
-from app.services.data_loader import get_data_loader
 from app.services.moex_client import MoexClient
 from app.utils.coupon_utils import to_frontend_coupon
-from config.paths import DATA_DIR as COUPONS_DATA_DIR
+from config.paths import DB_PATH
 
 
 class CouponService:
     """Сервис-оркестратор для работы с данными о купонах облигаций.
 
-    Координирует загрузку данных из API MOEX, файлового хранилища и БД.
-    Решает, нужна ли загрузка с MOEX, сохраняет данные в JSON и обеспечивает
-    предоставление актуальных данных через get_coupons и get_coupons_batch.
+    Координирует загрузку данных из API MOEX и БД. Проверка актуальности —
+    по наличию записей в таблице coupons для secid. Запись только через
+    DBCoupon.save_coupons_bulk после получения данных из API.
 
     Attributes:
-        STALE_DAYS: Количество дней, после которых данные считаются устаревшими.
+        STALE_DAYS: Не используется (актуальность определяется наличием данных в БД).
     """
 
     STALE_DAYS: int = 14
 
     def __init__(
         self,
-        data_dir: Path = COUPONS_DATA_DIR,
         moex_client: Optional[MoexClient] = None,
-        file_storage: Optional[FileStorage] = None,
     ):
         """Инициализирует сервис купонов.
 
         Args:
-            data_dir: Директория с файлами данных.
             moex_client: Клиент MOEX (создается при отсутствии).
-            file_storage: Хранилище файлов (создается при отсутствии).
         """
         self._moex_client = moex_client or MoexClient()
-        self._file_storage = file_storage or FileStorage()
-        from config.paths import COUPONS_DATA_JSON
-        self._coupons_path = Path(data_dir) / COUPONS_DATA_JSON
-        self._file_storage.ensure_coupons_exists(self._coupons_path)
+        self._db_coupon = DBCoupon(db_path=str(DB_PATH))
+        self._bonds_repo = BondsRepository(db_path=DB_PATH)
 
     def _is_data_stale(self, last_updated: str) -> bool:
-        """Проверяет, устарели ли данные.
+        """Проверяет, устарели ли данные по дате последнего обновления.
 
         Args:
             last_updated: Дата последнего обновления (YYYY-MM-DD).
@@ -72,8 +63,7 @@ class CouponService:
         Returns:
             Словарь: last_updated, coupons, offers (пустой).
         """
-        db_coupon = DBCoupon()
-        rows = db_coupon.fetch_coupons_for_frontend(secids=[secid])
+        rows = self._db_coupon.fetch_coupons_for_frontend(secids=[secid])
         coupons = [to_frontend_coupon(row) for row in rows]
         return {
             "last_updated": date.today().isoformat(),
@@ -84,9 +74,9 @@ class CouponService:
     def get_coupons(self, secid: str, force_refresh: bool = False) -> Dict:
         """Получает данные о купонах для конкретной облигации.
 
-        Проверяет актуальность данных в JSON. При необходимости загружает
-        с MOEX, сохраняет в файл и синхронизирует кэши. Данные для ответа
-        берутся из базы данных.
+        Проверяет наличие данных в БД (таблица coupons). Если данных нет или
+        force_refresh — загружает с MOEX, сохраняет через DBCoupon.save_coupons_bulk
+        и возвращает данные из БД.
 
         Args:
             secid: Идентификатор облигации (SECID).
@@ -98,38 +88,33 @@ class CouponService:
         Raises:
             RuntimeError: Если не удалось загрузить данные из API и в БД нет данных.
         """
-        data = self._file_storage.read_coupons(self._coupons_path)
-        bonds = data.get("bonds", {})
-
-        if secid in bonds and not force_refresh:
-            bond_data = bonds[secid]
-            last_updated = bond_data.get("last_updated", "")
-            if last_updated and not self._is_data_stale(last_updated):
-                return self._fetch_bond_coupons_from_db(secid)
+        if not force_refresh and self._db_coupon.has_coupons_for_secid(secid):
+            return self._fetch_bond_coupons_from_db(secid)
 
         try:
             fresh_data = self._moex_client.fetch_coupons(secid)
         except Exception as exc:
-            try:
+            if self._db_coupon.has_coupons_for_secid(secid):
                 return self._fetch_bond_coupons_from_db(secid)
-            except Exception:
-                raise exc from exc
+            raise RuntimeError(f"Не удалось загрузить купоны для {secid} и в БД нет данных") from exc
 
-        bond_entry = {
-            "last_updated": date.today().isoformat(),
-            "amortizations": fresh_data["amortizations"],
-            "coupons": fresh_data["coupons"],
-            "offers": fresh_data["offers"],
-        }
-        bonds[secid] = bond_entry
-        data["bonds"] = bonds
-        self._file_storage.write_coupons(self._coupons_path, data)
+        bond_id = self._bonds_repo.get_bond_id_by_secid(secid)
+        if bond_id is None:
+            if self._db_coupon.has_coupons_for_secid(secid):
+                return self._fetch_bond_coupons_from_db(secid)
+            raise RuntimeError(f"Облигация {secid} не найдена в таблице bonds")
 
-        coupon_loader = get_coupon_loader()
-        if coupon_loader is not None:
-            coupon_loader.clear_cache()
+        records: List[Dict] = []
+        for c in fresh_data.get("coupons", []):
+            raw = {"bond_id": bond_id, **c}
+            rec = self._db_coupon._transform_coupon_data(raw)
+            if rec:
+                records.append(rec)
+        if records:
+            self._db_coupon.save_coupons_bulk(records)
 
         try:
+            from app.services.data_loader import get_data_loader
             get_data_loader().clear_bonds_cache()
         except RuntimeError:
             pass
@@ -156,9 +141,11 @@ class CouponService:
     ) -> Dict[str, Dict]:
         """Получает данные о купонах для нескольких облигаций из БД.
 
+        Один SQL-запрос к DBCoupon с фильтром WHERE secid IN (...).
+
         Args:
             secids: Список идентификаторов облигаций (SECID).
-            use_db: Должен быть True. Данные берутся только из БД.
+            use_db: Должен быть True. Оставлен для совместимости.
 
         Returns:
             Словарь: ключ — SECID, значение — {"coupons": [...]}.
@@ -172,15 +159,12 @@ class CouponService:
         if not use_db:
             raise ValueError("Данные о купонах доступны только из базы данных")
 
-        db_coupon = DBCoupon()
-        rows = db_coupon.fetch_coupons_for_frontend(secids=secids)
-
+        rows = self._db_coupon.fetch_coupons_for_frontend(secids=secids)
         coupons_by_secid: Dict[str, List[Dict]] = {s: [] for s in secids}
         for row in rows:
             sid = row.get("secid")
             if sid and sid in coupons_by_secid:
                 coupons_by_secid[sid].append(to_frontend_coupon(row))
-
         return {sid: {"coupons": coupons_by_secid[sid]} for sid in secids}
 
     def get_nearest_coupon_values(
@@ -196,12 +180,11 @@ class CouponService:
 
         Args:
             secids: Список идентификаторов облигаций (SECID) для получения купонов.
-            from_date: Начальная дата для фильтрации (выбираются купоны с
-                coupondate >= from_date). Если None, используется текущая дата.
+            from_date: Начальная дата для фильтрации (купоны с coupondate >= from_date).
+                Если None, используется текущая дата.
 
         Returns:
-            Словарь: ключ — SECID, значение — сумма купона (float) или None,
-            если купон не найден или значение отсутствует.
+            Словарь: ключ — SECID, значение — сумма купона (float) или None.
             При пустом secids или ошибке доступа к БД возвращает пустой словарь.
         """
         if not secids:
@@ -211,8 +194,7 @@ class CouponService:
         from_date_str = effective_date.isoformat()
 
         try:
-            db_coupon = DBCoupon()
-            rows = db_coupon.fetch_coupons_raw(
+            rows = self._db_coupon.fetch_coupons_raw(
                 secids=secids,
                 from_date=from_date_str,
             )
@@ -252,23 +234,17 @@ class CouponService:
     ) -> Optional[Dict]:
         """Находит будущий купон с наиболее близкой датой выплаты.
 
-        Выбирает купон с минимальной датой (coupondate >= current_date),
-        так как фильтрация по from_date уже выполнена на уровне БД.
-
         Args:
-            coupons: Список словарей с данными купонов. Каждый словарь содержит
-                поле coupondate в формате YYYY-MM-DD.
+            coupons: Список словарей с данными купонов (поле coupondate YYYY-MM-DD).
             current_date: Текущая дата. Список уже отфильтрован (купоны >= current_date).
 
         Returns:
-            Словарь с данными ближайшего будущего купона или None, если список пуст.
+            Словарь ближайшего будущего купона или None.
         """
         if not coupons:
             return None
-
         closest = None
         min_date = None
-
         for coupon in coupons:
             cd_str = coupon.get("coupondate")
             if not cd_str:
@@ -280,7 +256,6 @@ class CouponService:
                     closest = coupon
             except (ValueError, TypeError):
                 continue
-
         return closest
 
 

@@ -151,6 +151,7 @@ memory_bank/
 .continue/
 DEPLOYMENT_GUIDE.md
 backend/app/data/bonds_trading_history.json
+backend/db/history_db.db
 
 # IDE and Editor
 *.sublime-project

@@ -10,34 +10,32 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 
-import orjson
-
 from app.utils.coupon_utils import COUPON_STORAGE_FIELDS
-from config.paths import COUPONS_DATA_JSON, DATA_DIR, DB_PATH
+from config.paths import DB_PATH
 
 
 class DBCoupon:
     """Репозиторий для работы с базой данных купонов облигаций.
-    
+
     Класс обеспечивает работу с таблицей coupons в SQLite базе данных.
     Отвечает за создание, обновление и запросы данных о купонах облигаций.
-    
+    Единственный источник истины для купонов — таблица coupons; чтение/запись
+    только через БД (без JSON-файлов).
+
     Основные методы:
-        refresh(): Создание или обновление таблицы coupons из JSON файлов (миграции).
-        fetch_coupons_raw(): Выполнение SELECT запросов с возвратом сырых данных о купонах.
-    
-    Note:
-        Обеспечивает полную синхронизацию данных купонов облигаций между JSON-источниками
-        и SQLite базой данных с гарантией целостности и актуальности информации.
+        has_coupons_for_secid(): Проверка наличия купонов для облигации в БД.
+        save_coupons_bulk(): Массовая вставка/обновление купонов (после API MOEX).
+        fetch_coupons_raw(): SELECT с фильтрами по secids и датам.
+        fetch_coupons_for_frontend(): Выборка полей для фронтенда по secids.
     """
-    
+
     def __init__(self, db_path: Optional[str] = None):
         """Инициализирует экземпляр репозитория для работы с купонами.
-        
+
         Args:
             db_path: Путь к файлу базы данных SQLite. Если не указан,
                 используется путь по умолчанию: backend/db/bonds.db
-        
+
         Attributes:
             db_path: Путь к файлу базы данных.
             logger: Логгер для записи событий и ошибок.
@@ -46,85 +44,84 @@ class DBCoupon:
             db_path = str(DB_PATH)
         self.db_path = Path(db_path)
         self.logger = logging.getLogger(__name__)
-    
-    def refresh(self, table_name: str) -> None:
-        """Создает или обновляет таблицу coupons в базе данных из JSON файлов.
-        
-        Выполняет полную синхронизацию данных купонов облигаций между JSON-источником
-        (coupons_data.json) и SQLite базой данных. Загружает данные, преобразует их
-        и сохраняет в БД в рамках одной транзакции.
-        
-        Последовательность выполнения:
-            1. Установить соединение с базой данных
-            2. Проверить существование таблицы coupons
-            3. Если таблица не существует — создать её
-            4. Загрузить данные из coupons_data.json
-            5. Преобразовать данные для каждой записи
-            6. Выполнить INSERT OR REPLACE INTO для всех записей в транзакции
-            7. Зафиксировать транзакцию
-            8. При ошибке выполнить rollback и пробросить исключение
-        
+
+    def has_coupons_for_secid(self, secid: str) -> bool:
+        """Проверяет, есть ли в БД хотя бы один купон для облигации с указанным secid.
+
+        Используется для проверки актуальности данных перед загрузкой из API MOEX.
+
         Args:
-            table_name: Имя таблицы для работы в БД. Должно быть "coupons".
-        
-        Raises:
-            FileNotFoundError: Если JSON файл coupons_data.json не найден.
-            orjson.JSONDecodeError: Если JSON файл некорректен или поврежден.
-            sqlite3.Error: Если произошла ошибка при работе с базой данных.
+            secid: Идентификатор облигации (SECID).
+
+        Returns:
+            True если в таблице coupons есть записи для данной облигации, иначе False.
+        """
+        if not secid or not str(secid).strip():
+            return False
+        if not self._table_exists("coupons"):
+            return False
+        sql = """
+        SELECT 1 FROM coupons c
+        INNER JOIN bonds b ON b.id = c.bond_id
+        WHERE b.secid = ?
+        LIMIT 1
         """
         try:
-            # Создаём директорию для БД, если она не существует
-            self._ensure_db_directory()
-            
-            # Устанавливаем соединение с базой данных
             with sqlite3.connect(self.db_path) as conn:
-                # Проверяем существование таблицы
-                if not self._table_exists(table_name):
-                    self.logger.info(f"Таблица {table_name} не существует, создаём её")
-                    self._create_coupons_table(conn)
-                else:
-                    self.logger.info(f"Таблица {table_name} существует, обновляем данные")
-                
-                # Загружаем данные из JSON
-                coupons_data = self._load_json_data()
-                if not coupons_data:
-                    self.logger.warning("JSON файл пуст или не содержит данных о купонах")
-                    return
-                
-                self.logger.info(f"Загружено {len(coupons_data)} записей купонов из JSON-файла")
-                
-                # Преобразуем данные
-                transformed_coupons = []
-                for raw_coupon in coupons_data:
-                    try:
-                        transformed = self._transform_coupon_data(raw_coupon)
-                        if transformed:
-                            transformed_coupons.append(transformed)
-                    except Exception as e:
-                        self.logger.warning(
-                            f"Ошибка при преобразовании данных купона "
-                            f"(secid={raw_coupon.get('secid', 'unknown')}, "
-                            f"coupondate={raw_coupon.get('coupondate', 'unknown')}): {e}"
-                        )
-                        continue
-                
-                self.logger.info(f"Преобразовано {len(transformed_coupons)} записей купонов")
-                
-                # Вставляем или заменяем записи в транзакции
-                self._insert_or_replace_coupons(conn, transformed_coupons)
-                
-                self.logger.info(
-                    f"Таблица {table_name} успешно создана/обновлена в базе данных: {self.db_path}"
-                )
-        except (FileNotFoundError, orjson.JSONDecodeError) as e:
-            self.logger.error(f"Ошибка при загрузке данных из JSON: {str(e)}", exc_info=True)
-            raise
+                cursor = conn.cursor()
+                cursor.execute(sql, (secid.strip(),))
+                return cursor.fetchone() is not None
         except sqlite3.Error as e:
-            self.logger.error(f"Ошибка при работе с базой данных: {str(e)}", exc_info=True)
+            self.logger.debug("has_coupons_for_secid(%s): %s", secid, e)
+            return False
+
+    def refresh(self, table_name: str, secid_to_id: Optional[Dict[str, int]] = None) -> None:
+        """Создаёт таблицу coupons, если её нет. Данные не загружаются из файлов.
+
+        Источник данных купонов — только API MOEX и save_coupons_bulk. Вызов
+        нужен для миграций/скриптов, чтобы гарантировать наличие таблицы.
+
+        Args:
+            table_name: Имя таблицы (должно быть "coupons").
+            secid_to_id: Не используется; оставлен для совместимости вызовов.
+        """
+        if table_name != "coupons":
+            self.logger.warning("refresh: ожидается table_name='coupons', получено %s", table_name)
+            return
+        try:
+            self._ensure_db_directory()
+            with sqlite3.connect(self.db_path) as conn:
+                if not self._table_exists(table_name):
+                    self._create_coupons_table(conn)
+                    self.logger.info("Таблица coupons создана: %s", self.db_path)
+        except sqlite3.Error as e:
+            self.logger.error("Ошибка при refresh(coupons): %s", e, exc_info=True)
             raise
-        except Exception as e:
-            self.logger.error(f"Неожиданная ошибка при синхронизации купонов: {str(e)}", exc_info=True)
-            raise
+
+    def save_coupons_bulk(self, records: List[Dict[str, Any]]) -> None:
+        """Вставляет или заменяет купоны напрямую с уже известным bond_id.
+
+        Не выполняет запросов к bonds — bond_id должен быть передан в каждой
+        записи. Используется после загрузки облигаций одним запросом и получения
+        купонов из API.
+
+        Args:
+            records: Список словарей с полями bond_id и полями купона
+                (coupondate, recorddate, startdate, initialfacevalue, facevalue,
+                faceunit, value, valueprc, value_rub). coupondate обязателен.
+
+        Raises:
+            sqlite3.Error: При ошибке работы с БД.
+        """
+        if not records:
+            self.logger.warning("save_coupons_bulk: нет записей для вставки")
+            return
+        self._ensure_db_directory()
+        with sqlite3.connect(self.db_path) as conn:
+            if not self._table_exists("coupons"):
+                self._create_coupons_table(conn)
+            self._insert_or_replace_coupons(conn, records)
+        self.logger.info(f"save_coupons_bulk: вставлено/обновлено {len(records)} записей")
     
     def _ensure_db_directory(self) -> None:
         """Создает директорию для базы данных, если она не существует.
@@ -158,20 +155,20 @@ class DBCoupon:
             return False
     
     def _create_coupons_table(self, conn: sqlite3.Connection) -> None:
-        """Создает таблицу coupons с указанной структурой.
-        
-        Определяет схему таблицы coupons со всеми необходимыми колонками
-        для хранения данных о купонах облигаций. Выполняет CREATE TABLE IF NOT EXISTS.
-        
+        """Создает таблицу coupons с bond_id (FK на bonds.id).
+
+        Схема управляется миграциями Alembic; метод используется при отсутствии
+        таблицы (например, после чистой установки). PK: (bond_id, coupondate).
+
         Args:
             conn: Соединение с базой данных SQLite.
-        
+
         Raises:
             sqlite3.Error: Если произошла ошибка при создании таблицы.
         """
         create_table_sql = """
         CREATE TABLE IF NOT EXISTS coupons (
-            secid TEXT NOT NULL,
+            bond_id INTEGER NOT NULL REFERENCES bonds(id) ON DELETE CASCADE,
             coupondate DATE,
             recorddate DATE,
             startdate DATE,
@@ -181,10 +178,9 @@ class DBCoupon:
             value REAL,
             valueprc REAL,
             value_rub REAL,
-            PRIMARY KEY (secid, coupondate)
+            PRIMARY KEY (bond_id, coupondate)
         )
         """
-        
         try:
             cursor = conn.cursor()
             cursor.execute(create_table_sql)
@@ -194,124 +190,58 @@ class DBCoupon:
             self.logger.error(f"Ошибка при создании таблицы coupons: {e}", exc_info=True)
             raise
     
-    def _load_json_data(self) -> List[Dict[str, Any]]:
-        """Загружает данные из coupons_data.json.
-        
-        Извлекает данные о купонах из структуры {"bonds": {"SECID": {"coupons": [...]}}}
-        и преобразует их в плоский список словарей, добавляя secid к каждому купону.
-        
-        Returns:
-            Список словарей с данными купонов. Каждый словарь содержит secid и данные купона.
-        
-        Raises:
-            FileNotFoundError: Если файл coupons_data.json не найден.
-            orjson.JSONDecodeError: Если JSON файл некорректен или поврежден.
-        """
-        coupons_path = DATA_DIR / COUPONS_DATA_JSON
-        if not coupons_path.exists():
-            error_msg = f"Файл {COUPONS_DATA_JSON} не найден: {coupons_path}"
-            self.logger.error(error_msg)
-            raise FileNotFoundError(error_msg)
-        
-        try:
-            with open(coupons_path, 'rb') as f:
-                data = orjson.loads(f.read())
-            
-            # Извлекаем данные о купонах из структуры {"bonds": {"SECID": {"coupons": [...]}}}
-            bonds_data = data.get("bonds", {})
-            coupons_list = []
-            
-            for secid, bond_data in bonds_data.items():
-                if not isinstance(bond_data, dict):
-                    continue
-                
-                coupons = bond_data.get("coupons", [])
-                if not isinstance(coupons, list):
-                    continue
-                
-                # Добавляем secid к каждому купону
-                for coupon in coupons:
-                    if isinstance(coupon, dict):
-                        coupon_with_secid = coupon.copy()
-                        coupon_with_secid["secid"] = secid
-                        coupons_list.append(coupon_with_secid)
-            
-            return coupons_list
-        except orjson.JSONDecodeError as e:
-            error_msg = f"Ошибка при декодировании JSON файла {coupons_path}: {e}"
-            self.logger.error(error_msg)
-            raise
-        except Exception as e:
-            error_msg = f"Ошибка при загрузке данных из {coupons_path}: {e}"
-            self.logger.error(error_msg, exc_info=True)
-            raise
-    
-    def _transform_coupon_data(self, raw_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Преобразует JSON данные в формат таблицы с обработкой отсутствующих полей.
-        
-        Выполняет преобразование сырых данных купона из JSON формата в формат,
-        пригодный для вставки в таблицу coupons. Обрабатывает отсутствующие поля
-        и преобразует даты в формат YYYY-MM-DD.
-        
-        При отсутствии полей в JSON:
-            - Для текстовых полей используется None (NULL)
-            - Для числовых полей используется 0
-            - Для полей дат (coupondate, recorddate, startdate) используется None
-              или преобразование в формат DATE (YYYY-MM-DD)
-        
+    def _transform_coupon_data(
+        self,
+        raw_data: Dict[str, Any],
+        secid_to_id: Optional[Dict[str, int]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Преобразует JSON/API данные в формат таблицы (bond_id + поля купона).
+
+        При наличии secid_to_id подставляет bond_id по secid. Даты приводятся
+        к формату YYYY-MM-DD.
+
         Args:
-            raw_data: Словарь с сырыми данными купона из JSON. Должен содержать
-                обязательные поля "secid" и "coupondate".
-        
+            raw_data: Словарь с полями secid (или bond_id) и coupondate и др.
+            secid_to_id: Маппинг secid → bonds.id; при отсутствии ожидается bond_id в raw_data.
+
         Returns:
-            Словарь с преобразованными данными для вставки в таблицу coupons или None,
-            если отсутствуют обязательные поля secid или coupondate.
+            Словарь с bond_id и полями купона для вставки или None при отсутствии ключей.
         """
-        # Извлекаем обязательные поля для составного ключа
-        secid = raw_data.get("secid")
-        coupondate_str = raw_data.get("coupondate")
-        
-        if not secid or not coupondate_str:
-            self.logger.warning(
-                f"Пропущена запись купона: отсутствует secid или coupondate. "
-                f"Данные: {raw_data}"
-            )
-            return None
-        
-        # Преобразуем даты из строк в объекты date, затем обратно в строки для хранения в БД
-        # SQLite хранит DATE как TEXT в формате YYYY-MM-DD
         def parse_date(date_str: Optional[str]) -> Optional[str]:
-            """Преобразует строку даты в формат YYYY-MM-DD для хранения в БД.
-            
-            Поддерживает различные форматы входных дат: YYYY-MM-DD, DD.MM.YYYY, YYYY/MM/DD.
-            
-            Args:
-                date_str: Строка с датой в одном из поддерживаемых форматов.
-            
-            Returns:
-                Строка с датой в формате YYYY-MM-DD или None, если дата не может быть распознана.
-            """
             if not date_str:
                 return None
             try:
-                # Парсим дату из строки (может быть в разных форматах)
                 if isinstance(date_str, str):
-                    # Пробуем разные форматы
                     for fmt in ["%Y-%m-%d", "%d.%m.%Y", "%Y/%m/%d"]:
                         try:
-                            parsed_date = datetime.strptime(date_str, fmt).date()
-                            return parsed_date.isoformat()  # Возвращаем в формате YYYY-MM-DD
+                            return datetime.strptime(date_str, fmt).date().isoformat()
                         except ValueError:
                             continue
-                    # Если не удалось распарсить, возвращаем как есть (если уже в формате YYYY-MM-DD)
-                    return date_str if len(date_str) == 10 and date_str[4] == '-' and date_str[7] == '-' else None
+                    if len(date_str) == 10 and date_str[4] == "-" and date_str[7] == "-":
+                        return date_str
                 return None
             except Exception:
                 return None
-        
-        # Преобразуем данные с обработкой отсутствующих полей
-        transformed = {
-            "secid": secid,
+
+        bond_id = raw_data.get("bond_id")
+        secid = raw_data.get("secid")
+        if bond_id is None and secid_to_id and secid:
+            bond_id = secid_to_id.get(secid)
+        if bond_id is None:
+            self.logger.warning(
+                "Пропущена запись купона: нет bond_id (secid=%s). Данные: %s",
+                secid or "?",
+                raw_data,
+            )
+            return None
+
+        coupondate_str = raw_data.get("coupondate")
+        if not coupondate_str:
+            self.logger.warning("Пропущена запись купона: отсутствует coupondate. Данные: %s", raw_data)
+            return None
+
+        return {
+            "bond_id": int(bond_id),
             "coupondate": parse_date(coupondate_str),
             "recorddate": parse_date(raw_data.get("recorddate")),
             "startdate": parse_date(raw_data.get("startdate")),
@@ -322,8 +252,6 @@ class DBCoupon:
             "valueprc": raw_data.get("valueprc") if raw_data.get("valueprc") is not None else 0.0,
             "value_rub": raw_data.get("value_rub") if raw_data.get("value_rub") is not None else 0.0,
         }
-        
-        return transformed
     
     def _insert_or_replace_coupons(self, conn: sqlite3.Connection, coupons: List[Dict[str, Any]]) -> None:
         """Вставляет или заменяет записи используя INSERT OR REPLACE INTO.
@@ -347,18 +275,16 @@ class DBCoupon:
         
         insert_sql = """
         INSERT OR REPLACE INTO coupons (
-            secid, coupondate, recorddate, startdate, initialfacevalue,
+            bond_id, coupondate, recorddate, startdate, initialfacevalue,
             facevalue, faceunit, value, valueprc, value_rub
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
-        
         try:
             cursor = conn.cursor()
             inserted_count = 0
-            
             for coupon in coupons:
                 cursor.execute(insert_sql, (
-                    coupon.get("secid"),
+                    coupon.get("bond_id"),
                     coupon.get("coupondate"),
                     coupon.get("recorddate"),
                     coupon.get("startdate"),
@@ -436,39 +362,31 @@ class DBCoupon:
             except ValueError:
                 raise ValueError(f"Неверный формат till_date: {till_date}. Ожидается YYYY-MM-DD")
         
-        # Формируем SQL запрос динамически
+        # JOIN с bonds для фильтра по secid и возврата secid в результате
         sql = """
-        SELECT 
-            secid, coupondate, recorddate, startdate, initialfacevalue,
-            facevalue, faceunit, value, valueprc, value_rub
-        FROM coupons
+        SELECT
+            c.bond_id, c.coupondate, c.recorddate, c.startdate, c.initialfacevalue,
+            c.facevalue, c.faceunit, c.value, c.valueprc, c.value_rub,
+            b.secid
+        FROM coupons c
+        INNER JOIN bonds b ON b.id = c.bond_id
         """
-        
         conditions = []
-        params = []
-        
-        # Фильтрация по secid
+        params: List[Any] = []
+
         if secids and len(secids) > 0:
             placeholders = ",".join("?" * len(secids))
-            conditions.append(f"secid IN ({placeholders})")
+            conditions.append(f"b.secid IN ({placeholders})")
             params.extend(secids)
-        
-        # Фильтрация по датам
-        # coupondate хранится как DATE в формате YYYY-MM-DD
         if from_date:
-            conditions.append("coupondate >= ?")
+            conditions.append("c.coupondate >= ?")
             params.append(from_date)
-        
         if till_date:
-            conditions.append("coupondate <= ?")
+            conditions.append("c.coupondate <= ?")
             params.append(till_date)
-        
-        # Добавляем условия WHERE если есть фильтры
         if conditions:
             sql += " WHERE " + " AND ".join(conditions)
-        
-        # Добавляем сортировку
-        sql += " ORDER BY secid, coupondate"
+        sql += " ORDER BY b.secid, c.coupondate"
         
         try:
             with sqlite3.connect(self.db_path) as conn:
@@ -515,18 +433,18 @@ class DBCoupon:
             self.logger.warning("Таблица coupons не существует, fetch_coupons_for_frontend возвращает []")
             return []
 
-        columns = ", ".join(("secid",) + COUPON_STORAGE_FIELDS)
-        sql = f"SELECT {columns} FROM coupons"
+        cols = ", ".join(f"c.{f}" for f in ("bond_id",) + COUPON_STORAGE_FIELDS) + ", b.secid"
+        sql = f"SELECT {cols} FROM coupons c INNER JOIN bonds b ON b.id = c.bond_id"
         conditions = []
-        params: List[Any] = []
+        params = []
 
         if secids and len(secids) > 0:
             placeholders = ",".join("?" * len(secids))
-            conditions.append(f"secid IN ({placeholders})")
+            conditions.append(f"b.secid IN ({placeholders})")
             params.extend(secids)
         if conditions:
             sql += " WHERE " + " AND ".join(conditions)
-        sql += " ORDER BY secid, coupondate"
+        sql += " ORDER BY b.secid, c.coupondate"
 
         try:
             with sqlite3.connect(self.db_path) as conn:

@@ -22,7 +22,10 @@ from app.services.bonds_service import (
 )
 from app.services.coupon_service import get_coupon_service
 from app.services.data_loader import get_data_loader
-from app.repository.db_orchestrator import DBOrchestrator
+from app.services.moex_client import MoexClient
+from app.repository.db.bonds_repository import BondsRepository
+from app.repository.db.db_coupon import DBCoupon
+from config.paths import DB_PATH
 from config.settings import settings
 from app.utils.logger import get_data_update_logger
 
@@ -123,7 +126,7 @@ async def refresh_bonds_endpoint():
     """Загружает последний набор данных об облигациях из MOEX и обновляет кэш.
 
     Выполняет HTTP запрос к API MOEX для получения актуальных данных об облигациях,
-    сохраняет данные в файл bonds.json и обновляет таблицу bonds в базе данных.
+    заполняет кэш в памяти и обновляет таблицу bonds в базе данных (без записи в файл).
     Также очищает кэш метаданных (колонки и описания полей) для обеспечения
     актуальности данных.
 
@@ -197,11 +200,11 @@ async def get_bond_detail(secid: str):
 
 @router.post("/refresh-coupons")
 async def refresh_coupons_data(force_refresh: bool = Query(False, description="Force refresh all coupons, ignoring cache (last_updated date)")):
-    """Обновляет данные о купонах для всех облигаций из файла bonds.json.
+    """Обновляет данные о купонах для всех облигаций из БД.
     
-    Читает список SECID из файла bonds.json и обновляет данные о купонах для каждой
-    облигации путем загрузки из API MOEX. После успешного обновления синхронизирует
-    данные с таблицей coupons в базе данных.
+    Загружает список облигаций одним запросом (SELECT id, secid FROM bonds),
+    для каждой облигации запрашивает купоны из API MOEX по secid и сохраняет
+    в таблицу coupons с bond_id без дополнительных запросов к bonds.
     
     Args:
         force_refresh: Если True, принудительно обновляет все купоны независимо от кэша
@@ -234,91 +237,84 @@ async def refresh_coupons_data(force_refresh: bool = Query(False, description="F
     
     try:
         coupon_service = get_coupon_service()
-        data_loader = get_data_loader()
-        
-        # Get all bonds data
-        logger.info("[API /bonds/refresh-coupons] Loading bonds data...")
-        print(f"[КУПОНЫ] Загрузка списка облигаций...")
-        bonds_list = await data_loader.get_bonds()
-        bonds_count = len(bonds_list)
-        logger.info(f"[API /bonds/refresh-coupons] Found {bonds_count} bonds to process")
+        bonds_repo = BondsRepository(db_path=DB_PATH)
+        db_coupon = DBCoupon(db_path=str(DB_PATH))
+        moex_client = MoexClient()
+
+        # Одна выборка облигаций: id и secid для всего процесса
+        logger.info("[API /bonds/refresh-coupons] Loading bonds from DB (id, secid)...")
+        print("[КУПОНЫ] Загрузка списка облигаций из БД (id, secid)...")
+        id_secid_list = await asyncio.to_thread(bonds_repo.get_id_secid_list)
+        bonds_count = len(id_secid_list)
+        logger.info("[API /bonds/refresh-coupons] Found %s bonds to process", bonds_count)
         print(f"[КУПОНЫ] Найдено облигаций для обработки: {bonds_count}")
-        
-        # Statistics
+
         updated_count = 0
         error_count = 0
         skipped_count = 0
-        
-        # Process each bond
-        print(f"[КУПОНЫ] Начало обработки облигаций...")
-        print(f"{'='*80}")
-        
-        for idx, bond in enumerate(bonds_list):
-            secid = bond.SECID
-            
+        all_records: List[dict] = []
+
+        print("[КУПОНЫ] Начало обработки облигаций...")
+        print("=" * 80)
+
+        for idx, (bond_id, secid) in enumerate(id_secid_list):
             if not secid:
-                logger.warning(f"[API /bonds/refresh-coupons] Bond {idx + 1}/{bonds_count}: Skipping - missing SECID")
-                print(f"[КУПОНЫ] [{idx + 1}/{bonds_count}] ПРОПУЩЕНО: отсутствует SECID")
+                logger.warning("[API /bonds/refresh-coupons] Bond %s/%s: Skipping - missing SECID", idx + 1, bonds_count)
                 skipped_count += 1
                 continue
-            
-            # Log progress for every bond
+
             progress_percent = ((idx + 1) / bonds_count) * 100
-            print(f"[КУПОНЫ] [{idx + 1}/{bonds_count}] ({progress_percent:.1f}%) Обработка облигации: SECID={secid}")
-            
+            print(f"[КУПОНЫ] [{idx + 1}/{bonds_count}] ({progress_percent:.1f}%) SECID={secid}")
             if (idx + 1) % 100 == 0:
-                logger.info(f"[API /bonds/refresh-coupons] Processing bond {idx + 1}/{bonds_count}: SECID={secid}")
-                print(f"[КУПОНЫ] Прогресс: обработано {idx + 1} из {bonds_count} облигаций")
-            
+                logger.info("[API /bonds/refresh-coupons] Processing bond %s/%s: SECID=%s", idx + 1, bonds_count, secid)
+
             try:
-                # Get coupons with force_refresh parameter
-                # If force_refresh=True, always fetch from MOEX
-                # If force_refresh=False, get_coupons will check if data is stale (older than 14 days)
-                await asyncio.to_thread(
-                    coupon_service.get_coupons,
-                    secid,
-                    force_refresh  # Use the parameter from request
-                )
+                fresh_data = await asyncio.to_thread(moex_client.fetch_coupons, secid)
+                for c in fresh_data.get("coupons", []):
+                    raw = {"bond_id": bond_id, **c}
+                    rec = db_coupon._transform_coupon_data(raw)
+                    if rec:
+                        all_records.append(rec)
                 updated_count += 1
-                print(f"[КУПОНЫ] [{idx + 1}/{bonds_count}] ✓ Успешно обновлено: SECID={secid}")
+                print(f"[КУПОНЫ] [{idx + 1}/{bonds_count}] ✓ SECID={secid}")
             except Exception as exc:
                 error_type = type(exc).__name__
                 error_msg = str(exc)
-                logger.error(f"[API /bonds/refresh-coupons] ERROR: Failed to update coupons for {secid} - {error_type}: {error_msg}")
-                print(f"[КУПОНЫ] [{idx + 1}/{bonds_count}] ✗ ОШИБКА при обновлении SECID={secid}: {error_type} - {error_msg}")
+                logger.error(
+                    "[API /bonds/refresh-coupons] ERROR: Failed to update coupons for %s - %s: %s",
+                    secid, error_type, error_msg,
+                )
+                print(f"[КУПОНЫ] [{idx + 1}/{bonds_count}] ✗ SECID={secid}: {error_type} - {error_msg}")
                 error_count += 1
-                # Continue processing other bonds even if one fails
                 continue
-        
-        print(f"{'='*80}")
+
+        print("=" * 80)
+        # Запись в БД напрямую с уже известным bond_id, без дополнительных SELECT
+        logger.info("[API /bonds/refresh-coupons] Saving coupons to DB (bulk)...")
+        print("[КУПОНЫ] Сохранение купонов в БД...")
+        await asyncio.to_thread(db_coupon.save_coupons_bulk, all_records)
+        logger.info("[API /bonds/refresh-coupons] Database table coupons updated: %s records", len(all_records))
+        print(f"[КУПОНЫ] В БД записано записей купонов: {len(all_records)}")
+
+        try:
+            get_data_loader().clear_bonds_cache()
+        except RuntimeError:
+            pass
+
         summary = {
             "status": "ok",
             "total_bonds": bonds_count,
             "updated": updated_count,
             "errors": error_count,
-            "skipped": skipped_count
+            "skipped": skipped_count,
         }
-        
-        logger.info(f"[API /bonds/refresh-coupons] Refresh completed: total={bonds_count}, updated={updated_count}, errors={error_count}, skipped={skipped_count}")
-        print(f"[КУПОНЫ] Обновление завершено!")
-        print(f"[КУПОНЫ] Всего облигаций: {bonds_count}")
-        print(f"[КУПОНЫ] Успешно обновлено: {updated_count}")
-        print(f"[КУПОНЫ] Ошибок: {error_count}")
-        print(f"[КУПОНЫ] Пропущено: {skipped_count}")
-        print(f"{'='*80}\n")
-        
-        # Update database table structure and data after successful file save
-        logger.info("[API /bonds/refresh-coupons] Starting database synchronization...")
-        print(f"[КУПОНЫ] Начало синхронизации с базой данных...")
-        orchestrator = DBOrchestrator()
-        db_refresh_result = await asyncio.to_thread(orchestrator.migrate, "coupons")
-        if db_refresh_result:
-            logger.info("[API /bonds/refresh-coupons] Database table coupons refreshed successfully")
-            print(f"[КУПОНЫ] Таблица coupons успешно обновлена в базе данных")
-        else:
-            logger.warning("[API /bonds/refresh-coupons] Database table coupons refresh failed, but coupons_data.json was saved successfully")
-            print(f"[КУПОНЫ] ВНИМАНИЕ: Обновление таблицы coupons в БД завершилось с ошибкой, но файл coupons_data.json сохранён успешно")
-        
+        logger.info(
+            "[API /bonds/refresh-coupons] Refresh completed: total=%s, updated=%s, errors=%s, skipped=%s",
+            bonds_count, updated_count, error_count, skipped_count,
+        )
+        print("[КУПОНЫ] Обновление завершено!")
+        print(f"[КУПОНЫ] Всего: {bonds_count}, обновлено: {updated_count}, ошибок: {error_count}, пропущено: {skipped_count}")
+        print("=" * 80 + "\n")
         return summary
         
     except Exception as exc:

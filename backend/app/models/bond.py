@@ -93,6 +93,7 @@ class Bond(SQLModel, table=True):
     board_name: Optional[str] = SQLField(default=None, max_length=128)
     call_option_date: Optional[str] = SQLField(default=None, max_length=10)
     put_option_date: Optional[str] = SQLField(default=None, max_length=10)
+    emitent_id: Optional[int] = SQLField(default=None)
 
 
 class BondListItem(BaseModel):
@@ -129,9 +130,8 @@ class BondListItem(BaseModel):
         RATING_AGENCY: Название рейтингового агентства (краткое название на русском).
         RATING_LEVEL: Уровень рейтинга (наихудший рейтинг из всех доступных).
         RATINGS: Список всех рейтингов облигации.
-        BONDTYPE: Тип облигации (из bonds_emitent.json).
-        BONDTYPE43: Вид облигации (BONDTYPE из bonds.json, индекс 43).
-        COUPON_TYPE: Тип купона (FIX или FLOAT) из coupons_data.json.
+        BONDTYPE: Тип облигации.
+        BONDTYPE43: Вид облигации.
         COUPON_YIELD_TO_PRICE: Доходность купона к текущей цене в процентах (вычисляемое поле).
         COUPON_FREQUENCY: Число выплат купона в год (вычисляемое поле).
         DURATION_YEARS: Дюрация в годах (вычисляемое поле).
@@ -167,9 +167,8 @@ class BondListItem(BaseModel):
     RATING_AGENCY: Optional[str] = None  # Название рейтингового агентства (agency_name_short_ru) - worst rating
     RATING_LEVEL: Optional[str] = None  # Уровень рейтинга (rating_level_name_short_ru) - worst rating
     RATINGS: Optional[List[Dict[str, Any]]] = None  # All ratings for the bond
-    BONDTYPE: Optional[str] = None  # Тип облигации (type из bonds_emitent.json)
-    BONDTYPE43: Optional[str] = None  # Вид облигации (BONDTYPE из bonds.json, индекс 43)
-    COUPON_TYPE: Optional[str] = None  # Тип купона (FIX или FLOAT) из coupons_data.json
+    BONDTYPE: Optional[str] = None  # Тип облигации
+    BONDTYPE43: Optional[str] = None  # Вид облигации
     # Вычисляемые на бэкенде поля (чистая архитектура — фронт только отображает)
     COUPON_YIELD_TO_PRICE: Optional[float] = None  # Доходность купона к текущей цене, %
     COUPON_FREQUENCY: Optional[int] = None  # Число выплат купона в год
@@ -188,8 +187,8 @@ class BondListItem(BaseModel):
 # class BondSecurity(BaseModel):
 #     """Модель секции данных о ценной бумаге (securities).
 #
-#     Содержит полную информацию о ценной бумаге из секции "securities"
-#     файла bonds.json. Включает все основные параметры облигации:
+#     Содержит полную информацию о ценной бумаге.
+#     Включает все основные параметры облигации:
 #     идентификаторы, цены, купоны, даты и дополнительные характеристики.
 #
 #     Attributes:
@@ -256,7 +255,7 @@ class BondListItem(BaseModel):
 #     ISIN: Optional[str] = Field(None, description="ISIN code")
 #     REGNUMBER: Optional[str] = Field(None, description="Registration number")
 #     CURRENCYID: Optional[str] = Field(None, description="Currency")
-#     # Additional fields from bonds.json
+#     # Дополнительные поля
 #     DECIMALS: Optional[int] = None
 #     COUPONPERIOD: Optional[int] = None
 #     ISSUESIZE: Optional[int] = None
@@ -284,15 +283,15 @@ class BondListItem(BaseModel):
 
 
 class BondSecurity(SQLModel, table=True):
-    """Упрощённая SQLModel-модель секции данных о ценной бумаге (securities).
+    """Упрощённая SQLModel-модель данных о ценной бумаге.
 
-    Таблица bondsecurity. Содержит сокращённый набор полей из секции "securities".
+    Таблица bondsecurity. Содержит расширенные поля торговых и эмиссионных параметров.
     Связана с таблицей bonds по полю bond_id (foreign key на bonds.id).
 
     Attributes:
         id: Автоинкрементный первичный ключ.
         bond_id: Внешний ключ на таблицу bonds (bonds.id).
-        boardid: Идентификатор режима торгов (BOARDID из секции securities).
+        boardid: Идентификатор режима торгов.
         prev_waprice: Предыдущая средневзвешенная цена.
         yield_at_prev_waprice: Доходность к погашению по предыдущей средневзвешенной цене.
         prev_price: Предыдущая цена облигации.
@@ -356,7 +355,7 @@ class BondSecurity(SQLModel, table=True):
 #
 #     Содержит информацию о текущих рыночных показателях облигации:
 #     цены покупки/продажи, объемы торгов, изменения цен и другие
-#     рыночные метрики из секции "marketdata" файла bonds.json.
+#     рыночные метрики.
 #
 #     Attributes:
 #         SECID: Идентификатор ценной бумаги (обязательное поле).
@@ -433,7 +432,7 @@ class BondMarketData(SQLModel, table=True):
     Attributes:
         id: Автоинкрементный первичный ключ.
         bond_id: Внешний ключ на таблицу bonds (bonds.id).
-        boardid: Идентификатор режима торгов (BOARDID из секции marketdata).
+        boardid: Идентификатор режима торгов.
         bid: Цена покупки (bid).
         offer: Цена продажи (offer).
         spread: Спред между ценой покупки и продажи.
@@ -501,11 +500,10 @@ class BondMarketData(SQLModel, table=True):
 
 
 class BondMarketDataYield(SQLModel, table=True):
-    """SQLModel-модель секции marketdata_yields из bonds.json.
+    """SQLModel-модель расчётов доходности облигации.
 
-    Таблица bondmarketdatayield. Содержит расчёты доходности облигации.
+    Таблица bondmarketdatayield. Содержит расчёты доходности, дюрации и спредов.
     Связана с таблицей bonds по полю bond_id (foreign key на bonds.id).
-    Структура соответствует секции marketdata_yields, собираемой в DataLoader._load_bonds_data().
 
     Attributes:
         id: Автоинкрементный первичный ключ.
@@ -563,23 +561,15 @@ class BondMarketDataYield(SQLModel, table=True):
 
 class BondDetail(BaseModel):
     """Модель полной информации об облигации со всеми секциями данных.
-    
-    Объединяет данные из всех секций файла bonds.json: securities,
-    marketdata и marketdata_yields. Используется для детального просмотра
-    информации об облигации на фронтенде.
-    
+
+    Объединяет базовые параметры ценной бумаги (securities), текущие рыночные
+    показатели (marketdata) и расчёты доходности (marketdata_yields).
+    Используется для детального просмотра на фронтенде.
+
     Attributes:
-        securities: Словарь со всеми полями секции "securities".
-            Используется гибкая структура для размещения всех возможных полей.
-        marketdata: Словарь с данными секции "marketdata" (опционально).
-            Содержит текущие рыночные показатели облигации.
-        marketdata_yields: Список словарей с данными секции "marketdata_yields" (опционально).
-            Содержит данные о доходностях по различным ценам и срокам.
-    
-    Note:
-        Используются словари Dict[str, Any] вместо строгих моделей для гибкости,
-        так как структура данных из MOEX API может изменяться и содержать
-        дополнительные поля, не описанные в моделях.
+        securities: Словарь с параметрами ценной бумаги (гибкая структура).
+        marketdata: Словарь с текущими рыночными показателями (опционально).
+        marketdata_yields: Список словарей с расчётами доходности по ценам и срокам (опционально).
     """
     securities: Dict[str, Any]  # Flexible to accommodate all fields
     marketdata: Optional[Dict[str, Any]] = None

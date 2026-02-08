@@ -65,13 +65,13 @@ def extract_coupon_for_storage(coupon: Dict[str, Any]) -> Dict[str, Any]:
 def to_frontend_coupon(row: Dict[str, Any]) -> Dict[str, Any]:
     """Приводит строку из БД к формату, ожидаемому фронтендом.
 
-    Удаляет поле secid, так как оно используется только для группировки
-    и не входит в интерфейс Coupon на фронтенде.
+    Удаляет bond_id (служебное поле связи). secid остаётся для группировки
+    в batch-запросах.
 
     Args:
-        row: Словарь с данными купона из БД (включая secid).
+        row: Словарь с данными купона из БД (bond_id, secid, поля купона).
 
     Returns:
-        Словарь с полями купона без secid.
+        Словарь с полями купона и secid, без bond_id.
     """
-    return {k: v for k, v in row.items() if k != "secid"}
+    return {k: v for k, v in row.items() if k != "bond_id"}

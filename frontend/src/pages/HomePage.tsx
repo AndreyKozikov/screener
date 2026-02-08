@@ -37,12 +37,13 @@ import { BondSelectionGuidePage } from './BondSelectionGuidePage';
 import { refreshBondsData, refreshCouponsData } from '../api/bonds';
 import { refreshZerocuponData, fetchZerocuponData } from '../api/zerocupon';
 import { refreshRatingsData } from '../api/rating';
-import { refreshRuoniaData, fetchRuoniaData } from '../api/ruonia';
+import { refreshRuoniaData } from '../api/ruonia';
 import { fetchForecastDates } from '../api/forecast';
 import { refreshEmitentsData } from '../api/emitent';
 import { refreshTradingHistory } from '../api/tradingHistory';
-import { getCurrencyRates, refreshCurrencyRates, type CurrencyRatesResponse } from '../api/currency';
-import { loadKeyRateData, getKeyRateData } from '../api/keyrate';
+import { getDashboardRates, type MacroRatesResponse } from '../api/dashboard';
+import { refreshCurrencyRates } from '../api/currency';
+import { loadKeyRateData } from '../api/keyrate';
 import { useUiStore } from '../stores/uiStore';
 import { useBondsStore } from '../stores/bondsStore';
 import { useComparisonStore } from '../stores/comparisonStore';
@@ -103,16 +104,10 @@ export const HomePage: React.FC = () => {
   const [isFeedbackDialogOpen, setIsFeedbackDialogOpen] = useState(false);
   const [isHelpDialogOpen, setIsHelpDialogOpen] = useState(false);
   
-  // Currency rates state
-  const [currencyRates, setCurrencyRates] = useState<CurrencyRatesResponse | null>(null);
-  const [isLoadingCurrencyRates, setIsLoadingCurrencyRates] = useState(false);
-  
-  // RUONIA rate state
-  const [ruoniaRate, setRuoniaRate] = useState<number | null>(null);
-  
-  // Key rate state
-  const [keyRate, setKeyRate] = useState<number | null>(null);
-  
+  // Dashboard rates (currency, RUONIA, key rate) — один ответ с бэкенда, отображаем как есть
+  const [dashboardRates, setDashboardRates] = useState<MacroRatesResponse | null>(null);
+  const [isLoadingDashboardRates, setIsLoadingDashboardRates] = useState(false);
+
   // Forecast cards last dates state
   const [zerocuponLastDate, setZerocuponLastDate] = useState<string | null>(null);
   const [forecastLastDate, setForecastLastDate] = useState<string | null>(null);
@@ -135,21 +130,20 @@ export const HomePage: React.FC = () => {
     return dateStr;
   };
 
-  // Load currency rates on mount
+  // Загрузка данных плашки (курсы валют, RUONIA, ключевая ставка) одним запросом
   useEffect(() => {
-    const loadCurrencyRates = async () => {
-      setIsLoadingCurrencyRates(true);
+    const loadDashboardRates = async () => {
+      setIsLoadingDashboardRates(true);
       try {
-        const rates = await getCurrencyRates();
-        setCurrencyRates(rates);
+        const data = await getDashboardRates();
+        setDashboardRates(data);
       } catch (error) {
-        console.error('Failed to load currency rates:', error);
+        console.error('Failed to load dashboard rates:', error);
       } finally {
-        setIsLoadingCurrencyRates(false);
+        setIsLoadingDashboardRates(false);
       }
     };
-    
-    loadCurrencyRates();
+    loadDashboardRates();
   }, []);
 
   // Load last dates for forecast cards
@@ -160,7 +154,6 @@ export const HomePage: React.FC = () => {
         try {
           const zerocuponData = await fetchZerocuponData(null, null);
           if (zerocuponData.data && zerocuponData.data.length > 0) {
-            // Data is sorted descending, first item is the latest
             const firstRecord = zerocuponData.data[0];
             const dateStr = firstRecord['Дата'];
             setZerocuponLastDate(formatDateForDisplay(dateStr));
@@ -173,69 +166,15 @@ export const HomePage: React.FC = () => {
         try {
           const forecastDates = await fetchForecastDates();
           if (forecastDates && forecastDates.length > 0) {
-            // Dates are typically sorted, take the first (latest)
             setForecastLastDate(formatDateForDisplay(forecastDates[0]));
           }
         } catch (error) {
           console.error('Failed to load forecast last date:', error);
         }
-
-        // Load ruonia rate
-        try {
-          const ruoniaData = await fetchRuoniaData(null, null);
-          if (ruoniaData.data && ruoniaData.data.length > 0) {
-            // Data is sorted descending, first item is the latest
-            const firstRecord = ruoniaData.data[0];
-            // Get last RUONIA rate
-            const rate = firstRecord['Ставка RUONIA, % годовых'];
-            if (rate !== null && rate !== undefined) {
-              setRuoniaRate(typeof rate === 'number' ? rate : parseFloat(String(rate)));
-            }
-          }
-        } catch (error) {
-          console.error('Failed to load ruonia rate:', error);
-        }
-
-        // Load key rate - find value closest to current date
-        try {
-          const keyRateData = await getKeyRateData();
-          if (keyRateData && Object.keys(keyRateData).length > 0) {
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            
-            // Find the date closest to today (but not in the future)
-            let closestDate: string | null = null;
-            let minDiff = Infinity;
-            
-            for (const dateStr of Object.keys(keyRateData)) {
-              const date = new Date(dateStr);
-              date.setHours(0, 0, 0, 0);
-              
-              // Only consider dates that are not in the future
-              if (date <= today) {
-                const diff = Math.abs(today.getTime() - date.getTime());
-                if (diff < minDiff) {
-                  minDiff = diff;
-                  closestDate = dateStr;
-                }
-              }
-            }
-            
-            if (closestDate) {
-              const rate = keyRateData[closestDate];
-              if (rate !== null && rate !== undefined) {
-                setKeyRate(typeof rate === 'number' ? rate : parseFloat(String(rate)));
-              }
-            }
-          }
-        } catch (error) {
-          console.error('Failed to load key rate:', error);
-        }
       } catch (error) {
         console.error('Failed to load forecast cards last dates:', error);
       }
     };
-
     loadLastDates();
   }, []);
 
@@ -290,71 +229,15 @@ export const HomePage: React.FC = () => {
       },
       currency: async () => {
         await refreshCurrencyRates();
-        // Reload currency rates to update display
-        try {
-          const rates = await getCurrencyRates();
-          setCurrencyRates(rates);
-        } catch (error) {
-          console.error('Failed to reload currency rates:', error);
-        }
       },
       ruonia: async () => {
         await refreshRuoniaData();
-        // Reload rate after refresh
-        try {
-          const ruoniaData = await fetchRuoniaData(null, null);
-          if (ruoniaData.data && ruoniaData.data.length > 0) {
-            const firstRecord = ruoniaData.data[0];
-            // Get last RUONIA rate
-            const rate = firstRecord['Ставка RUONIA, % годовых'];
-            if (rate !== null && rate !== undefined) {
-              setRuoniaRate(typeof rate === 'number' ? rate : parseFloat(String(rate)));
-            }
-          }
-        } catch (error) {
-          console.error('Failed to reload ruonia rate:', error);
-        }
       },
       'trading-history': async () => {
         await refreshTradingHistory();
       },
       keyrate: async () => {
         await loadKeyRateData();
-        // Reload key rate after refresh
-        try {
-          const keyRateData = await getKeyRateData();
-          if (keyRateData && Object.keys(keyRateData).length > 0) {
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            
-            // Find the date closest to today (but not in the future)
-            let closestDate: string | null = null;
-            let minDiff = Infinity;
-            
-            for (const dateStr of Object.keys(keyRateData)) {
-              const date = new Date(dateStr);
-              date.setHours(0, 0, 0, 0);
-              
-              // Only consider dates that are not in the future
-              if (date <= today) {
-                const diff = Math.abs(today.getTime() - date.getTime());
-                if (diff < minDiff) {
-                  minDiff = diff;
-                  closestDate = dateStr;
-                }
-              }
-            }
-            
-            if (closestDate) {
-              const rate = keyRateData[closestDate];
-              if (rate !== null && rate !== undefined) {
-                setKeyRate(typeof rate === 'number' ? rate : parseFloat(String(rate)));
-              }
-            }
-          }
-        } catch (error) {
-          console.error('Failed to reload key rate:', error);
-        }
       },
     };
 
@@ -387,7 +270,18 @@ export const HomePage: React.FC = () => {
 
     // Wait for all tasks to complete
     await Promise.allSettled(promises);
-    
+
+    // Обновить плашку одним запросом, если обновляли курсы/RUONIA/ключевую ставку
+    const panelTasks = ['currency', 'ruonia', 'keyrate'];
+    if (selectedTasks.some((id) => panelTasks.includes(id))) {
+      try {
+        const data = await getDashboardRates();
+        setDashboardRates(data);
+      } catch (error) {
+        console.error('Failed to reload dashboard rates:', error);
+      }
+    }
+
     setIsRefreshing(false);
   };
 
@@ -750,7 +644,7 @@ export const HomePage: React.FC = () => {
       }}>
         {viewMode === 'HUB' ? (
           <>
-            {/* Currency Rates */}
+            {/* Плашка: курсы валют, RUONIA, ключевая ставка — данные с одного эндпоинта, отображаем как есть */}
             <Box
               sx={{
                 bgcolor: 'background.paper',
@@ -768,22 +662,23 @@ export const HomePage: React.FC = () => {
                 boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.05)',
               }}
             >
-              {isLoadingCurrencyRates ? (
+              {isLoadingDashboardRates ? (
                 <CircularProgress size={16} />
               ) : (
                 (() => {
-                  const currencies = currencyRates ? [
-                    currencyRates.rates.EUR && { code: 'EUR', rate: currencyRates.rates.EUR.rate },
-                    currencyRates.rates.USD && { code: 'USD', rate: currencyRates.rates.USD.rate },
-                    currencyRates.rates.CNY && { code: 'CNY', rate: currencyRates.rates.CNY.rate },
-                  ].filter(Boolean) as Array<{ code: string; rate: number }> : [];
-                  
-                  const items: Array<{ label: string; value: number; key: string }> = [
-                    ...currencies.map(c => ({ label: c.code, value: c.rate, key: c.code })),
-                    ...(ruoniaRate !== null ? [{ label: 'RUONIA', value: ruoniaRate, key: 'RUONIA' }] : []),
-                    ...(keyRate !== null ? [{ label: 'Ключевая ставка', value: keyRate, key: 'KEYRATE' }] : []),
+                  const dr = dashboardRates;
+                  const currencies = dr?.rates
+                    ? [
+                        dr.rates.EUR && { label: 'EUR', value: dr.rates.EUR.rate, key: 'EUR', isPercent: false },
+                        dr.rates.USD && { label: 'USD', value: dr.rates.USD.rate, key: 'USD', isPercent: false },
+                        dr.rates.CNY && { label: 'CNY', value: dr.rates.CNY.rate, key: 'CNY', isPercent: false },
+                      ].filter(Boolean) as Array<{ label: string; value: number; key: string; isPercent: boolean }>
+                    : [];
+                  const items: Array<{ label: string; value: number; key: string; isPercent: boolean }> = [
+                    ...currencies,
+                    ...(dr?.ruonia_rate != null ? [{ label: 'RUONIA', value: dr.ruonia_rate, key: 'RUONIA', isPercent: true }] : []),
+                    ...(dr?.key_rate != null ? [{ label: 'Ключевая ставка', value: dr.key_rate, key: 'KEYRATE', isPercent: true }] : []),
                   ];
-                  
                   if (items.length === 0) {
                     return (
                       <Typography
@@ -799,7 +694,6 @@ export const HomePage: React.FC = () => {
                       </Typography>
                     );
                   }
-                  
                   return items.map((item, index) => (
                     <React.Fragment key={item.key}>
                       <Typography
@@ -811,16 +705,10 @@ export const HomePage: React.FC = () => {
                           color: 'text.primary',
                         }}
                       >
-                        {item.label}: <strong>{(item.key === 'RUONIA' || item.key === 'KEYRATE') ? item.value.toFixed(2) + '%' : item.value.toFixed(2)}</strong>
+                        {item.label}: <strong>{item.isPercent ? `${item.value.toFixed(2)}%` : item.value.toFixed(2)}</strong>
                       </Typography>
                       {index < items.length - 1 && (
-                        <Box
-                          sx={{
-                            width: '1px',
-                            height: '16px',
-                            bgcolor: 'divider',
-                          }}
-                        />
+                        <Box sx={{ width: '1px', height: '16px', bgcolor: 'divider' }} />
                       )}
                     </React.Fragment>
                   ));
@@ -1010,7 +898,7 @@ export const HomePage: React.FC = () => {
                       />
                       <HubCard
                         title="Ставка RUONIA"
-                        value={ruoniaRate !== null ? `${ruoniaRate.toFixed(2)}%` : "—"}
+                        value={dashboardRates?.ruonia_rate != null ? `${dashboardRates.ruonia_rate.toFixed(2)}%` : "—"}
                         subtitle="Информация о ставке RUONIA"
                         icon={<PercentIcon />}
                         color="#9c27b0"
@@ -1018,7 +906,7 @@ export const HomePage: React.FC = () => {
                       />
                       <HubCard
                         title="Ключевая ставка ЦБ"
-                        value={keyRate !== null ? `${keyRate.toFixed(2)}%` : "—"}
+                        value={dashboardRates?.key_rate != null ? `${dashboardRates.key_rate.toFixed(2)}%` : "—"}
                         subtitle="Информация о ключевой ставке Центрального Банка"
                         icon={<PercentIcon />}
                         color="#e91e63"

@@ -1,9 +1,9 @@
 """Центральный модуль расчётной логики облигаций.
 
-Содержит класс BondTransformer: загрузка маппингов, объединение данных из JSON,
-расчёт доходности, дюрации, рейтингов, флагов оферт и преобразование сырых
-данных в объекты Bond для сохранения в БД. Вся бизнес-логика расчётов
-сосредоточена здесь; в БД сохраняются только физически рассчитанные значения.
+Содержит класс BondTransformer: загрузка маппингов, объединение payload MOEX
+(transform_raw_payload), расчёт доходности, дюрации, рейтингов, флагов оферт
+и преобразование сырых данных в объекты Bond для сохранения в БД. Рейтинги
+и данные эмитентов загружаются из БД (bond_ratings, emitent_ratings, emitents).
 """
 
 import logging
@@ -11,106 +11,64 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-import orjson
+from sqlmodel import Session, select
 
-from app.models.bond import Bond, BondMarketData, BondMarketDataYield, BondSecurity
+from app.models.bond import Bond
+from app.models.emitent import Emitent
+from app.models.rating import BondRating, EmitentRating, RatingAgency
 from app.repository.files.file_storage import FileStorage
 from config.paths import (
-    BONDS_EMITENT_JSON,
-    BONDS_JSON,
-    BONDS_RATING_JSON,
     BONDS_TYPE_MAPPING_JSON,
     BONDS_TYPE43_MAPPING_JSON,
-    COUPONS_DATA_JSON,
 )
 from app.utils.rating_utils import get_rating_index, standardize_rating
 from app.services.emitent_service import get_emitent_service
 
 
 class BondTransformer:
-    """Преобразование данных облигаций из JSON в формат таблицы БД.
+    """Преобразование данных облигаций в формат таблицы БД.
 
-    Загружает маппинги типов и видов облигаций из JSON, объединяет данные
-    из bonds.json, bonds_rating.json, bonds_emitent.json и coupons_data.json,
-    вычисляет рейтинги и производные поля и формирует словари для вставки в БД.
+    Загружает маппинги типов и видов облигаций из JSON; рейтинги облигаций
+    и данные эмитентов — из БД (bond_ratings, emitent_ratings, rating_agency, emitents).
+    Объединяет сырые данные с рейтингами, вычисляет наихудший рейтинг и формирует
+    словари для вставки в БД.
 
     Attributes:
-        data_dir: Путь к директории с JSON файлами данных.
-        storage: Хранилище для чтения JSON файлов.
+        data_dir: Путь к директории с JSON файлами (маппинги типов/видов).
+        storage: Хранилище для чтения JSON.
+        session: Сессия SQLModel для запросов к БД (рейтинги, эмитенты).
     """
 
-    def __init__(self, data_dir: Path, storage: FileStorage):
+    def __init__(self, data_dir: Path, storage: FileStorage, db_session: Session):
         """Инициализирует преобразователь данных облигаций.
 
         Args:
-            data_dir: Путь к директории с JSON файлами (bonds.json, маппинги и т.д.).
+            data_dir: Путь к директории с JSON файлами (маппинги типов/видов).
             storage: Экземпляр FileStorage для чтения JSON.
+            db_session: Сессия SQLModel для запросов к таблицам bond_ratings,
+                emitent_ratings, rating_agency, emitents, bonds.
         """
         self.data_dir = Path(data_dir)
         self.storage = storage
+        self.session = db_session
         self.logger = logging.getLogger(__name__)
 
-    def load_mappings(self) -> Tuple[Dict[str, int], Dict[str, int]]:
-        """Загружает маппинги типов и видов облигаций из JSON-файлов.
+    def transform_raw_payload(self, payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Объединяет секции payload (MOEX) по SECID в список словарей облигаций.
 
-        Загружает маппинги из bonds_type_mapping.json и bonds_type43_mapping.json
-        для преобразования строковых значений типов и видов облигаций в числовые ID.
+        Реализует логику объединения securities, marketdata и marketdata_yields
+        по SECID без чтения с диска. Облигации с режимом SPOB исключаются.
 
-        Returns:
-            Кортеж из двух словарей:
-            - type_mapping: Маппинг типов облигаций (строка -> ID).
-            - kind_mapping: Маппинг видов облигаций (строка -> ID).
-        """
-        type_mapping: Dict[str, int] = {}
-        kind_mapping: Dict[str, int] = {}
-
-        type_path = self.data_dir / BONDS_TYPE_MAPPING_JSON
-        if type_path.exists():
-            try:
-                data = self.storage.read_json(type_path)
-                if isinstance(data, dict):
-                    type_mapping = {k: int(v) for k, v in data.items() if v is not None}
-                self.logger.debug("Загружен маппинг типов: %s записей", len(type_mapping))
-            except Exception as e:
-                self.logger.warning("Ошибка при загрузке маппинга типов: %s", e)
-
-        kind_path = self.data_dir / BONDS_TYPE43_MAPPING_JSON
-        if kind_path.exists():
-            try:
-                data = self.storage.read_json(kind_path)
-                if isinstance(data, dict):
-                    kind_mapping = {k: int(v) for k, v in data.items() if v is not None}
-                self.logger.debug("Загружен маппинг видов: %s записей", len(kind_mapping))
-            except Exception as e:
-                self.logger.warning("Ошибка при загрузке маппинга видов: %s", e)
-
-        return type_mapping, kind_mapping
-
-    def prepare_bonds_for_db(self) -> List[Dict[str, Any]]:
-        """Загружает данные облигаций из JSON-файлов и объединяет их.
-
-        Читает bonds.json, объединяет секции securities, marketdata и marketdata_yields.
-        Рейтинг: сначала из bonds_rating.json; если не установлен — из bonds_emitent.json
-        (cci_rating_companies). После выбора источника выполняется стандартизация рейтинга
-        и запись в структуру для сохранения в БД. Добавляет типы из bonds_emitent.json
-        и значения купонов из coupons_data.json (через CouponLoader).
+        Args:
+            payload: Словарь с ключами securities, marketdata, marketdata_yields
+                (формат ответа MOEX API).
 
         Returns:
-            Список словарей с данными облигаций (по одному на облигацию),
-            готовых для передачи в transform_batch.
+            Список словарей (по одному на облигацию) с объединёнными полями.
+            Готов для передачи в prepare_bonds_for_db.
         """
         bonds_data: List[Dict[str, Any]] = []
-        bonds_path = self.data_dir / BONDS_JSON
-
-        if not bonds_path.exists():
-            self.logger.error("Файл bonds.json не найден: %s", bonds_path)
-            return bonds_data
-
-        try:
-            data = self.storage.read_json(bonds_path)
-        except Exception as e:
-            self.logger.error("Ошибка при загрузке bonds.json: %s", e, exc_info=True)
-            return bonds_data
+        data = payload
 
         securities = data.get("securities", {})
         sec_columns = securities.get("columns", [])
@@ -165,22 +123,78 @@ class BondTransformer:
 
             bonds_data.append(bond_dict)
 
-        self.logger.debug("Загружено %s облигаций из bonds.json", len(bonds_data))
+        self.logger.debug("Преобразовано из payload: %s облигаций", len(bonds_data))
+        return bonds_data
 
+    def load_mappings(self) -> Tuple[Dict[str, int], Dict[str, int]]:
+        """Загружает маппинги типов и видов облигаций из JSON-файлов.
+
+        Загружает маппинги из bonds_type_mapping.json и bonds_type43_mapping.json
+        для преобразования строковых значений типов и видов облигаций в числовые ID.
+
+        Returns:
+            Кортеж из двух словарей:
+            - type_mapping: Маппинг типов облигаций (строка -> ID).
+            - kind_mapping: Маппинг видов облигаций (строка -> ID).
+        """
+        type_mapping: Dict[str, int] = {}
+        kind_mapping: Dict[str, int] = {}
+
+        type_path = self.data_dir / BONDS_TYPE_MAPPING_JSON
+        if type_path.exists():
+            try:
+                data = self.storage.read_json(type_path)
+                if isinstance(data, dict):
+                    type_mapping = {k: int(v) for k, v in data.items() if v is not None}
+                self.logger.debug("Загружен маппинг типов: %s записей", len(type_mapping))
+            except Exception as e:
+                self.logger.warning("Ошибка при загрузке маппинга типов: %s", e)
+
+        kind_path = self.data_dir / BONDS_TYPE43_MAPPING_JSON
+        if kind_path.exists():
+            try:
+                data = self.storage.read_json(kind_path)
+                if isinstance(data, dict):
+                    kind_mapping = {k: int(v) for k, v in data.items() if v is not None}
+                self.logger.debug("Загружен маппинг видов: %s записей", len(kind_mapping))
+            except Exception as e:
+                self.logger.warning("Ошибка при загрузке маппинга видов: %s", e)
+
+        return type_mapping, kind_mapping
+
+    def prepare_bonds_for_db(
+        self, raw_bonds_data: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """Обогащает сырые данные облигаций рейтингами и эмитентами из БД.
+
+        Рейтинг: сначала из bond_ratings (БД); если не установлен — из emitent_ratings
+        по эмитенту облигации (cci_rating_companies). Выполняется стандартизация
+        рейтинга и определение наихудшего через _get_worst_rating/standardize_rating/get_rating_index.
+        Маппинги загружаются одним запросом с JOIN (без N+1).
+
+        Args:
+            raw_bonds_data: Список словарей из API/файла (securities + marketdata + yields).
+
+        Returns:
+            Тот же список с добавленными RATINGS, RATING_AGENCY, RATING_LEVEL, BONDTYPE;
+            готов для transform_batch.
+        """
         ratings_map = self._load_ratings_map()
         emitent_map = self._load_emitent_map()
-        for bond in bonds_data:
+
+        for bond in raw_bonds_data:
             secid = bond.get("SECID")
             if not secid:
                 continue
-            # 1) Рейтинг: сначала из bonds_rating.json
+            # 1) Рейтинг: сначала из bond_ratings (БД)
             if secid in ratings_map:
                 bond["RATINGS"] = ratings_map[secid].get("all_ratings", [])
-            # 2) Если рейтинг не установлен — из bonds_emitent.json
+            # 2) Если рейтинг не установлен — из emitent_ratings по эмитенту (БД)
             if secid in emitent_map:
-                bond["BONDTYPE"] = emitent_map[secid].get("type")
+                emitent_entry = emitent_map[secid]
+                bond["BONDTYPE"] = emitent_entry.get("type")
                 if not bond.get("RATINGS"):
-                    bond["RATINGS"] = emitent_map[secid].get("cci_rating_companies", []) or []
+                    bond["RATINGS"] = emitent_entry.get("cci_rating_companies", []) or []
             # 3) Стандартизация рейтинга и запись в структуру для сохранения в БД
             if bond.get("RATINGS"):
                 worst_rating = self._get_worst_rating(bond["RATINGS"])
@@ -189,83 +203,97 @@ class BondTransformer:
                     rating_level_raw = worst_rating.get("rating_level_name_short_ru", "").strip()
                     bond["RATING_LEVEL"] = standardize_rating(rating_level_raw) or rating_level_raw
 
-        # COUPONVALUE теперь берётся из securities (bonds.json от MOEX API)
-        # bond_dict уже содержит COUPONVALUE из zip(sec_columns, row)
-        return bonds_data
+        return raw_bonds_data
 
-    def _load_ratings_map(self) -> Dict[str, Dict[str, Any]]:
-        """Загружает рейтинги облигаций из bonds_rating.json.
+    def _load_ratings_map(self) -> Dict[str, Dict[str, List[Dict[str, Any]]]]:
+        """Загружает рейтинги облигаций из БД (bond_ratings + bonds + rating_agency).
+
+        Один запрос с JOIN: bonds.secid, rating_agency.agency_name_short_ru,
+        bond_ratings.rating_level_name. Для secid без рейтингов в словаре записи нет
+        (при обращении вернуть пустой список).
 
         Returns:
-            Словарь, где ключ — SECID, значение — словарь с ключом "all_ratings".
+            Словарь: ключ — secid, значение — {"all_ratings": [{"agency_name_short_ru", "rating_level_name", "rating_level_name_short_ru"}, ...]}.
         """
-        ratings_map: Dict[str, Dict[str, Any]] = {}
-        path = self.data_dir / BONDS_RATING_JSON
-        if not path.exists():
-            return ratings_map
+        ratings_map: Dict[str, Dict[str, List[Dict[str, Any]]]] = {}
         try:
-            ratings_data = self.storage.read_json(path)
-            if not isinstance(ratings_data, dict):
-                return ratings_map
-            for secid, rating_entry in ratings_data.items():
-                if isinstance(rating_entry, dict):
-                    ratings_list = rating_entry.get("ratings") or rating_entry.get("all_ratings", [])
-                elif isinstance(rating_entry, list):
-                    ratings_list = rating_entry
-                else:
+            # JOIN bond_ratings -> bonds (по bond_id) и rating_agency (по agency_id = rating_agency.agency_id)
+            stmt = (
+                select(Bond.secid, RatingAgency.agency_name_short_ru, BondRating.rating_level_name)
+                .join(BondRating, Bond.id == BondRating.bond_id)
+                .join(RatingAgency, BondRating.agency_id == RatingAgency.agency_id)
+            )
+            rows = self.session.exec(stmt).all()
+            for secid, agency_name_short_ru, rating_level_name in rows:
+                if not secid:
                     continue
-                if isinstance(ratings_list, list) and len(ratings_list) > 0:
-                    valid = [
-                        r for r in ratings_list
-                        if isinstance(r, dict) and (r.get("agency_name_short_ru") or "").strip()
-                    ]
-                    if valid:
-                        ratings_map[secid] = {"all_ratings": valid}
+                name_ru = (agency_name_short_ru or "").strip()
+                level = (rating_level_name or "").strip()
+                if not name_ru:
+                    continue
+                entry = {
+                    "agency_name_short_ru": name_ru,
+                    "rating_level_name": level,
+                    "rating_level_name_short_ru": level,
+                }
+                if secid not in ratings_map:
+                    ratings_map[secid] = {"all_ratings": []}
+                ratings_map[secid]["all_ratings"].append(entry)
         except Exception as e:
-            self.logger.warning("Ошибка при загрузке рейтингов: %s", e)
+            self.logger.warning("Ошибка при загрузке рейтингов из БД: %s", e)
         return ratings_map
 
     def _load_emitent_map(self) -> Dict[str, Dict[str, Any]]:
-        """Загружает данные эмитентов из bonds_emitent.json.
+        """Загружает данные эмитентов из БД (bonds -> emitents -> emitent_ratings -> rating_agency).
+
+        Один запрос с JOIN по secid. Извлекает type из emitents, cci_rating_companies —
+        список словарей с agency_name_short_ru и rating_level_name_short_ru для совместимости
+        с _get_worst_rating.
 
         Returns:
-            Словарь, где ключ — SECID, значение — словарь с данными эмитента.
+            Словарь: ключ — secid, значение — {"type": str|None, "cci_rating_companies": [...]}.
         """
         emitent_map: Dict[str, Dict[str, Any]] = {}
-        path = self.data_dir / BONDS_EMITENT_JSON
-        if not path.exists():
-            return emitent_map
         try:
-            emitent_data = self.storage.read_json(path)
-            if isinstance(emitent_data, dict):
-                for secid, entry in emitent_data.items():
-                    if isinstance(entry, dict):
-                        emitent_map[secid] = entry
+            # Bond -> Emitent (emitent_id), EmitentRating (emitent_id), RatingAgency (agency_id = rating_agency.id)
+            stmt = (
+                select(
+                    Bond.secid,
+                    Emitent.type,
+                    RatingAgency.agency_name_short_ru,
+                    EmitentRating.rating_level_name,
+                )
+                .join(Emitent, Bond.emitent_id == Emitent.id)
+                .join(EmitentRating, EmitentRating.emitent_id == Emitent.id)
+                .join(RatingAgency, EmitentRating.agency_id == RatingAgency.id)
+            )
+            rows = self.session.exec(stmt).all()
+            for secid, emitent_type, agency_name_short_ru, rating_level_name in rows:
+                if not secid:
+                    continue
+                name_ru = (agency_name_short_ru or "").strip()
+                level = (rating_level_name or "").strip() if rating_level_name else ""
+                if secid not in emitent_map:
+                    type_val = (emitent_type or "").strip() or None
+                    emitent_map[secid] = {"type": type_val, "cci_rating_companies": []}
+                emitent_map[secid]["cci_rating_companies"].append({
+                    "agency_name_short_ru": name_ru,
+                    "rating_level_name_short_ru": level,
+                })
         except Exception as e:
-            self.logger.warning("Ошибка при загрузке данных эмитентов: %s", e)
+            self.logger.warning("Ошибка при загрузке данных эмитентов из БД: %s", e)
         return emitent_map
 
     def _load_coupons_map(self) -> Dict[str, Dict[str, Any]]:
-        """Загружает данные о купонах из coupons_data.json.
+        """Заглушка: данные о купонах хранятся только в БД (таблица coupons).
+
+        Источник истины для купонов — DBCoupon. Метод оставлен для совместимости
+        вызовов; возвращает пустой словарь.
 
         Returns:
-            Словарь, где ключ — SECID, значение — словарь с данными о купонах.
+            Пустой словарь (купоны запрашиваются через CouponService/DBCoupon).
         """
-        coupons_map: Dict[str, Dict[str, Any]] = {}
-        path = self.data_dir / COUPONS_DATA_JSON
-        if not path.exists():
-            return coupons_map
-        try:
-            coupons_data = self.storage.read_json(path)
-            if isinstance(coupons_data, dict):
-                bonds_data = coupons_data.get("bonds", {})
-                if isinstance(bonds_data, dict):
-                    for secid, bond_data in bonds_data.items():
-                        if isinstance(bond_data, dict):
-                            coupons_map[secid] = bond_data
-        except Exception as e:
-            self.logger.warning("Ошибка при загрузке данных о купонах: %s", e)
-        return coupons_map
+        return {}
 
     def _get_worst_rating(self, ratings_list: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         """Определяет наихудший рейтинг из списка рейтингов.
@@ -487,6 +515,7 @@ class BondTransformer:
             board_name=raw_data.get("BOARDNAME"),
             call_option_date=call_option_date,
             put_option_date=put_option_date,
+            emitent_id=None,
         )
 
     def transform_batch(self, raw_bonds_list: List[Dict[str, Any]]) -> List[Bond]:
@@ -537,103 +566,100 @@ class BondTransformer:
                 pass
         return None
 
-    def transform_to_bond_security(
-        self, raw_data: Dict[str, Any], bond_id: int
-    ) -> Optional[BondSecurity]:
-        """Преобразует сырые данные секции securities в объект BondSecurity.
+    def transform_to_bond_security(self, raw_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Преобразует сырые данные секции securities в словарь для вставки.
 
-        Извлекает поля из merged bond_dict (securities). Только облигации,
-        которые будут сохранены в bonds (без SPOB), попадают в raw_data.
+        Извлекает поля из merged bond_dict (securities). Возвращает словарь
+        с secid, boardid и всеми полями BondSecurity (без bond_id).
+        bond_id подставляется через подзапрос при сохранении.
 
         Args:
             raw_data: Словарь с сырыми данными (результат prepare_bonds_for_db).
-            bond_id: ID родительской записи в таблице bonds.
 
         Returns:
-            BondSecurity или None, если SECID отсутствует.
+            Словарь с secid, boardid и полями BondSecurity или None, если SECID отсутствует.
         """
         secid = raw_data.get("SECID")
         if not secid:
             return None
-        return BondSecurity(
-            bond_id=bond_id,
-            boardid=self._safe_str(raw_data.get("BOARDID")),
-            prev_waprice=self._safe_float(raw_data.get("PREVWAPRICE")),
-            yield_at_prev_waprice=self._safe_float(raw_data.get("YIELDATPREVWAPRICE")),
-            prev_price=self._safe_float(raw_data.get("PREVPRICE")),
-            lot_size=self._safe_int(raw_data.get("LOTSIZE")),
-            reg_number=self._safe_str(raw_data.get("REGNUMBER")),
-            decimals=self._safe_int(raw_data.get("DECIMALS")),
-            issue_size=self._safe_int(raw_data.get("ISSUESIZE")),
-            prev_legal_close_price=self._safe_float(raw_data.get("PREVLEGALCLOSEPRICE")),
-            prev_date=self._parse_date_for_security(raw_data.get("PREVDATE")),
-            remarks=self._safe_str(raw_data.get("REMARKS")),
-            market_code=self._safe_str(raw_data.get("MARKETCODE")),
-            instr_id=self._safe_str(raw_data.get("INSTRID")),
-            sector_id=self._safe_str(raw_data.get("SECTORID")),
-            min_step=self._safe_float(raw_data.get("MINSTEP")),
-            face_unit=self._safe_str(raw_data.get("FACEUNIT")),
-            buyback_price=self._safe_float(raw_data.get("BUYBACKPRICE")),
-            buyback_date=self._parse_date_for_security(raw_data.get("BUYBACKDATE")),
-            lat_name=self._safe_str(raw_data.get("LATNAME")),
-            issue_size_placed=self._safe_int(raw_data.get("ISSUESIZEPLACED")),
-            sec_type=self._safe_str(raw_data.get("SECTYPE")),
-            settle_date=self._parse_date_for_security(raw_data.get("SETTLEDATE")),
-            lot_value=self._safe_float(raw_data.get("LOTVALUE")),
-            face_value_on_settle_date=self._safe_float(raw_data.get("FACEVALUEONSETTLEDATE")),
-            date_yield_from_issuer=self._parse_date_for_security(raw_data.get("DATEYIELDFROMISSUER")),
-        )
+        boardid = self._safe_str(raw_data.get("BOARDID"))
+        return {
+            "secid": secid,
+            "boardid": boardid,
+            "prev_waprice": self._safe_float(raw_data.get("PREVWAPRICE")),
+            "yield_at_prev_waprice": self._safe_float(raw_data.get("YIELDATPREVWAPRICE")),
+            "prev_price": self._safe_float(raw_data.get("PREVPRICE")),
+            "lot_size": self._safe_int(raw_data.get("LOTSIZE")),
+            "reg_number": self._safe_str(raw_data.get("REGNUMBER")),
+            "decimals": self._safe_int(raw_data.get("DECIMALS")),
+            "issue_size": self._safe_int(raw_data.get("ISSUESIZE")),
+            "prev_legal_close_price": self._safe_float(raw_data.get("PREVLEGALCLOSEPRICE")),
+            "prev_date": self._parse_date_for_security(raw_data.get("PREVDATE")),
+            "remarks": self._safe_str(raw_data.get("REMARKS")),
+            "market_code": self._safe_str(raw_data.get("MARKETCODE")),
+            "instr_id": self._safe_str(raw_data.get("INSTRID")),
+            "sector_id": self._safe_str(raw_data.get("SECTORID")),
+            "min_step": self._safe_float(raw_data.get("MINSTEP")),
+            "face_unit": self._safe_str(raw_data.get("FACEUNIT")),
+            "buyback_price": self._safe_float(raw_data.get("BUYBACKPRICE")),
+            "buyback_date": self._parse_date_for_security(raw_data.get("BUYBACKDATE")),
+            "lat_name": self._safe_str(raw_data.get("LATNAME")),
+            "issue_size_placed": self._safe_int(raw_data.get("ISSUESIZEPLACED")),
+            "sec_type": self._safe_str(raw_data.get("SECTYPE")),
+            "settle_date": self._parse_date_for_security(raw_data.get("SETTLEDATE")),
+            "lot_value": self._safe_float(raw_data.get("LOTVALUE")),
+            "face_value_on_settle_date": self._safe_float(raw_data.get("FACEVALUEONSETTLEDATE")),
+            "date_yield_from_issuer": self._parse_date_for_security(raw_data.get("DATEYIELDFROMISSUER")),
+        }
 
-    def transform_to_bond_market_data(
-        self, raw_data: Dict[str, Any], bond_id: int
-    ) -> Optional[BondMarketData]:
-        """Преобразует сырые данные секции marketdata в объект BondMarketData.
+    def transform_to_bond_market_data(self, raw_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Преобразует сырые данные секции marketdata в словарь для вставки.
 
-        Извлекает поля из merged bond_dict (секция marketdata).
-        Создаётся только для записей, у которых есть данные marketdata (merged в bond_dict).
+        Возвращает словарь с secid, boardid и полями BondMarketData (без bond_id).
+        bond_id подставляется через подзапрос при сохранении.
 
         Args:
             raw_data: Словарь с сырыми данными (результат prepare_bonds_for_db).
-            bond_id: ID родительской записи в таблице bonds.
 
         Returns:
-            BondMarketData или None, если SECID отсутствует.
+            Словарь с secid, boardid и полями BondMarketData или None, если SECID отсутствует.
         """
         secid = raw_data.get("SECID")
         if not secid:
             return None
-        return BondMarketData(
-            bond_id=bond_id,
-            boardid=self._safe_str(raw_data.get("BOARDID")),
-            bid=self._safe_float(raw_data.get("BID")),
-            offer=self._safe_float(raw_data.get("OFFER")),
-            spread=self._safe_float(raw_data.get("SPREAD")),
-            bid_depth=self._safe_int(raw_data.get("BIDDEPTH")),
-            offer_depth=self._safe_int(raw_data.get("OFFERDEPTH")),
-            open_price=self._safe_float(raw_data.get("OPEN")),
-            low=self._safe_float(raw_data.get("LOW")),
-            high=self._safe_float(raw_data.get("HIGH")),
-            last_price=self._safe_float(raw_data.get("LAST")),
-            last_change=self._safe_float(raw_data.get("LASTCHANGE")),
-            last_change_prcnt=self._safe_float(raw_data.get("LASTCHANGEPRCNT")),
-            qty=self._safe_int(raw_data.get("QTY")),
-            value=self._safe_float(raw_data.get("VALUE")),
-            value_usd=self._safe_float(raw_data.get("VALUE_USD")),
-            waprice=self._safe_float(raw_data.get("WAPRICE")),
-            last_cnt_to_last_waprice=self._safe_float(raw_data.get("LASTCNGTOLASTWAPRICE")),
-            wap_to_prev_waprice_prcnt=self._safe_float(raw_data.get("WAPTOPREVWAPRICEPRCNT")),
-            wap_to_prev_waprice=self._safe_float(raw_data.get("WAPTOPREVWAPRICE")),
-            close_price=self._safe_float(raw_data.get("CLOSEPRICE")),
-            market_price_today=self._safe_float(raw_data.get("MARKETPRICETODAY")),
-            market_price=self._safe_float(raw_data.get("MARKETPRICE")),
-            last_to_prev_price=self._safe_float(raw_data.get("LASTTOPREVPRICE")),
-            num_trades=self._safe_int(raw_data.get("NUMTRADES")),
-            vol_today=self._safe_int(raw_data.get("VOLTODAY")),
-            val_today=self._safe_float(raw_data.get("VALTODAY")),
-            val_today_usd=self._safe_float(raw_data.get("VALTODAY_USD")),
-            etf_settle_price=self._safe_float(raw_data.get("ETFSETTLEPRICE")),
-            update_time=self._safe_str(raw_data.get("UPDATETIME")),
-        )
+        boardid = self._safe_str(raw_data.get("BOARDID"))
+        return {
+            "secid": secid,
+            "boardid": boardid,
+            "bid": self._safe_float(raw_data.get("BID")),
+            "offer": self._safe_float(raw_data.get("OFFER")),
+            "spread": self._safe_float(raw_data.get("SPREAD")),
+            "bid_depth": self._safe_int(raw_data.get("BIDDEPTH")),
+            "offer_depth": self._safe_int(raw_data.get("OFFERDEPTH")),
+            "open_price": self._safe_float(raw_data.get("OPEN")),
+            "low": self._safe_float(raw_data.get("LOW")),
+            "high": self._safe_float(raw_data.get("HIGH")),
+            "last_price": self._safe_float(raw_data.get("LAST")),
+            "last_change": self._safe_float(raw_data.get("LASTCHANGE")),
+            "last_change_prcnt": self._safe_float(raw_data.get("LASTCHANGEPRCNT")),
+            "qty": self._safe_int(raw_data.get("QTY")),
+            "value": self._safe_float(raw_data.get("VALUE")),
+            "value_usd": self._safe_float(raw_data.get("VALUE_USD")),
+            "waprice": self._safe_float(raw_data.get("WAPRICE")),
+            "last_cnt_to_last_waprice": self._safe_float(raw_data.get("LASTCNGTOLASTWAPRICE")),
+            "wap_to_prev_waprice_prcnt": self._safe_float(raw_data.get("WAPTOPREVWAPRICEPRCNT")),
+            "wap_to_prev_waprice": self._safe_float(raw_data.get("WAPTOPREVWAPRICE")),
+            "close_price": self._safe_float(raw_data.get("CLOSEPRICE")),
+            "market_price_today": self._safe_float(raw_data.get("MARKETPRICETODAY")),
+            "market_price": self._safe_float(raw_data.get("MARKETPRICE")),
+            "last_to_prev_price": self._safe_float(raw_data.get("LASTTOPREVPRICE")),
+            "num_trades": self._safe_int(raw_data.get("NUMTRADES")),
+            "vol_today": self._safe_int(raw_data.get("VOLTODAY")),
+            "val_today": self._safe_float(raw_data.get("VALTODAY")),
+            "val_today_usd": self._safe_float(raw_data.get("VALTODAY_USD")),
+            "etf_settle_price": self._safe_float(raw_data.get("ETFSETTLEPRICE")),
+            "update_time": self._safe_str(raw_data.get("UPDATETIME")),
+        }
 
     @staticmethod
     def _safe_float(val: Any) -> Optional[float]:
@@ -664,25 +690,20 @@ class BondTransformer:
         return s if s else None
 
     def transform_to_bond_securities_batch(
-        self, raw_bonds_list: List[Dict[str, Any]], secid_to_id: Dict[str, int]
-    ) -> List[BondSecurity]:
-        """Преобразует список сырых облигаций в список BondSecurity.
+        self, raw_bonds_list: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """Преобразует список сырых облигаций в список словарей для BondSecurity.
 
         Args:
             raw_bonds_list: Список словарей с сырыми данными.
-            secid_to_id: Маппинг secid -> bond.id для установки FK.
 
         Returns:
-            Список объектов BondSecurity с установленным bond_id.
+            Список словарей с secid, boardid и полями BondSecurity.
         """
-        result: List[BondSecurity] = []
+        result: List[Dict[str, Any]] = []
         for bond_data in raw_bonds_list:
             try:
-                secid = bond_data.get("SECID")
-                if not secid or secid not in secid_to_id:
-                    continue
-                bond_id = secid_to_id[secid]
-                obj = self.transform_to_bond_security(bond_data, bond_id)
+                obj = self.transform_to_bond_security(bond_data)
                 if obj:
                     result.append(obj)
             except Exception as e:
@@ -694,25 +715,20 @@ class BondTransformer:
         return result
 
     def transform_to_bond_market_data_batch(
-        self, raw_bonds_list: List[Dict[str, Any]], secid_to_id: Dict[str, int]
-    ) -> List[BondMarketData]:
-        """Преобразует список сырых облигаций в список BondMarketData.
+        self, raw_bonds_list: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """Преобразует список сырых облигаций в список словарей для BondMarketData.
 
         Args:
             raw_bonds_list: Список словарей с сырыми данными.
-            secid_to_id: Маппинг secid -> bond.id для установки FK.
 
         Returns:
-            Список объектов BondMarketData с установленным bond_id.
+            Список словарей с secid, boardid и полями BondMarketData.
         """
-        result: List[BondMarketData] = []
+        result: List[Dict[str, Any]] = []
         for bond_data in raw_bonds_list:
             try:
-                secid = bond_data.get("SECID")
-                if not secid or secid not in secid_to_id:
-                    continue
-                bond_id = secid_to_id[secid]
-                obj = self.transform_to_bond_market_data(bond_data, bond_id)
+                obj = self.transform_to_bond_market_data(bond_data)
                 if obj:
                     result.append(obj)
             except Exception as e:
@@ -724,70 +740,65 @@ class BondTransformer:
         return result
 
     def transform_to_bond_market_data_yield(
-        self, raw_data: Dict[str, Any], bond_id: int
-    ) -> Optional[BondMarketDataYield]:
-        """Преобразует сырые данные секции marketdata_yields в объект BondMarketDataYield.
+        self, raw_data: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """Преобразует сырые данные секции marketdata_yields в словарь для вставки.
 
-        Извлекает поля из merged bond_dict (yields_map). Создаётся только для записей,
-        у которых есть данные marketdata_yields (EFFECTIVEYIELD или YIELDDATETYPE).
+        Возвращает словарь с secid, boardid и полями BondMarketDataYield (без bond_id).
+        bond_id подставляется через подзапрос при сохранении.
 
         Args:
             raw_data: Словарь с сырыми данными (результат prepare_bonds_for_db).
-            bond_id: ID родительской записи в таблице bonds.
 
         Returns:
-            BondMarketDataYield или None, если SECID отсутствует или нет yields.
+            Словарь с secid, boardid и полями BondMarketDataYield или None.
         """
         secid = raw_data.get("SECID")
         if not secid:
             return None
         if raw_data.get("EFFECTIVEYIELD") is None and raw_data.get("YIELDDATETYPE") is None:
             return None
-        return BondMarketDataYield(
-            bond_id=bond_id,
-            boardid=self._safe_str(raw_data.get("BOARDID")),
-            price=self._safe_float(raw_data.get("PRICE")),
-            yield_date=self._safe_str(raw_data.get("YIELDDATE")),
-            zcyc_moment=self._safe_str(raw_data.get("ZCYCMOMENT")),
-            yield_date_type=self._safe_str(raw_data.get("YIELDDATETYPE")),
-            effective_yield=self._safe_float(raw_data.get("EFFECTIVEYIELD")),
-            duration=self._safe_int(raw_data.get("DURATION")),
-            zspread_bp=self._safe_int(raw_data.get("ZSPREADBP")),
-            gspread_bp=self._safe_int(raw_data.get("GSPREADBP")),
-            waprice=self._safe_float(raw_data.get("WAPRICE")),
-            effective_yield_waprice=self._safe_float(raw_data.get("EFFECTIVEYIELDWAPRICE")),
-            duration_waprice=self._safe_int(raw_data.get("DURATIONWAPRICE")),
-            ir=self._safe_float(raw_data.get("IR")),
-            icpi=self._safe_float(raw_data.get("ICPI")),
-            bei=self._safe_float(raw_data.get("BEI")),
-            cbr=self._safe_float(raw_data.get("CBR")),
-            yield_to_offer=self._safe_float(raw_data.get("YIELDTOOFFER")),
-            yield_last_coupon=self._safe_float(raw_data.get("YIELDLASTCOUPON")),
-            trade_moment=self._safe_str(raw_data.get("TRADEMOMENT")),
-            seqnum=self._safe_int(raw_data.get("SEQNUM")),
-            systime=self._safe_str(raw_data.get("SYSTIME")),
-        )
+        boardid = self._safe_str(raw_data.get("BOARDID"))
+        return {
+            "secid": secid,
+            "boardid": boardid,
+            "price": self._safe_float(raw_data.get("PRICE")),
+            "yield_date": self._safe_str(raw_data.get("YIELDDATE")),
+            "zcyc_moment": self._safe_str(raw_data.get("ZCYCMOMENT")),
+            "yield_date_type": self._safe_str(raw_data.get("YIELDDATETYPE")),
+            "effective_yield": self._safe_float(raw_data.get("EFFECTIVEYIELD")),
+            "duration": self._safe_int(raw_data.get("DURATION")),
+            "zspread_bp": self._safe_int(raw_data.get("ZSPREADBP")),
+            "gspread_bp": self._safe_int(raw_data.get("GSPREADBP")),
+            "waprice": self._safe_float(raw_data.get("WAPRICE")),
+            "effective_yield_waprice": self._safe_float(raw_data.get("EFFECTIVEYIELDWAPRICE")),
+            "duration_waprice": self._safe_int(raw_data.get("DURATIONWAPRICE")),
+            "ir": self._safe_float(raw_data.get("IR")),
+            "icpi": self._safe_float(raw_data.get("ICPI")),
+            "bei": self._safe_float(raw_data.get("BEI")),
+            "cbr": self._safe_float(raw_data.get("CBR")),
+            "yield_to_offer": self._safe_float(raw_data.get("YIELDTOOFFER")),
+            "yield_last_coupon": self._safe_float(raw_data.get("YIELDLASTCOUPON")),
+            "trade_moment": self._safe_str(raw_data.get("TRADEMOMENT")),
+            "seqnum": self._safe_int(raw_data.get("SEQNUM")),
+            "systime": self._safe_str(raw_data.get("SYSTIME")),
+        }
 
     def transform_to_bond_market_data_yields_batch(
-        self, raw_bonds_list: List[Dict[str, Any]], secid_to_id: Dict[str, int]
-    ) -> List[BondMarketDataYield]:
-        """Преобразует список сырых облигаций в список BondMarketDataYield.
+        self, raw_bonds_list: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """Преобразует список сырых облигаций в список словарей для BondMarketDataYield.
 
         Args:
             raw_bonds_list: Список словарей с сырыми данными.
-            secid_to_id: Маппинг secid -> bond.id для установки FK.
 
         Returns:
-            Список объектов BondMarketDataYield с установленным bond_id.
+            Список словарей с secid, boardid и полями BondMarketDataYield.
         """
-        result: List[BondMarketDataYield] = []
+        result: List[Dict[str, Any]] = []
         for bond_data in raw_bonds_list:
             try:
-                secid = bond_data.get("SECID")
-                if not secid or secid not in secid_to_id:
-                    continue
-                bond_id = secid_to_id[secid]
-                obj = self.transform_to_bond_market_data_yield(bond_data, bond_id)
+                obj = self.transform_to_bond_market_data_yield(bond_data)
                 if obj:
                     result.append(obj)
             except Exception as e:

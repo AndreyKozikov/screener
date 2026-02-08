@@ -123,7 +123,6 @@ export const PremiumBondCard: React.FC<PremiumBondCardProps> = ({ bondDetail }) 
   const couponValue = typeof securities?.COUPONVALUE === 'number' ? securities.COUPONVALUE : null;
   const nextCoupon = typeof securities?.NEXTCOUPON === 'string' ? securities.NEXTCOUPON : null;
   const couponPeriod = typeof securities?.COUPONPERIOD === 'number' ? securities.COUPONPERIOD : null;
-  const couponType: string | null = null;  // Недоступен из БД
 
   // Volume and issue
   const faceUnit = typeof securities?.FACEUNIT === 'string' ? securities.FACEUNIT : null;
@@ -223,15 +222,6 @@ export const PremiumBondCard: React.FC<PremiumBondCardProps> = ({ bondDetail }) 
     if (lastDigit === 1) return `${days} день`;
     if (lastDigit >= 2 && lastDigit <= 4) return `${days} дня`;
     return `${days} дней`;
-  };
-
-  // Format coupon type
-  const formatCouponType = (type: string | null): string => {
-    if (!type) return '—';
-    const typeUpper = type.toUpperCase();
-    if (typeUpper === 'FIX') return 'Постоянный';
-    if (typeUpper === 'FLOAT') return 'Плавающий';
-    return type;
   };
 
   const currencySymbol = getCurrencySymbol(faceUnit);
@@ -533,14 +523,6 @@ export const PremiumBondCard: React.FC<PremiumBondCardProps> = ({ bondDetail }) 
             </Typography>
             <Typography variant="body1" fontWeight={600}>
               {couponPeriod !== null ? `${couponPeriod} дней` : '—'}
-            </Typography>
-          </Grid>
-          <Grid size={{ xs: 6 }} sx={{ textAlign: 'center' }}>
-            <Typography variant="body2" color="text.secondary" gutterBottom>
-              Тип купона
-            </Typography>
-            <Typography variant="body1" fontWeight={600}>
-              {formatCouponType(couponType)}
             </Typography>
           </Grid>
           {couponProgress && (

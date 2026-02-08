@@ -8,13 +8,14 @@
 from fastapi import APIRouter
 from typing import Dict, List
 
+from app.models.describe_dto import DescribeDTO
+from app.repository.db.describe_repository import DescribeRepository
 from app.services.data_loader import get_data_loader
 from app.utils.logger import get_data_update_logger
+from config.paths import DB_PATH
 
 router = APIRouter(prefix="/api", tags=["metadata"])
 """Роутер FastAPI для обработки запросов к API метаданных."""
-
-
 
 
 @router.get("/columns", response_model=Dict[str, str])
@@ -34,19 +35,22 @@ async def get_columns():
     return await loader.get_column_mapping()
 
 
-@router.get("/descriptions")
-async def get_descriptions():
-    """Получает описания полей.
-    
-    Загружает подробные описания полей из файла describe.json и возвращает их
-    для использования на фронтенде (подсказки, справка).
-    
+@router.get("/descriptions", response_model=DescribeDTO)
+async def get_descriptions() -> DescribeDTO:
+    """Получает описания полей из БД (таблица describe_fields).
+
+    Возвращает структуру секция -> поле -> описание для подсказок на фронтенде.
+    Совместим с прежним форматом ответа (describe.json).
+
     Returns:
-        Словарь с описаниями полей из файла describe.json. Структура словаря
-        соответствует структуре файла describe.json.
+        DescribeDTO с полями securities и marketdata (словари поле -> описание).
     """
-    loader = get_data_loader()
-    return await loader.get_descriptions()
+    repo = DescribeRepository(db_path=DB_PATH)
+    data = repo.get_descriptions_formatted()
+    return DescribeDTO(
+        securities=data.get("securities") or {},
+        marketdata=data.get("marketdata") or {},
+    )
 
 
 @router.get("/filter-options")
@@ -80,11 +84,11 @@ async def get_filter_options():
 
 @router.post("/refresh-metadata")
 async def refresh_metadata():
-    """Очищает кэш метаданных для принудительной перезагрузки из файлов.
-    
-    Очищает кэш маппингов колонок и описаний полей в DataLoader. При следующем
-    запросе метаданные будут перезагружены из файлов columns.json и describe.json.
-    Полезно при обновлении этих файлов.
+    """Очищает кэш метаданных (колонки) для принудительной перезагрузки из файлов.
+
+    Очищает кэш маппинга колонок в DataLoader. Описания полей берутся из БД
+    (таблица describe_fields). При следующем запросе /api/columns данные
+    будут перезагружены из columns.json.
     
     Returns:
         Словарь с результатом операции, содержащий:
@@ -101,5 +105,5 @@ async def refresh_metadata():
     logger.info("[API /refresh-metadata] Metadata cache cleared successfully")
     return {
         "status": "ok",
-        "message": "Metadata cache cleared. Columns and descriptions will be reloaded on next request.",
+        "message": "Metadata cache cleared. Columns will be reloaded on next request.",
     }
