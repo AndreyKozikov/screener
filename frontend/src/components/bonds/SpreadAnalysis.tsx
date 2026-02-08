@@ -93,6 +93,7 @@ export const SpreadAnalysis: React.FC = () => {
   const [selectedEmitent, setSelectedEmitent] = useState<string>('');
   const [emitentOptions, setEmitentOptions] = useState<string[]>([]);
   const [isLoadingEmitents, setIsLoadingEmitents] = useState(false);
+  const [emitentLoadError, setEmitentLoadError] = useState<string | null>(null);
   const [bonds, setBonds] = useState<BondListItem[]>([]);
   const [isLoadingBonds, setIsLoadingBonds] = useState(false);
   const [zerocuponData, setZerocuponData] = useState<ZerocuponRecord[]>([]);
@@ -125,13 +126,16 @@ export const SpreadAnalysis: React.FC = () => {
   useEffect(() => {
     const loadEmitents = async () => {
       setIsLoadingEmitents(true);
+      setEmitentLoadError(null);
       try {
         const response = await getEmitentList();
-        setEmitentOptions(response.emitents);
-        // Don't auto-select - user should choose from empty state
+        setEmitentOptions(response.emitents ?? []);
       } catch (error) {
         console.error('Error loading emitents:', error);
         setEmitentOptions([]);
+        setEmitentLoadError(
+          error instanceof Error ? error.message : 'Ошибка загрузки списка эмитентов. Проверьте подключение к серверу.'
+        );
       } finally {
         setIsLoadingEmitents(false);
       }
@@ -1585,6 +1589,16 @@ export const SpreadAnalysis: React.FC = () => {
                   ))}
                 </Select>
               </FormControl>
+              {!isLoadingEmitents && emitentOptions.length === 0 && emitentLoadError && (
+                <Typography variant="caption" color="error" sx={{ mt: 1, display: 'block' }}>
+                  {emitentLoadError}
+                </Typography>
+              )}
+              {!isLoadingEmitents && emitentOptions.length === 0 && !emitentLoadError && (
+                <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                  Список пуст. Выполните «Обновить данные» → «Обновить эмитентов» в меню.
+                </Typography>
+              )}
             </Box>
 
             {/* Tabs Section */}

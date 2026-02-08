@@ -342,6 +342,29 @@ class EmitentsRepository:
             self.logger.warning("Ошибка при чтении emitent по secid=%s: %s", secid, e)
             return None
 
+    def get_all_emitent_titles(self) -> List[str]:
+        """Возвращает отсортированный список уникальных названий эмитентов из БД.
+
+        Используется как fallback для API списка эмитентов, когда кэш облигаций пуст
+        (например, после деплоя до первого обновления облигаций).
+
+        Returns:
+            Отсортированный список непустых названий эмитентов.
+        """
+        stmt = text("""
+            SELECT DISTINCT e.title
+            FROM emitents e
+            WHERE e.title IS NOT NULL AND trim(e.title) != ''
+            ORDER BY e.title
+        """)
+        try:
+            with Session(self._engine) as session:
+                rows = session.execute(stmt).fetchall()
+                return [str(row[0]).strip() for row in rows if row[0]]
+        except Exception as e:
+            self.logger.warning("Ошибка при чтении списка эмитентов: %s", e)
+            return []
+
     def get_secid_to_emitent_title_index(self) -> Dict[str, str]:
         """Возвращает маппинг SECID облигации -> название эмитента из БД."""
         stmt = text("""

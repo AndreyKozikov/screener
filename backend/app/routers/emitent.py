@@ -25,8 +25,9 @@ router = APIRouter(prefix="/api/emitent", tags=["emitent"])
 async def list_emitents() -> Dict[str, List[str]]:
     """Получает список всех уникальных названий эмитентов из БД.
 
-    Загружает все облигации из кэша DataLoader и извлекает уникальные названия
-    эмитентов из БД по маппингу secid -> emitent_title.
+    Сначала строит список по кэшу облигаций и маппингу secid -> emitent_title в БД.
+    Если кэш пуст (например после деплоя), использует fallback: выборка уникальных
+    названий напрямую из таблицы emitents.
 
     Returns:
         Словарь с ключом "emitents", содержащий отсортированный список уникальных
@@ -51,6 +52,11 @@ async def list_emitents() -> Dict[str, List[str]]:
                     emitent_titles_set.add(emitent_title.strip())
 
         emitent_titles = sorted(list(emitent_titles_set))
+
+        # Fallback: если кэш облигаций пуст (например после деплоя), список строится из БД
+        if not emitent_titles:
+            emitents_repo = EmitentsRepository(db_path=DB_PATH, data_dir=DATA_DIR)
+            emitent_titles = emitents_repo.get_all_emitent_titles()
 
         return {"emitents": emitent_titles}
 
