@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from sqlalchemy import text
 from sqlmodel import Session, create_engine, select
 
-from app.models.emitent import Emitent
+from app.models import Emitent
 from app.utils.logger import get_data_update_logger
 from config.paths import DATA_DIR, DB_PATH
 

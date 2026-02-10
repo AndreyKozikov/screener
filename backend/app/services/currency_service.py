@@ -12,7 +12,7 @@ from typing import Dict, List, Optional, Any
 
 import requests
 
-from app.models.currencyrate import DBcurrencyrate
+from app.models import DBcurrencyrate
 from app.repository.db.currencyrate_repository import CurrencyrateRepository
 from app.utils.logger import get_data_update_logger
 from config.paths import DB_PATH

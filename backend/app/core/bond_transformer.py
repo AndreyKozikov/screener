@@ -13,9 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from sqlmodel import Session, select
 
-from app.models.bond import Bond
-from app.models.emitent import Emitent
-from app.models.rating import BondRating, EmitentRating, RatingAgency
+from app.models import Bond, BondRating, Emitent, EmitentRating, RatingAgency
 from app.repository.files.file_storage import FileStorage
 from config.paths import (
     BONDS_TYPE_MAPPING_JSON,

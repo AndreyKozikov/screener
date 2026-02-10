@@ -8,7 +8,7 @@
 from fastapi import APIRouter
 from typing import Dict, List
 
-from app.models.describe_dto import DescribeDTO
+from app.models import DescribeDTO
 from app.repository.db.describe_repository import DescribeRepository
 from app.services.data_loader import get_data_loader
 from app.utils.logger import get_data_update_logger

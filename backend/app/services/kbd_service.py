@@ -11,7 +11,7 @@ import logging
 from pathlib import Path
 
 from app.repository.db.db_kbd import KbdRepository
-from app.models.kbd_DTO import KbdDTO
+from app.models import KbdDTO
 
 
 class KbdService:

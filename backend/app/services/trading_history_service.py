@@ -17,7 +17,7 @@ from urllib.request import Request, urlopen
 
 import orjson
 
-from app.models.trading_history import TradingHistoryRecord
+from app.models import TradingHistoryRecord
 from app.repository.db.bonds_repository import BondsRepository
 from app.repository.db.trading_history_repository import TradingHistoryRepository
 from app.utils.logger import get_data_update_logger

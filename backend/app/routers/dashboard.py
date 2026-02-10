@@ -8,7 +8,7 @@ import asyncio
 
 from fastapi import APIRouter, HTTPException
 
-from app.models.macro_rates_dto import MacroRatesDTO
+from app.models import MacroRatesDTO
 from app.services.dashboard_rates_service import get_dashboard_rates
 from app.utils.logger import get_data_update_logger
 

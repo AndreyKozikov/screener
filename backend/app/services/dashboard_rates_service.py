@@ -7,7 +7,7 @@
 from datetime import date
 from typing import Optional
 
-from app.models.macro_rates_dto import MacroRatesDTO
+from app.models import MacroRatesDTO
 from app.services.currency_service import get_currency_service
 from app.services.keyrate_service import get_keyrate_service
 from app.services.ruonia_service import get_ruonia_service

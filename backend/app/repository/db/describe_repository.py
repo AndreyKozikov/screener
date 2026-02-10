@@ -9,7 +9,7 @@ from typing import Dict, Optional
 
 from sqlmodel import Session, create_engine, select
 
-from app.models.describe import DescribeField
+from app.models import DescribeField
 from config.paths import DB_PATH
 
 

@@ -1,15 +1,10 @@
-"""Загрузчик данных об облигациях с кэшированием в памяти.
-
-Модуль содержит класс DataLoader: загрузка payload с MOEX, заполнение кэша
-в памяти (без записи bonds.json), загрузка рейтингов и метаданных из файлов/БД.
-Данные облигаций существуют в памяти во время транзакции и в БД после миграции.
-"""
+"""Загрузчик данных об облигациях: кэш из payload MOEX, маппинг колонок из columns.json, рейтинги и типы из БД."""
 
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from app.models.bond import BondListItem
+from app.models import BondListItem
 from app.repository.db.bond_ratings_repository import BondRatingsRepository
 from app.repository.db.emitents_repository import EmitentsRepository
 from app.repository.files.file_storage import FileStorage
@@ -19,19 +14,7 @@ from app.utils.logger import get_data_update_logger
 
 
 class DataLoader:
-    """Загрузчик данных об облигациях с кэшированием в памяти.
-
-    Кэш заполняется из payload (ответ MOEX), без записи bonds.json. Рейтинги
-    загружаются из БД (bond_ratings), типы облигаций — из БД (emitents).
-
-    Attributes:
-        data_dir: Путь к директории с JSON файлами данных.
-        _moex_client: Клиент для загрузки данных с MOEX.
-        _file_storage: Хранилище для чтения/записи JSON файлов.
-        _bonds_cache: Кэш списка облигаций (BondListItem).
-        _details_cache: Кэш детальной информации об облигациях.
-        _columns_cache: Кэш маппингов колонок (поле -> отображаемое имя).
-    """
+    """Загрузчик облигаций: кэш списка и деталей из payload MOEX, маппинг колонок из columns.json, рейтинги и типы из БД."""
 
     def __init__(
         self,
@@ -39,12 +22,12 @@ class DataLoader:
         moex_client: Optional[MoexClient] = None,
         file_storage: Optional[FileStorage] = None,
     ):
-        """Инициализирует загрузчик данных.
+        """Инициализирует загрузчик.
 
         Args:
-            data_dir: Путь к директории с JSON файлами данных.
-            moex_client: Клиент для загрузки данных с MOEX. Если None, создаётся экземпляр по умолчанию.
-            file_storage: Хранилище для чтения/записи JSON. Если None, создаётся экземпляр по умолчанию.
+            data_dir: Директория с данными (в т.ч. columns.json).
+            moex_client: Клиент MOEX. Если None — создаётся по умолчанию.
+            file_storage: Хранилище для чтения JSON. Если None — по умолчанию.
         """
         self.data_dir = Path(data_dir)
         self._moex_client = moex_client if moex_client is not None else MoexClient()
@@ -55,89 +38,71 @@ class DataLoader:
         self._columns_cache: Optional[Dict[str, str]] = None
 
     async def get_bonds(self) -> List[BondListItem]:
-        """Получает список всех облигаций (с кэшированием).
-
-        Возвращает кэш списка облигаций. Если кэш пуст (обновление ещё не выполнялось),
-        возвращает пустой список без попытки чтения с диска.
+        """Возвращает кэшированный список облигаций.
 
         Returns:
-            Список объектов BondListItem с данными облигаций. Облигации с режимом
-            торгов SPOB исключаются из списка. Пустой список, если кэш не заполнен.
+            Список BondListItem или пустой список, если кэш не заполнен.
         """
         if self._bonds_cache is None:
             return []
         return self._bonds_cache
 
     async def get_bond_details(self) -> Dict[str, Dict]:
-        """Получает детальную информацию об облигациях (с кэшированием).
-
-        Возвращает кэш детальной информации. Если кэш пуст (обновление ещё не выполнялось),
-        возвращает пустой словарь без попытки чтения с диска.
+        """Возвращает кэшированные детали облигаций (SECID -> securities, marketdata, marketdata_yields).
 
         Returns:
-            Словарь, где ключ - SECID облигации, значение - словарь с детальной
-            информацией (securities, marketdata, marketdata_yields).
-            Пустой словарь, если кэш не заполнен.
+            Словарь деталей или пустой словарь, если кэш не заполнен.
         """
         if self._details_cache is None:
             return {}
         return self._details_cache
 
     def get_bond_details_sync(self) -> Dict[str, Dict]:
-        """Синхронно возвращает детальную информацию об облигациях (с кэшированием).
-
-        Используется в пайплайне обновления эмитентов. Если кэш пуст, возвращает
-        пустой словарь без попытки чтения с диска.
+        """Синхронно возвращает кэшированные детали облигаций.
 
         Returns:
-            Словарь SECID -> детальные данные облигации (securities, marketdata, marketdata_yields).
+            Словарь SECID -> детали (securities, marketdata, marketdata_yields) или {}.
         """
         if self._details_cache is None:
             return {}
         return self._details_cache
 
     async def get_column_mapping(self) -> Dict[str, str]:
-        """Получает маппинг колонок (с кэшированием).
-        
-        Загружает маппинг имен полей на отображаемые имена из файла columns.json.
-        Данные кэшируются в памяти для повышения производительности.
-        
+        """Возвращает маппинг имя поля -> отображаемое имя (из columns.json, с кэшем).
+
         Returns:
-            Словарь, где ключ - имя поля, значение - отображаемое имя колонки.
+            Словарь поле -> отображаемое имя колонки.
         """
         if self._columns_cache is None:
             self._columns_cache = self._load_column_mapping()
         return self._columns_cache
 
     def fetch_bonds_payload(self, source_url: str) -> Dict[str, Any]:
-        """Загружает JSON-ответ об облигациях с MOEX по указанному URL.
+        """Загружает JSON с MOEX по URL.
 
         Args:
-            source_url: URL для загрузки (например, MOEX bonds API).
+            source_url: URL запроса (MOEX bonds API).
 
         Returns:
             Словарь с секциями securities, marketdata, marketdata_yields.
 
         Raises:
-            RuntimeError: При сетевой ошибке или некорректном JSON.
+            RuntimeError: Сетевая ошибка или невалидный JSON.
         """
         return self._moex_client.fetch_bonds_json(source_url)
 
     def refresh_bonds_dataset(self, payload: Dict[str, Any], source_url: Optional[str] = None) -> Dict[str, int]:
-        """Обновляет кэш облигаций из переданного payload (ответ MOEX).
-
-        Записей на диск не производится. Данные существуют только в памяти (кэш)
-        и в БД после миграции.
+        """Заполняет кэш облигаций из payload MOEX (без записи на диск).
 
         Args:
-            payload: JSON-ответ MOEX с секциями securities, marketdata, marketdata_yields.
-            source_url: Опциональный URL источника для логирования.
+            payload: JSON с секциями securities, marketdata, marketdata_yields.
+            source_url: URL источника для логирования (опционально).
 
         Returns:
-            Словарь с количеством записей: securities, marketdata, marketdata_yields.
+            Словарь с числом записей: securities, marketdata, marketdata_yields.
 
         Raises:
-            RuntimeError: Если payload некорректен или не содержит ожидаемых секций.
+            RuntimeError: Некорректный или неполный payload.
         """
         logger = get_data_update_logger()
         logger.info("[REFRESH BONDS] Starting bonds dataset refresh from payload (source_url=%s)", source_url)
@@ -159,14 +124,10 @@ class DataLoader:
         return summary
 
     def _populate_cache_from_payload(self, payload: Dict[str, Any]) -> None:
-        """Заполняет _bonds_cache и _details_cache из JSON-ответа MOEX.
-
-        Объединяет секции securities, marketdata и marketdata_yields по SECID,
-        подгружает рейтинги из БД (bond_ratings) и типы облигаций из БД (emitents).
+        """Заполняет _bonds_cache и _details_cache из payload; подмешивает рейтинги и типы из БД.
 
         Args:
-            payload: Словарь с ключами securities, marketdata, marketdata_yields
-                (формат ответа MOEX API).
+            payload: Словарь с секциями securities, marketdata, marketdata_yields (MOEX API).
         """
         logger = get_data_update_logger()
         logger.info("[POPULATE CACHE] Populating bonds cache from payload")
@@ -333,15 +294,10 @@ class DataLoader:
             logger.info("[POPULATE CACHE] Skipped %s bonds with trading mode SPOB", skipped_spob_count)
     
     def _load_column_mapping(self) -> Dict[str, str]:
-        """Загружает columns.json и строит маппинг полей на отображаемые имена.
-        
-        Загружает данные из файла columns.json и создает словарь для преобразования
-        имен полей в отображаемые имена колонок. Обрабатывает секции securities,
-        marketdata и marketdata_yields.
-        
+        """Читает columns.json и строит маппинг поле -> отображаемое имя по секциям.
+
         Returns:
-            Словарь, где ключ - имя поля, значение - отображаемое имя колонки.
-            Если файл не существует или некорректен, возвращает пустой словарь.
+            Словарь имя поля -> отображаемое имя (пустой при ошибке/отсутствии файла).
         """
         columns_path = self.data_dir / "columns.json"
         data = self._file_storage.read_json(columns_path)
@@ -369,38 +325,26 @@ class DataLoader:
         return mapping
     
     def clear_bonds_cache(self) -> None:
-        """Очищает кэш облигаций для принудительной перезагрузки.
-        
-        Сбрасывает кэши списка облигаций и детальной информации. Используется
-        после обновления данных о купонах для принудительной перезагрузки данных
-        с актуальными значениями купонов.
-        """
+        """Сбрасывает кэш списка облигаций и деталей (следующее обращение перезагрузит данные)."""
         self._bonds_cache = None
         self._details_cache = None
     
     def clear_metadata_cache(self) -> None:
-        """Очищает кэш метаданных (колонки) для принудительной перезагрузки.
-
-        Сбрасывает кэш маппинга колонок. Описания полей хранятся в БД (describe_fields).
-        """
+        """Сбрасывает кэш маппинга колонок (при следующем запросе загрузка из columns.json)."""
         logger = get_data_update_logger()
         logger.info("[CLEAR METADATA CACHE] Clearing metadata cache (columns)")
         self._columns_cache = None
         logger.info("[CLEAR METADATA CACHE] Metadata cache cleared successfully")
     
     @staticmethod
-    def _parse_int(value: any) -> Optional[int]:
-        """Парсит целочисленное значение из различных форматов.
-        
-        Преобразует значение в целое число, поддерживая различные типы входных данных
-        (int, str, float). Обрабатывает некорректные значения.
-        
+    def _parse_int(value: Any) -> Optional[int]:
+        """Приводит значение к int (поддержка int, str, float).
+
         Args:
-            value: Значение для преобразования в целое число. Может быть int, str, float
-                или другим типом.
-        
+            value: Произвольное значение.
+
         Returns:
-            Целое число или None, если значение не может быть преобразовано в int.
+            int или None при ошибке преобразования.
         """
         if value is None:
             return None
@@ -417,32 +361,21 @@ class DataLoader:
             return None
     
     def _load_ratings_map(self) -> Dict[str, Dict[str, Any]]:
-        """Загружает рейтинги из БД (bond_ratings) и возвращает словарь secid -> all_ratings.
-
-        Использует BondRatingsRepository.get_all_latest_ratings_map(): один запрос с JOIN
-        по bond_ratings, bonds и rating_agency. Структура совместима с логикой подмешивания
-        рейтингов и выбора наихудшего рейтинга (_get_worst_rating).
+        """Загружает последние рейтинги из БД (bond_ratings).
 
         Returns:
-            Словарь: ключ — SECID облигации, значение — словарь с ключом "all_ratings"
-            (список рейтингов с agency_name_short_ru, rating_level_name_short_ru и др.).
+            Словарь SECID -> {"all_ratings": [...]}.
         """
         return self._bond_ratings_repo.get_all_latest_ratings_map()
     
     def _get_worst_rating(self, ratings_list: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-        """Получает наихудший рейтинг из списка рейтингов.
-        
-        Определяет наихудший рейтинг из списка, исключая рейтинги со значением "Отозван",
-        если есть другие рейтинги. Использует шкалу рейтингов для определения позиции
-        рейтинга.
-        
+        """Выбирает наихудший рейтинг (по шкале), при наличии других игнорирует «Отозван».
+
         Args:
-            ratings_list: Список словарей с рейтингами. Каждый словарь должен содержать
-                ключ "rating_level_name_short_ru" с уровнем рейтинга.
-        
+            ratings_list: Список рейтингов с ключом rating_level_name_short_ru.
+
         Returns:
-            Словарь с наихудшим рейтингом (с наибольшим индексом в шкале) или None,
-            если список пуст или не содержит валидных рейтингов.
+            Словарь наихудшего рейтинга или None.
         """
         if not ratings_list:
             return None
@@ -476,15 +409,11 @@ class DataLoader:
         return worst_rating
     
     def _add_ratings_to_bonds(self, bonds_list: List[BondListItem], ratings_map: Dict[str, Dict[str, Any]]) -> None:
-        """Добавляет рейтинги из ratings_map к облигациям, выбирая наихудший рейтинг.
-        
-        Для каждой облигации из списка добавляет все рейтинги и определяет наихудший
-        рейтинг, который сохраняется в полях RATING_AGENCY и RATING_LEVEL.
-        
+        """Добавляет рейтинги из ratings_map к bonds_list (RATINGS, RATING_AGENCY, RATING_LEVEL).
+
         Args:
-            bonds_list: Список объектов BondListItem для добавления рейтингов.
-            ratings_map: Словарь с рейтингами, где ключ - SECID облигации, значение -
-                словарь с ключами "all_ratings" (список всех рейтингов).
+            bonds_list: Список облигаций для обогащения.
+            ratings_map: SECID -> {"all_ratings": [...]}.
         """
         ratings_added = 0
         for bond in bonds_list:
@@ -506,14 +435,10 @@ class DataLoader:
         logger.debug("[DATA LOADER] Added ratings to %s bonds", ratings_added)
     
     def _load_bondtype_map(self) -> Dict[str, Optional[str]]:
-        """Загружает типы облигаций из БД (таблица emitents) и возвращает как словарь.
-
-        Использует EmitentsRepository.get_secid_to_bondtype_map() для получения
-        маппинга SECID -> type из таблиц bonds и emitents.
+        """Загружает маппинг SECID -> тип облигации из БД (emitents).
 
         Returns:
-            Словарь, где ключ - SECID облигации, значение - тип облигации (строка).
-            Пустой словарь при ошибке или отсутствии данных в БД.
+            Словарь SECID -> тип (строка) или {} при ошибке.
         """
         try:
             emitents_repo = EmitentsRepository()
@@ -531,14 +456,11 @@ class DataLoader:
             return {}
     
     def _add_bondtypes_to_bonds(self, bonds_list: List[BondListItem], bondtype_map: Dict[str, Optional[str]]) -> None:
-        """Добавляет типы облигаций из bondtype_map к облигациям.
-        
-        Для каждой облигации из списка устанавливает поле BONDTYPE из словаря типов.
-        
+        """Проставляет BONDTYPE у облигаций из bondtype_map.
+
         Args:
-            bonds_list: Список объектов BondListItem для добавления типов.
-            bondtype_map: Словарь с типами облигаций, где ключ - SECID облигации,
-                значение - тип облигации (строка) или None.
+            bonds_list: Список облигаций.
+            bondtype_map: SECID -> тип облигации.
         """
         bondtypes_added = 0
         for bond in bonds_list:
@@ -551,16 +473,13 @@ class DataLoader:
     
     @staticmethod
     def _parse_date(date_str: str) -> Optional[date]:
-        """Парсит строку даты в объект date.
-        
-        Преобразует строку с датой в формате YYYY-MM-DD в объект date.
-        Обрабатывает некорректные значения и специальное значение "0000-00-00".
-        
+        """Парсит дату из строки YYYY-MM-DD.
+
         Args:
-            date_str: Строка с датой в формате YYYY-MM-DD.
-        
+            date_str: Строка даты (YYYY-MM-DD). "0000-00-00" и пустая дают None.
+
         Returns:
-            Объект date или None, если строка некорректна, пуста или равна "0000-00-00".
+            date или None при ошибке/пустоте.
         """
         if not date_str or date_str == "0000-00-00":
             return None
@@ -576,14 +495,10 @@ _data_loader: Optional[DataLoader] = None
 
 
 def init_data_loader(data_dir: Path) -> None:
-    """Инициализирует singleton экземпляр загрузчика данных.
-
-    Создаёт глобальный экземпляр DataLoader с указанной директорией данных
-    и внедрёнными MoexClient и FileStorage. Должен быть вызван перед
-    использованием get_data_loader().
+    """Инициализирует глобальный экземпляр DataLoader (вызвать до get_data_loader).
 
     Args:
-        data_dir: Путь к директории с JSON файлами данных.
+        data_dir: Директория с данными (в т.ч. columns.json).
     """
     global _data_loader
     _data_loader = DataLoader(
@@ -594,13 +509,13 @@ def init_data_loader(data_dir: Path) -> None:
 
 
 def get_data_loader() -> DataLoader:
-    """Получает singleton экземпляр загрузчика данных.
-    
+    """Возвращает глобальный экземпляр DataLoader.
+
     Returns:
-        Экземпляр DataLoader для работы с данными из JSON файлов.
-    
+        Инициализированный DataLoader.
+
     Raises:
-        RuntimeError: Если загрузчик не был инициализирован через init_data_loader().
+        RuntimeError: Если init_data_loader() ещё не вызывался.
     """
     if _data_loader is None:
         raise RuntimeError("Data loader not initialized")

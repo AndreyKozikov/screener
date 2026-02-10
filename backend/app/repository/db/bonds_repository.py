@@ -13,8 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from sqlalchemy import delete, func, or_, and_, text
 from sqlmodel import Session, create_engine, select
 
-from app.models.bond import Bond, BondMarketData, BondMarketDataYield, BondSecurity
-from app.models.filters import BondFilters
+from app.models import Bond, BondFilters, BondMarketData, BondMarketDataYield, BondSecurity
 from app.repository.db.constants import RATINGS_ORDER
 from app.utils.logger import get_data_update_logger
 from config.paths import DB_PATH

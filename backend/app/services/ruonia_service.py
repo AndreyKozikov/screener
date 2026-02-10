@@ -14,8 +14,7 @@ import pandas as pd
 import requests
 from urllib.parse import urlencode
 
-from app.models.ruonia import DBruonia
-from app.models.ruonia_dto import RuoniaDataResponse, RuoniaDTO
+from app.models import DBruonia, RuoniaDataResponse, RuoniaDTO
 from app.repository.db.ruonia_repository import RuoniaRepository
 from app.utils.logger import get_data_update_logger
 from config.paths import DB_PATH

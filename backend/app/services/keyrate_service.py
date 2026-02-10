@@ -13,8 +13,7 @@ import pandas as pd
 import requests
 from urllib.parse import urlencode
 
-from app.models.keyrate import DBkeyrate
-from app.models.keyrate_dto import KeyrateDTO
+from app.models import DBkeyrate, KeyrateDTO
 from app.repository.db.keyrate_repository import KeyrateRepository
 from app.utils.logger import get_data_update_logger
 from config.paths import DB_PATH

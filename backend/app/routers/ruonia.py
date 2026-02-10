@@ -11,7 +11,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 
-from app.models.ruonia_dto import RuoniaDataResponse
+from app.models import RuoniaDataResponse
 from app.services.ruonia_service import get_ruonia_service
 from app.utils.logger import get_data_update_logger
 

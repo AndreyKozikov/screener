@@ -13,7 +13,7 @@ from typing import List, Optional
 from sqlalchemy import func, select
 from sqlmodel import Session, create_engine
 
-from app.models.ruonia import DBruonia
+from app.models import DBruonia
 from app.utils.logger import get_data_update_logger
 from config.paths import DB_PATH
 

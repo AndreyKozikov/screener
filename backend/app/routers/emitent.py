@@ -10,7 +10,7 @@ from typing import Any, Dict, List
 
 from fastapi import APIRouter, HTTPException
 
-from app.models.emitent import EmitentInfo
+from app.models import EmitentInfo
 from app.repository.db.bonds_repository import BondsRepository
 from app.repository.db.emitents_repository import EmitentsRepository
 from app.services.data_loader import get_data_loader

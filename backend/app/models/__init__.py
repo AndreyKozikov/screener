@@ -1,23 +1,90 @@
 """Модели данных для приложения BondsScreener.
 
-Этот пакет содержит все модели данных (Pydantic), используемые в приложении
-для валидации и сериализации данных облигаций, купонов, эмитентов и фильтров.
-
-Модули:
-    bond: Модели данных облигаций (Bond — SQLModel таблица bonds; BondListItem, BondDetail, BondSecurity, BondMarketData)
-    describe: SQLModel таблица describe_fields (DescribeField)
-    describe_dto: DTO для описаний полей (DescribeDTO)
-    currencyrate: SQLModel таблица currencyrate (DBcurrencyrate) — курсы валют ЦБ РФ
-    keyrate: SQLModel таблица keyrate (DBkeyrate) — данные ключевой ставки ЦБ РФ
-    keyrate_dto: DTO для API ключевой ставки (KeyrateDTO)
-    ruonia: SQLModel таблица ruonia (DBruonia) — данные индикатора RUONIA ЦБ РФ
-    ruonia_dto: DTO для API RUONIA (RuoniaDTO, RuoniaDataResponse)
-    bonds_dto: DTO для API скринера облигаций (BondScreenerDTO)
-    kbd_DTO: DTO для кривой бескупонной доходности (KbdDTO, KbdDataResponse)
-    kbd_model: SQLModel таблица kbd (DBkbd)
-    coupons: Модели данных купонов (Coupon, Offer)
-    emitent: Модели данных эмитентов (EmitentInfo)
-    filters: Модели фильтров для поиска облигаций (BondFilters)
-    responses: Модели ответов API (BondsListResponse, ErrorResponse и др.)
-    rating: SQLModel таблицы рейтингов (RatingAgency, BondRating, EmitentRating)
+Пакет разделён на:
+- entities: модели БД (SQLModel) для таблиц SQLite
+- schemasDTO: DTO (Pydantic) для взаимодействия с фронтендом и валидации API
 """
+
+from app.models.entities import (
+    Bond,
+    BondMarketData,
+    BondMarketDataYield,
+    BondSecurity,
+    DBcurrencyrate,
+    DBkbd,
+    DBkeyrate,
+    DBruonia,
+    DescribeField,
+    Emitent,
+    BondRating,
+    EmitentRating,
+    RatingAgency,
+    TradingHistoryRecord,
+)
+from app.models.schemasDTO import (
+    BondDetail,
+    BondDetailDTO,
+    BondListItem,
+    BondScreenerDTO,
+    round_float_for_api,
+    BondFilters,
+    Coupon,
+    CouponsBySecid,
+    CouponsListResponse,
+    MultipleCouponsResponse,
+    Offer,
+    DescribeDTO,
+    EmitentInfo,
+    KbdDataResponse,
+    KbdDTO,
+    KeyrateDTO,
+    CurrencyRateItem,
+    MacroRatesDTO,
+    BondsListResponse,
+    ColumnMapping,
+    DescriptionItem,
+    ErrorResponse,
+    RuoniaDataResponse,
+    RuoniaDTO,
+)
+
+__all__ = [
+    "Bond",
+    "BondMarketData",
+    "BondMarketDataYield",
+    "BondSecurity",
+    "DBcurrencyrate",
+    "DBkbd",
+    "DBkeyrate",
+    "DBruonia",
+    "DescribeField",
+    "Emitent",
+    "BondRating",
+    "EmitentRating",
+    "RatingAgency",
+    "TradingHistoryRecord",
+    "BondDetail",
+    "BondDetailDTO",
+    "BondListItem",
+    "BondScreenerDTO",
+    "BondFilters",
+    "Coupon",
+    "CouponsBySecid",
+    "CouponsListResponse",
+    "MultipleCouponsResponse",
+    "Offer",
+    "DescribeDTO",
+    "EmitentInfo",
+    "KbdDataResponse",
+    "KbdDTO",
+    "KeyrateDTO",
+    "CurrencyRateItem",
+    "MacroRatesDTO",
+    "BondsListResponse",
+    "ColumnMapping",
+    "DescriptionItem",
+    "ErrorResponse",
+    "RuoniaDataResponse",
+    "RuoniaDTO",
+    "round_float_for_api",
+]

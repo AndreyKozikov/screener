@@ -21,10 +21,17 @@ import orjson
 
 from config.settings import settings
 
-from app.models.bond import Bond, BondMarketData, BondMarketDataYield, BondSecurity
-from app.models.bonds_dto import BondDetailDTO, BondScreenerDTO, round_float_for_api
-from app.models.filters import BondFilters
-from app.models.responses import BondsListResponse
+from app.models import (
+    Bond,
+    BondDetailDTO,
+    BondFilters,
+    BondMarketData,
+    BondMarketDataYield,
+    BondScreenerDTO,
+    BondSecurity,
+    BondsListResponse,
+    round_float_for_api,
+)
 from app.repository.db.bonds_repository import BondsRepository
 from app.repository.db_orchestrator import DBOrchestrator
 from app.services.coupon_service import get_coupon_service

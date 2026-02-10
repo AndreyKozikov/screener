@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 
 from sqlmodel import Session, create_engine, func, select
 
-from app.models.kbd_model import DBkbd
+from app.models import DBkbd
 from app.utils.logger import get_data_update_logger
 from config.paths import DB_PATH
 

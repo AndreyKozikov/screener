@@ -13,7 +13,7 @@ from typing import List, Optional
 from sqlalchemy import func, select
 from sqlmodel import Session, create_engine
 
-from app.models.keyrate import DBkeyrate
+from app.models import DBkeyrate
 from app.utils.logger import get_data_update_logger
 from config.paths import DB_PATH
 

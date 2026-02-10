@@ -14,7 +14,7 @@ from sqlalchemy import text
 from sqlalchemy.pool import NullPool
 from sqlmodel import Session, create_engine, select
 
-from app.models.trading_history import TradingHistoryRecord
+from app.models import TradingHistoryRecord
 from config.paths import HISTORY_DB_PATH
 
 

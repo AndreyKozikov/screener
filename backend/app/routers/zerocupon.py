@@ -19,8 +19,7 @@ from fastapi.responses import Response
 from app.utils.logger import get_data_update_logger
 from app.repository.db.db_kbd import KbdRepository
 from app.services.kbd_service import get_kbd_service
-from app.models.kbd_DTO import KbdDataResponse
-from app.models.kbd_model import DBkbd
+from app.models import DBkbd, KbdDataResponse
 from config.paths import DB_PATH
 
 router = APIRouter(prefix="/api/zerocupon", tags=["zerocupon"])

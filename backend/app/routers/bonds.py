@@ -11,10 +11,14 @@ from fastapi import APIRouter, HTTPException, Query
 from typing import List, Optional
 from datetime import date
 
-from app.models.bond import BondDetail
-from app.models.filters import BondFilters
-from app.models.responses import BondsListResponse
-from app.models.coupons import CouponsListResponse, MultipleCouponsResponse, CouponsBySecid
+from app.models import (
+    BondDetail,
+    BondFilters,
+    BondsListResponse,
+    CouponsBySecid,
+    CouponsListResponse,
+    MultipleCouponsResponse,
+)
 from app.services.bonds_service import (
     get_bond_detail as get_bond_detail_from_db,
     get_bonds_list,
@@ -409,7 +413,7 @@ async def get_bond_coupons(
             bond_data = batch_data[target_secid]
             coupons_data = bond_data.get("coupons", [])
             
-            from app.models.coupons import Coupon
+            from app.models import Coupon
             coupons = [Coupon(**coupon) for coupon in coupons_data]
             
             return CouponsListResponse(coupons=coupons)
@@ -423,7 +427,7 @@ async def get_bond_coupons(
         
         coupons_data = full_coupon_data.get("coupons", [])
         
-        from app.models.coupons import Coupon
+        from app.models import Coupon
         coupons = [Coupon(**coupon) for coupon in coupons_data]
         
         return CouponsListResponse(coupons=coupons)
@@ -478,7 +482,7 @@ async def get_bonds_coupons_batch(
         )
         
         # Convert to response model
-        from app.models.coupons import Coupon
+        from app.models import Coupon
         result_data = []
         
         for secid in unique_secids:
