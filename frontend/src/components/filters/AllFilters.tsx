@@ -70,6 +70,15 @@ const BOND_TYPE_LABELS: Record<string, string> = {
   "subfederal_bond": "Региональная облигация",
 };
 
+/** Фиксированные уровни листинга (не зависят от бэкенда). На бэкенд уходят только выбранные значения. */
+const LIST_LEVEL_OPTIONS: number[] = [1, 2, 3];
+
+/** Фиксированный список валют для фильтра (не зависит от бэкенда). На бэкенд уходят только выбранные значения. */
+const CURRENCY_OPTIONS: string[] = ['SUR', 'USD', 'EUR', 'GBP', 'CHF'];
+
+/** Ключи типов облигаций для фильтра (порядок отображения). */
+const BOND_TYPE_KEYS = Object.keys(BOND_TYPE_LABELS) as Array<keyof typeof BOND_TYPE_LABELS>;
+
 // ============================================================================
 // Общие стили для TextField (премиум стиль)
 // ============================================================================
@@ -477,11 +486,11 @@ export const MaturityDateFilter: React.FC = () => {
 };
 
 // ============================================================================
-// 6. Уровень листинга (ListLevelFilter) - Chip вместо Checkbox
+// 6. Уровень листинга (ListLevelFilter) - фиксированные опции 1, 2, 3
 // ============================================================================
 
 export const ListLevelFilter: React.FC = () => {
-  const { draftFilters, setDraftFilter, filterOptions, isLoadingFilterOptions } = useFiltersStore();
+  const { draftFilters, setDraftFilter } = useFiltersStore();
 
   const handleToggle = (value: number) => {
     const currentValues = draftFilters.listlevel || [];
@@ -491,23 +500,11 @@ export const ListLevelFilter: React.FC = () => {
     setDraftFilter('listlevel', newValues);
   };
 
-  if (isLoadingFilterOptions || !filterOptions) {
-    return (
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 1 }}>
-        <CircularProgress size={16} />
-        <Typography variant="body2" color="text.secondary">
-          Загрузка...
-        </Typography>
-      </Box>
-    );
-  }
-
   const selectedValues = draftFilters.listlevel || [];
-  const sortedLevels = [...(filterOptions.listlevels || [])].sort((a, b) => a - b);
 
   return (
     <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ width: '100%' }}>
-      {sortedLevels.map((level) => (
+      {LIST_LEVEL_OPTIONS.map((level) => (
         <Chip
           key={level}
           label={`Уровень ${level}`}
@@ -529,11 +526,11 @@ export const ListLevelFilter: React.FC = () => {
 };
 
 // ============================================================================
-// 7. Валюта (CurrencyFilter) - Chip вместо Autocomplete
+// 7. Валюта (CurrencyFilter) - фиксированный список валют
 // ============================================================================
 
 export const CurrencyFilter: React.FC = () => {
-  const { draftFilters, setDraftFilter, filterOptions, isLoadingFilterOptions } = useFiltersStore();
+  const { draftFilters, setDraftFilter } = useFiltersStore();
 
   const handleToggle = (value: string) => {
     const currentValues = draftFilters.faceunit || [];
@@ -543,22 +540,11 @@ export const CurrencyFilter: React.FC = () => {
     setDraftFilter('faceunit', newValues);
   };
 
-  if (isLoadingFilterOptions || !filterOptions) {
-    return (
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 1 }}>
-        <CircularProgress size={16} />
-        <Typography variant="body2" color="text.secondary">
-          Загрузка...
-        </Typography>
-      </Box>
-    );
-  }
-
   const selectedValues = draftFilters.faceunit || [];
 
   return (
     <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ width: '100%' }}>
-      {(filterOptions.faceunits || []).map((currency) => (
+      {CURRENCY_OPTIONS.map((currency) => (
         <Chip
           key={currency}
           label={currency}
@@ -580,19 +566,15 @@ export const CurrencyFilter: React.FC = () => {
 };
 
 // ============================================================================
-// 8. Тип облигации (BondTypeFilter) - Chip вместо Checkbox
+// 8. Тип облигации (BondTypeFilter) - фиксированный список из BOND_TYPE_LABELS
 // ============================================================================
 
 export const BondTypeFilter: React.FC = () => {
-  const { draftFilters, setDraftFilter, filterOptions, isLoadingFilterOptions } = useFiltersStore();
+  const { draftFilters, setDraftFilter } = useFiltersStore();
 
   const handleToggle = (typeKey: string) => {
-    // Преобразуем строковый ключ в ID
     const typeId = BOND_TYPE_TO_ID[typeKey];
-    if (typeId === undefined) {
-      console.warn(`[BondTypeFilter] Unknown bond type: ${typeKey}`);
-      return;
-    }
+    if (typeId === undefined) return;
 
     const currentValues = draftFilters.bondtype || [];
     const newValues = currentValues.includes(typeId)
@@ -601,33 +583,18 @@ export const BondTypeFilter: React.FC = () => {
     setDraftFilter('bondtype', newValues);
   };
 
-  if (isLoadingFilterOptions || !filterOptions) {
-    return (
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 1 }}>
-        <CircularProgress size={16} />
-        <Typography variant="body2" color="text.secondary">
-          Загрузка...
-        </Typography>
-      </Box>
-    );
-  }
-
-  const availableBondTypes = (filterOptions.bondtypes || []).filter(
-    type => type in BOND_TYPE_LABELS
-  );
-
   const selectedValues = draftFilters.bondtype || [];
 
   return (
     <Stack direction="column" spacing={1} sx={{ width: '100%' }}>
-      {availableBondTypes.map((type) => {
+      {BOND_TYPE_KEYS.map((type) => {
         const typeId = BOND_TYPE_TO_ID[type];
         if (typeId === undefined) return null;
-        
+
         return (
           <Chip
             key={type}
-            label={BOND_TYPE_LABELS[type] || type}
+            label={BOND_TYPE_LABELS[type] ?? type}
             onClick={() => handleToggle(type)}
             color={selectedValues.includes(typeId) ? 'primary' : 'default'}
             variant={selectedValues.includes(typeId) ? 'filled' : 'outlined'}

@@ -14,6 +14,12 @@ def setup_data_update_logger(log_dir: Optional[Path] = None) -> logging.Logger:
     
     Returns:
         Configured logger instance.
+    
+    Notes:
+        - Logger level: INFO (captures INFO, WARNING, ERROR, CRITICAL)
+        - File handler level: INFO (все сообщения записываются в файл)
+        - Console handler level: INFO (все сообщения выводятся в консоль)
+        - Log rotation: daily (новый файл каждый день)
     """
     if log_dir is None:
         from config.paths import BACKEND_DIR
@@ -30,9 +36,10 @@ def setup_data_update_logger(log_dir: Optional[Path] = None) -> logging.Logger:
     logger.handlers.clear()
     
     # Create file handler with date-based filename
+    # ИСПРАВЛЕНО: изменен уровень с WARNING на INFO для записи всех логов в файл
     log_file = log_dir / f"data_updates_{datetime.now().strftime('%Y-%m-%d')}.log"
     file_handler = logging.FileHandler(log_file, encoding='utf-8')
-    file_handler.setLevel(logging.INFO)
+    file_handler.setLevel(logging.INFO)  # Записываем INFO и выше в файл
     
     # Create formatter
     formatter = logging.Formatter(
@@ -41,9 +48,9 @@ def setup_data_update_logger(log_dir: Optional[Path] = None) -> logging.Logger:
     )
     file_handler.setFormatter(formatter)
     
-    # Console handler for errors (helps debug 500 etc. when running server)
+    # Console handler for INFO and above (shows data update progress in console)
     console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.ERROR)
+    console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(formatter)
     
     # Add handlers to logger

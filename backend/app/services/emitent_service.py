@@ -16,8 +16,9 @@ import orjson
 import requests
 
 from app.services.data_loader import get_data_loader
+from app.utils.logger import get_data_update_logger
 
-logger = logging.getLogger(__name__)
+logger = get_data_update_logger()
 
 
 class EmitentService:
@@ -275,38 +276,61 @@ class EmitentService:
         skipped_count = 0
         api_data: Dict[str, Dict[str, Any]] = {}
 
+        logger.info(
+            "[Emitent Refresh] Starting update for %s bonds from MOEX API",
+            total_bonds,
+        )
+
+        processed = 0
         for secid, bond_data in bonds_details.items():
+            processed += 1
+
             try:
                 if not (secid or "").strip():
-                    logger.debug("Skipping bond with empty SECID")
                     skipped_count += 1
+                    logger.info("[%s/%s] SKIPPED: empty SECID", processed, total_bonds)
                     continue
 
+                url = f"https://iss.moex.com/iss/securities.json?q={secid}"
+                logger.info("[%s/%s] Processing: %s | URL: %s", processed, total_bonds, secid, url)
+                
                 emitent_data = self._fetch_emitent_from_moex_by_secid(secid)
                 if emitent_data is not None:
                     api_data[secid] = emitent_data
                     updated_count += 1
+                    
+                    emitent_title = emitent_data.get("emitent_title", "N/A")
                     ratings_count = len(emitent_data.get("cci_rating_companies", []))
-                    logger.debug(
-                        "Bond %s: Successfully loaded from API (ratings: %s)",
+                    logger.info(
+                        "[%s/%s] ✓ SUCCESS: %s | Emitent: %s | Ratings: %s",
+                        processed,
+                        total_bonds,
                         secid,
+                        emitent_title[:50] if emitent_title else "N/A",
                         ratings_count,
                     )
                 else:
                     error_count += 1
-                    logger.debug("Bond %s: Failed to fetch from MOEX", secid)
+                    logger.warning(
+                        "[%s/%s] ✗ FAILED: %s | No data from MOEX",
+                        processed,
+                        total_bonds,
+                        secid,
+                    )
 
             except Exception as exc:
                 error_count += 1
-                logger.warning(
-                    "Bond %s: ERROR - %s: %s",
+                logger.error(
+                    "[%s/%s] ✗ ERROR: %s | %s: %s",
+                    processed,
+                    total_bonds,
                     secid,
                     type(exc).__name__,
                     exc,
                 )
 
         logger.info(
-            "Emitent refresh from API: total=%s, updated=%s, errors=%s, skipped=%s",
+            "[Emitent Refresh] Completed: total=%s, updated=%s, errors=%s, skipped=%s",
             total_bonds,
             updated_count,
             error_count,

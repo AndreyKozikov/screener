@@ -128,9 +128,27 @@ def _run_emitent_pipeline_sync() -> Dict[str, Any]:
 
     bonds_details = data_loader.get_bond_details_sync()
     if not bonds_details:
-        logger.warning("[API /emitent/refresh] No bonds details, skipping")
-        return {"status": "ok", "total": 0, "updated": 0, "errors": 0, "skipped": 0}
+        logger.warning(
+            "[API /emitent/refresh] Bonds details cache is empty, loading SECIDs from database"
+        )
+        bonds_repo = BondsRepository(db_path=DB_PATH)
+        secids = bonds_repo.get_all_secids()
+        if not secids:
+            logger.warning("[API /emitent/refresh] No bonds found in database, skipping")
+            return {"status": "ok", "total": 0, "updated": 0, "errors": 0, "skipped": 0}
+        bonds_details = {secid: {} for secid in secids}
+        logger.info(
+            "[API /emitent/refresh] Loaded %s SECIDs from database for emitent refresh",
+            len(secids),
+        )
 
+    logger.info("=" * 80)
+    logger.info(
+        "[API /emitent/refresh] Starting MOEX API requests for %s bonds",
+        len(bonds_details),
+    )
+    logger.info("=" * 80)
+    
     result = emitent_service.refresh_all_emitents(bonds_details)
     api_data = result.get("data", {})
     summary = {
@@ -140,26 +158,35 @@ def _run_emitent_pipeline_sync() -> Dict[str, Any]:
         "skipped": result.get("skipped", 0),
     }
 
+    logger.info("=" * 80)
     logger.info(
-        "[API /emitent/refresh] Данные из API: total=%s, updated=%s, errors=%s, skipped=%s",
+        "[API /emitent/refresh] API requests completed: total=%s, success=%s, errors=%s, skipped=%s",
         summary["total"],
         summary["updated"],
         summary["errors"],
         summary["skipped"],
     )
+    logger.info("=" * 80)
 
+    if not api_data:
+        logger.warning("[API /emitent/refresh] No data received from API, skipping database update")
+        return {"status": "ok", **summary}
+
+    logger.info("[API /emitent/refresh] Saving %s emitents to database...", len(api_data))
     emitents_repo = EmitentsRepository(db_path=DB_PATH, data_dir=DATA_DIR)
     secid_to_emitent_id = emitents_repo.refresh(api_data)
 
     if secid_to_emitent_id:
+        logger.info("[API /emitent/refresh] Updating bonds table...")
         bonds_repo = BondsRepository(db_path=DB_PATH)
         updated_rows = bonds_repo.update_emitent_ids(secid_to_emitent_id)
         logger.info(
-            "[API /emitent/refresh] DB: emitents/ratings saved, bonds.emitent_id updated for %s rows",
+            "[API /emitent/refresh] ✓ Database updated: %s emitents saved, %s bonds linked",
+            len(secid_to_emitent_id),
             updated_rows,
         )
     else:
-        logger.warning("[API /emitent/refresh] DB: no emitents written (empty data or error)")
+        logger.warning("[API /emitent/refresh] ✗ Database update failed")
 
     return {"status": "ok", **summary}
 

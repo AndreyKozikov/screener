@@ -217,7 +217,7 @@ class BondsRepository:
         if listlevel is not None and len(listlevel) > 0:
             conditions.append(Bond.listing_level.in_(listlevel))
         if currency is not None and len(currency) > 0:
-            conditions.append(Bond.currency.in_(currency))
+            conditions.append(Bond.face_unit.in_(currency))
         if bond_type_ids is not None and len(bond_type_ids) > 0:
             conditions.append(Bond.bond_type.in_(bond_type_ids))
         if bond_kind_ids is not None and len(bond_kind_ids) > 0:
@@ -309,6 +309,8 @@ class BondsRepository:
             currency = filters.faceunit
             rating_min = filters.rating_min
             rating_max = filters.rating_max
+            bond_type_ids = filters.bondtype
+            bond_kind_ids = filters.bondtype43
 
         where = self._build_where_conditions(
             coupon_percent_min=coupon_percent_min,
@@ -375,6 +377,8 @@ class BondsRepository:
             currency = filters.faceunit
             rating_min = filters.rating_min
             rating_max = filters.rating_max
+            bond_type_ids = filters.bondtype
+            bond_kind_ids = filters.bondtype43
 
         where = self._build_where_conditions(
             coupon_percent_min=coupon_percent_min,

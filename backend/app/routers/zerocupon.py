@@ -263,9 +263,11 @@ def _fetch_zerocupon_data_for_date(target_date: datetime) -> Optional[List[Dict[
         - value: Значение доходности (в процентах годовых)
         - tradetime: Время торгов
     """
+    logger = get_data_update_logger()
     # Format date as YYYY-MM-DD
     date_str = target_date.strftime("%Y-%m-%d")
     url = f"https://iss.moex.com/iss/engines/stock/zcyc.jsonp?iss.meta=off&iss.json=extended&callback=JSON_CALLBACK&lang=ru&iss.only=yearyields&date={date_str}"
+    logger.info(f"[REFRESH ZEROCOUPON] Fetching data from API: {url}")
     
     try:
         # Use httpx in sync mode for this function (will be called in thread)
@@ -285,7 +287,7 @@ def _fetch_zerocupon_data_for_date(target_date: datetime) -> Optional[List[Dict[
             
             return None
     except Exception as e:
-        print(f"Error fetching data for {date_str}: {e}")
+        logger.error(f"[REFRESH ZEROCOUPON] Error fetching data for {date_str} from {url}: {e}")
         return None
 
 
@@ -296,7 +298,9 @@ def refresh_zerocupon_data() -> Dict[str, Any]:
     по каждой дате (только будни), преобразует в DBkbd и сохраняет через KbdRepository.
     """
     logger = get_data_update_logger()
-    logger.info("[REFRESH ZEROCOUPON] Starting zerocupon data refresh (API → DB)")
+    api_base_url = "https://iss.moex.com/iss/engines/stock/zcyc.jsonp"
+    logger.info(f"[REFRESH ZEROCOUPON] Starting zerocupon data refresh (API → DB)")
+    logger.info(f"[REFRESH ZEROCOUPON] API endpoint: {api_base_url}")
     repo = KbdRepository(db_path=DB_PATH)
     last_date = repo.get_last_kbd_date()
     logger.info(f"[REFRESH ZEROCOUPON] Last date in DB: {last_date.strftime('%Y-%m-%d') if last_date else 'None'}")

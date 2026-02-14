@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -12,8 +12,6 @@ import {
   Chip,
   Divider,
   Stack,
-  CircularProgress,
-  Alert,
 } from '@mui/material';
 import FilterAltIcon from '@mui/icons-material/FilterAlt';
 import ClearIcon from '@mui/icons-material/Clear';
@@ -99,13 +97,10 @@ function TabPanel(props: TabPanelProps) {
  * 3. Рейтинг - фильтры по рейтингам облигаций
  */
 export const FiltersModal: React.FC<FiltersModalProps> = ({ open, onClose }) => {
-  // Получаем функции и состояние из хранилища фильтров
-  const { 
-    resetFilters,           // Функция сброса всех фильтров
-    applyFilters,           // Функция применения фильтров к данным
-    loadFilterOptions,      // Функция загрузки доступных опций для фильтров
-    isLoadingFilterOptions, // Статус загрузки опций (true/false)
-    filterOptionsError,     // Ошибка при загрузке опций (если есть)
+  // Получаем функции из хранилища фильтров
+  const {
+    resetFilters,
+    applyFilters,
   } = useFiltersStore();
   
   // Получаем количество отфильтрованных облигаций для отображения
@@ -113,16 +108,6 @@ export const FiltersModal: React.FC<FiltersModalProps> = ({ open, onClose }) => 
 
   // Состояние активной вкладки (0 = Доходность, 1 = Даты, 2 = Категории, 3 = Рейтинг)
   const [activeTab, setActiveTab] = useState(0);
-
-  /**
-   * Эффект: предзагрузка данных фильтров при открытии модального окна
-   * Загружает доступные опции для фильтров (валюты, типы облигаций и т.д.)
-   */
-  useEffect(() => {
-    if (open) {
-      loadFilterOptions();
-    }
-  }, [open, loadFilterOptions]);
 
   /**
    * Обработчик смены вкладки
@@ -414,26 +399,11 @@ export const FiltersModal: React.FC<FiltersModalProps> = ({ open, onClose }) => 
             </TabPanel>
 
             {/* 
-              Панель "Категории" (index 2) - фильтры по типам, валютам, уровням листинга
-              Эта панель требует загрузки данных с сервера, поэтому показываются состояния загрузки и ошибок
+              Панель "Категории" (index 2) - фильтры по типам, валютам, уровням листинга.
+              Опции заданы на фронте; на бэкенд уходят только выбранные значения.
             */}
             <TabPanel value={activeTab} index={2}>
               <Box sx={{ height: '100%', overflowY: 'auto', overflowX: 'hidden', p: 3 }}>
-                {/* Сообщение об ошибке при загрузке опций фильтров */}
-                {filterOptionsError && (
-                  <Alert severity="error" sx={{ mb: 3 }}>
-                    {filterOptionsError}
-                  </Alert>
-                )}
-                {/* Индикатор загрузки опций фильтров */}
-                {isLoadingFilterOptions && (
-                  <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 4 }}>
-                    <CircularProgress size={40} />  {/* Круговой индикатор загрузки */}
-                    <Typography variant="body2" sx={{ ml: 2 }}>
-                      Загрузка опций фильтров...
-                    </Typography>
-                  </Box>
-                )}
                 <Stack spacing={4} sx={{ width: '100%' }}>
                 {/* Блок фильтра: Уровень листинга на бирже (1, 2, 3 и т.д.) */}
                 <Box sx={{ width: '100%' }}>

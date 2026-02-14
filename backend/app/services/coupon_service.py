@@ -21,12 +21,7 @@ class CouponService:
     Координирует загрузку данных из API MOEX и БД. Проверка актуальности —
     по наличию записей в таблице coupons для secid. Запись только через
     DBCoupon.save_coupons_bulk после получения данных из API.
-
-    Attributes:
-        STALE_DAYS: Не используется (актуальность определяется наличием данных в БД).
     """
-
-    STALE_DAYS: int = 14
 
     def __init__(
         self,
@@ -40,22 +35,6 @@ class CouponService:
         self._moex_client = moex_client or MoexClient()
         self._db_coupon = DBCoupon(db_path=str(DB_PATH))
         self._bonds_repo = BondsRepository(db_path=DB_PATH)
-
-    def _is_data_stale(self, last_updated: str) -> bool:
-        """Проверяет, устарели ли данные по дате последнего обновления.
-
-        Args:
-            last_updated: Дата последнего обновления (YYYY-MM-DD).
-
-        Returns:
-            True если данные старше STALE_DAYS дней, иначе False.
-            При некорректной дате возвращает True.
-        """
-        try:
-            last_date = datetime.strptime(last_updated, "%Y-%m-%d").date()
-            return (date.today() - last_date).days > self.STALE_DAYS
-        except (ValueError, TypeError):
-            return True
 
     def _fetch_bond_coupons_from_db(self, secid: str) -> Dict:
         """Получает данные о купонах облигации из базы данных.

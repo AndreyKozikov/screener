@@ -29,6 +29,7 @@ import SaveIcon from '@mui/icons-material/Save';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import ShowChartIcon from '@mui/icons-material/ShowChart';
 import { useComparisonStore } from '../../stores/comparisonStore';
 import { ComparisonImportDialog } from './ComparisonImportDialog';
 import { formatNumber, calculateCouponFrequency } from '../../utils/formatters';
@@ -89,7 +90,6 @@ interface TotalReturnResult {
   quantity: number;
   cashBalance: number;
   totalCoupons: number;
-  grossCouponsReceived: number;
   priceChangePercent: number;
   futureCleanPricePercent: number;
   saleProceeds: number;
@@ -129,8 +129,9 @@ export const ComparisonTable: React.FC = () => {
   const [isLoadingForecast, setIsLoadingForecast] = useState(false);
   const [useForecastRate, setUseForecastRate] = useState<boolean>(false);
   const [useManualParams, setUseManualParams] = useState<boolean>(false);
-  // Manual price and accrued interest values per bond (keyed by secid)
-  const [manualPrices, setManualPrices] = useState<Map<string, { cleanPricePercent: number; accruedInterest: number }>>(new Map());
+  // Manual parameters per bond (keyed by secid): cleanPricePercent, accruedInterest, and investAmount
+  // If a parameter is not set manually, it should be undefined (not 0)
+  const [manualPrices, setManualPrices] = useState<Map<string, { cleanPricePercent?: number; accruedInterest?: number; investAmount?: number }>>(new Map());
   const [isParamsDialogOpen, setIsParamsDialogOpen] = useState<boolean>(false);
   
   // Temporary states for dialog parameters (not applied until "Применить" is clicked)
@@ -143,6 +144,13 @@ export const ComparisonTable: React.FC = () => {
   
   // Trigger for manual recalculation (incremented when "Пересчитать" button is clicked)
   const [recalculateTrigger, setRecalculateTrigger] = useState<number>(0);
+
+  // Clear manual values when manual params checkbox is disabled
+  useEffect(() => {
+    if (!useManualParams) {
+      setManualPrices(new Map());
+    }
+  }, [useManualParams]);
 
   // Load zero-coupon yield curve data when component mounts or bonds change
   useEffect(() => {
@@ -1713,6 +1721,54 @@ export const ComparisonTable: React.FC = () => {
   // Column definitions for AG Grid
   const columnDefs: ColDef[] = useMemo(() => {
     // Remove bond renderer
+    const ChartButtonRenderer = (params: ICellRendererParams<ComparisonRow>) => {
+      const row = params.data;
+      if (!row) return null;
+
+      const handleClick = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        // No action assigned yet
+      };
+
+      return (
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: '100%',
+            height: '100%',
+            cursor: 'default',
+          }}
+        >
+          <Box
+            component="button"
+            onClick={handleClick}
+            sx={{
+              border: '1px solid',
+              borderColor: 'primary.main',
+              borderRadius: '4px',
+              backgroundColor: 'rgba(25, 118, 210, 0.08)',
+              cursor: 'pointer',
+              padding: '6px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: 'primary.main',
+              transition: 'all 0.2s',
+              '&:hover': {
+                backgroundColor: 'primary.main',
+                color: 'white',
+                transform: 'scale(1.05)',
+              },
+            }}
+          >
+            <ShowChartIcon fontSize="small" />
+          </Box>
+        </Box>
+      );
+    };
+
     const RemoveBondRenderer = (params: ICellRendererParams<ComparisonRow>) => {
       const row = params.data;
       if (!row) return null;
@@ -1990,6 +2046,21 @@ export const ComparisonTable: React.FC = () => {
         autoHeaderHeight: true,
         sortable: false,
         filter: false,
+      },
+      {
+        field: 'chart',
+        headerName: '',
+        minWidth: 60,
+        width: 60,
+        pinned: 'right',
+        sortable: false,
+        filter: false,
+        suppressMenu: true,
+        resizable: false,
+        cellRenderer: ChartButtonRenderer,
+        cellStyle: { textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+        headerClass: 'ag-header-center',
+        suppressSizeToFit: true,
       },
       {
         field: 'actions',
@@ -2282,7 +2353,104 @@ export const ComparisonTable: React.FC = () => {
     }
   };
 
-  // Calculate Total Return for a bond
+  /**
+   * Calculate accrued interest (НКД) for a specific date using Actual/Actual basis
+   * НКД накапливается пропорционально дням с момента последней выплаты купона до целевой даты
+   * Используется для расчета НКД на прогнозную дату продажи (в будущем)
+   * Для НКД на дату покупки используется значение из данных облигации (bond.ACCRUEDINT)
+   * @param coupons - Array of coupon payments (should be sorted by date)
+   * @param targetDate - Date for which to calculate НКД
+   * @param nominal - Face value of the bond (not used in calculation, kept for compatibility)
+   * @returns НКД amount or null if cannot calculate
+   */
+  const calculateAccruedInterest = useCallback((
+    coupons: Coupon[],
+    targetDate: Date,
+    nominal: number
+  ): number | null => {
+    if (coupons.length === 0) return null;
+
+    // Create a copy of targetDate to avoid mutating the original
+    const target = new Date(targetDate);
+    target.setHours(0, 0, 0, 0);
+    const targetTime = target.getTime();
+
+    // Find the previous coupon before targetDate and the next coupon after it
+    let prevCoupon: Coupon | null = null;
+    let nextCoupon: Coupon | null = null;
+
+    for (const coupon of coupons) {
+      if (!coupon.coupondate) continue;
+      const couponDate = new Date(coupon.coupondate);
+      couponDate.setHours(0, 0, 0, 0);
+      const couponTime = couponDate.getTime();
+
+      if (couponTime <= targetTime) {
+        // This coupon was paid on or before target date
+        if (!prevCoupon || couponTime > new Date(prevCoupon.coupondate!).getTime()) {
+          prevCoupon = coupon;
+        }
+      } else {
+        // This coupon will be paid after target date
+        if (!nextCoupon || couponTime < new Date(nextCoupon.coupondate!).getTime()) {
+          nextCoupon = coupon;
+        }
+      }
+    }
+
+    // If no previous coupon found, НКД is 0 (before first coupon or no coupons)
+    if (!prevCoupon || !nextCoupon) {
+      return 0;
+    }
+
+    // Calculate НКД proportionally based on days (Actual/Actual basis)
+    const prevCouponDate = new Date(prevCoupon.coupondate!);
+    prevCouponDate.setHours(0, 0, 0, 0);
+    const nextCouponDate = new Date(nextCoupon.coupondate!);
+    nextCouponDate.setHours(0, 0, 0, 0);
+
+    const daysSincePrevCoupon = Math.floor((targetTime - prevCouponDate.getTime()) / (1000 * 60 * 60 * 24));
+    const daysBetweenCoupons = Math.floor((nextCouponDate.getTime() - prevCouponDate.getTime()) / (1000 * 60 * 60 * 24));
+
+    if (daysBetweenCoupons <= 0) return 0;
+
+    // Get coupon value for the next coupon (prefer value_rub, fallback to value)
+    const couponValue = nextCoupon.value_rub ?? nextCoupon.value ?? 0;
+    if (couponValue <= 0) return 0;
+
+    // Calculate НКД proportionally: (days since prev coupon / days between coupons) * coupon value
+    // This represents the portion of the next coupon that has accrued but not yet been paid
+    const accruedInterest = (daysSincePrevCoupon / daysBetweenCoupons) * couponValue;
+    return accruedInterest;
+  }, []);
+
+  /**
+   * Get coupons paid during holding period (between purchaseDate and saleDate)
+   * @param coupons - Array of coupon payments sorted by date
+   * @param purchaseDate - Purchase date
+   * @param saleDate - Sale date
+   * @returns Array of coupons paid during holding period
+   */
+  const getCouponsInPeriod = useCallback((
+    coupons: Coupon[],
+    purchaseDate: Date,
+    saleDate: Date
+  ): Coupon[] => {
+    const purchaseTime = purchaseDate.getTime();
+    const saleTime = saleDate.getTime();
+
+    return coupons.filter(coupon => {
+      if (!coupon.coupondate) return false;
+      const couponDate = new Date(coupon.coupondate);
+      couponDate.setHours(0, 0, 0, 0);
+      const couponTime = couponDate.getTime();
+
+      // Include coupon if it's paid after purchase date and on or before sale date
+      return couponTime > purchaseTime && couponTime <= saleTime;
+    });
+  }, []);
+
+  // Calculate Total Return for a bond with calendar-accurate calculation
   const calculateTotalReturn = (bond: BondListItem): TotalReturnResult | null => {
     // Validate required inputs
     if (
@@ -2294,108 +2462,141 @@ export const ComparisonTable: React.FC = () => {
       return null;
     }
 
+    // Get coupons for this bond - REQUIRED for calendar-accurate calculation
+    const couponsRaw = couponsData.get(bond.SECID);
+    if (!couponsRaw || couponsRaw.length === 0) {
+      // No fallback allowed - return null if coupon data is not available
+      return null;
+    }
+
+    // Sort coupons by date to ensure correct НКД calculation
+    const coupons = [...couponsRaw].sort((a, b) => {
+      if (!a.coupondate || !b.coupondate) return 0;
+      return new Date(a.coupondate).getTime() - new Date(b.coupondate).getTime();
+    });
+
     // Use manual values if checkbox is checked and manual values are set, otherwise use bond data
     const manualValues = manualPrices.get(bond.SECID);
-    const cleanPricePercent = useManualParams && manualValues 
+    const cleanPricePercent = useManualParams && manualValues && manualValues.cleanPricePercent !== undefined
       ? manualValues.cleanPricePercent 
       : bond.PREVPRICE;
     const nominal = bond.FACEVALUE;
-    const accruedInterest = useManualParams && manualValues
-      ? manualValues.accruedInterest
-      : (bond.ACCRUEDINT ?? 0);
-    const couponRate = bond.COUPONPERCENT / 100; // Convert to decimal
     const modDuration = calculateModifiedDuration(bond);
 
     if (modDuration === null) {
       return null;
     }
 
-    // ===== DIRTY-TO-DIRTY METHOD =====
-    // This method correctly accounts for accrued interest (НКД) at both purchase and sale,
-    // ensuring that paid НКД is not incorrectly counted as profit.
+    const bondInvestAmount = useManualParams && manualValues?.investAmount !== undefined && manualValues.investAmount > 0
+      ? manualValues.investAmount
+      : investAmount;
 
-    // Step 1: Calculate purchase costs (T0) - Dirty price at purchase
-    const priceRub = nominal * (cleanPricePercent / 100);
-    const accruedInterestAtPurchase = accruedInterest;
-    const buyDirtyPrice = priceRub + accruedInterestAtPurchase;
+    // ===== CALENDAR-ACCURATE CALCULATION (Actual/Actual) =====
+    // Uses real coupon payment dates and proportional НКД calculation for sale date
+    // НКД на дату покупки берется из данных облигации (bond.ACCRUEDINT)
 
-    // Step 2: Calculate quantity and total invested
-    const quantity = Math.floor(investAmount / buyDirtyPrice);
+    // Step 1: Define purchase and sale dates
+    const purchaseDate = new Date();
+    purchaseDate.setHours(0, 0, 0, 0);
+    const saleDate = new Date(purchaseDate);
+    saleDate.setFullYear(saleDate.getFullYear() + Math.floor(years));
+    saleDate.setMonth(saleDate.getMonth() + Math.round((years % 1) * 12));
+    saleDate.setHours(0, 0, 0, 0);
+
+    // Step 2: Get НКД on purchase date from bond data (not calculated)
+    // НКД на дату покупки берется из данных облигации, так как это текущая рыночная величина
+    let accruedInterestAtPurchase: number;
+    if (useManualParams && manualValues && manualValues.accruedInterest !== undefined) {
+      accruedInterestAtPurchase = manualValues.accruedInterest;
+    } else {
+      // Use НКД from bond data (ACCRUEDINT field contains current market НКД)
+      accruedInterestAtPurchase = bond.ACCRUEDINT ?? 0;
+    }
+
+    // Step 3: Calculate purchase costs (T0) - Dirty price at purchase
+    const cleanPriceRubAtPurchase = nominal * (cleanPricePercent / 100);
+    const buyDirtyPrice = cleanPriceRubAtPurchase + accruedInterestAtPurchase;
+
+    // Step 4: Calculate quantity and total invested
+    const quantity = Math.floor(bondInvestAmount / buyDirtyPrice);
     const totalInvested = quantity * buyDirtyPrice;
-    const cashBalance = investAmount - totalInvested;
+    const cashBalance = bondInvestAmount - totalInvested;
 
-    // Step 3: Calculate future price with convexity adjustment
-    // Calculate delta yield: (targetYield - currentYield) / 100
-    // If forecastRate (8%) < currentRate (16%), deltaYield is negative (-0.08)
+    // Step 5: Calculate future clean price with convexity adjustment
     const deltaYield = (forecastRate - currentRate) / 100;
-    
-    // According to Fabozzi theory: PercentageChange = -ModDuration * deltaYield
-    // When deltaYield is negative (rates decrease), priceChangePercent will be positive (price increases)
     const priceChangeDuration = -modDuration * deltaYield;
-    
-    // Calculate convexity adjustment: 0.5 * Convexity * deltaYield^2
     const convexity = calculateConvexity(bond);
     const priceChangeConvexity = convexity !== null 
       ? 0.5 * convexity * Math.pow(deltaYield, 2)
       : 0;
-    
-    // Total price change with convexity adjustment
     const totalPriceChangePercent = priceChangeDuration + priceChangeConvexity;
-    
-    // Future clean price in percentage
     const futureCleanPricePercent = cleanPricePercent * (1 + totalPriceChangePercent);
+    const futureCleanPriceRub = nominal * (futureCleanPricePercent / 100);
 
-    // Step 4: Calculate sale proceeds (T_exit) - Dirty price at sale
-    // For simplification, we use current accrued interest as accruedInterestAtSale
-    // In a more precise calculation, this would be based on coupon dates and time elapsed
-    const accruedInterestAtSale = accruedInterestAtPurchase; // Simplified: same as purchase
-    const futurePriceRub = nominal * (futureCleanPricePercent / 100);
-    const sellDirtyPrice = futurePriceRub + accruedInterestAtSale;
-    const totalSaleProceeds = quantity * sellDirtyPrice;
+    // Step 6: Calculate НКД on sale date using calendar-accurate method
+    const accruedInterestAtSale = calculateAccruedInterest(coupons, saleDate, nominal) ?? 0;
 
-    // Step 5: Calculate coupon income
-    // Total gross coupons received during holding period (includes НКД in first coupon)
-    const grossCouponsReceived = quantity * nominal * couponRate * years;
+    // Step 7: Get coupons paid during holding period (cash method)
+    const couponsInPeriod = getCouponsInPeriod(coupons, purchaseDate, saleDate);
     
-    // In Dirty-to-Dirty method: first coupon includes НКД that was paid at purchase
-    // This НКД is a return of what we already paid, not new income
-    // Therefore, we subtract the НКД paid at purchase from total coupons
-    const accruedInterestPaid = quantity * accruedInterestAtPurchase;
-    const totalCouponsReceived = grossCouponsReceived - accruedInterestPaid;
+    // Calculate total coupon payments received
+    let totalCouponPayments = 0;
+    for (const coupon of couponsInPeriod) {
+      const couponValue = coupon.value_rub ?? coupon.value ?? 0;
+      totalCouponPayments += couponValue;
+    }
 
-    // Step 6: Calculate final results using Dirty-to-Dirty method
-    // Final balance = sale proceeds + coupons + cash balance
-    const finalBalance = totalSaleProceeds + totalCouponsReceived + cashBalance;
+    // Step 8: Calculate income components (strictly separated)
     
-    // Absolute profit = final balance - total invested (which includes НКД paid at purchase)
-    // This ensures НКД paid at purchase is not counted as profit
+    // Component 1: Income from clean price change (body of bond)
+    const priceChangeIncome = (futureCleanPriceRub - cleanPriceRubAtPurchase) * quantity;
+    
+    // Component 2: Net coupon income (НКД isolated within coupon block)
+    // Formula: (Sum of coupons + НКД at sale - НКД at purchase) × Quantity
+    const netCouponIncome = (totalCouponPayments + accruedInterestAtSale - accruedInterestAtPurchase) * quantity;
+
+    // Step 9: Calculate final results
+    // Sale proceeds (clean): Quantity × Future clean price
+    const cleanSaleProceeds = quantity * futureCleanPriceRub;
+    
+    // Final balance calculation:
+    // netCouponIncome already includes: (totalCouponPayments + accruedInterestAtSale - accruedInterestAtPurchase) × quantity
+    // But we need to add НКД at sale separately to sale proceeds to get dirty sale price
+    // And subtract НКД at purchase that was already subtracted in netCouponIncome to avoid double subtraction
+    // Final balance = Dirty sale proceeds + Net coupon income (which already has НКД at sale included)
+    // But since netCouponIncome already includes НКД at sale, we use clean sale proceeds
+    // However, НКД at purchase is subtracted twice: once in netCouponIncome, once in totalInvested
+    // So we need to add it back once to finalBalance to correct this
+    const finalBalance = cleanSaleProceeds + netCouponIncome + accruedInterestAtPurchase * quantity;
+    
+    // Absolute profit = Final balance - Total invested
+    // This corrects for double subtraction of НКД at purchase
     const absoluteProfit = finalBalance - totalInvested;
     
     // Total return percentage based on initial investment amount
-    const totalReturnPercent = (absoluteProfit / investAmount) * 100;
-    const annualReturn = (Math.pow(finalBalance / investAmount, 1 / years) - 1) * 100;
+    const totalReturnPercent = (absoluteProfit / bondInvestAmount) * 100;
+    const annualReturn = (Math.pow(finalBalance / bondInvestAmount, 1 / years) - 1) * 100;
 
     return {
       secid: bond.SECID,
       name: bond.SHORTNAME || '—',
       ticker: bond.SECID || '—',
-      investAmount: Math.round(investAmount * 100) / 100,
+      investAmount: Math.round(bondInvestAmount * 100) / 100,
       cleanPricePercent: Math.round(cleanPricePercent * 100) / 100,
       nominal: Math.round(nominal * 100) / 100,
       accruedInterest: Math.round(accruedInterestAtPurchase * 100) / 100,
-      couponRate: Math.round(couponRate * 10000) / 10000,
+      couponRate: Math.round((bond.COUPONPERCENT / 100) * 10000) / 10000,
       years: Math.round(years * 100) / 100,
       modDuration: Math.round(modDuration * 100) / 100,
       targetYieldChange: Math.round(deltaYield * 10000) / 10000,
-      priceRub: Math.round(priceRub * 100) / 100,
+      priceRub: Math.round(cleanPriceRubAtPurchase * 100) / 100,
       dirtyPriceRub: Math.round(buyDirtyPrice * 100) / 100,
       quantity,
       cashBalance: Math.round(cashBalance * 100) / 100,
-      totalCoupons: Math.round(totalCouponsReceived * 100) / 100,
-      grossCouponsReceived: Math.round(grossCouponsReceived * 100) / 100,
+      totalCoupons: Math.round(netCouponIncome * 100) / 100,
       priceChangePercent: Math.round(totalPriceChangePercent * 10000) / 100,
       futureCleanPricePercent: Math.round(futureCleanPricePercent * 100) / 100,
-      saleProceeds: Math.round(totalSaleProceeds * 100) / 100,
+      saleProceeds: Math.round(cleanSaleProceeds * 100) / 100,
       finalBalance: Math.round(finalBalance * 100) / 100,
       absoluteProfit: Math.round(absoluteProfit * 100) / 100,
       totalReturnPercent: Math.round(totalReturnPercent * 100) / 100,
@@ -2404,16 +2605,17 @@ export const ComparisonTable: React.FC = () => {
   };
 
   // Handle manual price and accrued interest updates
-  // These functions preserve the other parameter value when updating one
+  // These functions preserve the other parameter values when updating one
   const updateManualPrice = useCallback((secid: string, cleanPricePercent: number, currentAccruedInterest: number) => {
     setManualPrices(prev => {
       const newMap = new Map(prev);
       const existing = newMap.get(secid);
-      // Use existing accruedInterest if available, otherwise use current from table data
+      // Use existing values if available, otherwise use current from table data
       const accruedInterestToKeep = existing?.accruedInterest ?? currentAccruedInterest;
       newMap.set(secid, {
         cleanPricePercent,
         accruedInterest: accruedInterestToKeep,
+        investAmount: existing?.investAmount,
       });
       return newMap;
     });
@@ -2423,12 +2625,54 @@ export const ComparisonTable: React.FC = () => {
     setManualPrices(prev => {
       const newMap = new Map(prev);
       const existing = newMap.get(secid);
-      // Use existing cleanPricePercent if available, otherwise use current from table data
+      // Use existing values if available, otherwise use current from table data
       const cleanPricePercentToKeep = existing?.cleanPricePercent ?? currentCleanPricePercent;
       newMap.set(secid, {
         cleanPricePercent: cleanPricePercentToKeep,
         accruedInterest,
+        investAmount: existing?.investAmount,
       });
+      return newMap;
+    });
+  }, []);
+
+  // Handle manual investment amount updates
+  // Preserves existing cleanPricePercent and accruedInterest if they were set manually
+  const updateManualInvestAmount = useCallback((secid: string, investAmount: number) => {
+    setManualPrices(prev => {
+      const newMap = new Map(prev);
+      const existing = newMap.get(secid);
+      if (investAmount > 0) {
+        // If entry exists, preserve existing cleanPricePercent and accruedInterest
+        // If entry doesn't exist, create new entry with only investAmount
+        if (existing) {
+          newMap.set(secid, {
+            cleanPricePercent: existing.cleanPricePercent,
+            accruedInterest: existing.accruedInterest,
+            investAmount,
+          });
+        } else {
+          // Create new entry with only investAmount (cleanPricePercent and accruedInterest will use defaults)
+          newMap.set(secid, {
+            investAmount,
+          });
+        }
+      } else {
+        // Remove investAmount but keep other values if they exist
+        if (existing) {
+          // Only keep entry if cleanPricePercent or accruedInterest were set manually
+          if (existing.cleanPricePercent !== undefined || existing.accruedInterest !== undefined) {
+            const updatedValue: { cleanPricePercent?: number; accruedInterest?: number; investAmount?: number } = {
+              cleanPricePercent: existing.cleanPricePercent,
+              accruedInterest: existing.accruedInterest,
+            };
+            newMap.set(secid, updatedValue);
+          } else {
+            // Remove entry completely if no other values exist
+            newMap.delete(secid);
+          }
+        }
+      }
       return newMap;
     });
   }, []);
@@ -2448,7 +2692,7 @@ export const ComparisonTable: React.FC = () => {
       .map(bond => calculateTotalReturn(bond))
       .filter((result): result is TotalReturnResult => result !== null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [comparisonBonds, recalculateTrigger]);
+  }, [comparisonBonds, recalculateTrigger, investAmount, useManualParams, manualPrices]);
   
   // Function to trigger manual recalculation
   const handleRecalculate = useCallback(() => {
@@ -2469,6 +2713,29 @@ export const ComparisonTable: React.FC = () => {
       headerName: 'Тикер',
       minWidth: 100,
       cellStyle: { textAlign: 'center' },
+    },
+    {
+      field: 'investAmount',
+      headerName: 'Сумма инвестиций',
+      minWidth: 150,
+      cellStyle: { textAlign: 'right' },
+      valueFormatter: (params) => formatNumber(params.value, 2),
+      editable: useManualParams,
+      valueSetter: (params) => {
+        const newValue = typeof params.newValue === 'string' ? parseFloat(params.newValue) : params.newValue;
+        if (!isNaN(newValue) && newValue !== null && newValue !== undefined && newValue > 0) {
+          params.data.investAmount = newValue;
+          // Update manualPrices with investAmount but do NOT trigger recalculation
+          // Recalculation will happen only when "Пересчитать" button is clicked
+          updateManualInvestAmount(params.data.secid, newValue);
+          return true;
+        }
+        return false;
+      },
+      valueParser: (params) => {
+        const value = parseFloat(params.newValue);
+        return isNaN(value) || value <= 0 ? params.oldValue : value;
+      },
     },
     {
       field: 'cleanPricePercent',
@@ -2562,16 +2829,6 @@ export const ComparisonTable: React.FC = () => {
       valueFormatter: (params) => formatNumber(params.value, 2),
     },
     {
-      field: 'grossCouponsReceived',
-      headerName: 'Полная сумма купонов (включая НКД в первом купоне), руб.',
-      minWidth: 320,
-      cellStyle: { textAlign: 'right' },
-      valueFormatter: (params) => formatNumber(params.value, 2),
-      headerTooltip: 'Полная сумма всех купонных выплат за период владения облигацией. Включает НКД, который был уплачен продавцу при покупке и вернется в первом купоне. Это валовая сумма всех купонных выплат без вычета уплаченного НКД.',
-      headerComponent: CustomHeaderWithTooltip,
-      headerClass: 'ag-header-center',
-    },
-    {
       field: 'totalCoupons',
       headerName: 'Чистый доход от купонов (за вычетом уплаченного НКД), руб.',
       minWidth: 320,
@@ -2597,7 +2854,7 @@ export const ComparisonTable: React.FC = () => {
     },
     {
       field: 'saleProceeds',
-      headerName: 'Выручка от продажи (грязная цена), руб.',
+      headerName: 'Выручка от продажи, руб.',
       minWidth: 240,
       cellStyle: { textAlign: 'right' },
       valueFormatter: (params) => formatNumber(params.value, 2),
@@ -2639,7 +2896,7 @@ export const ComparisonTable: React.FC = () => {
       cellStyle: { textAlign: 'right', fontWeight: 600 },
       valueFormatter: (params) => formatNumber(params.value, 2) + '%',
     },
-  ] as ColDef[], [useManualParams, updateManualPrice, updateManualAccruedInterest]);
+  ] as ColDef[], [useManualParams, updateManualPrice, updateManualAccruedInterest, updateManualInvestAmount]);
 
   if (comparisonBonds.length === 0) {
     return (
