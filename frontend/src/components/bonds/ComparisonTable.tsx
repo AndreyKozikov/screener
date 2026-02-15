@@ -2414,7 +2414,7 @@ export const ComparisonTable: React.FC = () => {
   const calculateAccruedInterest = useCallback((
     coupons: Coupon[],
     targetDate: Date,
-    nominal: number
+    _nominal: number
   ): number | null => {
     if (coupons.length === 0) return null;
 
@@ -2596,9 +2596,8 @@ export const ComparisonTable: React.FC = () => {
 
     // Step 8: Calculate income components (strictly separated)
     
-    // Component 1: Income from clean price change (body of bond)
-    const priceChangeIncome = (futureCleanPriceRub - cleanPriceRubAtPurchase) * quantity;
-    
+    // Component 1: Income from clean price change (body of bond): (futureCleanPriceRub - cleanPriceRubAtPurchase) * quantity
+
     // Component 2: Net coupon income (НКД isolated within coupon block)
     // Formula: (Sum of coupons + НКД at sale - НКД at purchase) × Quantity
     const netCouponIncome = (totalCouponPayments + accruedInterestAtSale - accruedInterestAtPurchase) * quantity;
@@ -3618,7 +3617,6 @@ export const ComparisonTable: React.FC = () => {
                   <LineChart
                     data={yieldRuoniaChartData.data}
                     margin={{ top: 4, right: 8, left: 4, bottom: 4 }}
-                    isAnimationActive={false}
                   >
                     <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
                     <XAxis

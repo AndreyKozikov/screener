@@ -8,7 +8,6 @@ import {
   InputAdornment,
   Stack,
   alpha,
-  CircularProgress,
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { keyframes } from '@emotion/react';
