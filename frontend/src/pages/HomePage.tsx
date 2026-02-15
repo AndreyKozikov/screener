@@ -31,6 +31,7 @@ import { AnalysisResultDialog } from '../components/llm/AnalysisResultDialog';
 import { LLMAnalysisModelDialog, type LLMModel } from '../components/llm/LLMAnalysisModelDialog';
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
 import { RefreshDataDialog } from '../components/common/RefreshDataDialog';
+import { ForecastFileDialog } from '../components/common/ForecastFileDialog';
 import { FeedbackDialog } from '../components/common/FeedbackDialog';
 import { HelpDialog, type HelpSection } from '../components/common/HelpDialog';
 import { BondSelectionGuidePage } from './BondSelectionGuidePage';
@@ -38,7 +39,7 @@ import { refreshBondsData, refreshCouponsData } from '../api/bonds';
 import { refreshZerocuponData, fetchZerocuponData } from '../api/zerocupon';
 import { refreshRatingsData } from '../api/rating';
 import { refreshRuoniaData } from '../api/ruonia';
-import { fetchForecastDates } from '../api/forecast';
+import { fetchForecastDates, uploadForecastMd } from '../api/forecast';
 import { refreshEmitentsData } from '../api/emitent';
 import { refreshTradingHistory } from '../api/tradingHistory';
 import { getDashboardRates, type MacroRatesResponse } from '../api/dashboard';
@@ -73,6 +74,11 @@ export const HomePage: React.FC = () => {
   const [isRefreshDialogOpen, setIsRefreshDialogOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshStatus, setRefreshStatus] = useState<Record<string, { status: 'idle' | 'loading' | 'success' | 'error'; error?: string }>>({});
+  // Forecast file dialog: when user selects "forecast" and clicks Обновить, open file picker before running refresh
+  const [isForecastFileDialogOpen, setIsForecastFileDialogOpen] = useState(false);
+  const [pendingRefreshTasks, setPendingRefreshTasks] = useState<string[]>([]);
+  const [pendingForceUpdateRatings, setPendingForceUpdateRatings] = useState(false);
+  const [pendingForceRefreshCoupons, setPendingForceRefreshCoupons] = useState(false);
   
   // LLM Analysis state
   const [isAnalysisParamsOpen, setIsAnalysisParamsOpen] = useState(false);
@@ -111,6 +117,8 @@ export const HomePage: React.FC = () => {
   // Forecast cards last dates state
   const [zerocuponLastDate, setZerocuponLastDate] = useState<string | null>(null);
   const [forecastLastDate, setForecastLastDate] = useState<string | null>(null);
+  /** Список дат прогнозов (YYYY-MM-DD), загружается при входе в комнату «Прогнозы», передаётся в ForecastTable чтобы не дублировать запрос */
+  const [availableForecastDates, setAvailableForecastDates] = useState<string[] | null>(null);
 
   // Helper function to format date from DD.MM.YYYY or YYYY-MM-DD to DD.MM.YYYY
   const formatDateForDisplay = (dateStr: string | null): string | null => {
@@ -146,44 +154,64 @@ export const HomePage: React.FC = () => {
     loadDashboardRates();
   }, []);
 
-  // Load last dates for forecast cards
+  // Load last dates for zerocupon card (once on mount)
   useEffect(() => {
-    const loadLastDates = async () => {
+    const loadZerocuponLastDate = async () => {
       try {
-        // Load zerocupon last date
-        try {
-          const zerocuponData = await fetchZerocuponData(null, null);
-          if (zerocuponData.data && zerocuponData.data.length > 0) {
-            const firstRecord = zerocuponData.data[0];
-            const dateStr = firstRecord['Дата'];
-            setZerocuponLastDate(formatDateForDisplay(dateStr));
-          }
-        } catch (error) {
-          console.error('Failed to load zerocupon last date:', error);
-        }
-
-        // Load forecast last date
-        try {
-          const forecastDates = await fetchForecastDates();
-          if (forecastDates && forecastDates.length > 0) {
-            setForecastLastDate(formatDateForDisplay(forecastDates[0]));
-          }
-        } catch (error) {
-          console.error('Failed to load forecast last date:', error);
+        const zerocuponData = await fetchZerocuponData(null, null);
+        if (zerocuponData.data && zerocuponData.data.length > 0) {
+          const firstRecord = zerocuponData.data[0];
+          const dateStr = firstRecord['Дата'];
+          setZerocuponLastDate(formatDateForDisplay(dateStr));
         }
       } catch (error) {
-        console.error('Failed to load forecast cards last dates:', error);
+        console.error('Failed to load zerocupon last date:', error);
       }
     };
-    loadLastDates();
+    loadZerocuponLastDate();
   }, []);
+
+  // Запрос дат среднесрочных прогнозов при переходе в комнату «Прогнозы» (один раз; список передаётся в ForecastTable)
+  useEffect(() => {
+    if (currentTab !== 2) return;
+    const loadForecastDates = async () => {
+      try {
+        const forecastDates = await fetchForecastDates();
+        setAvailableForecastDates(forecastDates ?? []);
+        if (forecastDates && forecastDates.length > 0) {
+          setForecastLastDate(formatDateForDisplay(forecastDates[0]));
+        } else {
+          setForecastLastDate(null);
+        }
+      } catch (error) {
+        console.error('Failed to load forecast dates:', error);
+        setAvailableForecastDates([]);
+        setForecastLastDate(null);
+      }
+    };
+    void loadForecastDates();
+  }, [currentTab]);
 
   const handleRefreshDataClick = () => {
     setIsRefreshDialogOpen(true);
   };
 
-  const handleRefreshConfirm = async (selectedTasks: string[], forceUpdateRatings?: boolean, forceRefreshCoupons?: boolean) => {
+  const handleRefreshConfirm = async (
+    selectedTasks: string[],
+    forceUpdateRatings?: boolean,
+    forceRefreshCoupons?: boolean,
+    forecastFile?: File | null,
+  ) => {
     if (selectedTasks.length === 0) {
+      return;
+    }
+
+    // If forecast is selected but no file yet — open file selection dialog first
+    if (selectedTasks.includes('forecast') && forecastFile === undefined) {
+      setPendingRefreshTasks(selectedTasks);
+      setPendingForceUpdateRatings(forceUpdateRatings ?? false);
+      setPendingForceRefreshCoupons(forceRefreshCoupons ?? false);
+      setIsForecastFileDialogOpen(true);
       return;
     }
 
@@ -196,6 +224,8 @@ export const HomePage: React.FC = () => {
       initialStatus[taskId] = { status: 'loading' };
     });
     setRefreshStatus(initialStatus);
+
+    const forecastFileRef = forecastFile ?? null;
 
     // Define task handlers
     const taskHandlers: Record<string, () => Promise<void>> = {
@@ -238,6 +268,11 @@ export const HomePage: React.FC = () => {
       },
       keyrate: async () => {
         await loadKeyRateData();
+      },
+      forecast: async () => {
+        if (forecastFileRef) {
+          await uploadForecastMd(forecastFileRef);
+        }
       },
     };
 
@@ -952,7 +987,7 @@ export const HomePage: React.FC = () => {
                     
                     {forecastSubView === 'forecast' && (
                       <Box sx={{ flexGrow: 1, minHeight: 0 }}>
-                        <ForecastTable />
+                        <ForecastTable initialDates={availableForecastDates} />
                       </Box>
                     )}
                     
@@ -1077,11 +1112,10 @@ export const HomePage: React.FC = () => {
         onClose={() => {
           if (!isRefreshing) {
             setIsRefreshDialogOpen(false);
-            // Reset status when closing
             setRefreshStatus({});
           }
         }}
-        onConfirm={handleRefreshConfirm}
+        onConfirm={(tasks, forceRatings, forceCoupons) => handleRefreshConfirm(tasks, forceRatings, forceCoupons)}
         tasks={[
           { id: 'bonds', label: 'Обновить данные облигаций', checked: false },
           { id: 'zerocupon', label: 'Обновить данные кривой бескупонной доходности', checked: false },
@@ -1092,9 +1126,25 @@ export const HomePage: React.FC = () => {
           { id: 'ruonia', label: 'Обновить данные ставки RUONIA', checked: false },
           { id: 'keyrate', label: 'Обновить ключевую ставку ЦБ', checked: false },
           { id: 'trading-history', label: 'Обновить историю торгов', checked: false },
+          { id: 'forecast', label: 'Обновить среднесрочный прогноз Банка России', checked: false },
         ]}
         isRefreshing={isRefreshing}
         refreshStatus={refreshStatus}
+      />
+
+      {/* Forecast file selection: after user chose "Обновить прогноз" and clicked Обновить */}
+      <ForecastFileDialog
+        open={isForecastFileDialogOpen}
+        onClose={() => {
+          setIsForecastFileDialogOpen(false);
+          setPendingRefreshTasks([]);
+        }}
+        onConfirm={(file) => {
+          setIsForecastFileDialogOpen(false);
+          const tasks = pendingRefreshTasks;
+          setPendingRefreshTasks([]);
+          void handleRefreshConfirm(tasks, pendingForceUpdateRatings, pendingForceRefreshCoupons, file);
+        }}
       />
 
       {/* LLM Analysis Parameters Dialog - First step */}

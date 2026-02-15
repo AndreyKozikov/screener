@@ -135,6 +135,32 @@ export const fetchBonds = async (filters: BondFilters, emitentTitle?: string, ex
 };
 
 /**
+ * Точка графика сравнения доходности облигации и RUONIA
+ */
+export interface YieldRuoniaChartPoint {
+  date: string;
+  ruonia_rate: number | null;
+  yieldatwap: number | null;
+}
+
+/**
+ * Ответ API графика доходность облигации vs RUONIA
+ */
+export interface YieldRuoniaChartResponse {
+  secid: string;
+  data: YieldRuoniaChartPoint[];
+}
+
+/**
+ * Загружает данные для графика сравнения доходности облигации и ставки RUONIA.
+ * Период: от (текущая дата − 1 день) на год назад; только даты, присутствующие в обоих источниках.
+ */
+export const fetchYieldRuoniaChart = async (secid: string): Promise<YieldRuoniaChartResponse> => {
+  const response = await apiClient.get<YieldRuoniaChartResponse>(`/bonds/${secid}/yield-ruonia-chart`);
+  return response.data;
+};
+
+/**
  * Fetch bond details by SECID
  */
 export const fetchBondDetail = async (secid: string): Promise<BondDetail> => {

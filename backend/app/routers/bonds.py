@@ -14,6 +14,7 @@ from datetime import date
 from app.models import (
     BondDetail,
     BondFilters,
+    BondYieldRuoniaChartResponse,
     BondsListResponse,
     CouponsBySecid,
     CouponsListResponse,
@@ -25,6 +26,7 @@ from app.services.bonds_service import (
     refresh_bonds_data as do_refresh_bonds_data,
 )
 from app.services.coupon_service import get_coupon_service
+from app.services.bond_ruonia_chart_service import get_yield_ruonia_chart_data
 from app.services.data_loader import get_data_loader
 from app.services.moex_client import MoexClient
 from app.repository.db.bonds_repository import BondsRepository
@@ -173,6 +175,23 @@ async def refresh_bonds_endpoint():
         ) from exc
 
 
+@router.get("/{secid}/yield-ruonia-chart", response_model=BondYieldRuoniaChartResponse)
+async def get_bond_yield_ruonia_chart(secid: str):
+    """Возвращает нормализованные данные для графика сравнения доходности облигации и RUONIA.
+
+    Период: от (текущая дата минус 1 день) на год назад. В ответ входят только даты,
+    по которым есть и ставка RUONIA, и доходность к погашению (yieldatwap) облигации.
+
+    Args:
+        secid: Идентификатор облигации (SECID).
+
+    Returns:
+        BondYieldRuoniaChartResponse с полем data — список точек (date, ruonia_rate, yieldatwap).
+    """
+    result = await asyncio.to_thread(get_yield_ruonia_chart_data, secid)
+    return result
+
+
 @router.get("/{secid}", response_model=BondDetail)
 async def get_bond_detail(secid: str):
     """Получает детальную информацию об облигации по SECID.
@@ -199,6 +218,7 @@ async def get_bond_detail(secid: str):
         securities=dto.securities,
         marketdata=dto.marketdata,
         marketdata_yields=dto.marketdata_yields,
+        emitent_inn=dto.emitent_inn,
     )
 
 

@@ -202,6 +202,38 @@ class TradingHistoryService:
         )
         return _date_str(from_d), _date_str(till_d), True
 
+    def get_history_for_period(
+        self,
+        secid: str,
+        date_from: date,
+        date_to: date,
+    ) -> List[Tuple[date, Optional[float]]]:
+        """Возвращает историю доходности (tradedate, yieldatwap) по облигации за период.
+
+        Используется для построения графика сравнения с RUONIA. По одной дате может
+        быть несколько записей (разные boardid); берётся одно значение yieldatwap
+        на дату (первое непустое при сортировке по дате и boardid).
+
+        Args:
+            secid: Идентификатор ценной бумаги (SECID).
+            date_from: Начальная дата (включительно).
+            date_to: Конечная дата (включительно).
+
+        Returns:
+            Список кортежей (дата, yieldatwap). yieldatwap может быть None.
+        """
+        records = self._history_repo.get_by_secid_date_range(
+            secid=secid.strip(),
+            date_from=date_from,
+            date_to=date_to,
+        )
+        # Одна точка на дату: первое непустое yieldatwap при обходе по порядку
+        by_date: Dict[date, Optional[float]] = {}
+        for rec in records:
+            if rec.tradedate not in by_date or by_date[rec.tradedate] is None:
+                by_date[rec.tradedate] = rec.yieldatwap
+        return [(d, by_date[d]) for d in sorted(by_date.keys())]
+
     def _build_moex_url(
         self, secid: str, from_: str, till: str, start: int
     ) -> str:

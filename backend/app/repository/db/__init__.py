@@ -12,6 +12,7 @@ from app.repository.db.db_coupon import DBCoupon
 from app.repository.db.db_kbd import KbdRepository
 from app.repository.db.describe_repository import DescribeRepository
 from app.repository.db.emitents_repository import EmitentsRepository
+from app.repository.db.forecast_repository import ForecastRepository
 from app.repository.db.keyrate_repository import KeyrateRepository
 from app.repository.db.ruonia_repository import RuoniaRepository
 from app.repository.db.trading_history_repository import TradingHistoryRepository
@@ -25,6 +26,7 @@ __all__ = [
     "KbdRepository",
     "KeyrateRepository",
     "EmitentsRepository",
+    "ForecastRepository",
     "RuoniaRepository",
     "TradingHistoryRepository",
     "RATINGS_ORDER",

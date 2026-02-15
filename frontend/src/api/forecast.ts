@@ -37,8 +37,13 @@ export interface ForecastDatesResponse {
  * Get list of available forecast dates
  */
 export const fetchForecastDates = async (): Promise<string[]> => {
-  const response = await apiClient.get<ForecastDatesResponse>('/forecast/dates');
-  return response.data.dates;
+  const response = await apiClient.get<ForecastDatesResponse | string[] | { data?: { dates?: string[] }; dates?: string[] }>('/forecast/dates');
+  const data = response.data;
+  if (Array.isArray(data)) return data;
+  const dates =
+    (data as ForecastDatesResponse)?.dates ??
+    (data as { data?: { dates?: string[] } })?.data?.dates;
+  return Array.isArray(dates) ? dates : [];
 };
 
 /**
@@ -50,6 +55,20 @@ export const fetchForecastData = async (date?: string | null): Promise<ForecastD
 
   const response = await apiClient.get<ForecastData>('/forecast/data', { params });
   return response.data;
+};
+
+/**
+ * Upload forecast Markdown file to backend (saved to backend/app/data).
+ * Only .md files are accepted by the backend.
+ */
+export const uploadForecastMd = async (file: File): Promise<{ filename: string }> => {
+  const formData = new FormData();
+  formData.append('file', file);
+  const response = await apiClient.post<{ filename: string; saved_to: string }>('/forecast/upload', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 30000,
+  });
+  return { filename: response.data.filename };
 };
 
 /**

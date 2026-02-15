@@ -88,6 +88,8 @@ export interface BondDetail {
   securities: Record<string, BondFieldValue>;
   marketdata: Record<string, BondFieldValue> | null;
   marketdata_yields: Array<Record<string, BondFieldValue>> | null;
+  /** ИНН эмитента (из таблицы emitents) */
+  emitent_inn?: string | null;
 }
 
 // Portfolio bond with quantity

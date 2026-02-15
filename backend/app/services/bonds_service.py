@@ -592,8 +592,10 @@ def get_bond_detail(
         if market_data_yield is not None
         else []
     )
+    emitent_inn: Optional[str] = repo.get_emitent_inn_by_secid(secid)
     return BondDetailDTO(
         securities=securities,
         marketdata=marketdata,
         marketdata_yields=marketdata_yields,
+        emitent_inn=emitent_inn,
     )

@@ -23,6 +23,16 @@ import {
   DialogContent,
   DialogActions,
 } from '@mui/material';
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as RechartsTooltip,
+  Legend,
+} from 'recharts';
 import DeleteIcon from '@mui/icons-material/Delete';
 import DownloadIcon from '@mui/icons-material/Download';
 import SaveIcon from '@mui/icons-material/Save';
@@ -42,7 +52,7 @@ import {
   formatSpread,
 } from '../../utils/zerocuponInterpolation';
 import { calculateGSpread, formatGSpread, calculateZSpread } from '../../utils/SpreadCalculation';
-import { fetchBondsCoupons } from '../../api/bonds';
+import { fetchBondsCoupons, fetchYieldRuoniaChart, type YieldRuoniaChartResponse } from '../../api/bonds';
 import type { Coupon } from '../../types/coupon';
 import dayjs from 'dayjs';
 import type { BondListItem } from '../../types/bond';
@@ -119,6 +129,12 @@ export const ComparisonTable: React.FC = () => {
   const gridRef = useRef<AgGridReact<ComparisonRow>>(null);
   const [headerHeight, setHeaderHeight] = useState<number | undefined>(undefined);
   const [currentTab, setCurrentTab] = useState(0);
+  const [yieldRuoniaChartOpen, setYieldRuoniaChartOpen] = useState(false);
+  const [yieldRuoniaChartData, setYieldRuoniaChartData] = useState<YieldRuoniaChartResponse | null>(null);
+  const [yieldRuoniaChartLoading, setYieldRuoniaChartLoading] = useState(false);
+  const [yieldRuoniaChartError, setYieldRuoniaChartError] = useState<string | null>(null);
+  const [yieldRuoniaChartSecid, setYieldRuoniaChartSecid] = useState<string>('');
+  const [yieldRuoniaChartBondName, setYieldRuoniaChartBondName] = useState<string>('');
   
   // Cash flow calculation state
   const [investAmount, setInvestAmount] = useState<number>(10000);
@@ -1718,16 +1734,48 @@ export const ComparisonTable: React.FC = () => {
 
   ConvexityHeaderWithTooltip.displayName = 'ConvexityHeaderWithTooltip';
 
+  const handleYieldRuoniaChartClick = useCallback(async (secid: string, shortName?: string) => {
+    setYieldRuoniaChartSecid(secid);
+    setYieldRuoniaChartBondName(shortName ?? '');
+    setYieldRuoniaChartOpen(true);
+    setYieldRuoniaChartLoading(true);
+    setYieldRuoniaChartError(null);
+    setYieldRuoniaChartData(null);
+    try {
+      const data = await fetchYieldRuoniaChart(secid);
+      setYieldRuoniaChartData(data);
+    } catch (e) {
+      setYieldRuoniaChartError(e instanceof Error ? e.message : 'Ошибка загрузки данных');
+    } finally {
+      setYieldRuoniaChartLoading(false);
+    }
+  }, []);
+
+  // Домен Y для графика доходность vs RUONIA: по данным + небольшой отступ, чтобы убрать пустые зоны
+  const yieldRuoniaYDomain = useMemo((): [number, number] | undefined => {
+    if (!yieldRuoniaChartData?.data?.length) return undefined;
+    const values: number[] = [];
+    yieldRuoniaChartData.data.forEach((d) => {
+      if (d.ruonia_rate != null && !Number.isNaN(d.ruonia_rate)) values.push(d.ruonia_rate);
+      if (d.yieldatwap != null && !Number.isNaN(d.yieldatwap)) values.push(d.yieldatwap);
+    });
+    if (values.length === 0) return undefined;
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const span = max - min || 1;
+    const padding = Math.max(span * 0.05, 0.2);
+    return [min - padding, max + padding];
+  }, [yieldRuoniaChartData]);
+
   // Column definitions for AG Grid
   const columnDefs: ColDef[] = useMemo(() => {
-    // Remove bond renderer
     const ChartButtonRenderer = (params: ICellRendererParams<ComparisonRow>) => {
       const row = params.data;
       if (!row) return null;
 
       const handleClick = (e: React.MouseEvent) => {
         e.stopPropagation();
-        // No action assigned yet
+        handleYieldRuoniaChartClick(row.secid, row.name);
       };
 
       return (
@@ -2080,7 +2128,7 @@ export const ComparisonTable: React.FC = () => {
         suppressSizeToFit: true,
       },
     ] as ColDef[];
-  }, [removeBondFromComparison]);
+  }, [removeBondFromComparison, handleYieldRuoniaChartClick]);
 
   // Default column properties
   const defaultColDef: ColDef = useMemo(() => ({
@@ -3521,6 +3569,109 @@ export const ComparisonTable: React.FC = () => {
         onClose={() => setIsImportDialogOpen(false)}
         onImport={handleImportComparison}
       />
+      <Dialog
+        open={yieldRuoniaChartOpen}
+        onClose={() => setYieldRuoniaChartOpen(false)}
+        maxWidth={false}
+        fullWidth
+        PaperProps={{
+          sx: {
+            width: '100%',
+            maxWidth: '100%',
+            height: '100vh',
+            maxHeight: '100vh',
+            m: 0,
+            borderRadius: 2,
+          },
+        }}
+        sx={{
+          '& .MuiDialog-container': {
+            alignItems: 'center',
+            justifyContent: 'center',
+          },
+        }}
+      >
+        <DialogTitle>
+          Сравнение доходности облигации и ставки RUONIA{yieldRuoniaChartSecid
+            ? ` — ${yieldRuoniaChartBondName ? `${yieldRuoniaChartBondName} (${yieldRuoniaChartSecid})` : yieldRuoniaChartSecid}`
+            : ''}
+        </DialogTitle>
+        <DialogContent dividers sx={{ p: 2, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+          {yieldRuoniaChartLoading && (
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1 }}>
+              <LoadingSpinner />
+            </Box>
+          )}
+          {yieldRuoniaChartError && (
+            <Typography color="error" sx={{ py: 2 }}>
+              {yieldRuoniaChartError}
+            </Typography>
+          )}
+          {!yieldRuoniaChartLoading && !yieldRuoniaChartError && yieldRuoniaChartData && (
+            <Box sx={{ width: '100%', height: '100%', minHeight: 300 }}>
+              {yieldRuoniaChartData.data.length === 0 ? (
+                <Typography color="text.secondary" sx={{ py: 2 }}>
+                  Нет общих данных за период (текущая дата − 1 день на год назад). Загрузите историю торгов и данные RUONIA.
+                </Typography>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart
+                    data={yieldRuoniaChartData.data}
+                    margin={{ top: 4, right: 8, left: 4, bottom: 4 }}
+                    isAnimationActive={false}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
+                    <XAxis
+                      dataKey="date"
+                      tick={{ fontSize: 11 }}
+                      tickFormatter={(v: string) => (v ? new Date(v).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' }) : v)}
+                      padding={{ left: 8, right: 8 }}
+                    />
+                    <YAxis
+                      domain={yieldRuoniaYDomain}
+                      allowDataOverflow
+                      tick={{ fontSize: 11 }}
+                      tickFormatter={(v: number | string) => {
+                      const n = typeof v === 'number' ? v : Number(v);
+                      return !Number.isNaN(n) ? n.toFixed(2) : String(v);
+                    }}
+                      label={{ value: '%, годовых', angle: -90, position: 'insideLeft', style: { fontSize: 12 } }}
+                    />
+                    <RechartsTooltip
+                      labelFormatter={(v: string) => (v ? new Date(v).toLocaleDateString('ru-RU') : v)}
+                      formatter={(value: number) => (value != null ? `${Number(value).toFixed(2)}%` : '—')}
+                    />
+                    <Legend />
+                    <Line
+                      type="monotone"
+                      dataKey="ruonia_rate"
+                      name="Ставка RUONIA"
+                      stroke="#1976d2"
+                      strokeWidth={2}
+                      dot={false}
+                      connectNulls
+                      isAnimationActive={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="yieldatwap"
+                      name="Доходность к погашению (yieldatwap)"
+                      stroke="#2e7d32"
+                      strokeWidth={2}
+                      dot={false}
+                      connectNulls
+                      isAnimationActive={false}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setYieldRuoniaChartOpen(false)}>Закрыть</Button>
+        </DialogActions>
+      </Dialog>
     </Card>
   );
 };

@@ -2,17 +2,26 @@
 
 Этот модуль содержит роутеры FastAPI для обработки HTTP запросов, связанных
 с прогнозными данными. Включает endpoints для получения списка доступных дат,
-данных прогноза для конкретной даты и экспорта данных в JSON формате.
+данных прогноза для конкретной даты, экспорта данных в JSON и загрузки файла прогноза (.md).
+После сохранения .md файл передаётся в ForecastService для парсинга и записи в БД.
 """
 
 import json
+import re
 from pathlib import Path
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, UploadFile, File
 from fastapi.responses import Response
 
+from app.models.schemasDTO.forecast_dto import ForecastDatesResponse
+from app.services.forecast_service import get_forecast_service
+
 router = APIRouter(prefix="/api/forecast", tags=["forecast"])
-"""Роутер FastAPI для обработки запросов к API прогнозных данных."""
+
+
+def _get_data_dir() -> Path:
+    """Путь к директории backend/app/data."""
+    return Path(__file__).resolve().parent.parent / "data"
 
 
 
@@ -52,28 +61,50 @@ def _load_forecast_data() -> dict:
         raise HTTPException(status_code=500, detail=f"Error reading forecast data: {str(e)}")
 
 
-@router.get("/dates")
-async def get_available_dates():
-    """Получает список доступных дат прогнозных данных.
-    
-    Извлекает все ключи-даты из файла прогнозных данных (исключая ключ "названия")
-    и возвращает их отсортированными в порядке убывания (от новых к старым).
-    
-    Returns:
-        Словарь с ключом "dates", содержащий список дат в формате YYYY-MM-DD,
-        отсортированных в порядке убывания.
-    
-    Raises:
-        HTTPException: Если файл прогнозных данных не найден или поврежден
-            (статус 404 или 500).
+ALLOWED_FORECAST_EXTENSION = ".md"
+
+
+@router.post("/upload")
+async def upload_forecast_md(file: UploadFile = File(..., description="Markdown file with Bank of Russia forecast (.md)")):
+    """Загружает файл прогноза в формате Markdown и сохраняет в backend/app/data.
+
+    Принимает только файлы с расширением .md. Имя файла sanitize-ится (только буквы, цифры, подчёркивание, дефис, точка).
     """
-    data = _load_forecast_data()
-    
-    # Extract all date keys (excluding "названия")
-    dates = [key for key in data.keys() if key != "названия" and key.startswith("20")]
-    dates.sort(reverse=True)  # Newest first
-    
-    return {"dates": dates}
+    if not file.filename or not file.filename.lower().endswith(ALLOWED_FORECAST_EXTENSION):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Разрешён только формат Markdown (.md). Получено: {file.filename or 'без имени'}",
+        )
+    safe_name = re.sub(r"[^\w.\-]", "_", file.filename)
+    if not safe_name.lower().endswith(ALLOWED_FORECAST_EXTENSION):
+        safe_name = safe_name.rstrip("_") + ALLOWED_FORECAST_EXTENSION
+    data_dir = _get_data_dir()
+    data_dir.mkdir(parents=True, exist_ok=True)
+    dest = data_dir / safe_name
+    try:
+        content = await file.read()
+        dest.write_bytes(content)
+    except IOError as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка записи файла: {str(e)}")
+
+    try:
+        get_forecast_service().process_and_save(safe_name)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return {"filename": safe_name, "saved_to": str(dest)}
+
+
+@router.get("/dates", response_model=ForecastDatesResponse)
+async def get_available_dates() -> ForecastDatesResponse:
+    """Возвращает список дат, по которым в БД доступны прогнозы (для выпадающего списка на фронте).
+
+    Данные запрашиваются у сервиса: репозиторий отдаёт сырые даты из таблицы forecast,
+    сервис формирует DTO со строками YYYY-MM-DD, отсортированными от новых к старым.
+    """
+    return get_forecast_service().get_available_dates()
 
 
 @router.get("/data")
@@ -82,8 +113,8 @@ async def get_forecast_data(
 ):
     """Получает прогнозные данные для указанной даты.
     
-    Загружает прогнозные данные для указанной даты из файла forecast_251024.json.
-    Если дата не указана, возвращает данные для последней доступной даты.
+    Загружает прогнозные данные из БД. Если дата не указана, возвращает данные
+    для последней доступной даты.
     
     Args:
         date: Дата в формате YYYY-MM-DD для получения прогнозных данных.
@@ -100,31 +131,10 @@ async def get_forecast_data(
             если данные для указанной даты не найдены (статус 404),
             или если произошла ошибка при чтении файла (статус 500).
     """
-    data = _load_forecast_data()
-    
-    # If no date provided, get the latest
-    if not date:
-        dates = [key for key in data.keys() if key != "названия" and key.startswith("20")]
-        if not dates:
-            raise HTTPException(status_code=404, detail="No forecast data available")
-        dates.sort(reverse=True)
-        date = dates[0]
-    
-    # Check if date exists
-    if date not in data:
-        raise HTTPException(status_code=404, detail=f"Forecast data for date {date} not found")
-    
-    # Get names mapping
-    names = data.get("названия", {})
-    
-    # Get data for the date
-    date_data = data[date]
-    
-    return {
-        "date": date,
-        "names": names,
-        "data": date_data,
-    }
+    try:
+        return get_forecast_service().get_forecast_data(date)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 @router.get("/export/json")

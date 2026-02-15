@@ -749,6 +749,38 @@ class BondsRepository:
             )
             return None
 
+    def get_emitent_inn_by_secid(self, secid: str) -> Optional[str]:
+        """Получает ИНН эмитента по SECID облигации из таблицы emitents.
+
+        Связь: bond.emitent_id -> emitents.id, emitents.inn.
+
+        Args:
+            secid: Идентификатор ценной бумаги (SECID).
+
+        Returns:
+            ИНН эмитента или None, если эмитент или ИНН отсутствуют.
+        """
+        stmt = text("""
+            SELECT e.inn
+            FROM bonds b
+            JOIN emitents e ON b.emitent_id = e.id
+            WHERE b.secid = :secid AND e.inn IS NOT NULL AND trim(e.inn) != ''
+        """)
+        try:
+            with Session(self._engine) as session:
+                row = session.execute(stmt, {"secid": secid}).fetchone()
+                if row is None:
+                    return None
+                inn = row[0]
+                return str(inn).strip() if inn else None
+        except Exception as e:
+            self.logger.warning(
+                "Ошибка при получении ИНН эмитента для secid=%s: %s",
+                secid,
+                e,
+            )
+            return None
+
     def update_emitent_ids(self, secid_to_emitent_id: Dict[str, int]) -> int:
         """Обновляет поле emitent_id в таблице bonds по маппингу secid -> emitent_id.
 

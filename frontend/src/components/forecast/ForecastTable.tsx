@@ -28,26 +28,39 @@ import { formatNumber } from '../../utils/formatters';
 // Register AG Grid modules
 ModuleRegistry.registerModules([AllCommunityModule]);
 
+export interface ForecastTableProps {
+  /** Если передан (массив из комнаты «Прогнозы»), запрос /forecast/dates не выполняется */
+  initialDates?: string[] | null;
+}
+
 /**
  * ForecastTable Component
  *
  * Displays Bank of Russia forecast data in tables with date selection
  */
-export const ForecastTable: React.FC = () => {
+export const ForecastTable: React.FC<ForecastTableProps> = ({ initialDates }) => {
   const [data, setData] = useState<ForecastData | null>(null);
   const [availableDates, setAvailableDates] = useState<string[]>([]);
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load available dates on mount
+  // Использовать переданные даты или загрузить при монтировании (без дублирования запроса из комнаты Прогнозы)
   useEffect(() => {
+    if (initialDates != null) {
+      const list = Array.isArray(initialDates) ? initialDates : [];
+      setAvailableDates(list);
+      setSelectedDate(list.length > 0 ? list[0] : '');
+      setError(null);
+      return;
+    }
     const loadDates = async () => {
       try {
         const dates = await fetchForecastDates();
-        setAvailableDates(dates);
-        if (dates.length > 0) {
-          setSelectedDate(dates[0]); // Set latest date as default
+        const list = Array.isArray(dates) ? dates : [];
+        setAvailableDates(list);
+        if (list.length > 0) {
+          setSelectedDate(list[0]);
         }
       } catch (err) {
         console.error('Error loading forecast dates:', err);
@@ -58,9 +71,8 @@ export const ForecastTable: React.FC = () => {
         }
       }
     };
-
     void loadDates();
-  }, []);
+  }, [initialDates]);
 
   // Load data when date changes
   useEffect(() => {
@@ -312,8 +324,10 @@ export const ForecastTable: React.FC = () => {
             </Typography>
           )}
           <FormControl size="small" sx={{ minWidth: 200, ml: 'auto' }}>
-            <InputLabel>Выберите дату</InputLabel>
+            <InputLabel id="forecast-date-select-label">Выберите дату</InputLabel>
             <Select
+              labelId="forecast-date-select-label"
+              key={availableDates.length > 0 ? availableDates[0] : 'empty'}
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
               label="Выберите дату"

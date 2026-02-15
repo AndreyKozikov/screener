@@ -28,6 +28,8 @@ from app.models.schemasDTO import (
     BondScreenerDTO,
     round_float_for_api,
     BondFilters,
+    BondYieldRuoniaChartItem,
+    BondYieldRuoniaChartResponse,
     Coupon,
     CouponsBySecid,
     CouponsListResponse,
@@ -86,5 +88,7 @@ __all__ = [
     "ErrorResponse",
     "RuoniaDataResponse",
     "RuoniaDTO",
+    "BondYieldRuoniaChartItem",
+    "BondYieldRuoniaChartResponse",
     "round_float_for_api",
 ]

@@ -301,6 +301,11 @@ export const PremiumBondCard: React.FC<PremiumBondCardProps> = ({ bondDetail }) 
                   Эмитент: {emitentInfo.emitent_title}
                 </Typography>
               )}
+              {(bondDetail?.emitent_inn ?? emitentInfo?.emitent_inn) && (
+                <Typography variant="body2" color="text.secondary">
+                  ИНН: {bondDetail?.emitent_inn ?? emitentInfo?.emitent_inn}
+                </Typography>
+              )}
             </Stack>
           </Box>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 3.3, mt: 4 }}>

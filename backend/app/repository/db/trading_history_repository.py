@@ -123,6 +123,32 @@ class TradingHistoryRepository:
             )
             return None
 
+    def get_by_secid_date_range(
+        self,
+        secid: str,
+        date_from: date,
+        date_to: date,
+    ) -> List[TradingHistoryRecord]:
+        """Возвращает записи истории торгов по облигации за диапазон дат.
+
+        Args:
+            secid: Идентификатор ценной бумаги (SECID).
+            date_from: Начальная дата диапазона (включительно).
+            date_to: Конечная дата диапазона (включительно).
+
+        Returns:
+            Список записей TradingHistoryRecord, отсортированный по tradedate по возрастанию.
+        """
+        stmt = (
+            select(TradingHistoryRecord)
+            .where(TradingHistoryRecord.secid == secid.strip())
+            .where(TradingHistoryRecord.tradedate >= date_from)
+            .where(TradingHistoryRecord.tradedate <= date_to)
+            .order_by(TradingHistoryRecord.tradedate.asc(), TradingHistoryRecord.boardid.asc())
+        )
+        with Session(self._engine) as session:
+            return list(session.exec(stmt).all())
+
     def save_records(self, records: List[TradingHistoryRecord]) -> int:
         """Потокобезопасно сохраняет записи одним bulk INSERT OR REPLACE.
 

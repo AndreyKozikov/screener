@@ -127,11 +127,14 @@ class BondDetailDTO(BaseModel):
             None при отсутствии рыночных данных.
         marketdata_yields: Список словарей с расчётами доходности или None.
             Каждый элемент — Record с полями EFFECTIVEYIELD, DURATION и т.д.
+        emitent_inn: ИНН эмитента из таблицы emitents (связь через bond.emitent_id).
+            None или пустая строка при отсутствии данных об эмитенте.
     """
 
     securities: Dict[str, Any]
     marketdata: Optional[Dict[str, Any]] = None
     marketdata_yields: Optional[List[Dict[str, Any]]] = None
+    emitent_inn: Optional[str] = None
 
     class Config:
         """Конфигурация Pydantic модели."""
