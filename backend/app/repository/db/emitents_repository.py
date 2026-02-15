@@ -312,7 +312,7 @@ class EmitentsRepository:
                 bond_type = row[5]
 
                 ratings_stmt = text("""
-                    SELECT ra.agency_id, er.rating_level_name, er.rating_date, er.rating_publicate_date
+                    SELECT ra.agency_id, ra.agency_name_short_ru, er.rating_level_name, er.rating_date, er.rating_publicate_date
                     FROM emitent_ratings er
                     JOIN rating_agency ra ON er.agency_id = ra.id
                     WHERE er.emitent_id = :emitent_id
@@ -321,9 +321,10 @@ class EmitentsRepository:
 
                 cci_rating_companies: List[Dict[str, Any]] = []
                 for r in rating_rows:
-                    agency_id, rating_level_name, rating_date, rating_publicate_date = r
+                    agency_id, agency_name_short_ru, rating_level_name, rating_date, rating_publicate_date = r
                     cci_rating_companies.append({
                         "agency_id": agency_id,
+                        "agency_name_short_ru": (agency_name_short_ru or "").strip() or None,
                         "rating_level_name_short_ru": rating_level_name,
                         "rating_level_name": rating_level_name,
                         "rating_date": str(rating_date) if rating_date else None,

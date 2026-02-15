@@ -275,3 +275,14 @@ class BondRatingsPipelineService:
             agency_name_short_ru.
         """
         return self._ratings_repo.get_ratings_by_secid(secid)
+
+    def get_agency_name_short_ru(self, agency_id: int) -> Optional[str]:
+        """Возвращает название рейтингового агентства по agency_id из rating_agency.
+
+        Args:
+            agency_id: agency_id из bond_ratings / rating_agency.
+
+        Returns:
+            Строка названия или None.
+        """
+        return self._ratings_repo.get_agency_name_short_ru_by_agency_id(agency_id)

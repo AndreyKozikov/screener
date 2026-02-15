@@ -10,6 +10,8 @@ from app.repository.db.bonds_repository import BondsRepository
 from app.repository.db.db_coupon import DBCoupon
 from app.repository.db.db_kbd import KbdRepository
 from app.repository.files.file_storage import FileStorage
+from app.services import bonds_service
+from app.services.emitent_service import get_emitent_service
 from app.utils.logger import get_data_update_logger
 
 
@@ -148,6 +150,83 @@ class DBOrchestrator:
                 data_log.warning(
                     "[API /bonds/refresh] Сохранение в bondmarketdatayield завершилось с ошибкой"
                 )
+
+            # Дозаполнение эмитентов для облигаций без emitent_id
+            try:
+                data_log.info(
+                    "[API /bonds/refresh] Шаг: отбор облигаций без проставленного эмитента"
+                )
+                secids_without_emitent = bonds_service.get_secids_without_emitent(
+                    self.db_path
+                )
+                data_log.info(
+                    "[API /bonds/refresh] Найдено облигаций без эмитента: %s",
+                    len(secids_without_emitent),
+                )
+                if secids_without_emitent:
+                    emitent_svc = get_emitent_service()
+                    emitent_result = emitent_svc.refresh_emitents_for_secids(
+                        secids_without_emitent, self.db_path
+                    )
+                    data_log.info(
+                        "[API /bonds/refresh] Дозаполнение эмитентов: загружено=%s, "
+                        "связано с bonds=%s, ошибок=%s",
+                        emitent_result.get("updated", 0),
+                        emitent_result.get("bonds_linked", 0),
+                        emitent_result.get("errors", 0),
+                    )
+                else:
+                    data_log.info(
+                        "[API /bonds/refresh] Дозаполнение эмитентов пропущено (нет записей без эмитента)"
+                    )
+            except Exception as e:
+                data_log.warning(
+                    "[API /bonds/refresh] Ошибка при дозаполнении эмитентов: %s",
+                    e,
+                    exc_info=True,
+                )
+                self.logger.warning(
+                    "Ошибка при дозаполнении эмитентов после миграции облигаций: %s",
+                    e,
+                )
+
+            # Дозаполнение рейтингов для облигаций без rating (из bond_ratings и emitent_ratings)
+            try:
+                data_log.info(
+                    "[API /bonds/refresh] Шаг: отбор облигаций без рейтинга"
+                )
+                secids_without_rating = bonds_service.get_secids_without_rating(
+                    self.db_path
+                )
+                count_without_rating = len(secids_without_rating)
+                data_log.info(
+                    "[API /bonds/refresh] Из таблицы bonds отобрано облигаций с отсутствующим рейтингом: %s",
+                    count_without_rating,
+                )
+                if secids_without_rating:
+                    updated_ratings = bonds_service.fill_ratings_for_bonds_without_rating(
+                        self.db_path
+                    )
+                    data_log.info(
+                        "[API /bonds/refresh] Дозаполнение рейтингов: облигаций с отсутствующим рейтингом отобрано %s, записей обновлено (рейтинг проставлен): %s",
+                        count_without_rating,
+                        updated_ratings,
+                    )
+                else:
+                    data_log.info(
+                        "[API /bonds/refresh] Дозаполнение рейтингов пропущено (нет записей без рейтинга)"
+                    )
+            except Exception as e:
+                data_log.warning(
+                    "[API /bonds/refresh] Ошибка при дозаполнении рейтингов: %s",
+                    e,
+                    exc_info=True,
+                )
+                self.logger.warning(
+                    "Ошибка при дозаполнении рейтингов после миграции облигаций: %s",
+                    e,
+                )
+
             overall = bonds_ok and sec_ok and md_ok and yields_ok
             if overall:
                 self.logger.info("Миграция данных облигаций выполнена успешно")

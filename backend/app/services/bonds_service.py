@@ -34,10 +34,12 @@ from app.models import (
 )
 from app.repository.db.bonds_repository import BondsRepository
 from app.repository.db_orchestrator import DBOrchestrator
+from app.services.bond_ratings_pipeline_service import BondRatingsPipelineService
 from app.services.coupon_service import get_coupon_service
 from app.services.data_loader import get_data_loader
 from app.services.emitent_service import get_emitent_service
 from app.utils.logger import get_data_update_logger
+from app.utils.rating_utils import get_worst_rating, standardize_rating
 
 
 def _load_mappings(data_dir: Path) -> Tuple[Dict[int, str], Dict[int, str]]:
@@ -299,6 +301,131 @@ def get_bonds_list(
         limit=len(bonds),
         bonds=bonds,
     )
+
+
+def get_secids_without_emitent(db_path: Optional[Path] = None) -> List[str]:
+    """Возвращает SECID облигаций без проставленного эмитента.
+
+    Использует BondsRepository. Для вызова из пайплайна обновления облигаций.
+
+    Args:
+        db_path: Путь к БД. Если None — путь по умолчанию из config.
+
+    Returns:
+        Отсортированный список уникальных SECID.
+    """
+    from config.paths import DB_PATH
+    path = db_path or DB_PATH
+    repo = BondsRepository(db_path=path)
+    return repo.get_secids_without_emitent()
+
+
+def get_secids_without_rating(db_path: Optional[Path] = None) -> List[str]:
+    """Возвращает SECID облигаций без проставленного рейтинга.
+
+    Использует BondsRepository. Для вызова из пайплайна обновления облигаций.
+
+    Args:
+        db_path: Путь к БД. Если None — путь по умолчанию из config.
+
+    Returns:
+        Отсортированный список уникальных SECID.
+    """
+    from config.paths import DB_PATH
+    path = db_path or DB_PATH
+    repo = BondsRepository(db_path=path)
+    return repo.get_secids_without_rating()
+
+
+def fill_ratings_for_bonds_without_rating(db_path: Optional[Path] = None) -> int:
+    """Дозаполняет поле rating в bonds для облигаций без рейтинга.
+
+    Берёт рейтинги из bond_ratings, при отсутствии — из emitent_ratings (через
+    данные эмитента по secid). Применяет выбор наихудшего рейтинга и
+    нормализацию (standardize_rating). Использует BondRatingsPipelineService
+    и EmitentService, запись — через BondsRepository.
+
+    Args:
+        db_path: Путь к БД. Если None — путь по умолчанию из config.
+
+    Returns:
+        Количество обновлённых записей в bonds.
+    """
+    from config.paths import DB_PATH
+    path = db_path or DB_PATH
+    repo = BondsRepository(db_path=path)
+    pipeline = BondRatingsPipelineService(db_path=path)
+    emitent_svc = get_emitent_service()
+
+    secids = repo.get_secids_without_rating()
+    if not secids:
+        return 0
+
+    data_log = get_data_update_logger()
+    from_bond_ratings = 0
+    emitent_data_found = 0
+    ratings_from_emitent = 0
+    got_worst = 0
+
+    updates: Dict[str, Tuple[Optional[str], Optional[str]]] = {}
+    for secid in secids:
+        ratings_raw = pipeline.get_ratings_by_secid(secid)
+        ratings_list: List[Dict[str, Any]] = []
+        if ratings_raw:
+            from_bond_ratings += 1
+            for r in ratings_raw:
+                level = (r.get("rating_level_name") or "").strip()
+                agency = (r.get("agency_name_short_ru") or "").strip()
+                # Добавляем только записи с непустым уровнем — иначе get_worst_rating их пропустит
+                if level:
+                    ratings_list.append({
+                        "rating_level_name_short_ru": level,
+                        "agency_name_short_ru": agency,
+                    })
+        if not ratings_list:
+            emitent_data = emitent_svc.get_emitent_by_secid(secid)
+            if emitent_data:
+                emitent_data_found += 1
+                ratings_list = (
+                    list(emitent_data.get("cci_rating_companies") or [])
+                    if isinstance(emitent_data.get("cci_rating_companies"), list)
+                    else []
+                )
+                if ratings_list:
+                    ratings_from_emitent += 1
+        worst = get_worst_rating(ratings_list) if ratings_list else None
+        if worst:
+            got_worst += 1
+            level_raw = (worst.get("rating_level_name_short_ru") or "").strip()
+            agency = (worst.get("agency_name_short_ru") or "").strip()
+            if not agency:
+                aid = worst.get("agency_id")
+                if aid is not None:
+                    try:
+                        agency_val = pipeline.get_agency_name_short_ru(int(aid))
+                        if agency_val:
+                            agency = agency_val.strip()
+                    except (TypeError, ValueError):
+                        pass
+            if level_raw:
+                rating_std = standardize_rating(level_raw) or level_raw
+                updates[secid] = (rating_std, agency or None)
+
+    data_log.info(
+        "[API /bonds/refresh] Дозаполнение рейтингов (диагностика): всего без рейтинга=%s, "
+        "рейтинг из bond_ratings=%s, данные эмитента найдены (emitent_id есть)=%s, "
+        "рейтинги эмитента непустые=%s, наихудший выбран=%s, записей к обновлению=%s",
+        len(secids),
+        from_bond_ratings,
+        emitent_data_found,
+        ratings_from_emitent,
+        got_worst,
+        len(updates),
+    )
+
+    if not updates:
+        return 0
+    return repo.update_ratings_batch(updates)
 
 
 def refresh_bonds_data(

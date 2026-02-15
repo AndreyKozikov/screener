@@ -165,6 +165,28 @@ class BondRatingsRepository:
             for row in rows
         ]
 
+    def get_agency_name_short_ru_by_agency_id(self, agency_id: int) -> Optional[str]:
+        """Возвращает название агентства (agency_name_short_ru) по agency_id из rating_agency.
+
+        Args:
+            agency_id: agency_id из bond_ratings / rating_agency.
+
+        Returns:
+            Строка названия или None, если не найдено.
+        """
+        stmt = text(
+            "SELECT agency_name_short_ru FROM rating_agency WHERE agency_id = :agency_id LIMIT 1"
+        )
+        try:
+            with Session(self._engine) as session:
+                row = session.execute(stmt, {"agency_id": agency_id}).fetchone()
+                if row and row[0]:
+                    return (row[0] or "").strip() or None
+                return None
+        except Exception as e:
+            self.logger.warning("Ошибка при получении agency_name_short_ru для agency_id=%s: %s", agency_id, e)
+            return None
+
     def get_all_latest_ratings_map(self) -> Dict[str, Dict[str, Any]]:
         """Возвращает словарь рейтингов по всем облигациям (secid -> all_ratings).
 

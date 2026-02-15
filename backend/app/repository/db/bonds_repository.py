@@ -96,7 +96,8 @@ class BondsRepository:
                 )
                 ON CONFLICT(secid, boardid) DO UPDATE SET
                     isin=excluded.isin, name=excluded.name, secname=excluded.secname,
-                    rating=excluded.rating, rating_agency=excluded.rating_agency,
+                    rating=CASE WHEN excluded.rating IS NOT NULL AND trim(coalesce(excluded.rating, '')) != '' THEN excluded.rating ELSE bonds.rating END,
+                    rating_agency=CASE WHEN excluded.rating_agency IS NOT NULL AND trim(coalesce(excluded.rating_agency, '')) != '' THEN excluded.rating_agency ELSE bonds.rating_agency END,
                     current_price=excluded.current_price,
                     coupon_yield_to_price=excluded.coupon_yield_to_price,
                     yield_to_maturity=excluded.yield_to_maturity,
@@ -909,6 +910,95 @@ class BondsRepository:
                 "Ошибка при get_bonds_for_ratings_pipeline: %s", e, exc_info=True
             )
             return []
+
+    def get_secids_without_emitent(self) -> List[str]:
+        """Возвращает список SECID облигаций, у которых не проставлен emitent_id.
+
+        Returns:
+            Отсортированный список уникальных SECID с пустым emitent_id.
+        """
+        stmt = select(Bond.secid).where(
+            Bond.secid.isnot(None),
+            or_(Bond.emitent_id.is_(None), Bond.emitent_id == 0),
+        )
+        try:
+            with Session(self._engine) as session:
+                rows = session.exec(stmt).all()
+                secids = [str(r).strip() for r in rows if r and str(r).strip()]
+                return sorted(set(secids))
+        except Exception as e:
+            self.logger.error(
+                "Ошибка при get_secids_without_emitent: %s", e, exc_info=True
+            )
+            return []
+
+    def get_secids_without_rating(self) -> List[str]:
+        """Возвращает список SECID облигаций, у которых не проставлен рейтинг.
+
+        Returns:
+            Отсортированный список уникальных SECID с пустым rating.
+        """
+        stmt = select(Bond.secid).where(
+            Bond.secid.isnot(None),
+            or_(
+                Bond.rating.is_(None),
+                Bond.rating == "",
+                func.trim(Bond.rating) == "",
+            ),
+        )
+        try:
+            with Session(self._engine) as session:
+                rows = session.exec(stmt).all()
+                secids = [str(r).strip() for r in rows if r and str(r).strip()]
+                return sorted(set(secids))
+        except Exception as e:
+            self.logger.error(
+                "Ошибка при get_secids_without_rating: %s", e, exc_info=True
+            )
+            return []
+
+    def update_ratings_batch(
+        self, secid_to_rating_agency: Dict[str, Tuple[Optional[str], Optional[str]]]
+    ) -> int:
+        """Обновляет поля rating и rating_agency в bonds по маппингу secid -> (rating, rating_agency).
+
+        Args:
+            secid_to_rating_agency: Словарь {secid: (rating, rating_agency)}.
+
+        Returns:
+            Суммарное количество обновлённых строк.
+        """
+        if not secid_to_rating_agency:
+            return 0
+        stmt = text(
+            "UPDATE bonds SET rating = :rating, rating_agency = :rating_agency WHERE secid = :secid"
+        )
+        total = 0
+        try:
+            with Session(self._engine) as session:
+                for secid, (rating, rating_agency) in secid_to_rating_agency.items():
+                    result = session.execute(
+                        stmt,
+                        {
+                            "secid": secid,
+                            "rating": rating or None,
+                            "rating_agency": rating_agency or None,
+                        },
+                    )
+                    if result.rowcount is not None:
+                        total += result.rowcount
+                session.commit()
+            self.logger.info(
+                "Обновлено rating/rating_agency для %s записей bonds (по %s secid)",
+                total,
+                len(secid_to_rating_agency),
+            )
+            return total
+        except Exception as e:
+            self.logger.error(
+                "Ошибка при update_ratings_batch: %s", e, exc_info=True
+            )
+            return 0
 
     def refresh(self, bonds: List[Bond]) -> bool:
         """Сохраняет список готовых объектов Bond в таблицу bonds (INSERT ON CONFLICT).

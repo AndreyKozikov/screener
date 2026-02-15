@@ -345,6 +345,57 @@ class EmitentService:
             "skipped": skipped_count,
         }
 
+    def refresh_emitents_for_secids(
+        self,
+        secids: List[str],
+        db_path: Optional[Path] = None,
+    ) -> Dict[str, Any]:
+        """Запрашивает эмитентов по списку SECID из MOEX, сохраняет в БД и обновляет emitent_id в bonds.
+
+        Использует refresh_all_emitents для загрузки данных, затем репозитории
+        для записи в emitents/emitent_ratings и обновления bonds.emitent_id.
+
+        Args:
+            secids: Список SECID облигаций без проставленного эмитента.
+            db_path: Путь к БД. Если None — используется config.paths.DB_PATH.
+
+        Returns:
+            Словарь: total, updated, errors, skipped, bonds_linked (число обновлённых bonds).
+        """
+        from config.paths import DB_PATH as DEFAULT_DB_PATH
+
+        path = db_path if db_path is not None else DEFAULT_DB_PATH
+        if not secids:
+            return {
+                "total": 0,
+                "updated": 0,
+                "errors": 0,
+                "skipped": 0,
+                "bonds_linked": 0,
+            }
+        bonds_details = {secid: {} for secid in secids if (secid or "").strip()}
+        result = self.refresh_all_emitents(bonds_details)
+        api_data = result.get("data") or {}
+        summary = {
+            "total": result.get("total", 0),
+            "updated": result.get("updated", 0),
+            "errors": result.get("errors", 0),
+            "skipped": result.get("skipped", 0),
+            "bonds_linked": 0,
+        }
+        if not api_data:
+            return summary
+        from app.repository.db.bonds_repository import BondsRepository
+        from app.repository.db.emitents_repository import EmitentsRepository
+
+        emitents_repo = EmitentsRepository(db_path=path, data_dir=self.data_dir)
+        secid_to_emitent_id = emitents_repo.refresh(api_data)
+        if secid_to_emitent_id:
+            bonds_repo = BondsRepository(db_path=path)
+            updated_rows = bonds_repo.update_emitent_ids(secid_to_emitent_id)
+            summary["bonds_linked"] = updated_rows
+        return summary
+
 
 # Singleton instance
 _emitent_service: Optional[EmitentService] = None
