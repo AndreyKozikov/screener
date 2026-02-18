@@ -4,7 +4,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import bonds, metadata, zerocupon, forecast, llm, qwen, grok, emitent, rating, feedback, currency, ruonia, keyrate, dashboard, trading_history
+from app.routers import bonds, metadata, zerocupon, forecast, llm, qwen, grok, emitent, rating, feedback, currency, ruonia, keyrate, dashboard, trading_history, edisclosure
 from app.services.data_loader import init_data_loader
 from app.services.emitent_service import init_emitent_service
 from app.services.currency_service import init_currency_service
@@ -90,6 +90,7 @@ app.include_router(ruonia.router)
 app.include_router(keyrate.router)
 app.include_router(dashboard.router)
 app.include_router(trading_history.router)
+app.include_router(edisclosure.router)
 
 # Root endpoint
 @app.get("/")

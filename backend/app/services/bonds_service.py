@@ -303,6 +303,40 @@ def get_bonds_list(
     )
 
 
+def get_emitent_inn_by_secid(secid: str, db_path: Optional[Path] = None) -> Optional[str]:
+    """Получает ИНН эмитента по SECID облигации через EmitentService.
+
+    Args:
+        secid: Идентификатор ценной бумаги (SECID).
+        db_path: Не используется (для совместимости сигнатуры).
+
+    Returns:
+        ИНН эмитента или None, если не найден.
+    """
+    emitent_service = get_emitent_service()
+    emitent_data = emitent_service.get_emitent_by_secid(secid)
+    if emitent_data is None:
+        return None
+    inn = emitent_data.get("emitent_inn")
+    return str(inn).strip() if inn else None
+
+
+def get_reg_number_by_secid(secid: str, db_path: Optional[Path] = None) -> Optional[str]:
+    """Получает регистрационный номер облигации по SECID.
+
+    Args:
+        secid: Идентификатор ценной бумаги (SECID).
+        db_path: Путь к БД. Если None — путь по умолчанию из config.
+
+    Returns:
+        Регистрационный номер или None, если не найден.
+    """
+    from config.paths import DB_PATH
+    path = db_path or DB_PATH
+    repo = BondsRepository(db_path=path)
+    return repo.get_reg_number_by_secid(secid)
+
+
 def get_secids_without_emitent(db_path: Optional[Path] = None) -> List[str]:
     """Возвращает SECID облигаций без проставленного эмитента.
 
@@ -719,7 +753,7 @@ def get_bond_detail(
         if market_data_yield is not None
         else []
     )
-    emitent_inn: Optional[str] = repo.get_emitent_inn_by_secid(secid)
+    emitent_inn: Optional[str] = get_emitent_inn_by_secid(secid, db_path)
     return BondDetailDTO(
         securities=securities,
         marketdata=marketdata,

@@ -161,6 +161,17 @@ class TradingHistoryService:
         repo = BondsRepository(db_path=self.db_path)
         return repo.get_all_secids()
 
+    def get_first_tradedate(self, secid: str) -> Optional[date]:
+        """Возвращает минимальную дату торгов по облигации.
+
+        Args:
+            secid: Идентификатор ценной бумаги (SECID).
+
+        Returns:
+            Дата первой записи в истории по данному secid или None.
+        """
+        return self._history_repo.get_first_tradedate(secid.strip())
+
     def get_from_till(self, secid: str) -> Tuple[str, str, bool]:
         """Определяет диапазон дат для загрузки истории торгов.
 

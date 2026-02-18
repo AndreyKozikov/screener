@@ -123,6 +123,35 @@ class TradingHistoryRepository:
             )
             return None
 
+    def get_first_tradedate(self, secid: str) -> Optional[date]:
+        """Возвращает минимальную дату торгов (TRADEDATE) по облигации.
+
+        Args:
+            secid: Идентификатор ценной бумаги (SECID).
+
+        Returns:
+            Дата первой записи в истории по данному secid или None,
+            если записей нет или произошла ошибка.
+        """
+        try:
+            with Session(self._engine) as session:
+                stmt = (
+                    select(TradingHistoryRecord.tradedate)
+                    .where(TradingHistoryRecord.secid == secid.strip())
+                    .order_by(TradingHistoryRecord.tradedate.asc())
+                    .limit(1)
+                )
+                row = session.exec(stmt).first()
+                return row if isinstance(row, date) else None
+        except Exception as e:
+            self.logger.warning(
+                "Ошибка при получении первой даты торгов для %s: %s",
+                secid,
+                e,
+                exc_info=True,
+            )
+            return None
+
     def get_by_secid_date_range(
         self,
         secid: str,
