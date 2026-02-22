@@ -1,6 +1,7 @@
 """Модели БД (SQLModel) для таблиц SQLite."""
 
 from app.models.entities.bond import Bond, BondMarketData, BondMarketDataYield, BondSecurity
+from app.models.entities.bond_float_params import BondFloatParams
 from app.models.entities.currencyrate import DBcurrencyrate
 from app.models.entities.describe import DescribeField
 from app.models.entities.emitent import Emitent
@@ -18,6 +19,7 @@ from app.models.entities.trading_history import TradingHistoryRecord
 
 __all__ = [
     "Bond",
+    "BondFloatParams",
     "BondMarketData",
     "BondMarketDataYield",
     "BondSecurity",

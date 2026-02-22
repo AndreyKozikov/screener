@@ -321,6 +321,23 @@ def get_emitent_inn_by_secid(secid: str, db_path: Optional[Path] = None) -> Opti
     return str(inn).strip() if inn else None
 
 
+def get_emitent_moex_id_by_secid(secid: str) -> Optional[int]:
+    """Получает MOEX ID эмитента по SECID облигации через EmitentService.
+
+    Args:
+        secid: Идентификатор ценной бумаги (SECID).
+
+    Returns:
+        MOEX ID эмитента или None, если не найден.
+    """
+    emitent_service = get_emitent_service()
+    emitent_data = emitent_service.get_emitent_by_secid(secid)
+    if emitent_data is None:
+        return None
+    moex_id = emitent_data.get("emitent_id")
+    return int(moex_id) if moex_id is not None else None
+
+
 def get_reg_number_by_secid(secid: str, db_path: Optional[Path] = None) -> Optional[str]:
     """Получает регистрационный номер облигации по SECID.
 
@@ -335,6 +352,25 @@ def get_reg_number_by_secid(secid: str, db_path: Optional[Path] = None) -> Optio
     path = db_path or DB_PATH
     repo = BondsRepository(db_path=path)
     return repo.get_reg_number_by_secid(secid)
+
+
+def get_bond_id_by_secid(secid: str, db_path: Optional[Path] = None) -> Optional[int]:
+    """Возвращает первичный ключ облигации (bonds.id) по SECID.
+
+    Используется для установления связи между облигацией и данными edisclosure
+    перед сохранением в БД.
+
+    Args:
+        secid: Идентификатор ценной бумаги (SECID).
+        db_path: Путь к БД. Если None — путь по умолчанию из config.
+
+    Returns:
+        Первичный ключ (id) записи в таблице bonds или None, если не найден.
+    """
+    from config.paths import DB_PATH
+    path = db_path or DB_PATH
+    repo = BondsRepository(db_path=path)
+    return repo.get_bond_id_by_secid(secid)
 
 
 def get_secids_without_emitent(db_path: Optional[Path] = None) -> List[str]:

@@ -44,7 +44,10 @@ class Settings(BaseSettings):
         "https://iss.moex.com/iss/engines/stock/markets/bonds/securities.json"
     )
 
+    PDF2MD_BASE_URL: str = "http://localhost:9000"
+
     OPENAI_API_KEY: str = ""
+    GEMINI_API_KEY: str = ""
     OPENROUTER_API_KEY: str = ""
     OPENROUTER_HTTP_REFERER: str = ""
     OPENROUTER_X_TITLE: str = ""
