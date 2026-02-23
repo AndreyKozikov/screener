@@ -1009,6 +1009,33 @@ class BondsRepository:
             )
             return []
 
+    def get_floater_secids(self) -> List[str]:
+        """Возвращает список SECID корпоративных облигаций вида «флоатер» (bond_kind = 8).
+
+        Исключает ОФЗ (bond_type = 2), муниципальные (bond_type = 4)
+        и субфедеральные (bond_type = 5) бумаги — только корпоративные выпуски.
+
+        Returns:
+            Список SECID флоатеров. Пустой список при ошибке или отсутствии записей.
+        """
+        _EXCLUDED_BOND_TYPES: tuple[int, ...] = (2, 4, 5)
+        stmt = select(Bond.secid).where(
+            Bond.bond_kind == 8,
+            Bond.bond_type.isnot(None),
+            Bond.bond_type.notin_(_EXCLUDED_BOND_TYPES),
+            or_(
+                Bond.boardid.is_(None),
+                func.upper(func.trim(Bond.boardid)) != "PACT",
+            ),
+        )
+        try:
+            with Session(self._engine) as session:
+                rows = session.exec(stmt).all()
+                return [str(r) for r in rows if r]
+        except Exception as e:
+            self.logger.error("Ошибка при получении списка флоатеров: %s", e, exc_info=True)
+            return []
+
     def get_secids_without_emitent(self) -> List[str]:
         """Возвращает список SECID облигаций, у которых не проставлен emitent_id.
 

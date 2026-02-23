@@ -43,12 +43,22 @@ class BondFloatParams(SQLModel, table=True):
         placement_date: Дата размещения (ISO 8601).
         underwriter: Наименование организатора размещения.
         bond: Навигационное свойство — связанный объект Bond.
+        is_find: 1 — данные найдены и сохранены, 0 — пайплайн обработан, данные не найдены.
+        floor_rate: Нижний лимит процентной ставки (минимальный купон).
+        cap_rate: Верхний лимит процентной ставки (максимальный купон).
+        extra_indicators: Дополнительные базовые индикаторы при формуле с несколькими индексами.
+        condition_logic: Текстовое описание логических условий (пороги, зависимости от индикаторов).
+        observation_type: Метод замера данных (на дату, среднее за период, макроинтервал).
+        reference_period_desc: Словесное описание периода данных (напр. «за прошлый квартал»).
     """
 
     __tablename__ = "bond_float_params"
 
     id: Optional[int] = SQLField(default=None, primary_key=True)
     bond_id: int = SQLField(foreign_key="bonds.id", nullable=False, index=True, unique=True)
+
+    # Признак результата пайплайна: 1 — данные найдены, 0 — не найдены (остальные поля NULL).
+    is_find: int = SQLField(default=1, nullable=False)
 
     # float_params fields
     base_indicator_code: str = SQLField(max_length=64)
@@ -76,5 +86,13 @@ class BondFloatParams(SQLModel, table=True):
     # trading fields
     placement_date: Optional[str] = SQLField(default=None, max_length=10)
     underwriter: Optional[str] = SQLField(default=None)
+
+    # Сложные флоатеры: лимиты ставки, доп. индикаторы, условия, период наблюдения
+    floor_rate: Optional[float] = SQLField(default=None)
+    cap_rate: Optional[float] = SQLField(default=None)
+    extra_indicators: Optional[str] = SQLField(default=None)
+    condition_logic: Optional[str] = SQLField(default=None)
+    observation_type: Optional[str] = SQLField(default=None, max_length=64)
+    reference_period_desc: Optional[str] = SQLField(default=None)
 
     bond: Optional["Bond"] = Relationship()

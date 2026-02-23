@@ -41,7 +41,9 @@ class PdfConversionService:
 
         Args:
             data: Словарь, содержащий ключ ``doc_filenames`` со списком
-                имён PDF-файлов в data-директории.
+                имён PDF-файлов. Если передан ``data_dir`` (Path или str),
+                чтение PDF и запись .md выполняются в этой директории;
+                иначе используется backend/app/data.
 
         Returns:
             Копия *data* с добавленным ключом ``md_filenames: List[str]``.
@@ -51,28 +53,35 @@ class PdfConversionService:
         if not doc_filenames:
             return {**data, "md_filenames": []}
 
+        data_dir: Any = data.get("data_dir")
+        base_dir: Path = Path(data_dir) if data_dir is not None else _DATA_DIR
+        if not isinstance(base_dir, Path):
+            base_dir = Path(str(base_dir))
+
         if len(doc_filenames) == 1:
-            md_filenames = self._convert_single(doc_filenames[0])
+            md_filenames = self._convert_single(doc_filenames[0], base_dir)
         else:
-            md_filenames = self._convert_batch(doc_filenames)
+            md_filenames = self._convert_batch(doc_filenames, base_dir)
 
         return {**data, "md_filenames": md_filenames}
 
-    def _convert_single(self, filename: str) -> List[str]:
+    def _convert_single(self, filename: str, base_dir: Path) -> List[str]:
         """Конвертирует один PDF через ``/api/v1/convert``.
 
         Args:
-            filename: Имя PDF-файла в data-директории.
+            filename: Имя PDF-файла в базовой директории.
+            base_dir: Директория для чтения PDF и записи .md.
 
         Returns:
             Список из одного имени .md файла при успехе, иначе пустой список.
         """
-        file_path: Path = _DATA_DIR / filename
+        file_path: Path = base_dir / filename
         if not file_path.is_file():
             logger.error("PDF файл не найден: %s", file_path)
             return []
 
         url: str = f"{self._base_url}/api/v1/convert"
+        print(f"  [API] POST {url}", flush=True)
         try:
             with httpx.Client(timeout=_TIMEOUT) as client:
                 with open(file_path, "rb") as f:
@@ -81,33 +90,34 @@ class PdfConversionService:
                         files={"file": (filename, f, "application/pdf")},
                     )
                 response.raise_for_status()
+                body: Dict[str, Any] = response.json()
         except httpx.HTTPError as exc:
             logger.error("Ошибка при конвертации %s: %s", filename, exc)
             return []
 
-        body: Dict[str, Any] = response.json()
         markdown: Optional[str] = body.get("markdown")
         if not markdown:
             logger.warning("Пустой markdown в ответе для %s", filename)
             return []
 
         md_filename: str = Path(filename).stem + ".md"
-        self._file_storage.save_text_file(_DATA_DIR / md_filename, markdown)
-        logger.info("Сохранён markdown: %s", _DATA_DIR / md_filename)
+        self._file_storage.save_text_file(base_dir / md_filename, markdown)
+        logger.info("Сохранён markdown: %s", base_dir / md_filename)
         return [md_filename]
 
-    def _convert_batch(self, filenames: List[str]) -> List[str]:
+    def _convert_batch(self, filenames: List[str], base_dir: Path) -> List[str]:
         """Конвертирует несколько PDF через ``/api/v1/convert/batch``.
 
         Args:
-            filenames: Имена PDF-файлов в data-директории.
+            filenames: Имена PDF-файлов в базовой директории.
+            base_dir: Директория для чтения PDF и записи .md.
 
         Returns:
             Список имён успешно созданных .md файлов.
         """
         files_payload: List[Tuple[str, Tuple[str, bytes, str]]] = []
         for filename in filenames:
-            file_path: Path = _DATA_DIR / filename
+            file_path: Path = base_dir / filename
             if not file_path.is_file():
                 logger.error("PDF файл не найден, пропуск: %s", file_path)
                 continue
@@ -119,15 +129,16 @@ class PdfConversionService:
             return []
 
         url: str = f"{self._base_url}/api/v1/convert/batch"
+        print(f"  [API] POST {url}", flush=True)
         try:
             with httpx.Client(timeout=_TIMEOUT) as client:
                 response: httpx.Response = client.post(url, files=files_payload)
                 response.raise_for_status()
+                body: Dict[str, Any] = response.json()
         except httpx.HTTPError as exc:
             logger.error("Ошибка batch-конвертации: %s", exc)
             return []
 
-        body: Dict[str, Any] = response.json()
         results: List[Dict[str, Any]] = body.get("results", [])
 
         md_filenames: List[str] = []
@@ -145,8 +156,8 @@ class PdfConversionService:
                 continue
 
             md_filename: str = Path(original).stem + ".md"
-            self._file_storage.save_text_file(_DATA_DIR / md_filename, markdown)
-            logger.info("Сохранён markdown: %s", _DATA_DIR / md_filename)
+            self._file_storage.save_text_file(base_dir / md_filename, markdown)
+            logger.info("Сохранён markdown: %s", base_dir / md_filename)
             md_filenames.append(md_filename)
 
         return md_filenames

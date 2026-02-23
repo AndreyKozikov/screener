@@ -36,6 +36,7 @@ import { FeedbackDialog } from '../components/common/FeedbackDialog';
 import { HelpDialog, type HelpSection } from '../components/common/HelpDialog';
 import { BondSelectionGuidePage } from './BondSelectionGuidePage';
 import { refreshBondsData, refreshCouponsData } from '../api/bonds';
+import { refreshFloatersData } from '../api/edisclosure';
 import { refreshZerocuponData, fetchZerocuponData } from '../api/zerocupon';
 import { refreshRatingsData } from '../api/rating';
 import { refreshRuoniaData } from '../api/ruonia';
@@ -201,6 +202,7 @@ export const HomePage: React.FC = () => {
     forceUpdateRatings?: boolean,
     forceRefreshCoupons?: boolean,
     forecastFile?: File | null,
+    floatersProvider?: string,
   ) => {
     if (selectedTasks.length === 0) {
       return;
@@ -273,6 +275,9 @@ export const HomePage: React.FC = () => {
         if (forecastFileRef) {
           await uploadForecastMd(forecastFileRef);
         }
+      },
+      floaters: async () => {
+        await refreshFloatersData(floatersProvider ?? 'gemini');
       },
     };
 
@@ -1115,7 +1120,7 @@ export const HomePage: React.FC = () => {
             setRefreshStatus({});
           }
         }}
-        onConfirm={(tasks, forceRatings, forceCoupons) => handleRefreshConfirm(tasks, forceRatings, forceCoupons)}
+        onConfirm={(tasks, forceRatings, forceCoupons, floatersProvider) => handleRefreshConfirm(tasks, forceRatings, forceCoupons, undefined, floatersProvider)}
         tasks={[
           { id: 'bonds', label: 'Обновить данные облигаций', checked: false },
           { id: 'zerocupon', label: 'Обновить данные кривой бескупонной доходности', checked: false },
@@ -1127,6 +1132,7 @@ export const HomePage: React.FC = () => {
           { id: 'keyrate', label: 'Обновить ключевую ставку ЦБ', checked: false },
           { id: 'trading-history', label: 'Обновить историю торгов', checked: false },
           { id: 'forecast', label: 'Обновить среднесрочный прогноз Банка России', checked: false },
+          { id: 'floaters', label: 'Обновить данные по флоатерам', checked: false },
         ]}
         isRefreshing={isRefreshing}
         refreshStatus={refreshStatus}

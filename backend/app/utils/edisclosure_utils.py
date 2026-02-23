@@ -8,6 +8,7 @@ import html
 import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import quote
 
 import requests
 
@@ -42,12 +43,19 @@ _SEARCH_PAGE_URL = "https://www.e-disclosure.ru/poisk-po-kompaniyam"
 _MAIN_PAGE_URL = "https://www.e-disclosure.ru"
 _TIMEOUT = 30  # Увеличен таймаут для медленных соединений
 
+# Заголовки событий, которые исключаются из пайплайна (не передаются в LLM).
+_EXCLUDED_EVENT_TITLE = (
+    "Перевод эмиссионных ценных бумаг эмитента из одного котировального списка "
+    "в другой котировальный список"
+)
+
 _MOEX_DISCLOSURE_TREE_URL = "https://web.moex.com/moex-web-icdb-api/api/v1/bond-disclosure-tree/reporting"
 _MOEX_FILE_BASE_URL = "https://fs.moex.com/emidocs"
 
 _TARGET_DOC_TYPES = (
     "Решение о выпуске (дополнительном выпуске) ценных бумаг",
     "Документ, содержащий условия размещения ценных бумаг",
+    "Условия выпуска облигаций",
 )
 
 # Карта визуально идентичных символов: Кириллица → Латиница.
@@ -67,6 +75,7 @@ def _get_session_data() -> Tuple[requests.Session, str]:
     session.headers.update(_API_HEADERS)
     
     # Получаем страницу поиска для получения токена и кук
+    print(f"  [API] GET {_SEARCH_PAGE_URL}", flush=True)
     response = session.get(_SEARCH_PAGE_URL, headers=_HTML_HEADERS, timeout=_TIMEOUT)
     response.raise_for_status()
     
@@ -113,11 +122,7 @@ def search_company_by_inn(inn: str) -> List[Dict[str, Any]]:
     Returns:
         Список словарей с полями: id, name, district, region, branch для каждой найденной компании.
     """
-    print(f"[E-DISCLOSURE SEARCH] Старт поиска компании: ИНН={inn}")
-    # Очищаем кэш перед каждым поиском компании
     _clear_session_cache()
-
-    print(f"[E-DISCLOSURE SEARCH] Получение сессии и токена: GET {_SEARCH_PAGE_URL}")
     session, token = _get_session()
 
     data = {
@@ -132,23 +137,19 @@ def search_company_by_inn(inn: str) -> List[Dict[str, Any]]:
     }
     data["__RequestVerificationToken"] = token
 
-    print(f"[E-DISCLOSURE SEARCH] → POST {_URL} | query={inn}")
+    print(f"  [API] POST {_URL}", flush=True)
     response = session.post(_URL, data=data, timeout=_TIMEOUT)
-    print(f"[E-DISCLOSURE SEARCH] HTTP {response.status_code}")
 
     if response.status_code == 403:
-        print("[E-DISCLOSURE SEARCH] 403 — обновляем сессию и повторяем запрос")
         _clear_session_cache()
         session, token = _get_session()
         data["__RequestVerificationToken"] = token
         response = session.post(_URL, data=data, timeout=_TIMEOUT)
-        print(f"[E-DISCLOSURE SEARCH] Повторный запрос HTTP {response.status_code}")
 
     response.raise_for_status()
     payload = response.json()
 
     found_list = payload.get("foundCompaniesList") or []
-    print(f"[E-DISCLOSURE SEARCH] Найдено компаний: {len(found_list)}")
 
     result: List[Dict[str, Any]] = []
     for item in found_list:
@@ -159,7 +160,6 @@ def search_company_by_inn(inn: str) -> List[Dict[str, Any]]:
             "region": item.get("region"),
             "branch": item.get("branch"),
         })
-        print(f"[E-DISCLOSURE SEARCH]   id={item.get('id')}, name={item.get('name')}")
 
     return result
 
@@ -175,6 +175,7 @@ def _extract_event_text(pseudo_guid: str, session: requests.Session) -> Optional
         Извлечённый текст или None, если не удалось извлечь.
     """
     page_url = f"{_EVENT_PAGE_URL}?EventId={pseudo_guid}"
+    print(f"  [API] GET {page_url}", flush=True)
     # Для HTML страницы явно исключаем X-Requested-With из заголовков запроса
     html_headers = {k: v for k, v in _HTML_HEADERS.items()}
     html_headers.pop("X-Requested-With", None)
@@ -327,7 +328,7 @@ def _event_text_matches_reg_number(
 
     Сначала выполняется полное совпадение (кириллическая и латинская копии),
     затем частичное по парам ``<номер_программы>-<порядковый_номер>`` и
-    ``<код_эмитента>-<номер_программы>``.
+    ``<порядковый_номер>-<код_эмитента>-<номер_программы>``.
 
     Args:
         text: Текст события.
@@ -354,7 +355,7 @@ def _event_text_matches_reg_number(
         pattern1 = f"{program_num}-{serial_num}"
         if pattern1.lower() in text_lower:
             return True
-        pattern2 = f"{emitent_code}-{program_num}"
+        pattern2 = f"{serial_num}-{emitent_code}-{program_num}"
         if pattern2.lower() in text_lower:
             return True
 
@@ -367,7 +368,8 @@ def _find_all_events_sorted_by_date(
 ) -> List[Dict[str, Any]]:
     """Возвращает все события строго раньше ``date_obj``, отсортированные от новых к старым.
 
-    Не фильтрует по названию события — включаются события любого типа.
+    Исключает события с заголовком «Перевод эмиссионных ценных бумаг эмитента из одного
+    котировального списка в другой котировальный список» — они не попадают в пайплайн.
 
     Args:
         events: Список событий, полученных от API.
@@ -378,6 +380,9 @@ def _find_all_events_sorted_by_date(
     """
     filtered: List[Tuple[datetime.date, Dict[str, Any]]] = []
     for event in events:
+        event_name = (event.get("eventName") or "").strip()
+        if event_name == _EXCLUDED_EVENT_TITLE:
+            continue
         event_date_str = event.get("eventDate")
         if not event_date_str:
             continue
@@ -416,65 +421,49 @@ def find_events_by_reg_number(
         Пустой список, если ``reg_number`` пустой или совпадений не найдено.
     """
     if not reg_number.strip():
-        print("[E-DISCLOSURE EVENTS] рег.номер пустой — поиск событий пропущен")
         return []
 
-    print(f"[E-DISCLOSURE EVENTS] Старт: company_id={company_id}, рег.номер={reg_number}, дата={date}")
     session, _ = _get_session()
 
     date_obj = datetime.strptime(date, "%Y-%m-%d").date()
     year = date_obj.year
 
     params = {"companyId": company_id, "year": year}
-    events_url_full = f"{_EVENTS_URL}?companyId={company_id}&year={year}"
-    print(f"[E-DISCLOSURE EVENTS] → GET {events_url_full}")
+    events_full_url = f"{_EVENTS_URL}?companyId={company_id}&year={year}"
+    print(f"  [API] GET {events_full_url}", flush=True)
     response = session.get(_EVENTS_URL, params=params, timeout=_TIMEOUT)
-    print(f"[E-DISCLOSURE EVENTS] HTTP {response.status_code}")
     if response.status_code == 403:
-        print("[E-DISCLOSURE EVENTS] 403 — обновляем сессию и повторяем запрос")
         _clear_session_cache()
         session, _ = _get_session()
         response = session.get(_EVENTS_URL, params=params, timeout=_TIMEOUT)
-        print(f"[E-DISCLOSURE EVENTS] Повторный запрос HTTP {response.status_code}")
     response.raise_for_status()
     events = response.json()
-    print(f"[E-DISCLOSURE EVENTS] Всего событий за {year} год: {len(events)}")
 
     sorted_events = _find_all_events_sorted_by_date(events, date_obj)
-    print(f"[E-DISCLOSURE EVENTS] После фильтрации по дате (< {date}): {len(sorted_events)} событий")
 
     reg_num_ru, reg_num_lat = _normalize_reg_number(reg_number)
     parts_ru: Optional[Tuple[str, str, str]] = _parse_reg_number_parts(reg_num_ru)
     parts_lat: Optional[Tuple[str, str, str]] = _parse_reg_number_parts(reg_num_lat)
-    print(f"[E-DISCLOSURE EVENTS] Нормализация рег.номера: RU={reg_num_ru}, LAT={reg_num_lat}")
 
     result: List[Dict[str, Optional[str]]] = []
-    for idx, event in enumerate(sorted_events, start=1):
+    for event in sorted_events:
         pseudo_guid = event.get("pseudoGUID")
-        event_name = event.get("eventName") or "(без названия)"
-        event_date_raw = event.get("eventDate", "")
         if not pseudo_guid:
-            print(f"[E-DISCLOSURE EVENTS]   [{idx}/{len(sorted_events)}] {event_name} — нет pseudoGUID, пропуск")
             continue
-        page_url = f"{_EVENT_PAGE_URL}?EventId={pseudo_guid}"
-        print(f"[E-DISCLOSURE EVENTS]   [{idx}/{len(sorted_events)}] → GET {page_url}")
-        print(f"[E-DISCLOSURE EVENTS]     Событие: {event_name} ({event_date_raw})")
         text = _extract_event_text(pseudo_guid, session)
         if not text:
-            print(f"[E-DISCLOSURE EVENTS]     Текст не извлечён — пропуск")
             continue
         if _event_text_matches_reg_number(text, reg_num_ru, reg_num_lat, parts_ru, parts_lat):
             event_date = _format_event_date(event.get("eventDate"))
+            event_name = event.get("eventName") or ""
+            event_url = f"{_EVENT_PAGE_URL}?EventId={pseudo_guid}"
+            print(f"  [событие] {event_name} ({event_date}) → {event_url}", flush=True)
             result.append({
-                "event_name": event.get("eventName") or "",
+                "event_name": event_name,
                 "event_date": event_date,
                 "text": text,
             })
-            print(f"[E-DISCLOSURE EVENTS]     ✓ СОВПАДЕНИЕ: рег.номер найден в тексте")
-        else:
-            print(f"[E-DISCLOSURE EVENTS]     — рег.номер не найден")
 
-    print(f"[E-DISCLOSURE EVENTS] Итого совпавших событий: {len(result)}")
     return result
 
 
@@ -496,25 +485,19 @@ def fetch_moex_disclosure_docs(
         Список кортежей ``(filename, content)`` для каждого скачанного документа.
         Пустой список, если ничего не найдено.
     """
-    print(f"[MOEX DOCS] Старт: emitent_id={emitent_id}, reg_number={reg_number}")
-
     reg_num_ru, reg_num_lat = _normalize_reg_number(reg_number)
-    print(f"[MOEX DOCS] Нормализация: RU={reg_num_ru}, LAT={reg_num_lat}")
 
     parts_ru = _parse_reg_number_parts(reg_num_ru)
     parts_lat = _parse_reg_number_parts(reg_num_lat)
-    print(f"[MOEX DOCS] Части RU: {parts_ru}")
-    print(f"[MOEX DOCS] Части LAT: {parts_lat}")
 
-    search_patterns: List[Tuple[str, str]] = []
+    search_patterns: List[Tuple[str, str, str]] = []
     for parts, reg_num in ((parts_ru, reg_num_ru), (parts_lat, reg_num_lat)):
         if parts is not None:
-            _, emitent_code, program_num = parts
-            search_patterns.append((f"{emitent_code}-{program_num}", reg_num))
+            serial_num, emitent_code, program_num = parts
+            program_pattern: str = f"{emitent_code}-{program_num}"
+            search_patterns.append((program_pattern, reg_num, serial_num))
 
-    print(f"[MOEX DOCS] Паттерны поиска: {search_patterns}")
     if not search_patterns:
-        print("[MOEX DOCS] Паттерны пустые — выход")
         return []
 
     moex_headers: Dict[str, str] = {
@@ -522,110 +505,111 @@ def fetch_moex_disclosure_docs(
         "Accept": "application/json",
     }
 
-    program_tree_id = _find_program_tree_id(emitent_id, search_patterns, moex_headers)
-    print(f"[MOEX DOCS] Шаг 1 — program_tree_id: {program_tree_id}")
-    if program_tree_id is None:
-        print("[MOEX DOCS] Программа не найдена — выход")
+    program_tree_ids = _find_program_tree_ids(emitent_id, search_patterns, moex_headers)
+    if not program_tree_ids:
+        print("  [MOEX] Программа выпуска в дереве раскрытия не найдена", flush=True)
         return []
 
-    issue_tree_id = _find_issue_tree_id(emitent_id, program_tree_id, search_patterns, moex_headers)
-    print(f"[MOEX DOCS] Шаг 2 — issue_tree_id: {issue_tree_id}")
-    if issue_tree_id is None:
-        print("[MOEX DOCS] Выпуск не найден — выход")
-        return []
+    target_links: List[str] = []
+    for program_tree_id in program_tree_ids:
+        issue_tree_id = _find_issue_tree_id(emitent_id, program_tree_id, search_patterns, moex_headers)
+        if issue_tree_id is None:
+            continue
+        links = _find_doc_links(emitent_id, issue_tree_id, moex_headers)
+        for link in links:
+            if link not in target_links:
+                target_links.append(link)
 
-    target_links = _find_doc_links(emitent_id, issue_tree_id, moex_headers)
-    print(f"[MOEX DOCS] Шаг 3 — target_links: {target_links}")
     if not target_links:
-        print("[MOEX DOCS] Документы не найдены — выход")
+        print("  [MOEX] Документы для скачивания не найдены (дерево раскрытия)", flush=True)
         return []
 
-    downloaded = _download_docs(target_links, moex_headers)
-    print(f"[MOEX DOCS] Шаг 4 — скачано файлов: {len(downloaded)}, имена: {[f for f, _ in downloaded]}")
-    return downloaded
+    print(f"  [MOEX] Найдено документов для скачивания: {len(target_links)}", flush=True)
+    for i, link in enumerate(target_links, start=1):
+        full_url = f"{_MOEX_FILE_BASE_URL}/{link}"
+        print(f"  [MOEX] Ссылка {i}: GET {full_url}", flush=True)
+    return _download_docs(target_links, moex_headers)
 
 
-def _find_program_tree_id(
+def _find_program_tree_ids(
     emitent_id: int,
-    search_patterns: List[Tuple[str, str]],
+    search_patterns: List[Tuple[str, str, str]],
     headers: Dict[str, str],
-) -> Optional[str]:
-    """Ищет treeId программы выпуска в дереве раскрытия MOEX.
+) -> List[str]:
+    """Ищет все treeId программ выпуска в дереве раскрытия MOEX, совпадающие с паттернами.
 
     Args:
         emitent_id: MOEX ID эмитента.
-        search_patterns: Список пар ``(program_pattern, full_reg_num)``.
+        search_patterns: Список троек ``(program_pattern, full_reg_num, serial_num)``.
         headers: HTTP-заголовки для запроса.
 
     Returns:
-        treeId программы или ``None``, если совпадение не найдено.
+        Список treeId всех программ, у которых treeDisplayAdditional совпал с паттерном.
     """
     url = f"{_MOEX_DISCLOSURE_TREE_URL}/{emitent_id}"
-    print(f"[MOEX STEP1] GET {url}")
+    print(f"  [API] GET {url}", flush=True)
     try:
         response = requests.get(url, headers=headers, timeout=_TIMEOUT)
-        print(f"[MOEX STEP1] HTTP {response.status_code}")
         response.raise_for_status()
         data: Dict[str, Any] = response.json()
-    except requests.RequestException as exc:
-        print(f"[MOEX STEP1] Ошибка запроса: {exc}")
-        return None
+    except requests.RequestException:
+        return []
 
     nodes: List[Dict[str, Any]] = data.get("nodes") or []
-    print(f"[MOEX STEP1] Получено узлов: {len(nodes)}")
+    result: List[str] = []
+    seen: set[str] = set()
     for node in nodes:
-        display_raw: str = node.get("treeDisplayAdditional") or ""
-        display = display_raw.lower()
-        for program_pattern, _ in search_patterns:
+        tree_id = node.get("treeId")
+        if tree_id is None or tree_id in seen:
+            continue
+        display: str = (node.get("treeDisplayAdditional") or "").lower()
+        for program_pattern, _, _ in search_patterns:
             if program_pattern.lower() in display:
-                tree_id = node.get("treeId")
-                print(f"[MOEX STEP1] Совпадение: паттерн='{program_pattern}' в '{display_raw}' → treeId={tree_id}")
-                return tree_id
-        print(f"[MOEX STEP1]   Узел не совпал: '{display_raw}'")
-    print("[MOEX STEP1] Ни один узел не совпал")
-    return None
+                result.append(tree_id)
+                seen.add(tree_id)
+                break
+    return result
 
 
 def _find_issue_tree_id(
     emitent_id: int,
     program_tree_id: str,
-    search_patterns: List[Tuple[str, str]],
+    search_patterns: List[Tuple[str, str, str]],
     headers: Dict[str, str],
 ) -> Optional[str]:
     """Ищет treeId конкретного выпуска облигации внутри программы.
 
+    Выпуск считается найденным, если в treeDisplayAdditional выполняется
+    хотя бы одно условие: полный рег. номер или паттерн
+    «порядковый_номер-код_эмитента-номер_программы».
+
     Args:
         emitent_id: MOEX ID эмитента.
         program_tree_id: treeId программы выпуска.
-        search_patterns: Список пар ``(program_pattern, full_reg_num)``.
+        search_patterns: Список троек ``(program_pattern, full_reg_num, serial_num)``.
         headers: HTTP-заголовки для запроса.
 
     Returns:
         treeId выпуска или ``None``, если совпадение не найдено.
     """
     url = f"{_MOEX_DISCLOSURE_TREE_URL}/{emitent_id}/{program_tree_id}"
-    print(f"[MOEX STEP2] GET {url}")
+    print(f"  [API] GET {url}", flush=True)
     try:
         response = requests.get(url, headers=headers, timeout=_TIMEOUT)
-        print(f"[MOEX STEP2] HTTP {response.status_code}")
         response.raise_for_status()
         data: Dict[str, Any] = response.json()
-    except requests.RequestException as exc:
-        print(f"[MOEX STEP2] Ошибка запроса: {exc}")
+    except requests.RequestException:
         return None
 
     nodes: List[Dict[str, Any]] = data.get("nodes") or []
-    print(f"[MOEX STEP2] Получено узлов: {len(nodes)}")
     for node in nodes:
-        display_raw: str = node.get("treeDisplayAdditional") or ""
-        display = display_raw.lower()
-        for _, full_reg_num in search_patterns:
+        display: str = (node.get("treeDisplayAdditional") or "").lower()
+        for program_pattern, full_reg_num, serial_num in search_patterns:
             if full_reg_num.lower() in display:
-                tree_id = node.get("treeId")
-                print(f"[MOEX STEP2] Совпадение: рег.номер='{full_reg_num}' в '{display_raw}' → treeId={tree_id}")
-                return tree_id
-        print(f"[MOEX STEP2]   Узел не совпал: '{display_raw}'")
-    print("[MOEX STEP2] Ни один узел не совпал")
+                return node.get("treeId")
+            issue_pattern: str = f"{serial_num}-{program_pattern}"
+            if issue_pattern.lower() in display:
+                return node.get("treeId")
     return None
 
 
@@ -645,29 +629,21 @@ def _find_doc_links(
         Список значений ``moexWebsiteLink`` для целевых типов документов.
     """
     url = f"{_MOEX_DISCLOSURE_TREE_URL}/{emitent_id}/{issue_tree_id}"
-    print(f"[MOEX STEP3] GET {url}")
+    print(f"  [API] GET {url}", flush=True)
     try:
         response = requests.get(url, headers=headers, timeout=_TIMEOUT)
-        print(f"[MOEX STEP3] HTTP {response.status_code}")
         response.raise_for_status()
         data: Dict[str, Any] = response.json()
-    except requests.RequestException as exc:
-        print(f"[MOEX STEP3] Ошибка запроса: {exc}")
+    except requests.RequestException:
         return []
 
     docs: List[Dict[str, Any]] = data.get("docs") or []
-    print(f"[MOEX STEP3] Получено документов: {len(docs)}")
     links: List[str] = []
     for doc in docs:
         doc_type: str = doc.get("documentType") or ""
         link: Optional[str] = doc.get("moexWebsiteLink")
-        if doc_type in _TARGET_DOC_TYPES:
-            print(f"[MOEX STEP3]   Целевой документ: type='{doc_type}', link='{link}'")
-            if link:
-                links.append(link)
-        else:
-            print(f"[MOEX STEP3]   Пропущен: type='{doc_type}'")
-    print(f"[MOEX STEP3] Итого ссылок для скачивания: {len(links)}")
+        if doc_type in _TARGET_DOC_TYPES and link:
+            links.append(link)
     return links
 
 
@@ -689,18 +665,18 @@ def _download_docs(
         "Accept": "*/*",
     }
     results: List[Tuple[str, bytes]] = []
-    for moex_link in moex_links:
+    for idx, moex_link in enumerate(moex_links, start=1):
         filename: str = moex_link.split("/")[-1]
-        file_url = f"{_MOEX_FILE_BASE_URL}/{moex_link}"
-        print(f"[MOEX STEP4] Скачивание: GET {file_url}")
+        encoded_link: str = quote(moex_link, safe="/")
+        file_url: str = f"{_MOEX_FILE_BASE_URL}/{encoded_link}"
+        print(f"  [MOEX PDF] Запрос {idx}/{len(moex_links)}: GET {file_url}", flush=True)
+        print(f"  [файл] {filename} → {file_url}", flush=True)
         try:
             response = requests.get(file_url, headers=download_headers, timeout=_TIMEOUT)
-            print(f"[MOEX STEP4] HTTP {response.status_code}, Content-Length: {len(response.content)} байт")
             response.raise_for_status()
             results.append((filename, response.content))
-            print(f"[MOEX STEP4] Успешно скачан: {filename}")
-        except requests.RequestException as exc:
-            print(f"[MOEX STEP4] Ошибка скачивания {filename}: {exc}")
+            print(f"  [файл] скачан: {filename} ({len(response.content)} байт)", flush=True)
+        except requests.RequestException as e:
+            print(f"  [файл] ошибка {filename}: {e}", flush=True)
             continue
-    print(f"[MOEX STEP4] Итого скачано: {len(results)} из {len(moex_links)}")
     return results

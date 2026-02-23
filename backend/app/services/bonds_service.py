@@ -373,6 +373,21 @@ def get_bond_id_by_secid(secid: str, db_path: Optional[Path] = None) -> Optional
     return repo.get_bond_id_by_secid(secid)
 
 
+def get_floater_secids(db_path: Optional[Path] = None) -> List[str]:
+    """Возвращает список SECID всех флоатеров (bond_kind=8) из БД.
+
+    Args:
+        db_path: Путь к БД. Если None — путь по умолчанию из config.
+
+    Returns:
+        Список SECID флоатеров.
+    """
+    from config.paths import DB_PATH
+    path = db_path or DB_PATH
+    repo = BondsRepository(db_path=path)
+    return repo.get_floater_secids()
+
+
 def get_secids_without_emitent(db_path: Optional[Path] = None) -> List[str]:
     """Возвращает SECID облигаций без проставленного эмитента.
 

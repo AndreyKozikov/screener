@@ -12,6 +12,8 @@ import {
   Typography,
   LinearProgress,
   Alert,
+  Select,
+  MenuItem,
 } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
 
@@ -24,7 +26,7 @@ export interface RefreshTask {
 interface RefreshDataDialogProps {
   open: boolean;
   onClose: () => void;
-  onConfirm: (selectedTasks: string[], forceUpdateRatings?: boolean, forceRefreshCoupons?: boolean) => Promise<void>;
+  onConfirm: (selectedTasks: string[], forceUpdateRatings?: boolean, forceRefreshCoupons?: boolean, floatersProvider?: string) => Promise<void>;
   tasks: RefreshTask[];
   isRefreshing: boolean;
   refreshStatus: Record<string, { status: 'idle' | 'loading' | 'success' | 'error'; error?: string }>;
@@ -52,6 +54,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
   });
   const [forceUpdateRatings, setForceUpdateRatings] = useState(false);
   const [forceRefreshCoupons, setForceRefreshCoupons] = useState(false);
+  const [floatersProvider, setFloatersProvider] = useState<string>('gemini');
 
   // Reset selected tasks when dialog opens or tasks change
   useEffect(() => {
@@ -63,6 +66,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
       setSelectedTasks(initial);
       setForceUpdateRatings(false);
       setForceRefreshCoupons(false);
+      setFloatersProvider('gemini');
     }
   }, [open, tasks]);
 
@@ -85,7 +89,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
     // Close dialog immediately without waiting for server response
     onClose();
     // Start refresh in background (fire and forget)
-    void onConfirm(selected, forceUpdateRatings, forceRefreshCoupons);
+    void onConfirm(selected, forceUpdateRatings, forceRefreshCoupons, floatersProvider);
   };
 
   const handleClose = () => {
@@ -127,6 +131,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
             const isTaskError = taskStatus.status === 'error';
             const isRatingsTask = task.id === 'ratings';
             const isCouponsTask = task.id === 'coupons';
+            const isFloatersTask = task.id === 'floaters';
             
             return (
               <Box key={task.id} sx={{ mb: 2 }}>
@@ -176,6 +181,27 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                         </Typography>
                       }
                     />
+                  </Box>
+                )}
+                {isFloatersTask && selectedTasks[task.id] && (
+                  <Box sx={{ ml: 4, mt: 1 }}>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+                      Выберите AI провайдер:
+                    </Typography>
+                    <Select
+                      size="small"
+                      value={floatersProvider}
+                      onChange={(e) => setFloatersProvider(e.target.value)}
+                      disabled={isRefreshing}
+                      sx={{ minWidth: 240 }}
+                    >
+                      <MenuItem value="gemini">Google Gemini 2.5 Flash Lite</MenuItem>
+                      <MenuItem value="gemini-flash">Google Gemini 2.5 Flash</MenuItem>
+                      <MenuItem value="gemini-3-flash">Google Gemini 3 Flash</MenuItem>
+                      <MenuItem value="openai-gpt-5.1">OpenAI GPT-5.1</MenuItem>
+                      <MenuItem value="openrouter">OpenRouter: Gemini 2.5 Flash Lite</MenuItem>
+                      <MenuItem value="local">Локальная модель (Qwen3-4B)</MenuItem>
+                    </Select>
                   </Box>
                 )}
                 {isTaskLoading && (

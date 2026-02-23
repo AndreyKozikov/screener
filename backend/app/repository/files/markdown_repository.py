@@ -5,7 +5,7 @@
 
 import logging
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -25,7 +25,11 @@ class MarkdownFileRepository:
         """
         self._base_dir: Path = base_dir
 
-    def read_files(self, filenames: List[str]) -> str:
+    def read_files(
+        self,
+        filenames: List[str],
+        base_dir: Optional[Path] = None,
+    ) -> str:
         """Читает и объединяет содержимое Markdown-файлов.
 
         Каждый файл отделяется заголовком с именем файла. Файлы, которые
@@ -33,13 +37,16 @@ class MarkdownFileRepository:
 
         Args:
             filenames: Список имён .md файлов в базовой директории.
+            base_dir: Директория для поиска файлов. Если задана — используется
+                вместо self._base_dir (например, подпапка по secid).
 
         Returns:
             Объединённый текст всех успешно прочитанных файлов.
         """
+        dir_to_use: Path = base_dir if base_dir is not None else self._base_dir
         parts: List[str] = []
         for filename in filenames:
-            file_path: Path = self._base_dir / filename
+            file_path: Path = dir_to_use / filename
             if not file_path.is_file():
                 logger.warning("Markdown-файл не найден, пропуск: %s", file_path)
                 continue

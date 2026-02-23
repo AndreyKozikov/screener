@@ -150,7 +150,7 @@ memory_bank/
 .streamlit/
 .continue/
 DEPLOYMENT_GUIDE.md
-backend/app/data/bonds_trading_history.json
+backend/app/data/
 backend/db/history_db.db
 
 # IDE and Editor

@@ -7,7 +7,7 @@
 
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Optional, Set
 
 from sqlmodel import Session, create_engine, select
 
@@ -65,6 +65,7 @@ class BondFloatParamsRepository:
                 existing: Optional[BondFloatParams] = session.exec(stmt).first()
 
                 if existing is not None:
+                    existing.is_find = 1
                     existing.base_indicator_code = fp.base_indicator_code
                     existing.spread = fp.spread
                     existing.coupon_frequency_days = fp.coupon_frequency_days
@@ -89,6 +90,13 @@ class BondFloatParamsRepository:
                     existing.placement_date = trading.placement_date
                     existing.underwriter = trading.underwriter
 
+                    existing.floor_rate = fp.floor_rate
+                    existing.cap_rate = fp.cap_rate
+                    existing.extra_indicators = fp.extra_indicators
+                    existing.condition_logic = fp.condition_logic
+                    existing.observation_type = fp.observation_type
+                    existing.reference_period_desc = fp.reference_period_desc
+
                     session.add(existing)
                     session.commit()
                     self.logger.info(
@@ -97,6 +105,7 @@ class BondFloatParamsRepository:
                 else:
                     record = BondFloatParams(
                         bond_id=bond_id,
+                        is_find=1,
                         base_indicator_code=fp.base_indicator_code,
                         spread=fp.spread,
                         coupon_frequency_days=fp.coupon_frequency_days,
@@ -118,6 +127,12 @@ class BondFloatParamsRepository:
                         interest_compounding=ce.interest_compounding if ce else False,
                         placement_date=trading.placement_date,
                         underwriter=trading.underwriter,
+                        floor_rate=fp.floor_rate,
+                        cap_rate=fp.cap_rate,
+                        extra_indicators=fp.extra_indicators,
+                        condition_logic=fp.condition_logic,
+                        observation_type=fp.observation_type,
+                        reference_period_desc=fp.reference_period_desc,
                     )
                     session.add(record)
                     session.commit()
@@ -141,6 +156,63 @@ class BondFloatParamsRepository:
                 e,
                 exc_info=True,
             )
+
+    def upsert_not_found(self, bond_id: int, data: Dict[str, Any]) -> None:
+        """Сохраняет переданную запись «данные не найдены» для облигации.
+
+        Структура данных (is_find=0, base_indicator_code="", остальное NULL)
+        формируется в сервисе; репозиторий только применяет data к существующей
+        или новой записи и сохраняет.
+
+        Args:
+            bond_id: Идентификатор облигации (bonds.id).
+            data: Словарь полей bond_float_params (без id и bond_id).
+        """
+        try:
+            with Session(self._engine) as session:
+                stmt = select(BondFloatParams).where(
+                    BondFloatParams.bond_id == bond_id
+                )
+                existing: Optional[BondFloatParams] = session.exec(stmt).first()
+
+                if existing is not None:
+                    for key, value in data.items():
+                        if hasattr(existing, key):
+                            setattr(existing, key, value)
+                    session.add(existing)
+                else:
+                    record = BondFloatParams(bond_id=bond_id, **data)
+                    session.add(record)
+                session.commit()
+                self.logger.info(
+                    "Сохранена запись is_find=0 (данные не найдены) для bond_id=%s",
+                    bond_id,
+                )
+        except Exception as e:
+            self.logger.error(
+                "Ошибка при upsert_not_found для bond_id=%s: %s",
+                bond_id,
+                e,
+                exc_info=True,
+            )
+
+    def get_existing_bond_ids(self) -> Set[int]:
+        """Возвращает множество bond_id всех записей в bond_float_params.
+
+        Returns:
+            Множество идентификаторов облигаций, для которых уже есть запись.
+            Пустое множество при ошибке.
+        """
+        try:
+            with Session(self._engine) as session:
+                stmt = select(BondFloatParams.bond_id)
+                rows = session.exec(stmt).all()
+                return {int(r) for r in rows}
+        except Exception as e:
+            self.logger.error(
+                "Ошибка при получении существующих bond_id: %s", e, exc_info=True
+            )
+            return set()
 
     def get_by_bond_id(self, bond_id: int) -> Optional[BondFloatParams]:
         """Возвращает параметры флоатера по bond_id.

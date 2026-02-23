@@ -19,7 +19,7 @@ class GeminiIssuerDTO(BaseModel):
     """
 
     name_short: str
-    inn: str
+    inn: Optional[str] = None
     rating_ru: Optional[str] = None
 
 
@@ -60,9 +60,15 @@ class GeminiFloatParamsDTO(BaseModel):
         lookback_type: Тип дней отступа — CALENDAR (календарные) или BUSINESS (рабочие).
         year_base: База года в формуле расчёта — "360", "365", "366" или "ACTUAL".
         is_daily_accrual: True если купон рассчитывается как сумма ежедневных начислений.
+        floor_rate: Нижний лимит процентной ставки (минимальный купон).
+        cap_rate: Верхний лимит процентной ставки (максимальный купон).
+        extra_indicators: Дополнительные базовые индикаторы при формуле с несколькими индексами.
+        condition_logic: Текстовое описание логических условий (пороги, зависимости от индикаторов).
+        observation_type: Метод замера данных (на дату, среднее за период, макроинтервал).
+        reference_period_desc: Словесное описание периода данных (напр. «за прошлый квартал»).
     """
 
-    base_indicator_code: str
+    base_indicator_code: str = "NA"
     spread: Optional[float] = None
     coupon_frequency_days: Optional[int] = None
     lookback_period: Optional[int] = None
@@ -75,6 +81,13 @@ class GeminiFloatParamsDTO(BaseModel):
     lookback_type: Optional[str] = None
     year_base: Optional[str] = None
     is_daily_accrual: bool = False
+
+    floor_rate: Optional[float] = None
+    cap_rate: Optional[float] = None
+    extra_indicators: Optional[str] = None
+    condition_logic: Optional[str] = None
+    observation_type: Optional[str] = None
+    reference_period_desc: Optional[str] = None
 
 
 class GeminiCalculationEngineDTO(BaseModel):
