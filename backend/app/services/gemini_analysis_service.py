@@ -134,7 +134,12 @@ class GeminiClient:
             raise RuntimeError(f"Ошибка вызова Gemini API: {exc}") from exc
 
 
+class GeminiAnalysisService:
+    """Анализирует эмиссионную документацию облигаций через Google Gemini.
 
+    Оркеструет получение Markdown-содержимого через репозиторий,
+    формирование промта и валидацию ответа Gemini через Pydantic DTO.
+    """
 
     def __init__(
         self,
@@ -173,12 +178,7 @@ class GeminiClient:
         Returns:
             Валидированный GeminiBondAnalysisDTO или None при ошибке валидации/парсинга.
         """
-        events: List[Dict[str, Aclass GeminiAnalysisService:
-    """Анализирует эмиссионную документацию облигаций через Google Gemini.
-
-    Оркеструет получение Markdown-содержимого через репозиторий,
-    формирование промта и валидацию ответа Gemini через Pydantic DTO.
-    """ny]] = edisclosure_data.get("events", [])
+        events: List[Dict[str, Any]] = edisclosure_data.get("events", [])
         md_filenames: List[str] = edisclosure_data.get("md_filenames", [])
 
         logger.info(
