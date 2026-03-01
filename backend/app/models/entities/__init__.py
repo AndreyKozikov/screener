@@ -5,6 +5,8 @@ from app.models.entities.bond_float_params import BondFloatParams
 from app.models.entities.currencyrate import DBcurrencyrate
 from app.models.entities.describe import DescribeField
 from app.models.entities.emitent import Emitent
+from app.models.entities.emitent_edisclosure import EmitentEdisclosure
+from app.models.entities.emission_document import EmissionDocument
 from app.models.entities.forecast import (
     Forecast,
     ForecastBalance,
@@ -29,6 +31,8 @@ __all__ = [
     "DBruonia",
     "DescribeField",
     "Emitent",
+    "EmitentEdisclosure",
+    "EmissionDocument",
     "Forecast",
     "ForecastBalance",
     "ForecastIndicatorName",

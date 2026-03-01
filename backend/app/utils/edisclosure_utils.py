@@ -49,6 +49,8 @@ _EXCLUDED_EVENT_TITLE = (
     "в другой котировальный список"
 )
 
+_FILES_PAGE_URL = "https://www.e-disclosure.ru/portal/files.aspx"
+
 _MOEX_DISCLOSURE_TREE_URL = "https://web.moex.com/moex-web-icdb-api/api/v1/bond-disclosure-tree/reporting"
 _MOEX_FILE_BASE_URL = "https://fs.moex.com/emidocs"
 
@@ -175,7 +177,6 @@ def _extract_event_text(pseudo_guid: str, session: requests.Session) -> Optional
         Извлечённый текст или None, если не удалось извлечь.
     """
     page_url = f"{_EVENT_PAGE_URL}?EventId={pseudo_guid}"
-    print(f"  [API] GET {page_url}", flush=True)
     # Для HTML страницы явно исключаем X-Requested-With из заголовков запроса
     html_headers = {k: v for k, v in _HTML_HEADERS.items()}
     html_headers.pop("X-Requested-With", None)
@@ -252,6 +253,34 @@ def _extract_event_text(pseudo_guid: str, session: requests.Session) -> Optional
     text = text.strip()
 
     return text
+
+
+def _clean_event_text(text: str) -> str:
+    """Удаляет из текста события лишние блоки и маркеры для упрощения анализа LLM.
+
+    Убирает пункт «1. Общие сведения» целиком, пункт «3. Подпись»,
+    маркеры подпунктов (2.1., 2.2. и т.д.) в начале строк и заголовок «2. Содержание сообщения».
+
+    Args:
+        text: Исходный текст сообщения события.
+
+    Returns:
+        Очищенный текст.
+    """
+    # 1. Удаляем "Общие сведения" (пункт 1) целиком
+    text = re.sub(
+        r"1\. Общие сведения.*?2\. Содержание сообщения",
+        "",
+        text,
+        flags=re.DOTALL,
+    )
+    # 2. Удаляем "Подпись" (пункт 3)
+    text = re.sub(r"3\. Подпись.*", "", text, flags=re.DOTALL)
+    # 3. Удаляем маркеры подпунктов (2.1., 2.2. и т.д.) в начале строк
+    text = re.sub(r"^\d+\.\d+\.\s*", "", text, flags=re.MULTILINE)
+    # 4. Удаляем заголовок раздела
+    text = text.replace("2. Содержание сообщения", "")
+    return text.strip()
 
 
 def _format_event_date(event_date_str: Optional[str]) -> Optional[str]:
@@ -454,6 +483,7 @@ def find_events_by_reg_number(
         if not text:
             continue
         if _event_text_matches_reg_number(text, reg_num_ru, reg_num_lat, parts_ru, parts_lat):
+            text = _clean_event_text(text)
             event_date = _format_event_date(event.get("eventDate"))
             event_name = event.get("eventName") or ""
             event_url = f"{_EVENT_PAGE_URL}?EventId={pseudo_guid}"
@@ -645,6 +675,27 @@ def _find_doc_links(
         if doc_type in _TARGET_DOC_TYPES and link:
             links.append(link)
     return links
+
+
+def fetch_emission_documents_page(edisclosure_id: int) -> str:
+    """Загружает HTML-страницу эмиссионных документов эмитента с e-disclosure.ru.
+
+    Args:
+        edisclosure_id: ID компании на сайте e-disclosure.ru.
+
+    Returns:
+        HTML-код страницы в виде строки.
+    """
+    url: str = f"{_FILES_PAGE_URL}?id={edisclosure_id}&type=7"
+    print(f"  [API] GET {url}", flush=True)
+    session, _ = _get_session()
+    response: requests.Response = session.get(url, headers=_HTML_HEADERS, timeout=_TIMEOUT)
+    if response.status_code == 403:
+        _clear_session_cache()
+        session, _ = _get_session()
+        response = session.get(url, headers=_HTML_HEADERS, timeout=_TIMEOUT)
+    response.raise_for_status()
+    return response.text
 
 
 def _download_docs(

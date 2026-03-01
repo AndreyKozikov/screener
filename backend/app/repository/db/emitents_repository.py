@@ -366,6 +366,20 @@ class EmitentsRepository:
             self.logger.warning("Ошибка при чтении списка эмитентов: %s", e)
             return []
 
+    def get_emitents_with_inn(self) -> List[Dict[str, Any]]:
+        """Возвращает список эмитентов с непустым ИНН: [{"id": int, "inn": str}, ...]."""
+        stmt = text(
+            "SELECT id, inn FROM emitents "
+            "WHERE inn IS NOT NULL AND trim(inn) != ''"
+        )
+        try:
+            with Session(self._engine) as session:
+                rows = session.execute(stmt).fetchall()
+            return [{"id": int(row[0]), "inn": str(row[1]).strip()} for row in rows if row[0] is not None and row[1]]
+        except Exception as e:
+            self.logger.warning("Ошибка при чтении эмитентов с ИНН: %s", e)
+            return []
+
     def get_secid_to_emitent_title_index(self) -> Dict[str, str]:
         """Возвращает маппинг SECID облигации -> название эмитента из БД."""
         stmt = text("""

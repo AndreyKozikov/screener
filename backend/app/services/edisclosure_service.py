@@ -20,6 +20,8 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from app.models.schemasDTO.gemini_dto import GeminiBondAnalysisDTO
 from app.repository.db.bond_float_params_repository import BondFloatParamsRepository
+from app.repository.db.emitent_edisclosure_repository import EmitentEdisclosureRepository
+from app.repository.db.emitents_repository import EmitentsRepository
 from app.repository.files.file_storage import FileStorage
 from app.services.bonds_service import (
     get_bond_id_by_secid,
@@ -38,7 +40,10 @@ from app.services.gemini_analysis_service import (
 )
 from app.services.pdf_conversion_service import get_pdf_conversion_service
 from app.services.trading_history_service import get_trading_history_service
+from app.parsers.emission_documents_parser import parse_emission_documents
+from app.repository.db.emission_document_repository import EmissionDocumentRepository
 from app.utils.edisclosure_utils import (
+    fetch_emission_documents_page,
     fetch_moex_disclosure_docs,
     find_events_by_reg_number,
     search_company_by_inn,
@@ -126,6 +131,9 @@ class EdisclosureService:
     def __init__(self) -> None:
         self._file_storage: FileStorage = FileStorage()
         self._float_params_repo: BondFloatParamsRepository = BondFloatParamsRepository()
+        self._emitents_repo: EmitentsRepository = EmitentsRepository()
+        self._emitent_edisclosure_repo: EmitentEdisclosureRepository = EmitentEdisclosureRepository()
+        self._emission_doc_repo: EmissionDocumentRepository = EmissionDocumentRepository()
         self._llm_call_timestamps: List[float] = []
 
     def _get_analysis_service(self, provider: str) -> Any:
@@ -562,6 +570,219 @@ class EdisclosureService:
 
         if quota_exhausted_error is not None:
             raise quota_exhausted_error
+
+    def populate_emitent_edisclosure(self) -> Dict[str, int]:
+        """Заполняет таблицу emitent_edisclosure по ИНН эмитентов.
+
+        Для каждого эмитента с непустым ИНН, ещё не попавшего в таблицу,
+        вызывает поиск компании на e-disclosure.ru (search_company_by_inn)
+        и сохраняет соответствие через EmitentEdisclosureRepository.
+        Обращение к БД — только через репозитории.
+
+        Returns:
+            Словарь: total_emitents, already_in_table, to_process, saved, skipped.
+        """
+        _delay: float = 2.0
+
+        emitents: List[Dict[str, Any]] = self._emitents_repo.get_emitents_with_inn()
+        existing_ids: Set[int] = self._emitent_edisclosure_repo.get_existing_emitent_ids()
+
+        to_process: List[Dict[str, Any]] = [
+            e for e in emitents if e["id"] not in existing_ids
+        ]
+        total: int = len(to_process)
+
+        logger.info(
+            "[emitent_edisclosure] Всего эмитентов с ИНН: %d, уже в таблице: %d, к обработке: %d",
+            len(emitents), len(existing_ids), total,
+        )
+
+        saved: int = 0
+        skipped: int = 0
+
+        for idx, emitent in enumerate(to_process, start=1):
+            emitent_id: int = emitent["id"]
+            inn: str = emitent["inn"]
+
+            try:
+                companies: List[Dict[str, Any]] = search_company_by_inn(inn)
+            except Exception as exc:
+                logger.warning(
+                    "[emitent_edisclosure] emitent_id=%s, ИНН=%s: ошибка запроса: %s",
+                    emitent_id, inn, exc,
+                )
+                skipped += 1
+                time.sleep(_delay)
+                continue
+
+            if not companies:
+                logger.debug(
+                    "[emitent_edisclosure] emitent_id=%s, ИНН=%s: компания не найдена",
+                    emitent_id, inn,
+                )
+                skipped += 1
+                time.sleep(_delay)
+                continue
+
+            raw_id: Optional[Any] = companies[0].get("id")
+            if raw_id is None:
+                logger.warning(
+                    "[emitent_edisclosure] emitent_id=%s: id отсутствует в ответе",
+                    emitent_id,
+                )
+                skipped += 1
+                time.sleep(_delay)
+                continue
+
+            try:
+                edisclosure_id: int = int(raw_id)
+            except (TypeError, ValueError):
+                logger.warning(
+                    "[emitent_edisclosure] emitent_id=%s: невалидный id=%r",
+                    emitent_id, raw_id,
+                )
+                skipped += 1
+                time.sleep(_delay)
+                continue
+
+            try:
+                self._emitent_edisclosure_repo.upsert_mapping(emitent_id, edisclosure_id)
+                saved += 1
+                logger.info(
+                    "[emitent_edisclosure] %d/%d emitent_id=%s → edisclosure_id=%s",
+                    idx, total, emitent_id, edisclosure_id,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "[emitent_edisclosure] emitent_id=%s: ошибка записи: %s",
+                    emitent_id, exc,
+                )
+                skipped += 1
+
+            time.sleep(_delay)
+
+        logger.info(
+            "[emitent_edisclosure] Готово. Сохранено: %d, пропущено: %d",
+            saved, skipped,
+        )
+
+        return {
+            "total_emitents": len(emitents),
+            "already_in_table": len(existing_ids),
+            "to_process": total,
+            "saved": saved,
+            "skipped": skipped,
+        }
+
+    def fetch_emission_documents(
+        self, limit: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Скачивает и сохраняет эмиссионные документы для эмитентов e-disclosure.
+
+        Для каждого эмитента из таблицы emitent_edisclosure:
+        1. Загружает HTML-страницу эмиссионных документов.
+        2. Парсит таблицу документов.
+        3. Если записей нет — логирует предупреждение со ссылкой на страницу.
+        4. Иначе сохраняет записи через репозиторий.
+
+        Приоритет обработки: сначала эмитенты без записей в emission_documents.
+
+        Args:
+            limit: Максимальное количество эмитентов для обработки. None — все.
+
+        Returns:
+            Статистика: processed, total_docs_added, empty_count.
+        """
+        _delay: float = 1.5
+
+        emitents: List[Dict[str, Any]] = (
+            self._emitent_edisclosure_repo.get_emitents_ordered_by_missing_docs(limit)
+        )
+        total: int = len(emitents)
+
+        logger.info(
+            "[emission_documents] Начало скачивания. Эмитентов к обработке: %d (limit=%s)",
+            total, limit,
+        )
+        print(
+            f"[emission_documents] Эмитентов к обработке: {total}",
+            flush=True,
+        )
+
+        processed: int = 0
+        total_docs_added: int = 0
+        empty_count: int = 0
+
+        for idx, emitent in enumerate(emitents, start=1):
+            emitent_edisclosure_id: int = emitent["id"]
+            edisclosure_id: int = emitent["edisclosure_id"]
+            page_url: str = (
+                f"https://www.e-disclosure.ru/portal/files.aspx"
+                f"?id={edisclosure_id}&type=7"
+            )
+
+            try:
+                html: str = fetch_emission_documents_page(edisclosure_id)
+            except Exception as exc:
+                logger.warning(
+                    "[emission_documents] %d/%d emitent_edisclosure_id=%d: "
+                    "ошибка загрузки страницы: %s. Ссылка: %s",
+                    idx, total, emitent_edisclosure_id, exc, page_url,
+                )
+                processed += 1
+                empty_count += 1
+                time.sleep(_delay)
+                continue
+
+            docs: List[Dict[str, Optional[str]]] = parse_emission_documents(html)
+
+            if not docs:
+                logger.warning(
+                    "[emission_documents] %d/%d emitent_edisclosure_id=%d "
+                    "(edisclosure_id=%d): записей не найдено. Ссылка: %s",
+                    idx, total, emitent_edisclosure_id, edisclosure_id, page_url,
+                )
+                print(
+                    f"  [emission_documents] {idx}/{total} — "
+                    f"edisclosure_id={edisclosure_id}: "
+                    f"записей не найдено. {page_url}",
+                    flush=True,
+                )
+                empty_count += 1
+            else:
+                inserted: int = self._emission_doc_repo.insert_batch(
+                    emitent_edisclosure_id, docs,
+                )
+                total_docs_added += inserted
+                logger.info(
+                    "[emission_documents] %d/%d emitent_edisclosure_id=%d: "
+                    "добавлено %d документов",
+                    idx, total, emitent_edisclosure_id, inserted,
+                )
+                print(
+                    f"  [emission_documents] {idx}/{total} — "
+                    f"edisclosure_id={edisclosure_id}: "
+                    f"добавлено {inserted} документов",
+                    flush=True,
+                )
+
+            processed += 1
+            time.sleep(_delay)
+
+        summary: str = (
+            f"[emission_documents] Готово. "
+            f"Обработано: {processed}, "
+            f"документов добавлено: {total_docs_added}, "
+            f"без записей: {empty_count}"
+        )
+        logger.info(summary)
+        print(summary, flush=True)
+
+        return {
+            "processed": processed,
+            "total_docs_added": total_docs_added,
+            "empty_count": empty_count,
+        }
 
     def _process_single_floater(
         self, secid: str, fl_logger: logging.Logger, provider: str = "gemini",
