@@ -374,34 +374,7 @@ class EdisclosureService:
                 len(companies), company_id, companies[0].get("name"),
             )
 
-        # --- Шаг 2: поиск событий по регистрационному номеру ---
-        if not regnumber or not regnumber.strip():
-            events: List[Dict[str, Any]] = []
-            logger.info("[E-DISCLOSURE EVENTS] рег.номер не задан — события пропущены")
-        else:
-            logger.info(
-                "[E-DISCLOSURE EVENTS] → GET https://www.e-disclosure.ru/api/events/page"
-                " | company_id=%s, рег.номер=%s, граничная дата=%s",
-                company_id, regnumber, date,
-            )
-            events = find_events_by_reg_number(
-                date=date,
-                company_id=company_id,
-                reg_number=regnumber,
-            )
-            logger.info(
-                "[E-DISCLOSURE EVENTS] Найдено событий с упоминанием рег.номера: %d",
-                len(events),
-            )
-
-        events_file: Path = bond_data_dir / "events.json"
-        self._file_storage.save_text_file(
-            events_file,
-            json.dumps(events, ensure_ascii=False, indent=2),
-        )
-        logger.info("[E-DISCLOSURE EVENTS] Сохранён файл событий: %s", events_file)
-
-        # --- Шаг 3: скачивание эмиссионных документов из БД (emission_documents) по ИНН и рег.номеру ---
+        # --- Шаг 2: скачивание эмиссионных документов из БД (emission_documents) по ИНН и рег.номеру ---
         doc_filenames: List[str] = []
         if regnumber and regnumber.strip():
             emission_records: List[Dict[str, Any]] = (
@@ -434,10 +407,10 @@ class EdisclosureService:
         else:
             logger.info("[E-DISCLOSURE DOCS] Пропуск: рег.номер не задан")
 
-        # --- Шаг 4: конвертация PDF → Markdown ---
+        # --- Шаг 3: конвертация PDF → Markdown ---
         result: Dict[str, Any] = {
             "companies": companies,
-            "events": events,
+            "events": [],
             "regnumber": regnumber,
             "search_date": date,
             "doc_filenames": doc_filenames,
@@ -459,6 +432,51 @@ class EdisclosureService:
         for md_name in md_filenames:
             print(f"[PDF2MD] Создан Markdown: {md_name}", flush=True)
 
+        # --- Шаг 4: поиск событий по регистрационному номеру ---
+        if not regnumber or not regnumber.strip():
+            events: List[Dict[str, Any]] = []
+            logger.info("[E-DISCLOSURE EVENTS] рег.номер не задан — события пропущены")
+        else:
+            logger.info(
+                "[E-DISCLOSURE EVENTS] → GET https://www.e-disclosure.ru/api/events/page"
+                " | company_id=%s, рег.номер=%s, граничная дата=%s",
+                company_id, regnumber, date,
+            )
+            events = find_events_by_reg_number(
+                date=date,
+                company_id=company_id,
+                reg_number=regnumber,
+            )
+            logger.info(
+                "[E-DISCLOSURE EVENTS] Найдено событий с упоминанием рег.номера: %d",
+                len(events),
+            )
+
+        # В events.json — полный текст и обработанный (для отладки); в LLM — только обработанный
+        events_file: Path = bond_data_dir / "events.json"
+        self._file_storage.save_text_file(
+            events_file,
+            json.dumps(
+                [
+                    {
+                        "event_name": e.get("event_name"),
+                        "event_date": e.get("event_date"),
+                        "full_text": e.get("full_text", ""),
+                        "processed_text": e.get("text", ""),
+                    }
+                    for e in events
+                ],
+                ensure_ascii=False,
+                indent=2,
+            ),
+        )
+        logger.info("[E-DISCLOSURE EVENTS] Сохранён файл событий: %s", events_file)
+        events_for_llm: List[Dict[str, Any]] = [
+            {"event_name": e.get("event_name"), "event_date": e.get("event_date"), "text": e.get("text", "")}
+            for e in events
+        ]
+        converted["events"] = events_for_llm
+
         # --- Шаг 5: анализ через LLM (с повтором при 503 UNAVAILABLE) ---
         logger.info("[LLM] Передача данных на анализ (провайдер: %s)...", provider)
         return self._call_llm_with_retry(converted, provider)
@@ -467,7 +485,9 @@ class EdisclosureService:
     # Пакетная обработка всех флоатеров
     # ------------------------------------------------------------------
 
-    def update_all_floaters(self, provider: str = "gemini") -> None:
+    def update_all_floaters(
+        self, provider: str = "gemini", limit: Optional[int] = None
+    ) -> None:
         """Обрабатывает облигации вида «флоатер» (bond_kind=8), ещё не сохранённые.
 
         Получает полный список secid флоатеров, фильтрует уже обработанные
@@ -475,6 +495,10 @@ class EdisclosureService:
         выполняет полный пайплайн: поиск компании, поиск событий, скачивание
         документов, конвертация PDF→MD, анализ LLM.
         Ограничение: не более 7 запросов к LLM в минуту.
+
+        Args:
+            provider: Имя LLM-провайдера.
+            limit: Максимальное количество облигаций для обработки. None — все без данных.
 
         Результаты записываются в БД (upsert — добавление или обновление полей).
         """
@@ -493,6 +517,9 @@ class EdisclosureService:
                 skipped += 1
                 continue
             secids.append(sid)
+
+        if limit is not None:
+            secids = secids[:limit]
 
         total: int = len(secids)
 
@@ -883,29 +910,8 @@ class EdisclosureService:
                 return False
             company_id = companies[0].get("id")
 
-        # --- Шаг 2: поиск событий ---
-        print(f"  [{secid}] Шаг 2/5: поиск событий по рег.номеру", flush=True)
-        events: List[Dict[str, Any]] = []
-        if regnumber and regnumber.strip():
-            try:
-                events = find_events_by_reg_number(
-                    date=date_str,
-                    company_id=company_id,
-                    reg_number=regnumber,
-                )
-            except Exception as exc:
-                fl_logger.warning(
-                    "[NOT FOUND] secid=%s: ошибка поиска событий: %s", secid, exc
-                )
-
-        events_file_batch: Path = bond_data_dir / "events.json"
-        self._file_storage.save_text_file(
-            events_file_batch,
-            json.dumps(events, ensure_ascii=False, indent=2),
-        )
-
-        # --- Шаг 3: скачивание эмиссионных документов из БД (emission_documents) ---
-        print(f"  [{secid}] Шаг 3/5: скачивание документов e-disclosure (ИНН + рег.номер)", flush=True)
+        # --- Шаг 2: скачивание эмиссионных документов из БД (emission_documents) ---
+        print(f"  [{secid}] Шаг 2/5: скачивание документов e-disclosure (ИНН + рег.номер)", flush=True)
         doc_filenames_batch: List[str] = []
         if regnumber and regnumber.strip():
             try:
@@ -935,20 +941,11 @@ class EdisclosureService:
                     "[NOT FOUND] secid=%s: ошибка скачивания документов: %s", secid, exc
                 )
 
-        if not events and not doc_filenames_batch:
-            fl_logger.warning(
-                "[NOT FOUND] secid=%s: не найдено ни событий (%d), ни документов (%d)",
-                secid, len(events), len(doc_filenames_batch),
-            )
-            if bond_id is not None:
-                self._float_params_repo.upsert_not_found(bond_id, _get_not_found_float_params_data())
-            return False
-
-        # --- Шаг 4: PDF → MD ---
-        print(f"  [{secid}] Шаг 4/5: конвертация PDF → Markdown", flush=True)
+        # --- Шаг 3: конвертация PDF → Markdown ---
+        print(f"  [{secid}] Шаг 3/5: конвертация PDF → Markdown", flush=True)
         result_dict: Dict[str, Any] = {
             "companies": companies,
-            "events": events,
+            "events": [],
             "regnumber": regnumber,
             "search_date": date_str,
             "doc_filenames": doc_filenames_batch,
@@ -959,6 +956,54 @@ class EdisclosureService:
         md_filenames_batch: List[str] = converted.get("md_filenames", [])
         for md_name in md_filenames_batch:
             print(f"[PDF2MD] Создан Markdown: {md_name}", flush=True)
+
+        # --- Шаг 4: поиск событий ---
+        print(f"  [{secid}] Шаг 4/5: поиск событий по рег.номеру", flush=True)
+        events: List[Dict[str, Any]] = []
+        if regnumber and regnumber.strip():
+            try:
+                events = find_events_by_reg_number(
+                    date=date_str,
+                    company_id=company_id,
+                    reg_number=regnumber,
+                )
+            except Exception as exc:
+                fl_logger.warning(
+                    "[NOT FOUND] secid=%s: ошибка поиска событий: %s", secid, exc
+                )
+
+        # В events.json — полный текст и обработанный (для отладки); в LLM — только обработанный
+        events_file_batch: Path = bond_data_dir / "events.json"
+        self._file_storage.save_text_file(
+            events_file_batch,
+            json.dumps(
+                [
+                    {
+                        "event_name": e.get("event_name"),
+                        "event_date": e.get("event_date"),
+                        "full_text": e.get("full_text", ""),
+                        "processed_text": e.get("text", ""),
+                    }
+                    for e in events
+                ],
+                ensure_ascii=False,
+                indent=2,
+            ),
+        )
+        events_for_llm_batch: List[Dict[str, Any]] = [
+            {"event_name": e.get("event_name"), "event_date": e.get("event_date"), "text": e.get("text", "")}
+            for e in events
+        ]
+        converted["events"] = events_for_llm_batch
+
+        if not events and not doc_filenames_batch:
+            fl_logger.warning(
+                "[NOT FOUND] secid=%s: не найдено ни событий (%d), ни документов (%d)",
+                secid, len(events), len(doc_filenames_batch),
+            )
+            if bond_id is not None:
+                self._float_params_repo.upsert_not_found(bond_id, _get_not_found_float_params_data())
+            return False
 
         # --- Шаг 5: LLM-анализ с ограничением частоты и повтором при 503 UNAVAILABLE ---
         print(f"  [{secid}] Шаг 5/5: анализ LLM", flush=True)

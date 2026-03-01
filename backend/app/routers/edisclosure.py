@@ -75,6 +75,10 @@ async def update_floaters(
         "gemini",
         description="AI провайдер: gemini (Flash Lite), gemini-flash (2.5 Flash), gemini-3-flash (3 Flash), openai-gpt-5.1 (OpenAI GPT-5.1), openrouter или local",
     ),
+    limit: Optional[int] = Query(
+        None,
+        description="Количество облигаций для обновления. По умолчанию — все, у которых нет данных.",
+    ),
 ) -> Dict[str, str]:
     """Запускает пакетное обновление данных по всем флоатерам (bond_kind=8).
 
@@ -83,7 +87,7 @@ async def update_floaters(
     """
     try:
         service = get_edisclosure_service()
-        service.update_all_floaters(provider=provider)
+        service.update_all_floaters(provider=provider, limit=limit)
         return {"status": "ok"}
     except GeminiQuotaExhaustedError as exc:
         raise HTTPException(

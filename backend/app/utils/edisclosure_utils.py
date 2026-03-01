@@ -448,8 +448,9 @@ def find_events_by_reg_number(
         reg_number: Регистрационный номер облигации.
 
     Returns:
-        Список словарей с полями ``event_name``, ``event_date`` (``None``, если дата не распознана),
-        ``text`` для каждого события, в котором найден регистрационный номер или его части.
+        Список словарей с полями ``event_name``, ``event_date`` (``None`` при ошибке),
+        ``full_text`` (исходный текст события), ``text`` (текст после обработки регулярными
+        выражениями — _clean_event_text). В LLM передавать только ``text``.
         Пустой список, если ``reg_number`` пустой или совпадений не найдено.
     """
     if not reg_number.strip():
@@ -486,7 +487,8 @@ def find_events_by_reg_number(
         if not text:
             continue
         if _event_text_matches_reg_number(text, reg_num_ru, reg_num_lat, parts_ru, parts_lat):
-            text = _clean_event_text(text)
+            full_text: str = text
+            processed_text: str = _clean_event_text(text)
             event_date = _format_event_date(event.get("eventDate"))
             event_name = event.get("eventName") or ""
             event_url = f"{_EVENT_PAGE_URL}?EventId={pseudo_guid}"
@@ -494,7 +496,8 @@ def find_events_by_reg_number(
             result.append({
                 "event_name": event_name,
                 "event_date": event_date,
-                "text": text,
+                "full_text": full_text,
+                "text": processed_text,
             })
 
     return result
@@ -740,23 +743,27 @@ def download_emission_file(file_url: str) -> Optional[bytes]:
 
 
 def extract_zip_to_dir(content: bytes, extract_dir: Path) -> List[str]:
-    """Извлекает содержимое ZIP-архива в директорию с уникальными именами файлов.
+    """Извлекает содержимое ZIP-архива в директорию с корректной кодировкой имён.
 
-    При коллизии имён (файл уже существует) к имени добавляется суффикс _1, _2 и т.д.
-    Возвращаются только имена извлечённых PDF-файлов (для передачи в doc_filenames).
+    Имена в архивах e-disclosure хранятся в CP866 (DOS/OEM кириллица). Параметр
+    ZipFile(..., metadata_encoding="cp866") задаёт эту кодировку для полей имён
+    в ZIP, поэтому namelist() возвращает уже правильные строки без перекодировки.
+
+    Возвращаются имена всех извлечённых файлов (PDF, Word и др.).
 
     Args:
         content: Байты ZIP-архива.
         extract_dir: Директория для извлечения (например, backend/app/data/{secid}).
 
     Returns:
-        Список имён PDF-файлов, записанных в extract_dir (только базовые имена).
+        Список имён всех извлечённых файлов, записанных в extract_dir (базовые имена).
     """
     extract_dir = Path(extract_dir)
     extract_dir.mkdir(parents=True, exist_ok=True)
     result: List[str] = []
     try:
-        with zipfile.ZipFile(io.BytesIO(content), "r") as zf:
+        # cp866 — стандартная кириллическая кодировка DOS/OEM в архивах e-disclosure
+        with zipfile.ZipFile(io.BytesIO(content), "r", metadata_encoding="cp866") as zf:
             for name in zf.namelist():
                 if name.endswith("/") or ".." in name:
                     continue
@@ -778,8 +785,7 @@ def extract_zip_to_dir(content: bytes, extract_dir: Path) -> List[str]:
                 except (zipfile.BadZipFile, OSError) as e:
                     print(f"  [ZIP] Ошибка извлечения {name}: {e}", flush=True)
                     continue
-                if base_name.lower().endswith(".pdf"):
-                    result.append(base_name)
+                result.append(base_name)
     except zipfile.BadZipFile as e:
         print(f"  [ZIP] Невалидный архив: {e}", flush=True)
     return result
