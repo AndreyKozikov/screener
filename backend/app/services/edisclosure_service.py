@@ -1,8 +1,9 @@
 """Сервис для работы с e-disclosure.ru.
 
-Содержит логику вызова методов из edisclosure_utils: поиск компаний по ИНН,
-поиск событий по регистрационному номеру облигации и скачивание документов
-из дерева раскрытия MOEX.
+Содержит логику вызова методов из edisclosure_utils: получение company_id из БД
+(emitent_edisclosure) или поиск компаний по ИНН на e-disclosure, поиск событий
+по регистрационному номеру облигации и скачивание эмиссионных документов из
+таблицы emission_documents (по ИНН и рег. номеру) с распаковкой ZIP в папку по secid.
 Эндпоинт вызывает get_accrued_income_by_secid(secid), который после получения
 результата анализа от Gemini сохраняет данные в БД через BondFloatParamsRepository
 и удаляет временные файлы из _DATA_DIR.
@@ -43,8 +44,9 @@ from app.services.trading_history_service import get_trading_history_service
 from app.parsers.emission_documents_parser import parse_emission_documents
 from app.repository.db.emission_document_repository import EmissionDocumentRepository
 from app.utils.edisclosure_utils import (
+    download_emission_file,
+    extract_zip_to_dir,
     fetch_emission_documents_page,
-    fetch_moex_disclosure_docs,
     find_events_by_reg_number,
     search_company_by_inn,
 )
@@ -122,10 +124,10 @@ def _get_floaters_pipeline_logger() -> logging.Logger:
 class EdisclosureService:
     """Сервис для получения данных с e-disclosure.ru.
 
-    Оркестрирует вызовы search_company_by_inn, find_events_by_reg_number
-    и fetch_moex_disclosure_docs. Использует bonds_service для получения
-    ИНН, регномера и MOEX ID по secid, TradingHistoryService — для получения
-    наименьшей даты из истории торгов. Скачанные PDF сохраняет через FileStorage.
+    Оркестрирует получение company_id из emitent_edisclosure или search_company_by_inn,
+    find_events_by_reg_number и скачивание документов из emission_documents с e-disclosure.
+    Использует bonds_service для получения ИНН и регномера по secid,
+    TradingHistoryService — для наименьшей даты из истории торгов.
     """
 
     def __init__(self) -> None:
@@ -321,15 +323,15 @@ class EdisclosureService:
         find_events_by_reg_number для поиска всех событий года, в которых
         присутствует регистрационный номер облигации или его части.
         Если regnumber не задан — возвращает пустой список событий.
-        Дополнительно скачивает PDF-документы через MOEX disclosure tree API,
-        конвертирует их в Markdown и передаёт в GeminiAnalysisService.
-        Файлы сохраняются в подпапку backend/app/data/{secid}.
+        Документы берутся из таблицы emission_documents (по ИНН и рег. номеру),
+        скачиваются по file_url (ZIP-архивы), извлекаются в подпапку backend/app/data/{secid},
+        конвертируются в Markdown и передаются в GeminiAnalysisService.
 
         Args:
             inn: ИНН компании.
             date: Граничная дата в формате YYYY-MM-DD; включаются события строго раньше неё.
             regnumber: Регистрационный номер облигации (опционально).
-            emitent_moex_id: MOEX ID эмитента для навигации по дереву раскрытия (опционально).
+            emitent_moex_id: Не используется (документы берутся из emission_documents).
             secid: Идентификатор облигации для подпапки данных.
 
         Returns:
@@ -341,23 +343,36 @@ class EdisclosureService:
         bond_data_dir: Path = _DATA_DIR / (secid or "unknown")
         bond_data_dir.mkdir(parents=True, exist_ok=True)
 
-        # --- Шаг 1: поиск компании на e-disclosure.ru ---
-        logger.info(
-            "[E-DISCLOSURE] → POST https://www.e-disclosure.ru/api/search/companies"
-            " | ИНН=%s",
-            inn,
-        )
-        companies = search_company_by_inn(inn)
-        if not companies:
-            raise ValueError(f"Компания с ИНН {inn} не найдена на e-disclosure.ru")
-
-        company_id = companies[0].get("id")
-        if company_id is None:
-            raise ValueError("Не удалось получить ID компании из ответа e-disclosure")
-        logger.info(
-            "[E-DISCLOSURE] Найдено компаний: %d, company_id=%s, название=%s",
-            len(companies), company_id, companies[0].get("name"),
-        )
+        # --- Шаг 1: company_id — из БД (emitent_edisclosure) или поиск по ИНН на e-disclosure ---
+        emitent_id: Optional[int] = self._emitents_repo.get_emitent_id_by_inn(inn)
+        edisclosure_id: Optional[int] = None
+        if emitent_id is not None:
+            edisclosure_id = self._emitent_edisclosure_repo.get_edisclosure_id_by_emitent_id(
+                emitent_id
+            )
+        company_id: Any
+        if edisclosure_id is not None:
+            company_id = edisclosure_id
+            companies = [{"id": company_id, "name": ""}]
+            logger.info(
+                "[E-DISCLOSURE] company_id=%s взят из таблицы emitent_edisclosure (ИНН=%s)",
+                company_id, inn,
+            )
+        else:
+            logger.info(
+                "[E-DISCLOSURE] → POST https://www.e-disclosure.ru/api/search/companies | ИНН=%s",
+                inn,
+            )
+            companies = search_company_by_inn(inn)
+            if not companies:
+                raise ValueError(f"Компания с ИНН {inn} не найдена на e-disclosure.ru")
+            company_id = companies[0].get("id")
+            if company_id is None:
+                raise ValueError("Не удалось получить ID компании из ответа e-disclosure")
+            logger.info(
+                "[E-DISCLOSURE] Найдено компаний: %d, company_id=%s, название=%s",
+                len(companies), company_id, companies[0].get("name"),
+            )
 
         # --- Шаг 2: поиск событий по регистрационному номеру ---
         if not regnumber or not regnumber.strip():
@@ -386,31 +401,38 @@ class EdisclosureService:
         )
         logger.info("[E-DISCLOSURE EVENTS] Сохранён файл событий: %s", events_file)
 
-        # --- Шаг 3: скачивание документов с MOEX ---
+        # --- Шаг 3: скачивание эмиссионных документов из БД (emission_documents) по ИНН и рег.номеру ---
         doc_filenames: List[str] = []
-        if regnumber and regnumber.strip() and emitent_moex_id is not None:
-            logger.info(
-                "[MOEX DOCS] → GET https://web.moex.com/moex-web-icdb-api/api/v1/"
-                "bond-disclosure-tree/reporting/%s | рег.номер=%s",
-                emitent_moex_id, regnumber,
+        if regnumber and regnumber.strip():
+            emission_records: List[Dict[str, Any]] = (
+                self._emission_doc_repo.get_by_inn_and_reg_number(inn, regnumber)
             )
-            downloaded: List[Tuple[str, bytes]] = fetch_moex_disclosure_docs(
-                emitent_id=emitent_moex_id,
-                reg_number=regnumber,
-            )
-            for filename, content in downloaded:
-                self._file_storage.save_binary_file(bond_data_dir / filename, content)
-                doc_filenames.append(filename)
-                print(f"[MOEX DOCS] Сохранён PDF: {filename} ({len(content)} байт)", flush=True)
             logger.info(
-                "[MOEX DOCS] Скачано PDF-файлов: %d → %s",
+                "[E-DISCLOSURE DOCS] По ИНН и рег.номеру найдено записей в emission_documents: %d",
+                len(emission_records),
+            )
+            for rec in emission_records:
+                file_url: Optional[str] = rec.get("file_url")
+                if not file_url or not str(file_url).strip():
+                    continue
+                content: Optional[bytes] = download_emission_file(file_url)
+                if not content:
+                    continue
+                extracted: List[str] = extract_zip_to_dir(content, bond_data_dir)
+                for name in extracted:
+                    if name not in doc_filenames:
+                        doc_filenames.append(name)
+                if extracted:
+                    print(
+                        f"[E-DISCLOSURE DOCS] Из архива извлечено PDF: {extracted}",
+                        flush=True,
+                    )
+            logger.info(
+                "[E-DISCLOSURE DOCS] Итого PDF для конвертации: %d → %s",
                 len(doc_filenames), doc_filenames,
             )
         else:
-            logger.info(
-                "[MOEX DOCS] Пропуск: рег.номер=%s, emitent_moex_id=%s",
-                regnumber, emitent_moex_id,
-            )
+            logger.info("[E-DISCLOSURE DOCS] Пропуск: рег.номер не задан")
 
         # --- Шаг 4: конвертация PDF → Markdown ---
         result: Dict[str, Any] = {
@@ -789,9 +811,8 @@ class EdisclosureService:
     ) -> bool:
         """Выполняет полный пайплайн анализа для одной облигации-флоатера.
 
-        regnumber и emitent_moex_id не передаются в метод — получаются из БД
-        по secid (get_reg_number_by_secid, get_emitent_moex_id_by_secid).
-        Скачивание с MOEX выполняется только если оба значения заданы в БД.
+        regnumber получается из БД по secid. Документы скачиваются из emission_documents
+        по ИНН и рег. номеру (ZIP по file_url, распаковка в папку по secid).
 
         Args:
             secid: Идентификатор ценной бумаги.
@@ -826,28 +847,41 @@ class EdisclosureService:
             first_tradedate.isoformat() if first_tradedate is not None else _DEFAULT_DATE
         )
 
-        # --- Шаг 1: поиск компании ---
-        print(f"  [{secid}] Шаг 1/5: поиск компании на e-disclosure (ИНН={inn})", flush=True)
-        try:
-            companies: List[Dict[str, Any]] = search_company_by_inn(inn)
-        except Exception as exc:
-            fl_logger.warning(
-                "[NOT FOUND] secid=%s: ошибка поиска компании: %s", secid, exc
+        # --- Шаг 1: company_id — из БД (emitent_edisclosure) или поиск по ИНН на e-disclosure ---
+        print(f"  [{secid}] Шаг 1/5: company_id (БД или e-disclosure, ИНН={inn})", flush=True)
+        emitent_id_batch: Optional[int] = self._emitents_repo.get_emitent_id_by_inn(inn)
+        edisclosure_id_batch: Optional[int] = None
+        if emitent_id_batch is not None:
+            edisclosure_id_batch = self._emitent_edisclosure_repo.get_edisclosure_id_by_emitent_id(
+                emitent_id_batch
             )
-            if bond_id is not None:
-                self._float_params_repo.upsert_not_found(bond_id, _get_not_found_float_params_data())
-            return False
-
-        if not companies:
-            fl_logger.warning(
-                "[NOT FOUND] secid=%s: компания с ИНН=%s не найдена на e-disclosure",
-                secid, inn,
-            )
-            if bond_id is not None:
-                self._float_params_repo.upsert_not_found(bond_id, _get_not_found_float_params_data())
-            return False
-
-        company_id: Any = companies[0].get("id")
+        company_id: Any
+        if edisclosure_id_batch is not None:
+            company_id = edisclosure_id_batch
+            companies = [{"id": company_id, "name": ""}]
+        else:
+            try:
+                companies = search_company_by_inn(inn)
+            except Exception as exc:
+                fl_logger.warning(
+                    "[NOT FOUND] secid=%s: ошибка поиска компании: %s", secid, exc
+                )
+                if bond_id is not None:
+                    self._float_params_repo.upsert_not_found(
+                        bond_id, _get_not_found_float_params_data()
+                    )
+                return False
+            if not companies:
+                fl_logger.warning(
+                    "[NOT FOUND] secid=%s: компания с ИНН=%s не найдена на e-disclosure",
+                    secid, inn,
+                )
+                if bond_id is not None:
+                    self._float_params_repo.upsert_not_found(
+                        bond_id, _get_not_found_float_params_data()
+                    )
+                return False
+            company_id = companies[0].get("id")
 
         # --- Шаг 2: поиск событий ---
         print(f"  [{secid}] Шаг 2/5: поиск событий по рег.номеру", flush=True)
@@ -870,28 +904,41 @@ class EdisclosureService:
             json.dumps(events, ensure_ascii=False, indent=2),
         )
 
-        # --- Шаг 3: скачивание документов ---
-        print(f"  [{secid}] Шаг 3/5: скачивание документов MOEX", flush=True)
-        doc_filenames: List[str] = []
-        if regnumber and regnumber.strip() and emitent_moex_id is not None:
+        # --- Шаг 3: скачивание эмиссионных документов из БД (emission_documents) ---
+        print(f"  [{secid}] Шаг 3/5: скачивание документов e-disclosure (ИНН + рег.номер)", flush=True)
+        doc_filenames_batch: List[str] = []
+        if regnumber and regnumber.strip():
             try:
-                downloaded: List[Tuple[str, bytes]] = fetch_moex_disclosure_docs(
-                    emitent_id=emitent_moex_id,
-                    reg_number=regnumber,
+                emission_records_batch: List[Dict[str, Any]] = (
+                    self._emission_doc_repo.get_by_inn_and_reg_number(inn, regnumber)
                 )
-                for filename, content in downloaded:
-                    self._file_storage.save_binary_file(bond_data_dir / filename, content)
-                    doc_filenames.append(filename)
-                    print(f"[MOEX DOCS] Сохранён PDF: {filename} ({len(content)} байт)", flush=True)
+                for rec in emission_records_batch:
+                    file_url_batch: Optional[str] = rec.get("file_url")
+                    if not file_url_batch or not str(file_url_batch).strip():
+                        continue
+                    content_batch: Optional[bytes] = download_emission_file(file_url_batch)
+                    if not content_batch:
+                        continue
+                    extracted_batch: List[str] = extract_zip_to_dir(
+                        content_batch, bond_data_dir
+                    )
+                    for name in extracted_batch:
+                        if name not in doc_filenames_batch:
+                            doc_filenames_batch.append(name)
+                    if extracted_batch:
+                        print(
+                            f"  [E-DISCLOSURE DOCS] Из архива извлечено PDF: {extracted_batch}",
+                            flush=True,
+                        )
             except Exception as exc:
                 fl_logger.warning(
                     "[NOT FOUND] secid=%s: ошибка скачивания документов: %s", secid, exc
                 )
 
-        if not events and not doc_filenames:
+        if not events and not doc_filenames_batch:
             fl_logger.warning(
                 "[NOT FOUND] secid=%s: не найдено ни событий (%d), ни документов (%d)",
-                secid, len(events), len(doc_filenames),
+                secid, len(events), len(doc_filenames_batch),
             )
             if bond_id is not None:
                 self._float_params_repo.upsert_not_found(bond_id, _get_not_found_float_params_data())
@@ -904,7 +951,7 @@ class EdisclosureService:
             "events": events,
             "regnumber": regnumber,
             "search_date": date_str,
-            "doc_filenames": doc_filenames,
+            "doc_filenames": doc_filenames_batch,
             "data_dir": bond_data_dir,
         }
         converted: Dict[str, Any] = get_pdf_conversion_service().convert(result_dict)

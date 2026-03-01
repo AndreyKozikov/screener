@@ -380,6 +380,27 @@ class EmitentsRepository:
             self.logger.warning("Ошибка при чтении эмитентов с ИНН: %s", e)
             return []
 
+    def get_emitent_id_by_inn(self, inn: str) -> Optional[int]:
+        """Возвращает id эмитента из таблицы emitents по ИНН.
+
+        Args:
+            inn: ИНН эмитента (без лишних пробелов).
+
+        Returns:
+            id записи в emitents или None, если не найдено.
+        """
+        if not inn or not str(inn).strip():
+            return None
+        inn_trimmed: str = str(inn).strip()
+        stmt = text("SELECT id FROM emitents WHERE trim(inn) = :inn LIMIT 1")
+        try:
+            with Session(self._engine) as session:
+                row = session.execute(stmt, {"inn": inn_trimmed}).fetchone()
+            return int(row[0]) if row and row[0] is not None else None
+        except Exception as e:
+            self.logger.warning("Ошибка при получении emitent_id по ИНН %s: %s", inn_trimmed, e)
+            return None
+
     def get_secid_to_emitent_title_index(self) -> Dict[str, str]:
         """Возвращает маппинг SECID облигации -> название эмитента из БД."""
         stmt = text("""

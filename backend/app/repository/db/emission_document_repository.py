@@ -6,7 +6,7 @@
 
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
@@ -90,3 +90,49 @@ class EmissionDocumentRepository:
             session.commit()
 
         return inserted
+
+    def get_by_inn_and_reg_number(
+        self,
+        inn: str,
+        reg_number: str,
+    ) -> List[Dict[str, Any]]:
+        """Возвращает записи emission_documents по ИНН эмитента и рег. номеру облигации.
+
+        Связь: emitents.inn -> emitent_edisclosure -> emission_documents.reg_number.
+        Возвращаются только записи с непустым file_url, отсортированные по
+        date_registration DESC (новые первыми).
+
+        Args:
+            inn: ИНН эмитента.
+            reg_number: Регистрационный номер облигации.
+
+        Returns:
+            Список словарей с ключами id, file_url и при необходимости date_registration.
+        """
+        if not inn or not str(inn).strip() or not reg_number or not str(reg_number).strip():
+            return []
+        inn_trimmed: str = str(inn).strip()
+        reg_trimmed: str = str(reg_number).strip()
+        query = text(
+            "SELECT ed.id, ed.file_url, ed.date_registration "
+            "FROM emission_documents ed "
+            "JOIN emitent_edisclosure ee ON ed.emitent_edisclosure_id = ee.id "
+            "JOIN emitents e ON ee.emitent_id = e.id "
+            "WHERE trim(e.inn) = :inn AND trim(ed.reg_number) = :reg_number "
+            "AND ed.file_url IS NOT NULL AND trim(ed.file_url) != '' "
+            "ORDER BY ed.date_registration DESC"
+        )
+        with Session(self._engine) as session:
+            rows = session.execute(
+                query,
+                {"inn": inn_trimmed, "reg_number": reg_trimmed},
+            ).fetchall()
+        return [
+            {
+                "id": int(row[0]),
+                "file_url": str(row[1]).strip() if row[1] else "",
+                "date_registration": row[2],
+            }
+            for row in rows
+            if row[0] is not None and row[1]
+        ]

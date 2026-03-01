@@ -5,10 +5,13 @@
 """
 
 import html
+import io
 import re
+import zipfile
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import quote
+from urllib.parse import quote, urljoin
 
 import requests
 
@@ -696,6 +699,90 @@ def fetch_emission_documents_page(edisclosure_id: int) -> str:
         response = session.get(url, headers=_HTML_HEADERS, timeout=_TIMEOUT)
     response.raise_for_status()
     return response.text
+
+
+def _resolve_emission_file_url(url: str) -> str:
+    """Преобразует относительный URL файла e-disclosure в абсолютный."""
+    u: str = (url or "").strip()
+    if not u:
+        return u
+    if u.startswith("http://") or u.startswith("https://"):
+        return u
+    return urljoin(_MAIN_PAGE_URL + "/", u.lstrip("/"))
+
+
+def download_emission_file(file_url: str) -> Optional[bytes]:
+    """Скачивает файл по ссылке с e-disclosure.ru (страница эмиссионных документов).
+
+    Поддерживает относительные URL (дополняет базой _MAIN_PAGE_URL).
+    Использует ту же сессию и заголовки, что и для HTML-страниц.
+
+    Args:
+        file_url: Прямая ссылка на файл (из emission_documents.file_url).
+
+    Returns:
+        Содержимое файла в байтах или None при ошибке.
+    """
+    resolved: str = _resolve_emission_file_url(file_url)
+    if not resolved:
+        return None
+    print(f"  [E-DISCLOSURE FILE] GET {resolved[:80]}...", flush=True)
+    session, _ = _get_session()
+    try:
+        response: requests.Response = session.get(
+            resolved, headers=_HTML_HEADERS, timeout=_TIMEOUT
+        )
+        response.raise_for_status()
+        return response.content
+    except requests.RequestException as e:
+        print(f"  [E-DISCLOSURE FILE] Ошибка загрузки: {e}", flush=True)
+        return None
+
+
+def extract_zip_to_dir(content: bytes, extract_dir: Path) -> List[str]:
+    """Извлекает содержимое ZIP-архива в директорию с уникальными именами файлов.
+
+    При коллизии имён (файл уже существует) к имени добавляется суффикс _1, _2 и т.д.
+    Возвращаются только имена извлечённых PDF-файлов (для передачи в doc_filenames).
+
+    Args:
+        content: Байты ZIP-архива.
+        extract_dir: Директория для извлечения (например, backend/app/data/{secid}).
+
+    Returns:
+        Список имён PDF-файлов, записанных в extract_dir (только базовые имена).
+    """
+    extract_dir = Path(extract_dir)
+    extract_dir.mkdir(parents=True, exist_ok=True)
+    result: List[str] = []
+    try:
+        with zipfile.ZipFile(io.BytesIO(content), "r") as zf:
+            for name in zf.namelist():
+                if name.endswith("/") or ".." in name:
+                    continue
+                base_name: str = Path(name).name
+                if not base_name:
+                    continue
+                target_path: Path = extract_dir / base_name
+                if target_path.exists():
+                    stem: str = target_path.stem
+                    suffix: str = target_path.suffix
+                    idx: int = 1
+                    while target_path.exists():
+                        base_name = f"{stem}_{idx}{suffix}"
+                        target_path = extract_dir / base_name
+                        idx += 1
+                try:
+                    with zf.open(name, "r") as src:
+                        target_path.write_bytes(src.read())
+                except (zipfile.BadZipFile, OSError) as e:
+                    print(f"  [ZIP] Ошибка извлечения {name}: {e}", flush=True)
+                    continue
+                if base_name.lower().endswith(".pdf"):
+                    result.append(base_name)
+    except zipfile.BadZipFile as e:
+        print(f"  [ZIP] Невалидный архив: {e}", flush=True)
+    return result
 
 
 def _download_docs(

@@ -48,6 +48,23 @@ class EmitentEdisclosureRepository:
             ).all()
         return set(rows)
 
+    def get_edisclosure_id_by_emitent_id(self, emitent_id: int) -> Optional[int]:
+        """Возвращает edisclosure_id (ID компании на e-disclosure.ru) по emitent_id.
+
+        Args:
+            emitent_id: FK на emitents.id.
+
+        Returns:
+            edisclosure_id или None, если маппинг отсутствует.
+        """
+        with Session(self._engine) as session:
+            row = session.exec(
+                select(EmitentEdisclosure.edisclosure_id).where(
+                    EmitentEdisclosure.emitent_id == emitent_id
+                )
+            ).first()
+        return int(row) if row is not None else None
+
     def get_emitents_ordered_by_missing_docs(
         self, limit: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
