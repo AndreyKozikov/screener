@@ -30,9 +30,13 @@ _GEMINI_QUOTA_EXHAUSTED_MARKERS: tuple[str, ...] = ("429", "RESOURCE_EXHAUSTED",
 _GEMINI_UNAVAILABLE_MARKERS: tuple[str, ...] = ("503", "UNAVAILABLE")
 
 # Идентификаторы моделей Google Gemini API.
+# Документация: https://ai.google.dev/gemini-api/docs/models
 GEMINI_MODEL_FLASH_LITE: str = "gemini-2.5-flash-lite"
 GEMINI_MODEL_FLASH: str = "gemini-2.5-flash"
+GEMINI_MODEL_2_5_PRO: str = "gemini-2.5-pro"
+GEMINI_MODEL_2_FLASH: str = "gemini-2.0-flash"
 GEMINI_MODEL_3_FLASH: str = "gemini-3-flash-preview"
+GEMINI_MODEL_3_1_PRO: str = "gemini-3.1-pro-preview"
 
 
 class GeminiQuotaExhaustedError(RuntimeError):
@@ -58,15 +62,29 @@ class GeminiUnavailableError(RuntimeError):
 class GeminiClientProtocol(Protocol):
     """Протокол транспортного клиента для Gemini API."""
 
-    def generate(self, prompt: str, model: Optional[str] = None) -> str:
-        """Отправляет промт в указанную модель и возвращает текст ответа."""
+    def generate(
+        self,
+        prompt: str,
+        model: Optional[str] = None,
+        file_paths: Optional[List[str]] = None,
+        base_dir: Optional[Path] = None,
+    ) -> str:
+        """Отправляет промт в указанную модель и возвращает текст ответа.
+
+        При наличии file_paths и base_dir загружает .md-файлы через Files API
+        и передаёт их вложениями вместе с промтом.
+        """
         ...
 
 
 class MarkdownRepositoryProtocol(Protocol):
     """Протокол репозитория для чтения Markdown-файлов."""
 
-    def read_files(self, filenames: List[str]) -> str:
+    def read_files(
+        self,
+        filenames: List[str],
+        base_dir: Optional[Path] = None,
+    ) -> str:
         """Читает и объединяет содержимое файлов."""
         ...
 
@@ -88,27 +106,56 @@ class GeminiClient:
             temperature=0.1,
         )
 
-    def generate(self, prompt: str, model: Optional[str] = None) -> str:
+    def generate(
+        self,
+        prompt: str,
+        model: Optional[str] = None,
+        file_paths: Optional[List[str]] = None,
+        base_dir: Optional[Path] = None,
+    ) -> str:
         """Отправляет промт в Gemini и возвращает текст ответа.
+
+        При наличии file_paths и base_dir загружает каждый .md-файл через
+        Gemini Files API и передаёт их вместе с промтом в generate_content.
+        Иначе отправляет только текст промта.
 
         Args:
             prompt: Полный текст промта.
             model: Идентификатор модели (например gemini-2.5-flash-lite, gemini-2.5-flash).
                 По умолчанию — gemini-2.5-flash-lite.
+            file_paths: Список имён файлов (PDF, Word и др.) для загрузки через Files API.
+                Требует base_dir. Если None или пуст — только текст промта.
+            base_dir: Базовая директория, в которой расположены файлы из file_paths.
 
         Returns:
             Текст ответа модели.
 
         Raises:
-            RuntimeError: Ошибка при обращении к Gemini API.
+            GeminiQuotaExhaustedError: При исчерпании квоты (429 RESOURCE_EXHAUSTED).
+            GeminiUnavailableError: При временной недоступности (503 UNAVAILABLE).
+            RuntimeError: Прочие ошибки вызова API.
         """
         model_id: str = model or GEMINI_MODEL_FLASH_LITE
         try:
-            response: types.GenerateContentResponse = self._client.models.generate_content(
-                model=model_id,
-                contents=prompt,
-                config=self._config,
-            )
+            if file_paths and base_dir is not None:
+                uploaded_files: List[Any] = []
+                for filename in file_paths:
+                    file_path: Path = Path(base_dir) / filename
+                    uploaded: Any = self._client.files.upload(file=file_path)
+                    uploaded_files.append(uploaded)
+                    logger.debug("[GEMINI] Files API: файл загружен %s → %s", file_path, uploaded.name)
+                contents: List[Any] = [prompt] + uploaded_files
+                response: types.GenerateContentResponse = self._client.models.generate_content(
+                    model=model_id,
+                    contents=contents,
+                    config=self._config,
+                )
+            else:
+                response = self._client.models.generate_content(
+                    model=model_id,
+                    contents=prompt,
+                    config=self._config,
+                )
             return response.text
         except Exception as exc:
             exc_str: str = str(exc)
@@ -180,20 +227,37 @@ class GeminiAnalysisService:
         """
         events: List[Dict[str, Any]] = edisclosure_data.get("events", [])
         md_filenames: List[str] = edisclosure_data.get("md_filenames", [])
+        doc_filenames: List[str] = edisclosure_data.get("doc_filenames", [])
 
         logger.info(
-            "[GEMINI] Подготовка запроса: событий=%d, md-файлов=%d → %s",
+            "[GEMINI] Подготовка запроса: событий=%d, md-файлов=%d, doc-файлов=%d → %s",
             len(events),
             len(md_filenames),
-            md_filenames,
+            len(doc_filenames),
+            doc_filenames or md_filenames,
         )
 
         md_base_dir: Optional[Path] = edisclosure_data.get("data_dir")
         if md_base_dir is not None and not isinstance(md_base_dir, Path):
             md_base_dir = Path(str(md_base_dir))
-        markdown_content: str = self._markdown_repo.read_files(
-            md_filenames, base_dir=md_base_dir
+
+        use_file_upload: bool = bool(
+            edisclosure_data.get("use_file_upload", False)
+            and doc_filenames
+            and md_base_dir is not None
         )
+
+        if use_file_upload:
+            markdown_content: str = "Документы приложены отдельными файлами (см. вложения)."
+            logger.info(
+                "[GEMINI] Режим Files API: %d оригинальных файлов (PDF, Word и др.) будут загружены отдельно",
+                len(doc_filenames),
+            )
+        else:
+            markdown_content = self._markdown_repo.read_files(
+                md_filenames, base_dir=md_base_dir
+            )
+
         events_json: str = json.dumps(events, ensure_ascii=False, indent=2)
 
         prompt: str = build_floater_analysis_prompt(
@@ -213,7 +277,12 @@ class GeminiAnalysisService:
         )
 
         try:
-            raw_text: str = self._client.generate(prompt, model=model_id)
+            if use_file_upload:
+                raw_text: str = self._client.generate(
+                    prompt, model=model_id, file_paths=doc_filenames, base_dir=md_base_dir
+                )
+            else:
+                raw_text = self._client.generate(prompt, model=model_id)
         except GeminiQuotaExhaustedError:
             raise
         except GeminiUnavailableError:

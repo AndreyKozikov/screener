@@ -1009,17 +1009,21 @@ class BondsRepository:
             )
             return []
 
-    def get_floater_secids(self) -> List[str]:
+    def get_floater_secids(self, rating: Optional[str] = None) -> List[str]:
         """Возвращает список SECID корпоративных облигаций вида «флоатер» (bond_kind = 8).
 
         Исключает ОФЗ (bond_type = 2), муниципальные (bond_type = 4)
         и субфедеральные (bond_type = 5) бумаги — только корпоративные выпуски.
 
+        Args:
+            rating: Если указан — возвращаются только флоатеры с данным рейтингом
+                (сравнение без учёта регистра и пробелов). None — все флоатеры.
+
         Returns:
             Список SECID флоатеров. Пустой список при ошибке или отсутствии записей.
         """
         _EXCLUDED_BOND_TYPES: tuple[int, ...] = (2, 4, 5)
-        stmt = select(Bond.secid).where(
+        conditions: List[Any] = [
             Bond.bond_kind == 8,
             Bond.bond_type.isnot(None),
             Bond.bond_type.notin_(_EXCLUDED_BOND_TYPES),
@@ -1027,7 +1031,12 @@ class BondsRepository:
                 Bond.boardid.is_(None),
                 func.upper(func.trim(Bond.boardid)) != "PACT",
             ),
-        )
+        ]
+        if rating is not None and rating.strip():
+            conditions.append(
+                func.upper(func.trim(Bond.rating)) == rating.strip().upper()
+            )
+        stmt = select(Bond.secid).where(and_(*conditions))
         try:
             with Session(self._engine) as session:
                 rows = session.exec(stmt).all()

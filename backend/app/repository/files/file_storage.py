@@ -77,6 +77,21 @@ class FileStorage:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(content)
 
+    def read_text_file(self, path: Path, encoding: str = "utf-8") -> str:
+        """Читает текстовый файл по указанному пути и возвращает его содержимое.
+
+        Args:
+            path: Путь к файлу для чтения.
+            encoding: Кодировка файла (по умолчанию UTF-8).
+
+        Returns:
+            Содержимое файла в виде строки.
+
+        Raises:
+            OSError: Если файл не найден или не удалось прочитать.
+        """
+        return path.read_text(encoding=encoding)
+
     def save_text_file(self, path: Path, content: str, encoding: str = "utf-8") -> None:
         """Записывает текстовые данные в файл.
 

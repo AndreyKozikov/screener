@@ -42,15 +42,29 @@ _OPENAI_UNAVAILABLE_MARKERS: tuple[str, ...] = ("503", "unavailable", "service")
 class OpenAIClientProtocol(Protocol):
     """Протокол транспортного клиента для OpenAI API."""
 
-    def generate(self, prompt: str, model: Optional[str] = None) -> str:
-        """Отправляет промт в указанную модель и возвращает текст ответа."""
+    def generate(
+        self,
+        prompt: str,
+        model: Optional[str] = None,
+        file_paths: Optional[List[str]] = None,
+        base_dir: Optional[Path] = None,
+    ) -> str:
+        """Отправляет промт в указанную модель и возвращает текст ответа.
+
+        При наличии file_paths и base_dir загружает .md-файлы через Files API
+        и передаёт их через Responses API вместе с промтом.
+        """
         ...
 
 
 class MarkdownRepositoryProtocol(Protocol):
     """Протокол репозитория для чтения Markdown-файлов."""
 
-    def read_files(self, filenames: List[str]) -> str:
+    def read_files(
+        self,
+        filenames: List[str],
+        base_dir: Optional[Path] = None,
+    ) -> str:
         """Читает и объединяет содержимое файлов."""
         ...
 
@@ -71,16 +85,30 @@ class OpenAIClient:
         self._client: OpenAI = OpenAI(api_key=api_key)
         self._temperature: float = 0.1
 
-    def generate(self, prompt: str, model: Optional[str] = None) -> str:
+    def generate(
+        self,
+        prompt: str,
+        model: Optional[str] = None,
+        file_paths: Optional[List[str]] = None,
+        base_dir: Optional[Path] = None,
+    ) -> str:
         """Отправляет промт в OpenAI и возвращает текст ответа.
+
+        При наличии file_paths и base_dir загружает каждый .md-файл через
+        OpenAI Files API (purpose="user_data") и вызывает Responses API,
+        передавая файлы как input_file и промт как input_text.
+        Иначе использует chat.completions.create с текстом промта.
 
         Args:
             prompt: Полный текст промта.
             model: Идентификатор модели (например gpt-5.1).
                 По умолчанию — OPENAI_MODEL_GPT_5_1.
+            file_paths: Список имён файлов (PDF, Word и др.) для загрузки через Files API.
+                Требует base_dir. Если None или пуст — только текст промта.
+            base_dir: Базовая директория, в которой расположены файлы из file_paths.
 
         Returns:
-            Текст ответа модели (content первого choice).
+            Текст ответа модели.
 
         Raises:
             GeminiQuotaExhaustedError: При 429 / rate limit (квота исчерпана).
@@ -89,17 +117,38 @@ class OpenAIClient:
         """
         model_id: str = model or OPENAI_MODEL_GPT_5_1
         try:
-            completion = self._client.chat.completions.create(
-                model=model_id,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=self._temperature,
-            )
-            content: Optional[str] = (
-                completion.choices[0].message.content if completion.choices else None
-            )
-            if content is None:
-                raise RuntimeError("OpenAI API вернул пустой ответ")
-            return content
+            if file_paths and base_dir is not None:
+                uploaded_file_ids: List[str] = []
+                for filename in file_paths:
+                    file_path: Path = Path(base_dir) / filename
+                    with open(file_path, "rb") as fh:
+                        uploaded = self._client.files.create(file=fh, purpose="user_data")
+                    uploaded_file_ids.append(uploaded.id)
+                    logger.debug("[OPENAI] Files API: файл загружен %s → %s", file_path, uploaded.id)
+                content_items: List[Dict[str, Any]] = [
+                    {"type": "input_file", "file_id": fid} for fid in uploaded_file_ids
+                ]
+                content_items.append({"type": "input_text", "text": prompt})
+                response = self._client.responses.create(
+                    model=model_id,
+                    input=[{"role": "user", "content": content_items}],
+                )
+                result_text: Optional[str] = response.output_text
+                if result_text is None:
+                    raise RuntimeError("OpenAI Responses API вернул пустой ответ")
+                return result_text
+            else:
+                completion = self._client.chat.completions.create(
+                    model=model_id,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=self._temperature,
+                )
+                content: Optional[str] = (
+                    completion.choices[0].message.content if completion.choices else None
+                )
+                if content is None:
+                    raise RuntimeError("OpenAI API вернул пустой ответ")
+                return content
         except Exception as exc:
             exc_str: str = str(exc).lower()
             if any(m in exc_str for m in _OPENAI_QUOTA_EXHAUSTED_MARKERS):
@@ -169,20 +218,37 @@ class OpenAIAnalysisService:
         """
         events: List[Dict[str, Any]] = edisclosure_data.get("events", [])
         md_filenames: List[str] = edisclosure_data.get("md_filenames", [])
+        doc_filenames: List[str] = edisclosure_data.get("doc_filenames", [])
 
         logger.info(
-            "[OPENAI] Подготовка запроса: событий=%d, md-файлов=%d → %s",
+            "[OPENAI] Подготовка запроса: событий=%d, md-файлов=%d, doc-файлов=%d → %s",
             len(events),
             len(md_filenames),
-            md_filenames,
+            len(doc_filenames),
+            doc_filenames or md_filenames,
         )
 
         md_base_dir: Optional[Path] = edisclosure_data.get("data_dir")
         if md_base_dir is not None and not isinstance(md_base_dir, Path):
             md_base_dir = Path(str(md_base_dir))
-        markdown_content: str = self._markdown_repo.read_files(
-            md_filenames, base_dir=md_base_dir
+
+        use_file_upload: bool = bool(
+            edisclosure_data.get("use_file_upload", False)
+            and doc_filenames
+            and md_base_dir is not None
         )
+
+        if use_file_upload:
+            markdown_content: str = "Документы приложены отдельными файлами (см. вложения)."
+            logger.info(
+                "[OPENAI] Режим Files API: %d оригинальных файлов (PDF, Word и др.) будут загружены отдельно",
+                len(doc_filenames),
+            )
+        else:
+            markdown_content = self._markdown_repo.read_files(
+                md_filenames, base_dir=md_base_dir
+            )
+
         events_json: str = json.dumps(events, ensure_ascii=False, indent=2)
 
         prompt: str = build_floater_analysis_prompt(
@@ -192,18 +258,24 @@ class OpenAIAnalysisService:
 
         model_id: str = model or OPENAI_MODEL_GPT_5_1
         logger.info(
-            "[OPENAI] → POST https://api.openai.com/v1/chat/completions "
-            "(model: %s, длина промта: %d символов)",
+            "[OPENAI] → POST https://api.openai.com/v1/ "
+            "(model: %s, длина промта: %d символов, файлов: %d)",
             model_id,
             len(prompt),
+            len(doc_filenames) if use_file_upload else 0,
         )
         print(
-            f"  [API] POST https://api.openai.com/v1/chat/completions (OpenAI, model: {model_id})",
+            f"  [API] POST https://api.openai.com/v1/ (OpenAI, model: {model_id})",
             flush=True,
         )
 
         try:
-            raw_text: str = self._client.generate(prompt, model=model_id)
+            if use_file_upload:
+                raw_text: str = self._client.generate(
+                    prompt, model=model_id, file_paths=doc_filenames, base_dir=md_base_dir
+                )
+            else:
+                raw_text = self._client.generate(prompt, model=model_id)
         except GeminiQuotaExhaustedError:
             raise
         except GeminiUnavailableError:

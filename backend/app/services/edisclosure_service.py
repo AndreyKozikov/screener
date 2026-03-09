@@ -5,8 +5,7 @@
 по регистрационному номеру облигации и скачивание эмиссионных документов из
 таблицы emission_documents (по ИНН и рег. номеру) с распаковкой ZIP в папку по secid.
 Эндпоинт вызывает get_accrued_income_by_secid(secid), который после получения
-результата анализа от Gemini сохраняет данные в БД через BondFloatParamsRepository
-и удаляет временные файлы из _DATA_DIR.
+результата анализа от Gemini сохраняет данные в БД через BondFloatParamsRepository.
 
 Метод update_all_floaters() обрабатывает все облигации вида «флоатер» (bond_kind=8)
 в пакетном режиме с ограничением на количество запросов к LLM (7 в минуту).
@@ -32,6 +31,9 @@ from app.services.bonds_service import (
     get_reg_number_by_secid,
 )
 from app.services.gemini_analysis_service import (
+    GEMINI_MODEL_2_5_PRO,
+    GEMINI_MODEL_2_FLASH,
+    GEMINI_MODEL_3_1_PRO,
     GEMINI_MODEL_3_FLASH,
     GEMINI_MODEL_FLASH,
     GEMINI_MODEL_FLASH_LITE,
@@ -42,12 +44,20 @@ from app.services.gemini_analysis_service import (
 from app.services.pdf_conversion_service import get_pdf_conversion_service
 from app.services.trading_history_service import get_trading_history_service
 from app.parsers.emission_documents_parser import parse_emission_documents
+from app.parsers.emission_series_parser import (
+    extract_series_from_markdown,
+    filter_events_by_secid_regnumber_series,
+    markdown_has_decision_header,
+)
+from app.core.exceptions import PdfConversionConnectionError
 from app.repository.db.emission_document_repository import EmissionDocumentRepository
 from app.utils.edisclosure_utils import (
+    clean_event_text,
     download_emission_file,
     extract_zip_to_dir,
     fetch_emission_documents_page,
     find_events_by_reg_number,
+    get_events_with_full_text,
     search_company_by_inn,
 )
 
@@ -93,6 +103,12 @@ def _get_not_found_float_params_data() -> Dict[str, Any]:
         "observation_type": None,
         "reference_period_desc": None,
     }
+
+
+class SkipBondException(Exception):
+    """Исключение: облигация пропущена пайплайном (например, в архиве есть не-PDF файлы)."""
+
+
 _DATA_DIR: Path = Path(__file__).resolve().parent.parent / "data"
 
 
@@ -142,8 +158,9 @@ class EdisclosureService:
         """Возвращает сервис LLM-анализа по имени провайдера.
 
         Args:
-            provider: Имя провайдера ("gemini", "gemini-flash", "gemini-3-flash", "openai-gpt-5.1", "openrouter" или "local").
-                gemini — Flash Lite, gemini-flash — 2.5 Flash, gemini-3-flash — 3 Flash, openai-gpt-5.1 — OpenAI GPT-5.1.
+            provider: Имя провайдера: gemini (2.5 Flash Lite), gemini-flash (2.5 Flash),
+                gemini-2.5-pro, gemini-2-flash, gemini-3-flash, gemini-3.1-pro,
+                openai-gpt-5.1, openrouter или local.
 
         Returns:
             Экземпляр сервиса анализа с методом analyze().
@@ -165,8 +182,14 @@ class EdisclosureService:
             return GEMINI_MODEL_FLASH_LITE
         if provider == "gemini-flash":
             return GEMINI_MODEL_FLASH
+        if provider == "gemini-2.5-pro":
+            return GEMINI_MODEL_2_5_PRO
+        if provider == "gemini-2-flash":
+            return GEMINI_MODEL_2_FLASH
         if provider == "gemini-3-flash":
             return GEMINI_MODEL_3_FLASH
+        if provider == "gemini-3.1-pro":
+            return GEMINI_MODEL_3_1_PRO
         return None
 
     def _call_llm_with_retry(
@@ -209,20 +232,27 @@ class EdisclosureService:
                     raise
         return None
 
-    def get_accrued_income_by_secid(self, secid: str, provider: str = "gemini") -> Dict[str, str]:
-        """Получает данные флоатера по SECID, анализирует через Gemini и сохраняет в БД.
+    def get_accrued_income_by_secid(
+        self,
+        secid: str,
+        provider: str = "gemini",
+        use_file_upload: bool = False,
+    ) -> Dict[str, str]:
+        """Получает данные флоатера по SECID, анализирует через LLM и сохраняет в БД.
 
         1. Получает ИНН эмитента и рег. номер облигации по secid из БД.
         2. Получает наименьшую дату из таблицы истории торгов.
-        3. Вызывает _get_accrued_income_by_inn для анализа через Gemini.
-        4. Если Gemini вернул None (ошибка валидации) — пропускает запись в БД,
-           очищает файлы и возвращает {"status": "error", "detail": "..."}.
+        3. Вызывает _get_accrued_income_by_inn для анализа через LLM.
+        4. Если LLM вернул None (ошибка валидации) — пропускает запись в БД
+           и возвращает {"status": "error", "detail": "..."}.
         5. Сохраняет результат анализа в БД через BondFloatParamsRepository.
-        6. Удаляет временные файлы .pdf и .md из _DATA_DIR.
-        7. Возвращает {"status": "ok"}.
+        6. Возвращает {"status": "ok"}.
 
         Args:
             secid: Идентификатор ценной бумаги.
+            provider: Провайдер LLM (gemini, openai-gpt-5.1, openrouter, local).
+            use_file_upload: Если True — для Gemini/OpenAI подавать в модель
+                оригинальные файлы (PDF, Word) через Files API; иначе — только Markdown в промпте.
 
         Returns:
             Словарь {"status": "ok"} или {"status": "error", "detail": "..."}.
@@ -266,21 +296,34 @@ class EdisclosureService:
         bond_data_dir: Path = _DATA_DIR / secid
         bond_data_dir.mkdir(parents=True, exist_ok=True)
 
-        analysis: Optional[GeminiBondAnalysisDTO] = self._get_accrued_income_by_inn(
-            inn=inn,
-            date=date_str,
-            regnumber=regnumber,
-            emitent_moex_id=emitent_moex_id,
-            provider=provider,
-            secid=secid,
-        )
+        try:
+            analysis = self._get_accrued_income_by_inn(
+                inn=inn,
+                date=date_str,
+                regnumber=regnumber,
+                emitent_moex_id=emitent_moex_id,
+                provider=provider,
+                secid=secid,
+                use_file_upload=use_file_upload,
+            )
+        except SkipBondException as exc:
+            logger.info(
+                "[PIPELINE SKIP] secid=%s: %s",
+                secid, exc,
+            )
+            return {"status": "skipped", "detail": str(exc)}
+        except PdfConversionConnectionError as exc:
+            logger.error(
+                "[PIPELINE ERROR] secid=%s: ошибка подключения к pdf2md: %s",
+                secid, exc,
+            )
+            return {"status": "error", "detail": str(exc)}
 
         if analysis is None:
             logger.warning(
                 "[PIPELINE] Анализ Gemini вернул None — запись в БД пропущена. secid=%s",
                 secid,
             )
-            self._cleanup_data_files()
             return {"status": "error", "detail": "Ошибка валидации ответа LLM"}
 
         bond_id: Optional[int] = get_bond_id_by_secid(secid)
@@ -291,22 +334,20 @@ class EdisclosureService:
         else:
             logger.warning("[DB SAVE] bond_id не найден для secid=%s — запись пропущена", secid)
 
-        self._cleanup_data_files()
         logger.info("[PIPELINE DONE] secid=%s → статус: ok", secid)
         logger.info("=" * 60)
         return {"status": "ok"}
 
-    def _cleanup_data_files(self) -> None:
-        """Удаляет все файлы .pdf и .md из директории данных после успешного сохранения.
+    @staticmethod
+    def _all_extracted_files_are_convertible(filenames: List[str]) -> bool:
+        """True, если все имена файлов имеют расширение, допустимое для конвертации через pdf2md.
 
-        Делегирует файловую операцию в FileStorage (repository/files) согласно
-        принципу разделения ответственности по слоям архитектуры.
+        Допустимые расширения (без учёта регистра): .pdf, .docx, .doc, .rtf.
         """
-        # self._file_storage.delete_files_by_pattern(
-        #     directory=_DATA_DIR,
-        #     extensions=("*.pdf", "*.md"),
-        # )
-        pass
+        if not filenames:
+            return True
+        _ALLOWED_EXTENSIONS: frozenset = frozenset({".pdf", ".docx", ".doc", ".rtf"})
+        return all(Path(f).suffix.lower() in _ALLOWED_EXTENSIONS for f in filenames)
 
     def _get_accrued_income_by_inn(
         self,
@@ -316,16 +357,20 @@ class EdisclosureService:
         emitent_moex_id: Optional[int] = None,
         provider: str = "gemini",
         secid: str = "",
+        use_file_upload: bool = False,
     ) -> Optional[GeminiBondAnalysisDTO]:
-        """Получает данные компании по ИНН, скачивает документы и анализирует их через Gemini.
+        """Получает данные компании по ИНН и выполняет полный пайплайн анализа эмиссионных документов.
 
-        Вызывает search_company_by_inn для получения ID компании, затем
-        find_events_by_reg_number для поиска всех событий года, в которых
-        присутствует регистрационный номер облигации или его части.
-        Если regnumber не задан — возвращает пустой список событий.
-        Документы берутся из таблицы emission_documents (по ИНН и рег. номеру),
-        скачиваются по file_url (ZIP-архивы), извлекаются в подпапку backend/app/data/{secid},
-        конвертируются в Markdown и передаются в GeminiAnalysisService.
+        Порядок шагов пайплайна (строгий, не изменять):
+          1. company_id — получение ID компании из БД (emitent_edisclosure) или поиска по ИНН на e-disclosure.
+          2. Скачивание файлов с e-disclosure: документы берутся из таблицы emission_documents
+             (по ИНН и рег. номеру), скачиваются по file_url (ZIP-архивы), извлекаются
+             в подпапку backend/app/data/{secid}.
+          3. Конвертация PDF → Markdown и сохранение: скачанные PDF передаются в сервис конвертации,
+             полученные Markdown-файлы сохраняются на диск.
+          4. Поиск событий: только после завершения шагов 2 и 3 запускается алгоритм
+             find_events_by_reg_number для поиска событий по регистрационному номеру облигации.
+          5. LLM-анализ: события и Markdown-документы передаются в языковую модель.
 
         Args:
             inn: ИНН компании.
@@ -374,7 +419,7 @@ class EdisclosureService:
                 len(companies), company_id, companies[0].get("name"),
             )
 
-        # --- Шаг 2: скачивание эмиссионных документов из БД (emission_documents) по ИНН и рег.номеру ---
+        # --- Шаг 2: скачивание файлов с e-disclosure (emission_documents по ИНН и рег.номеру → ZIP → PDF) ---
         doc_filenames: List[str] = []
         if regnumber and regnumber.strip():
             emission_records: List[Dict[str, Any]] = (
@@ -404,10 +449,19 @@ class EdisclosureService:
                 "[E-DISCLOSURE DOCS] Итого PDF для конвертации: %d → %s",
                 len(doc_filenames), doc_filenames,
             )
+            if doc_filenames and not self._all_extracted_files_are_convertible(doc_filenames):
+                _allowed: frozenset = frozenset({".pdf", ".docx", ".doc", ".rtf"})
+                non_convertible: List[str] = [
+                    f for f in doc_filenames if Path(f).suffix.lower() not in _allowed
+                ]
+                raise SkipBondException(
+                    f"В архиве есть файлы, которые не входят в список допустимых "
+                    f"(PDF, DOC, DOCX, RTF): {non_convertible}"
+                )
         else:
             logger.info("[E-DISCLOSURE DOCS] Пропуск: рег.номер не задан")
 
-        # --- Шаг 3: конвертация PDF → Markdown ---
+        # --- Шаг 3: конвертация PDF → Markdown и сохранение (выполняется после полного скачивания, шаг 2) ---
         result: Dict[str, Any] = {
             "companies": companies,
             "events": [],
@@ -432,27 +486,50 @@ class EdisclosureService:
         for md_name in md_filenames:
             print(f"[PDF2MD] Создан Markdown: {md_name}", flush=True)
 
-        # --- Шаг 4: поиск событий по регистрационному номеру ---
-        if not regnumber or not regnumber.strip():
-            events: List[Dict[str, Any]] = []
-            logger.info("[E-DISCLOSURE EVENTS] рег.номер не задан — события пропущены")
-        else:
-            logger.info(
-                "[E-DISCLOSURE EVENTS] → GET https://www.e-disclosure.ru/api/events/page"
-                " | company_id=%s, рег.номер=%s, граничная дата=%s",
-                company_id, regnumber, date,
-            )
-            events = find_events_by_reg_number(
-                date=date,
-                company_id=company_id,
-                reg_number=regnumber,
-            )
-            logger.info(
-                "[E-DISCLOSURE EVENTS] Найдено событий с упоминанием рег.номера: %d",
-                len(events),
-            )
+        # Берём в рассмотрение только файлы с заголовком «РЕШЕНИЕ О ВЫПУСКЕ ЦЕННЫХ БУМАГ»; серию ищем только в разделе 1
+        series: Optional[str] = None
+        for md_name in md_filenames:
+            try:
+                md_path: Path = bond_data_dir / md_name
+                md_content: str = self._file_storage.read_text_file(md_path)
+                if not markdown_has_decision_header(md_content):
+                    logger.info("[SERIES] Файл %s: заголовок «РЕШЕНИЕ О ВЫПУСКЕ ЦЕННЫХ БУМАГ» не найден — пропуск", md_name)
+                    continue
+                series = extract_series_from_markdown(md_content)
+                if series is not None:
+                    logger.info("[SERIES] Серия извлечена из %s: %s", md_name, series)
+                    break
+            except OSError as exc:
+                logger.warning(
+                    "[PDF2MD] Не удалось прочитать Markdown-файл %s: %s", md_path, exc
+                )
+        if series is None:
+            logger.info("[SERIES] Серия не найдена (нет файла с заголовком и разделом 1 или паттерн «серии» не найден)")
 
-        # В events.json — полный текст и обработанный (для отладки); в LLM — только обработанный
+        # --- Шаг 4: поиск событий (только после шагов 2 и 3), отбор по secid/рег.номер/серия в 2.1+2.3 ---
+        logger.info(
+            "[E-DISCLOSURE EVENTS] → GET https://www.e-disclosure.ru/api/events/page"
+            " | company_id=%s, рег.номер=%s, граничная дата=%s",
+            company_id, regnumber, date,
+        )
+        all_events: List[Dict[str, Any]] = get_events_with_full_text(
+            date=date,
+            company_id=company_id,
+        )
+        events: List[Dict[str, Any]] = filter_events_by_secid_regnumber_series(
+            all_events, secid or "", regnumber or "", series
+        )
+        logger.info(
+            "[E-DISCLOSURE EVENTS] По условиям secid/рег.номер/серия отобрано событий: %d",
+            len(events),
+        )
+
+        # Выделение нужной текстовой части каждого события (удаление блоков по regex) перед сохранением
+        for e in events:
+            full: str = e.get("full_text", "")
+            e["text"] = clean_event_text(full)
+
+        # В events.json — полный текст и обработанный (с удалёнными частями по regex); в LLM — только обработанный
         events_file: Path = bond_data_dir / "events.json"
         self._file_storage.save_text_file(
             events_file,
@@ -476,6 +553,7 @@ class EdisclosureService:
             for e in events
         ]
         converted["events"] = events_for_llm
+        converted["use_file_upload"] = use_file_upload
 
         # --- Шаг 5: анализ через LLM (с повтором при 503 UNAVAILABLE) ---
         logger.info("[LLM] Передача данных на анализ (провайдер: %s)...", provider)
@@ -486,7 +564,11 @@ class EdisclosureService:
     # ------------------------------------------------------------------
 
     def update_all_floaters(
-        self, provider: str = "gemini", limit: Optional[int] = None
+        self,
+        provider: str = "gemini",
+        limit: Optional[int] = None,
+        use_file_upload: bool = False,
+        rating: Optional[str] = None,
     ) -> None:
         """Обрабатывает облигации вида «флоатер» (bond_kind=8), ещё не сохранённые.
 
@@ -499,12 +581,16 @@ class EdisclosureService:
         Args:
             provider: Имя LLM-провайдера.
             limit: Максимальное количество облигаций для обработки. None — все без данных.
+            use_file_upload: Если True — для Gemini/OpenAI подавать в модель оригинальные
+                файлы (PDF, Word) через Files API; иначе — только Markdown в промпте.
+            rating: Если указан — обрабатываются только флоатеры с данным рейтингом.
+                None — обрабатываются все флоатеры.
 
         Результаты записываются в БД (upsert — добавление или обновление полей).
         """
         fl_logger: logging.Logger = _get_floaters_pipeline_logger()
 
-        all_secids: List[str] = get_floater_secids()
+        all_secids: List[str] = get_floater_secids(rating=rating)
         total_all: int = len(all_secids)
 
         existing_bond_ids: Set[int] = self._float_params_repo.get_existing_bond_ids()
@@ -550,7 +636,9 @@ class EdisclosureService:
                 "[%d/%d] Обработка secid=%s", processed, total, secid
             )
             try:
-                success: bool = self._process_single_floater(secid, fl_logger, provider=provider)
+                success: bool = self._process_single_floater(
+                    secid, fl_logger, provider=provider, use_file_upload=use_file_upload
+                )
                 if success:
                     saved += 1
                     print(f"[ФЛОАТЕРЫ] {processed}/{total} — {secid}: данные сохранены", flush=True)
@@ -582,14 +670,28 @@ class EdisclosureService:
                     flush=True,
                 )
                 raise
+            except PdfConversionConnectionError as exc:
+                fl_logger.error(
+                    "[PDF2MD CONNECTION ERROR] Пайплайн остановлен, secid=%s: %s",
+                    secid, exc,
+                    exc_info=True,
+                )
+                logger.error(
+                    "[PDF2MD CONNECTION ERROR] Пайплайн остановлен, secid=%s: %s",
+                    secid, exc,
+                    exc_info=True,
+                )
+                print(
+                    f"[ФЛОАТЕРЫ] Остановка пайплайна: ошибка подключения к pdf2md — {exc}",
+                    flush=True,
+                )
+                raise
             except Exception as exc:
                 fl_logger.error(
                     "[ERROR] secid=%s: необработанная ошибка: %s", secid, exc, exc_info=True
                 )
                 not_found_secids.append(secid)
                 print(f"[ФЛОАТЕРЫ] {processed}/{total} — {secid}: ошибка ({exc})", flush=True)
-            finally:
-                self._cleanup_data_files()
 
         summary: str = (
             f"[FLOATERS PIPELINE DONE] "
@@ -834,16 +936,29 @@ class EdisclosureService:
         }
 
     def _process_single_floater(
-        self, secid: str, fl_logger: logging.Logger, provider: str = "gemini",
+        self,
+        secid: str,
+        fl_logger: logging.Logger,
+        provider: str = "gemini",
+        use_file_upload: bool = False,
     ) -> bool:
         """Выполняет полный пайплайн анализа для одной облигации-флоатера.
 
-        regnumber получается из БД по secid. Документы скачиваются из emission_documents
-        по ИНН и рег. номеру (ZIP по file_url, распаковка в папку по secid).
+        Порядок шагов пайплайна (строгий, не изменять):
+          1. company_id — получение ID компании из БД (emitent_edisclosure) или поиска по ИНН на e-disclosure.
+          2. Скачивание файлов с e-disclosure: документы берутся из emission_documents
+             по ИНН и рег. номеру (ZIP по file_url, распаковка в папку по secid).
+          3. Конвертация PDF → Markdown и сохранение: скачанные PDF передаются в сервис конвертации,
+             полученные Markdown-файлы сохраняются на диск.
+          4. Поиск событий: только после завершения шагов 2 и 3 запускается алгоритм
+             find_events_by_reg_number для поиска событий по регистрационному номеру облигации.
+          5. LLM-анализ: события и Markdown-документы передаются в языковую модель.
 
         Args:
             secid: Идентификатор ценной бумаги.
             fl_logger: Логгер пайплайна флоатеров.
+            provider: Провайдер LLM («gemini» или «openai»).
+            use_file_upload: Использовать ли File Upload API для передачи Markdown-файлов в LLM.
 
         Returns:
             True если данные успешно сохранены, False если данные не найдены.
@@ -910,8 +1025,8 @@ class EdisclosureService:
                 return False
             company_id = companies[0].get("id")
 
-        # --- Шаг 2: скачивание эмиссионных документов из БД (emission_documents) ---
-        print(f"  [{secid}] Шаг 2/5: скачивание документов e-disclosure (ИНН + рег.номер)", flush=True)
+        # --- Шаг 2: скачивание файлов с e-disclosure (emission_documents по ИНН и рег.номеру → ZIP → PDF) ---
+        print(f"  [{secid}] Шаг 2/5: скачивание файлов с e-disclosure (ИНН + рег.номер)", flush=True)
         doc_filenames_batch: List[str] = []
         if regnumber and regnumber.strip():
             try:
@@ -941,8 +1056,27 @@ class EdisclosureService:
                     "[NOT FOUND] secid=%s: ошибка скачивания документов: %s", secid, exc
                 )
 
-        # --- Шаг 3: конвертация PDF → Markdown ---
-        print(f"  [{secid}] Шаг 3/5: конвертация PDF → Markdown", flush=True)
+        if doc_filenames_batch and not self._all_extracted_files_are_convertible(
+            doc_filenames_batch
+        ):
+            _allowed: frozenset = frozenset({".pdf", ".docx", ".doc", ".rtf"})
+            non_convertible_batch: List[str] = [
+                f for f in doc_filenames_batch if Path(f).suffix.lower() not in _allowed
+            ]
+            fl_logger.info(
+                "[SKIP] secid=%s: в архиве есть файлы, которые не входят в список допустимых "
+                "(PDF, DOC, DOCX, RTF): %s — обработка пропущена, в БД не записываем",
+                secid, non_convertible_batch,
+            )
+            print(
+                f"  [{secid}] Пропуск: в архиве файлы, не входящие в список допустимых "
+                f"(PDF, DOC, DOCX, RTF) — {non_convertible_batch}",
+                flush=True,
+            )
+            return False
+
+        # --- Шаг 3: конвертация PDF → Markdown и сохранение (выполняется после полного скачивания, шаг 2) ---
+        print(f"  [{secid}] Шаг 3/5: конвертация PDF → Markdown и сохранение", flush=True)
         result_dict: Dict[str, Any] = {
             "companies": companies,
             "events": [],
@@ -957,22 +1091,53 @@ class EdisclosureService:
         for md_name in md_filenames_batch:
             print(f"[PDF2MD] Создан Markdown: {md_name}", flush=True)
 
-        # --- Шаг 4: поиск событий ---
+        # Берём в рассмотрение только файлы с заголовком «РЕШЕНИЕ О ВЫПУСКЕ ЦЕННЫХ БУМАГ»; серию ищем только в разделе 1
+        series: Optional[str] = None
+        for md_name in md_filenames_batch:
+            try:
+                md_path_batch: Path = bond_data_dir / md_name
+                md_content_batch: str = self._file_storage.read_text_file(md_path_batch)
+                if not markdown_has_decision_header(md_content_batch):
+                    print(f"  [{secid}] Файл {md_name!r}: заголовок «РЕШЕНИЕ О ВЫПУСКЕ ЦЕННЫХ БУМАГ» не найден — пропуск", flush=True)
+                    continue
+                series = extract_series_from_markdown(md_content_batch)
+                if series is not None:
+                    print(f"  [{secid}] Серия извлечена из {md_name!r}: {series!r}", flush=True)
+                    break
+            except OSError as exc:
+                fl_logger.warning(
+                    "[PDF2MD] secid=%s: не удалось прочитать Markdown-файл %s: %s",
+                    secid, md_path_batch, exc,
+                )
+        if series is None:
+            print(f"  [{secid}] Серия не найдена (нет файла с заголовком и разделом 1 или паттерн «серии» не найден)", flush=True)
+
+        # --- Шаг 4: поиск событий (только после шагов 2 и 3), отбор по secid/рег.номер/серия в 2.1+2.3 ---
         print(f"  [{secid}] Шаг 4/5: поиск событий по рег.номеру", flush=True)
         events: List[Dict[str, Any]] = []
-        if regnumber and regnumber.strip():
-            try:
-                events = find_events_by_reg_number(
-                    date=date_str,
-                    company_id=company_id,
-                    reg_number=regnumber,
-                )
-            except Exception as exc:
-                fl_logger.warning(
-                    "[NOT FOUND] secid=%s: ошибка поиска событий: %s", secid, exc
-                )
+        try:
+            all_events_batch: List[Dict[str, Any]] = get_events_with_full_text(
+                date=date_str,
+                company_id=company_id,
+            )
+            events = filter_events_by_secid_regnumber_series(
+                all_events_batch, secid or "", regnumber or "", series
+            )
+            print(
+                f"  [{secid}] По условиям secid/рег.номер/серия отобрано событий: {len(events)}",
+                flush=True,
+            )
+        except Exception as exc:
+            fl_logger.warning(
+                "[NOT FOUND] secid=%s: ошибка поиска событий: %s", secid, exc
+            )
 
-        # В events.json — полный текст и обработанный (для отладки); в LLM — только обработанный
+        # Выделение нужной текстовой части каждого события (удаление блоков по regex) перед сохранением
+        for e in events:
+            full_batch: str = e.get("full_text", "")
+            e["text"] = clean_event_text(full_batch)
+
+        # В events.json — полный текст и обработанный (с удалёнными частями по regex); в LLM — только обработанный
         events_file_batch: Path = bond_data_dir / "events.json"
         self._file_storage.save_text_file(
             events_file_batch,
@@ -995,6 +1160,7 @@ class EdisclosureService:
             for e in events
         ]
         converted["events"] = events_for_llm_batch
+        converted["use_file_upload"] = use_file_upload
 
         if not events and not doc_filenames_batch:
             fl_logger.warning(

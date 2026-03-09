@@ -11,7 +11,7 @@ import zipfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import quote, urljoin
+from urllib.parse import urljoin
 
 import requests
 
@@ -54,14 +54,8 @@ _EXCLUDED_EVENT_TITLE = (
 
 _FILES_PAGE_URL = "https://www.e-disclosure.ru/portal/files.aspx"
 
-_MOEX_DISCLOSURE_TREE_URL = "https://web.moex.com/moex-web-icdb-api/api/v1/bond-disclosure-tree/reporting"
-_MOEX_FILE_BASE_URL = "https://fs.moex.com/emidocs"
-
-_TARGET_DOC_TYPES = (
-    "Решение о выпуске (дополнительном выпуске) ценных бумаг",
-    "Документ, содержащий условия размещения ценных бумаг",
-    "Условия выпуска облигаций",
-)
+# Фраза-маркер, идентифицирующая документ «Решение о выпуске ценных бумаг»
+_BOND_DECISION_PHRASE: str = "РЕШЕНИЕ О ВЫПУСКЕ ЦЕННЫХ БУМАГ"
 
 # Карта визуально идентичных символов: Кириллица → Латиница.
 # Включены только пары с действительно совпадающим начертанием в обоих алфавитах.
@@ -72,6 +66,171 @@ _CHAR_MAP: Dict[str, str] = {
     "а": "a", "с": "c", "е": "e", "к": "k",
     "м": "m", "о": "o", "р": "p", "х": "x",
 }
+
+
+def extract_bond_decision_data(text: str) -> str:
+    """Извлекает структурированные данные из документа «Решение о выпуске ценных бумаг».
+
+    Обрезает хвост документа начиная с раздела 9 («Сведения о представителе
+    владельцев облигаций»), извлекает шапку (до «на основании решения») и
+    нумерованные разделы, исключая разделы с пометкой «Не применимо».
+
+    Args:
+        text: Полный текст markdown-документа.
+
+    Returns:
+        Строка с шапкой и отфильтрованными разделами, разделёнными пустой строкой.
+        Если шапка не найдена, возвращает только отфильтрованные разделы.
+    """
+    print(
+        f"  [BOND_DECISION] extract: входной текст {len(text)} символов",
+        flush=True,
+    )
+
+    clean_text: str = re.split(
+        r"9\.\s+Сведения о представителе владельцев",
+        text,
+        flags=re.IGNORECASE,
+    )[0]
+    print(
+        f"  [BOND_DECISION] extract: после обрезки раздела 9 — {len(clean_text)} символов",
+        flush=True,
+    )
+
+    # Шапка: от «РЕШЕНИЕ О ВЫПУСКЕ» до «на основании решения» (гибкие пробелы/переносы)
+    header_match: Optional[re.Match[str]] = re.search(
+        r"(РЕШЕНИЕ О ВЫПУСКЕ.*?)(?=\s*на\s+основании\s+решения)",
+        clean_text,
+        re.DOTALL | re.IGNORECASE,
+    )
+    if not header_match:
+        # Fallback: до первого нумерованного раздела (1., 2. и т.д.)
+        header_match = re.search(
+            r"(РЕШЕНИЕ О ВЫПУСКЕ.*?)(?=^\s*\d+\.)",
+            clean_text,
+            re.DOTALL | re.IGNORECASE | re.MULTILINE,
+        )
+    header: str = header_match.group(1).strip() if header_match else ""
+    print(
+        f"  [BOND_DECISION] extract: шапка найдена={bool(header_match)}, длина={len(header)}",
+        flush=True,
+    )
+
+    # Разделы: markdown-заголовки ## 1., ## 2., ## 4.1. и т.д. (формат PDF2MD)
+    items: List[str] = re.findall(
+        r"(^\s*##\s*\d+(?:\.\d+)*\.\s*(?:(?!Не применимо).)*?)(?=^\s*##\s*\d+(?:\.\d+)*\.|\Z)",
+        clean_text,
+        re.DOTALL | re.MULTILINE,
+    )
+    if not items:
+        # Fallback: нумерация без ## (1., 2., 5.4.)
+        items = re.findall(
+            r"(^\s*\d+(?:\.\d+)*\.\s*(?:(?!Не применимо).)*?)(?=^\s*\d+(?:\.\d+)*\.|\Z)",
+            clean_text,
+            re.DOTALL | re.MULTILINE,
+        )
+    if not items:
+        # Fallback: простой формат «1.» без подпунктов
+        items = re.findall(
+            r"(^\s*\d+\.\s*(?:(?!Не применимо).)*?)(?=^\s*\d+\.|\Z)",
+            clean_text,
+            re.DOTALL | re.MULTILINE,
+        )
+    filtered_items: List[str] = [i.strip() for i in items if i.strip()]
+    print(
+        f"  [BOND_DECISION] extract: найдено разделов={len(items)}, после фильтра={len(filtered_items)}",
+        flush=True,
+    )
+    if not items and header_match is not None:
+        # Разделы не найдены — показываем текст после шапки для отладки формата
+        after_header: str = clean_text[header_match.end() : header_match.end() + 4000]
+        snippet: str = after_header.replace("\n", "↵")
+        print(
+            f"  [BOND_DECISION] extract: текст после шапки (4000 символов): {snippet!r}",
+            flush=True,
+        )
+
+    parts: List[str] = []
+    if header:
+        parts.append(header)
+    parts.extend(filtered_items)
+
+    result: str = "\n\n".join(parts)
+    print(
+        f"  [BOND_DECISION] extract: итоговая длина={len(result)} символов",
+        flush=True,
+    )
+    if len(result) == 0:
+        snippet: str = clean_text[:800].replace("\n", "↵")
+        print(
+            f"  [BOND_DECISION] extract: образец текста (первые 800 символов): {snippet!r}",
+            flush=True,
+        )
+    return result
+
+
+def process_markdown_if_bond_decision(content: str) -> str:
+    """Проверяет наличие маркера решения о выпуске и применяет извлечение данных.
+
+    Если в тексте обнаружена фраза ``_BOND_DECISION_PHRASE`` (без учёта регистра),
+    возвращает результат :func:`extract_bond_decision_data`. Иначе — исходный текст.
+
+    Args:
+        content: Текст markdown-документа, полученного после конвертации PDF.
+
+    Returns:
+        Обработанный текст (если маркер найден) или исходный ``content``.
+    """
+    has_marker: bool = bool(re.search(_BOND_DECISION_PHRASE, content, re.IGNORECASE))
+    print(
+        f"  [BOND_DECISION] process: маркер «{_BOND_DECISION_PHRASE}» найден={has_marker}, вход={len(content)} символов",
+        flush=True,
+    )
+    if has_marker:
+        return extract_bond_decision_data(content)
+    return content
+
+
+def clean_markdown_after_pdf2md(content: str) -> str:
+    """Очищает сырой markdown, полученный от сервиса pdf2md, перед сохранением на диск.
+
+    Шаги выполняются строго по порядку:
+
+    1. Проверяет наличие заголовка «РЕШЕНИЕ О ВЫПУСКЕ ЦЕННЫХ БУМАГ» (без учёта регистра).
+    2. Если заголовок найден — удаляет весь текст от начала файла до этого заголовка
+       (сам заголовок сохраняется).
+    3. Если заголовок найден — удаляет блок «Утверждено решением» до (не включая) строки
+       «Вид, категория (тип), ценных бумаг»; вариант «(тип)» разрешает любое содержимое в скобках.
+    4. Удаляет все символы неразрывного пробела (U+00A0) вне зависимости от наличия заголовка.
+
+    Args:
+        content: Сырой текст markdown-документа.
+
+    Returns:
+        Очищенный текст.
+    """
+    has_header: bool = bool(re.search(_BOND_DECISION_PHRASE, content, re.IGNORECASE))
+
+    if has_header:
+        # Шаг 2: удалить текст до заголовка (сам заголовок оставить).
+        header_match: Optional[re.Match[str]] = re.search(
+            _BOND_DECISION_PHRASE, content, re.IGNORECASE
+        )
+        if header_match:
+            content = content[header_match.start():]
+
+        # Шаг 3: удалить блок от «Утверждено решением» до (не включая) «Вид, категория...».
+        content = re.sub(
+            r"Утверждено\s+решением.*?(?=Вид,\s*категория\s*\([^)]*\),?\s*ценных\s*бумаг)",
+            "",
+            content,
+            flags=re.DOTALL | re.IGNORECASE,
+        )
+
+    # Шаг 4: удалить неразрывные пробелы (U+00A0) — всегда.
+    content = content.replace("\u00a0", " ")
+
+    return content
 
 
 def _get_session_data() -> Tuple[requests.Session, str]:
@@ -258,17 +417,19 @@ def _extract_event_text(pseudo_guid: str, session: requests.Session) -> Optional
     return text
 
 
-def _clean_event_text(text: str) -> str:
+def clean_event_text(text: str) -> str:
     """Удаляет из текста события лишние блоки и маркеры для упрощения анализа LLM.
 
     Убирает пункт «1. Общие сведения» целиком, пункт «3. Подпись»,
     маркеры подпунктов (2.1., 2.2. и т.д.) в начале строк и заголовок «2. Содержание сообщения».
+    Используется после отбора событий по фильтрам — для выделения нужной текстовой части
+    перед сохранением в events.json (полный текст сохраняется отдельно, обработанный — в processed_text).
 
     Args:
         text: Исходный текст сообщения события.
 
     Returns:
-        Очищенный текст.
+        Очищенный текст (с удалёнными частями по регулярным выражениям).
     """
     # 1. Удаляем "Общие сведения" (пункт 1) целиком
     text = re.sub(
@@ -298,7 +459,7 @@ def _format_event_date(event_date_str: Optional[str]) -> Optional[str]:
         return None
 
 
-def _normalize_reg_number(reg_number: str) -> Tuple[str, str]:
+def normalize_reg_number(reg_number: str) -> Tuple[str, str]:
     """Создаёт две нормализованные копии регистрационного номера.
 
     На основе карты ``_CHAR_MAP`` формирует:
@@ -318,80 +479,28 @@ def _normalize_reg_number(reg_number: str) -> Tuple[str, str]:
     return reg_num_ru, reg_num_lat
 
 
-def _parse_reg_number_parts(reg_number: str) -> Optional[Tuple[str, str, str]]:
-    """Разбирает регистрационный номер на составные части.
-
-    Ожидаемая структура::
-
-        XXXX-<порядковый_номер>-<ХХХХ>-<Х>-<номер_программы>
-
-    Например: ``4B02-01-36245-A-001P``
-
-    - ``parts[0]`` — 4-символьный префикс (пропускается).
-    - ``parts[1]`` — порядковый номер выпуска (2 символа).
-    - ``parts[2]-parts[3]`` — код эмитента формата ``ХХХХ-Х``.
-    - ``parts[4]`` — номер программы выпуска (4 символа).
-
-    Args:
-        reg_number: Нормализованный регистрационный номер облигации.
-
-    Returns:
-        Кортеж ``(serial_num, emitent_code, program_num)`` или ``None``,
-        если номер не соответствует ожидаемой структуре.
-    """
-    parts = reg_number.split("-")
-    if len(parts) < 5:
-        return None
-
-    serial_num: str = parts[1]
-    emitent_code: str = f"{parts[2]}-{parts[3]}"
-    program_num: str = parts[4]
-    return serial_num, emitent_code, program_num
-
-
-def _event_text_matches_reg_number(
+def event_text_matches_reg_number(
     text: str,
     reg_num_ru: str,
     reg_num_lat: str,
-    parts_ru: Optional[Tuple[str, str, str]],
-    parts_lat: Optional[Tuple[str, str, str]],
 ) -> bool:
-    """Проверяет, содержит ли текст события регистрационный номер или его части.
+    """Проверяет, содержит ли текст события полный регистрационный номер.
 
-    Сначала выполняется полное совпадение (кириллическая и латинская копии),
-    затем частичное по парам ``<номер_программы>-<порядковый_номер>`` и
-    ``<порядковый_номер>-<код_эмитента>-<номер_программы>``.
+    Учитываются только полные совпадения (кириллическая и латинская нормализации).
 
     Args:
         text: Текст события.
         reg_num_ru: Регистрационный номер в кириллической нормализации.
         reg_num_lat: Регистрационный номер в латинской нормализации.
-        parts_ru: Разобранные части кириллической копии или ``None``.
-        parts_lat: Разобранные части латинской копии или ``None``.
 
     Returns:
-        ``True``, если совпадение найдено; иначе ``False``.
+        ``True``, если в тексте есть полный номер; иначе ``False``.
     """
-    if not reg_num_ru:
-        return False
-
     text_lower = text.lower()
-
-    if reg_num_ru.lower() in text_lower or reg_num_lat.lower() in text_lower:
-        return True
-
-    for parts in (parts_ru, parts_lat):
-        if parts is None:
-            continue
-        serial_num, emitent_code, program_num = parts
-        pattern1 = f"{program_num}-{serial_num}"
-        if pattern1.lower() in text_lower:
-            return True
-        pattern2 = f"{serial_num}-{emitent_code}-{program_num}"
-        if pattern2.lower() in text_lower:
-            return True
-
-    return False
+    return (
+        (reg_num_ru and reg_num_ru.lower() in text_lower)
+        or (reg_num_lat and reg_num_lat.lower() in text_lower)
+    )
 
 
 def _find_all_events_sorted_by_date(
@@ -450,7 +559,7 @@ def find_events_by_reg_number(
     Returns:
         Список словарей с полями ``event_name``, ``event_date`` (``None`` при ошибке),
         ``full_text`` (исходный текст события), ``text`` (текст после обработки регулярными
-        выражениями — _clean_event_text). В LLM передавать только ``text``.
+        выражениями — clean_event_text). В LLM передавать только ``text``.
         Пустой список, если ``reg_number`` пустой или совпадений не найдено.
     """
     if not reg_number.strip():
@@ -474,9 +583,7 @@ def find_events_by_reg_number(
 
     sorted_events = _find_all_events_sorted_by_date(events, date_obj)
 
-    reg_num_ru, reg_num_lat = _normalize_reg_number(reg_number)
-    parts_ru: Optional[Tuple[str, str, str]] = _parse_reg_number_parts(reg_num_ru)
-    parts_lat: Optional[Tuple[str, str, str]] = _parse_reg_number_parts(reg_num_lat)
+    reg_num_ru, reg_num_lat = normalize_reg_number(reg_number)
 
     result: List[Dict[str, Optional[str]]] = []
     for event in sorted_events:
@@ -486,9 +593,9 @@ def find_events_by_reg_number(
         text = _extract_event_text(pseudo_guid, session)
         if not text:
             continue
-        if _event_text_matches_reg_number(text, reg_num_ru, reg_num_lat, parts_ru, parts_lat):
+        if event_text_matches_reg_number(text, reg_num_ru, reg_num_lat):
             full_text: str = text
-            processed_text: str = _clean_event_text(text)
+            processed_text: str = clean_event_text(text)
             event_date = _format_event_date(event.get("eventDate"))
             event_name = event.get("eventName") or ""
             event_url = f"{_EVENT_PAGE_URL}?EventId={pseudo_guid}"
@@ -503,184 +610,71 @@ def find_events_by_reg_number(
     return result
 
 
-def fetch_moex_disclosure_docs(
-    emitent_id: int,
-    reg_number: str,
-) -> List[Tuple[str, bytes]]:
-    """Навигирует по дереву раскрытия MOEX и скачивает PDF-документы по выпуску облигации.
+def get_events_with_full_text(
+    date: str,
+    company_id: int,
+) -> List[Dict[str, Any]]:
+    """Загружает все события компании за год и возвращает те, у которых есть непустой текст.
 
-    Выполняет трёхуровневую навигацию по MOEX bond disclosure tree API:
-    программа → выпуск → документы. Скачивает PDF-файлы целевых типов документов
-    и возвращает их содержимое вместе с именами файлов.
-
-    Args:
-        emitent_id: MOEX ID эмитента (moex_id из таблицы emitents).
-        reg_number: Регистрационный номер облигации.
-
-    Returns:
-        Список кортежей ``(filename, content)`` для каждого скачанного документа.
-        Пустой список, если ничего не найдено.
-    """
-    reg_num_ru, reg_num_lat = _normalize_reg_number(reg_number)
-
-    parts_ru = _parse_reg_number_parts(reg_num_ru)
-    parts_lat = _parse_reg_number_parts(reg_num_lat)
-
-    search_patterns: List[Tuple[str, str, str]] = []
-    for parts, reg_num in ((parts_ru, reg_num_ru), (parts_lat, reg_num_lat)):
-        if parts is not None:
-            serial_num, emitent_code, program_num = parts
-            program_pattern: str = f"{emitent_code}-{program_num}"
-            search_patterns.append((program_pattern, reg_num, serial_num))
-
-    if not search_patterns:
-        return []
-
-    moex_headers: Dict[str, str] = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
-        "Accept": "application/json",
-    }
-
-    program_tree_ids = _find_program_tree_ids(emitent_id, search_patterns, moex_headers)
-    if not program_tree_ids:
-        print("  [MOEX] Программа выпуска в дереве раскрытия не найдена", flush=True)
-        return []
-
-    target_links: List[str] = []
-    for program_tree_id in program_tree_ids:
-        issue_tree_id = _find_issue_tree_id(emitent_id, program_tree_id, search_patterns, moex_headers)
-        if issue_tree_id is None:
-            continue
-        links = _find_doc_links(emitent_id, issue_tree_id, moex_headers)
-        for link in links:
-            if link not in target_links:
-                target_links.append(link)
-
-    if not target_links:
-        print("  [MOEX] Документы для скачивания не найдены (дерево раскрытия)", flush=True)
-        return []
-
-    print(f"  [MOEX] Найдено документов для скачивания: {len(target_links)}", flush=True)
-    for i, link in enumerate(target_links, start=1):
-        full_url = f"{_MOEX_FILE_BASE_URL}/{link}"
-        print(f"  [MOEX] Ссылка {i}: GET {full_url}", flush=True)
-    return _download_docs(target_links, moex_headers)
-
-
-def _find_program_tree_ids(
-    emitent_id: int,
-    search_patterns: List[Tuple[str, str, str]],
-    headers: Dict[str, str],
-) -> List[str]:
-    """Ищет все treeId программ выпуска в дереве раскрытия MOEX, совпадающие с паттернами.
+    Не фильтрует по регистрационному номеру — возвращает все события с непустым текстом,
+    отсортированные от новых к старым (строго раньше ``date``).
 
     Args:
-        emitent_id: MOEX ID эмитента.
-        search_patterns: Список троек ``(program_pattern, full_reg_num, serial_num)``.
-        headers: HTTP-заголовки для запроса.
+        date: Граничная дата в формате YYYY-MM-DD. Включаются только события строго раньше неё.
+        company_id: ID компании на e-disclosure.ru.
 
     Returns:
-        Список treeId всех программ, у которых treeDisplayAdditional совпал с паттерном.
+        Список словарей с полями ``event_name``, ``event_date``, ``full_text``, ``text``.
+        Пустой список, если дата невалидна или событий с текстом не найдено.
     """
-    url = f"{_MOEX_DISCLOSURE_TREE_URL}/{emitent_id}"
-    print(f"  [API] GET {url}", flush=True)
     try:
-        response = requests.get(url, headers=headers, timeout=_TIMEOUT)
-        response.raise_for_status()
-        data: Dict[str, Any] = response.json()
-    except requests.RequestException:
+        date_obj = datetime.strptime(date, "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        print(f"  [EVENTS ALL] Невалидная дата: {date!r} — возвращаем []", flush=True)
         return []
 
-    nodes: List[Dict[str, Any]] = data.get("nodes") or []
-    result: List[str] = []
-    seen: set[str] = set()
-    for node in nodes:
-        tree_id = node.get("treeId")
-        if tree_id is None or tree_id in seen:
+    year = date_obj.year
+    print(
+        f"  [EVENTS ALL] Загрузка всех событий: company_id={company_id}, year={year}",
+        flush=True,
+    )
+
+    session, _ = _get_session()
+    params = {"companyId": company_id, "year": year}
+    events_full_url = f"{_EVENTS_URL}?companyId={company_id}&year={year}"
+    print(f"  [API] GET {events_full_url}", flush=True)
+    response = session.get(_EVENTS_URL, params=params, timeout=_TIMEOUT)
+    if response.status_code == 403:
+        _clear_session_cache()
+        session, _ = _get_session()
+        response = session.get(_EVENTS_URL, params=params, timeout=_TIMEOUT)
+    response.raise_for_status()
+    events = response.json()
+
+    sorted_events = _find_all_events_sorted_by_date(events, date_obj)
+    print(f"  [EVENTS ALL] Событий после фильтра: {len(sorted_events)}", flush=True)
+
+    result: List[Dict[str, Any]] = []
+    for event in sorted_events:
+        pseudo_guid = event.get("pseudoGUID")
+        if not pseudo_guid:
             continue
-        display: str = (node.get("treeDisplayAdditional") or "").lower()
-        for program_pattern, _, _ in search_patterns:
-            if program_pattern.lower() in display:
-                result.append(tree_id)
-                seen.add(tree_id)
-                break
+        text = _extract_event_text(pseudo_guid, session)
+        if not text:
+            continue
+        full_text: str = text
+        processed_text: str = clean_event_text(text)
+        event_date = _format_event_date(event.get("eventDate"))
+        event_name: str = event.get("eventName") or ""
+        result.append({
+            "event_name": event_name,
+            "event_date": event_date,
+            "full_text": full_text,
+            "text": processed_text,
+        })
+
+    print(f"  [EVENTS ALL] Событий с непустым текстом: {len(result)}", flush=True)
     return result
-
-
-def _find_issue_tree_id(
-    emitent_id: int,
-    program_tree_id: str,
-    search_patterns: List[Tuple[str, str, str]],
-    headers: Dict[str, str],
-) -> Optional[str]:
-    """Ищет treeId конкретного выпуска облигации внутри программы.
-
-    Выпуск считается найденным, если в treeDisplayAdditional выполняется
-    хотя бы одно условие: полный рег. номер или паттерн
-    «порядковый_номер-код_эмитента-номер_программы».
-
-    Args:
-        emitent_id: MOEX ID эмитента.
-        program_tree_id: treeId программы выпуска.
-        search_patterns: Список троек ``(program_pattern, full_reg_num, serial_num)``.
-        headers: HTTP-заголовки для запроса.
-
-    Returns:
-        treeId выпуска или ``None``, если совпадение не найдено.
-    """
-    url = f"{_MOEX_DISCLOSURE_TREE_URL}/{emitent_id}/{program_tree_id}"
-    print(f"  [API] GET {url}", flush=True)
-    try:
-        response = requests.get(url, headers=headers, timeout=_TIMEOUT)
-        response.raise_for_status()
-        data: Dict[str, Any] = response.json()
-    except requests.RequestException:
-        return None
-
-    nodes: List[Dict[str, Any]] = data.get("nodes") or []
-    for node in nodes:
-        display: str = (node.get("treeDisplayAdditional") or "").lower()
-        for program_pattern, full_reg_num, serial_num in search_patterns:
-            if full_reg_num.lower() in display:
-                return node.get("treeId")
-            issue_pattern: str = f"{serial_num}-{program_pattern}"
-            if issue_pattern.lower() in display:
-                return node.get("treeId")
-    return None
-
-
-def _find_doc_links(
-    emitent_id: int,
-    issue_tree_id: str,
-    headers: Dict[str, str],
-) -> List[str]:
-    """Извлекает ссылки на целевые документы из дерева раскрытия.
-
-    Args:
-        emitent_id: MOEX ID эмитента.
-        issue_tree_id: treeId выпуска облигации.
-        headers: HTTP-заголовки для запроса.
-
-    Returns:
-        Список значений ``moexWebsiteLink`` для целевых типов документов.
-    """
-    url = f"{_MOEX_DISCLOSURE_TREE_URL}/{emitent_id}/{issue_tree_id}"
-    print(f"  [API] GET {url}", flush=True)
-    try:
-        response = requests.get(url, headers=headers, timeout=_TIMEOUT)
-        response.raise_for_status()
-        data: Dict[str, Any] = response.json()
-    except requests.RequestException:
-        return []
-
-    docs: List[Dict[str, Any]] = data.get("docs") or []
-    links: List[str] = []
-    for doc in docs:
-        doc_type: str = doc.get("documentType") or ""
-        link: Optional[str] = doc.get("moexWebsiteLink")
-        if doc_type in _TARGET_DOC_TYPES and link:
-            links.append(link)
-    return links
 
 
 def fetch_emission_documents_page(edisclosure_id: int) -> str:
@@ -789,38 +783,3 @@ def extract_zip_to_dir(content: bytes, extract_dir: Path) -> List[str]:
     except zipfile.BadZipFile as e:
         print(f"  [ZIP] Невалидный архив: {e}", flush=True)
     return result
-
-
-def _download_docs(
-    moex_links: List[str],
-    headers: Dict[str, str],
-) -> List[Tuple[str, bytes]]:
-    """Скачивает PDF-документы по ссылкам MOEX.
-
-    Args:
-        moex_links: Список значений ``moexWebsiteLink``.
-        headers: HTTP-заголовки для запроса.
-
-    Returns:
-        Список кортежей ``(filename, content)`` для успешно скачанных файлов.
-    """
-    download_headers: Dict[str, str] = {
-        "User-Agent": headers.get("User-Agent", ""),
-        "Accept": "*/*",
-    }
-    results: List[Tuple[str, bytes]] = []
-    for idx, moex_link in enumerate(moex_links, start=1):
-        filename: str = moex_link.split("/")[-1]
-        encoded_link: str = quote(moex_link, safe="/")
-        file_url: str = f"{_MOEX_FILE_BASE_URL}/{encoded_link}"
-        print(f"  [MOEX PDF] Запрос {idx}/{len(moex_links)}: GET {file_url}", flush=True)
-        print(f"  [файл] {filename} → {file_url}", flush=True)
-        try:
-            response = requests.get(file_url, headers=download_headers, timeout=_TIMEOUT)
-            response.raise_for_status()
-            results.append((filename, response.content))
-            print(f"  [файл] скачан: {filename} ({len(response.content)} байт)", flush=True)
-        except requests.RequestException as e:
-            print(f"  [файл] ошибка {filename}: {e}", flush=True)
-            continue
-    return results

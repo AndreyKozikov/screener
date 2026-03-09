@@ -18,7 +18,11 @@ async def get_company_accrued_income(
     secid: str = Query(..., description="Идентификатор ценной бумаги (SECID)"),
     provider: str = Query(
         "gemini",
-        description="AI провайдер: gemini (Flash Lite), gemini-flash (2.5 Flash), gemini-3-flash (3 Flash), openai-gpt-5.1 (OpenAI GPT-5.1), openrouter или local",
+        description="AI провайдер: gemini (2.5 Flash Lite), gemini-flash (2.5 Flash), gemini-2.5-pro, gemini-2-flash, gemini-3-flash, gemini-3.1-pro, openai-gpt-5.1, openrouter или local",
+    ),
+    use_file_upload: bool = Query(
+        False,
+        description="Если True — в LLM (Gemini/OpenAI) подавать оригинальные файлы (PDF, Word) через Files API; по умолчанию — только текст Markdown в промпте.",
     ),
 ) -> Dict[str, str]:
     """Получает и сохраняет параметры флоатера по SECID.
@@ -35,7 +39,9 @@ async def get_company_accrued_income(
     """
     try:
         service = get_edisclosure_service()
-        result: Dict[str, str] = service.get_accrued_income_by_secid(secid, provider=provider)
+        result: Dict[str, str] = service.get_accrued_income_by_secid(
+            secid, provider=provider, use_file_upload=use_file_upload
+        )
         if result.get("status") == "error":
             raise HTTPException(
                 status_code=422,
@@ -73,11 +79,19 @@ async def get_company_accrued_income(
 async def update_floaters(
     provider: str = Query(
         "gemini",
-        description="AI провайдер: gemini (Flash Lite), gemini-flash (2.5 Flash), gemini-3-flash (3 Flash), openai-gpt-5.1 (OpenAI GPT-5.1), openrouter или local",
+        description="AI провайдер: gemini (2.5 Flash Lite), gemini-flash (2.5 Flash), gemini-2.5-pro, gemini-2-flash, gemini-3-flash, gemini-3.1-pro, openai-gpt-5.1, openrouter или local",
     ),
     limit: Optional[int] = Query(
         None,
         description="Количество облигаций для обновления. По умолчанию — все, у которых нет данных.",
+    ),
+    use_file_upload: bool = Query(
+        False,
+        description="Если True — в LLM (Gemini/OpenAI) подавать оригинальные файлы (PDF, Word) через Files API; по умолчанию — только текст Markdown в промпте.",
+    ),
+    rating: Optional[str] = Query(
+        None,
+        description="Фильтр по рейтингу облигаций (например AAA, AA+, BBB). Если не задан — обрабатываются все флоатеры.",
     ),
 ) -> Dict[str, str]:
     """Запускает пакетное обновление данных по всем флоатерам (bond_kind=8).
@@ -87,7 +101,9 @@ async def update_floaters(
     """
     try:
         service = get_edisclosure_service()
-        service.update_all_floaters(provider=provider, limit=limit)
+        service.update_all_floaters(
+            provider=provider, limit=limit, use_file_upload=use_file_upload, rating=rating
+        )
         return {"status": "ok"}
     except GeminiQuotaExhaustedError as exc:
         raise HTTPException(

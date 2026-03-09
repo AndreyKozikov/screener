@@ -197,7 +197,10 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                     >
                       <MenuItem value="gemini">Google Gemini 2.5 Flash Lite</MenuItem>
                       <MenuItem value="gemini-flash">Google Gemini 2.5 Flash</MenuItem>
+                      <MenuItem value="gemini-2.5-pro">Google Gemini 2.5 Pro</MenuItem>
+                      <MenuItem value="gemini-2-flash">Google Gemini 2 Flash</MenuItem>
                       <MenuItem value="gemini-3-flash">Google Gemini 3 Flash</MenuItem>
+                      <MenuItem value="gemini-3.1-pro">Google Gemini 3.1 Pro</MenuItem>
                       <MenuItem value="openai-gpt-5.1">OpenAI GPT-5.1</MenuItem>
                       <MenuItem value="openrouter">OpenRouter: Gemini 2.5 Flash Lite</MenuItem>
                       <MenuItem value="local">Локальная модель (Qwen3-4B)</MenuItem>

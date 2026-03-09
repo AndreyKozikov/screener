@@ -373,11 +373,14 @@ def get_bond_id_by_secid(secid: str, db_path: Optional[Path] = None) -> Optional
     return repo.get_bond_id_by_secid(secid)
 
 
-def get_floater_secids(db_path: Optional[Path] = None) -> List[str]:
+def get_floater_secids(db_path: Optional[Path] = None, rating: Optional[str] = None) -> List[str]:
     """Возвращает список SECID всех флоатеров (bond_kind=8) из БД.
 
     Args:
         db_path: Путь к БД. Если None — путь по умолчанию из config.
+        rating: Если указан — возвращаются только флоатеры с данным рейтингом.
+            Значение нормализуется через standardize_rating перед передачей в репозиторий.
+            None — все флоатеры.
 
     Returns:
         Список SECID флоатеров.
@@ -385,7 +388,10 @@ def get_floater_secids(db_path: Optional[Path] = None) -> List[str]:
     from config.paths import DB_PATH
     path = db_path or DB_PATH
     repo = BondsRepository(db_path=path)
-    return repo.get_floater_secids()
+    normalized_rating: Optional[str] = None
+    if rating is not None and rating.strip():
+        normalized_rating = standardize_rating(rating.strip()) or rating.strip()
+    return repo.get_floater_secids(rating=normalized_rating)
 
 
 def get_secids_without_emitent(db_path: Optional[Path] = None) -> List[str]:
