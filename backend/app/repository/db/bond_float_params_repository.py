@@ -7,7 +7,7 @@
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 
 from sqlmodel import Session, create_engine, select
 
@@ -213,6 +213,26 @@ class BondFloatParamsRepository:
                 "Ошибка при получении существующих bond_id: %s", e, exc_info=True
             )
             return set()
+
+    def get_bond_ids_with_find(self) -> List[int]:
+        """Возвращает список bond_id записей с is_find != 0.
+
+        Returns:
+            Список идентификаторов облигаций, для которых найдены параметры
+            флоатера. Пустой список при ошибке.
+        """
+        try:
+            with Session(self._engine) as session:
+                stmt = select(BondFloatParams.bond_id).where(
+                    BondFloatParams.is_find != 0
+                )
+                rows = session.exec(stmt).all()
+                return [int(r) for r in rows]
+        except Exception as e:
+            self.logger.error(
+                "Ошибка при получении bond_ids с is_find != 0: %s", e, exc_info=True
+            )
+            return []
 
     def get_by_bond_id(self, bond_id: int) -> Optional[BondFloatParams]:
         """Возвращает параметры флоатера по bond_id.

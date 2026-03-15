@@ -1,5 +1,6 @@
 """DTO (Pydantic) для взаимодействия с фронтендом и валидации API."""
 
+from app.models.schemasDTO.bond_float_params_dto import BondFloatParamsDTO
 from app.models.schemasDTO.bond_list_dto import BondDetail, BondListItem
 from app.models.schemasDTO.bonds_dto import BondDetailDTO, BondScreenerDTO, round_float_for_api
 from app.models.schemasDTO.coupons import (
@@ -29,6 +30,7 @@ from app.models.schemasDTO.yield_ruonia_chart_dto import (
 )
 
 __all__ = [
+    "BondFloatParamsDTO",
     "BondDetail",
     "BondDetailDTO",
     "BondListItem",

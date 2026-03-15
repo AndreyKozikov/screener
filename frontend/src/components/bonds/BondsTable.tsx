@@ -18,7 +18,7 @@ import { useBondsStore } from '../../stores/bondsStore';
 import { useFiltersStore } from '../../stores/filtersStore';
 import { useUiStore } from '../../stores/uiStore';
 import { usePortfolioStore } from '../../stores/portfolioStore';
-import { fetchBonds } from '../../api/bonds';
+import { fetchBonds, fetchFloaterSecids, fetchFloatParamsBySecid } from '../../api/bonds';
 import { fetchDescriptions } from '../../api/metadata';
 import type { DescriptionsResponse } from '../../api/metadata';
 import { 
@@ -30,10 +30,12 @@ import {
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { ErrorMessage } from '../common/ErrorMessage';
 import type { BondListItem } from '../../types/bond';
+import type { BondFloatParamsDTO } from '../../types/bondFloatParams';
 import AddToPortfolioRenderer from './AddToPortfolioRenderer';
 import AddToComparisonRenderer from './AddToComparisonRenderer';
 import { RatingDisplay } from './RatingDisplay';
 import { SearchFilter } from '../filters/AllFilters';
+import { FloaterCardDialog } from './FloaterCardDialog';
 
 type FieldDescriptionMap = Record<string, string>;
 
@@ -209,6 +211,9 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
   const [headerHeight, setHeaderHeight] = useState<number | undefined>(undefined);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isClosed, setIsClosed] = useState(false);
+  const [floaterSecids, setFloaterSecids] = useState<Set<string>>(new Set());
+  const [floaterDialogOpen, setFloaterDialogOpen] = useState(false);
+  const [floaterDialogData, setFloaterDialogData] = useState<BondFloatParamsDTO | null>(null);
 
   // Load field descriptions
   useEffect(() => {
@@ -231,6 +236,28 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
     };
 
     void loadMetadata();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
+  // Load floater secids once on mount for floater highlighting
+  useEffect(() => {
+    let isCancelled = false;
+
+    const loadFloaterSecids = async () => {
+      try {
+        const secids = await fetchFloaterSecids();
+        if (!isCancelled) {
+          setFloaterSecids(new Set(secids));
+        }
+      } catch (err: unknown) {
+        console.error('Failed to load floater secids:', err);
+      }
+    };
+
+    void loadFloaterSecids();
 
     return () => {
       isCancelled = true;
@@ -323,6 +350,25 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
 
     return undefined;
   }, [fieldDescriptions]);
+
+  // Handle floater name click — fetch params and open dialog
+  const handleFloaterNameClick = useCallback(async (secid: string) => {
+    setFloaterDialogOpen(true);
+    setFloaterDialogData(null);
+    try {
+      const data = await fetchFloatParamsBySecid(secid);
+      setFloaterDialogData(data);
+    } catch (err: unknown) {
+      console.error('Failed to load floater params:', err);
+      setFloaterDialogOpen(false);
+    }
+  }, []);
+
+  // Handle floater dialog close
+  const handleCloseFloaterDialog = useCallback(() => {
+    setFloaterDialogOpen(false);
+    setFloaterDialogData(null);
+  }, []);
 
   // Custom header component with Material-UI Tooltip
   const CustomHeaderWithTooltip = React.memo((params: IHeaderParams) => {
@@ -610,6 +656,7 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
   // Column definitions
   const columnDefs: ColDef[] = useMemo(() => {
     // Custom cell renderer for SHORTNAME with PUT/CALL/AMORT superscripts
+    // Floater names are rendered as clickable links
     const ShortNameRenderer = (params: ICellRendererParams<BondListItem>) => {
       const bond = params.data;
       if (!bond) return null;
@@ -617,6 +664,27 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
       const hasCall = bond.CALLOPTIONDATE != null && bond.CALLOPTIONDATE !== '';
       const hasPut = bond.PUTOPTIONDATE != null && bond.PUTOPTIONDATE !== '';
       const hasAmort = bond.BONDTYPE43 === 'Амортизируемые облигации';
+      const isFloater = floaterSecids.has(bond.SECID);
+
+      const nameNode = isFloater ? (
+        <Box
+          component="span"
+          onClick={(e: React.MouseEvent) => {
+            e.stopPropagation();
+            void handleFloaterNameClick(bond.SECID);
+          }}
+          sx={{
+            cursor: 'pointer',
+            color: 'primary.main',
+            textDecoration: 'none',
+            '&:hover': { textDecoration: 'underline' },
+          }}
+        >
+          {bond.SHORTNAME}
+        </Box>
+      ) : (
+        <span>{bond.SHORTNAME}</span>
+      );
 
       return (
         <Box
@@ -627,7 +695,7 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
             gap: 0,
           }}
         >
-          <span>{bond.SHORTNAME}</span>
+          {nameNode}
           {hasCall && (
             <Box
               component="span"
@@ -874,7 +942,7 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
       suppressSizeToFit: true, // Prevent auto-sizing to avoid layout shifts
     },
     ];
-  }, [getFieldDescription]);
+  }, [getFieldDescription, floaterSecids, handleFloaterNameClick]);
 
   // Default column properties
   const defaultColDef: ColDef = useMemo(() => ({
@@ -1546,6 +1614,11 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
         </Box>
         </Box>
       </CardContent>
+      <FloaterCardDialog
+        open={floaterDialogOpen}
+        onClose={handleCloseFloaterDialog}
+        data={floaterDialogData}
+      />
     </Card>
   );
 };

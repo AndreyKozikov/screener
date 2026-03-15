@@ -1,6 +1,7 @@
 import { apiClient } from './client';
 import type { BondsListResponse } from '../types/api';
 import type { BondDetail } from '../types/bond';
+import type { BondFloatParamsDTO } from '../types/bondFloatParams';
 import type { BondFilters } from '../types/filters';
 import type { CouponsListResponse, MultipleCouponsResponse } from '../types/coupon';
 
@@ -224,6 +225,24 @@ export const fetchBondCoupons = async (secid: string, forceRefresh: boolean = fa
  * @param forceRefresh If true, force refresh from MOEX API (only for single bond requests)
  * @returns Map of secid to CouponsListResponse for easy lookup
  */
+/**
+ * Fetch float params for a single bond by SECID.
+ * GET /bonds/{secid}/float-params
+ */
+export const fetchFloatParamsBySecid = async (secid: string): Promise<BondFloatParamsDTO> => {
+  const response = await apiClient.get<BondFloatParamsDTO>(`/bonds/${secid}/float-params`);
+  return response.data;
+};
+
+/**
+ * Fetch all SECIDs that have floater parameters (is_find != 0).
+ * GET /bonds/float-params/secids
+ */
+export const fetchFloaterSecids = async (): Promise<string[]> => {
+  const response = await apiClient.get<string[]>('/bonds/float-params/secids');
+  return response.data;
+};
+
 export const fetchBondsCoupons = async (
   secids: string[],
   forceRefresh: boolean = false

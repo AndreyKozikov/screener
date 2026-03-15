@@ -952,6 +952,34 @@ class BondsRepository:
             self.logger.error("Ошибка при get_bond_id_by_secid(%s): %s", secid, e, exc_info=True)
             return None
 
+    def get_secids_by_ids(self, bond_ids: List[int]) -> List[str]:
+        """Возвращает список SECID для указанных bond_id.
+
+        Args:
+            bond_ids: Список первичных ключей из таблицы bonds.
+
+        Returns:
+            Список SECID (непустых). Пустой список при ошибке или пустом вводе.
+        """
+        if not bond_ids:
+            return []
+        stmt = select(Bond.secid).where(
+            Bond.id.in_(bond_ids),
+            or_(
+                Bond.boardid.is_(None),
+                func.upper(func.trim(Bond.boardid)) != "PACT",
+            ),
+        )
+        try:
+            with Session(self._engine) as session:
+                rows = session.exec(stmt).all()
+                return [str(r).strip() for r in rows if r and str(r).strip()]
+        except Exception as e:
+            self.logger.error(
+                "Ошибка при get_secids_by_ids: %s", e, exc_info=True
+            )
+            return []
+
     def get_all_secids(self) -> List[str]:
         """Возвращает отсортированный список уникальных SECID из таблицы bonds.
 

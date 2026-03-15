@@ -9,6 +9,10 @@ from typing import Any, Optional
 from pydantic import BaseModel, field_validator
 
 
+# Значение по умолчанию для обязательных строковых полей, если LLM вернул None.
+DEFAULT_ISSUER_NAME_SHORT: str = "Не указано"
+
+
 class GeminiIssuerDTO(BaseModel):
     """Данные эмитента, извлечённые из документации.
 
@@ -21,6 +25,20 @@ class GeminiIssuerDTO(BaseModel):
     name_short: str
     inn: Optional[str] = None
     rating_ru: Optional[str] = None
+
+    @field_validator("name_short", mode="before")
+    @classmethod
+    def coerce_name_short_to_str(cls, value: Any) -> str:
+        """Подставляет строку по умолчанию, если LLM вернул None для name_short.
+
+        Поле name_short обязательно (str). При отсутствии значения валидация
+        не падает — подставляется DEFAULT_ISSUER_NAME_SHORT.
+        """
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return DEFAULT_ISSUER_NAME_SHORT
+        if isinstance(value, str):
+            return value
+        return str(value)
 
 
 class GeminiInstrumentDTO(BaseModel):

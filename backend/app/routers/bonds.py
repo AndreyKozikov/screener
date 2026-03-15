@@ -7,7 +7,7 @@
 
 import asyncio
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Optional
 from datetime import date
 
@@ -20,6 +20,8 @@ from app.models import (
     CouponsListResponse,
     MultipleCouponsResponse,
 )
+from app.models.schemasDTO.bond_float_params_dto import BondFloatParamsDTO
+from app.services.bond_float_params_service import BondFloatParamsService
 from app.services.bonds_service import (
     get_bond_detail as get_bond_detail_from_db,
     get_bonds_list,
@@ -30,6 +32,7 @@ from app.services.bond_ruonia_chart_service import get_yield_ruonia_chart_data
 from app.services.data_loader import get_data_loader
 from app.services.moex_client import MoexClient
 from app.repository.db.bonds_repository import BondsRepository
+from app.repository.db.bond_float_params_repository import BondFloatParamsRepository
 from app.repository.db.db_coupon import DBCoupon
 from config.paths import DB_PATH
 from config.settings import settings
@@ -37,6 +40,13 @@ from app.utils.logger import get_data_update_logger
 
 router = APIRouter(prefix="/api/bonds", tags=["bonds"])
 """Роутер FastAPI для обработки запросов к API облигаций."""
+
+
+def get_bond_float_params_service() -> BondFloatParamsService:
+    """Фабрика зависимости для BondFloatParamsService."""
+    bonds_repo = BondsRepository(db_path=DB_PATH)
+    float_repo = BondFloatParamsRepository(db_path=DB_PATH)
+    return BondFloatParamsService(bonds_repo=bonds_repo, float_repo=float_repo)
 
 
 
@@ -175,6 +185,21 @@ async def refresh_bonds_endpoint():
         ) from exc
 
 
+@router.get("/float-params/secids", response_model=List[str])
+async def get_floater_secids_from_params(
+    service: BondFloatParamsService = Depends(get_bond_float_params_service),
+):
+    """Возвращает список SECID облигаций, для которых найдены параметры флоатера.
+
+    Фильтрует записи bond_float_params по условию is_find != 0 и маппит
+    bond_id в SECID.
+
+    Returns:
+        Список SECID облигаций с найденными параметрами флоатера.
+    """
+    return await asyncio.to_thread(service.get_floater_secids_from_params)
+
+
 @router.get("/{secid}/yield-ruonia-chart", response_model=BondYieldRuoniaChartResponse)
 async def get_bond_yield_ruonia_chart(secid: str):
     """Возвращает нормализованные данные для графика сравнения доходности облигации и RUONIA.
@@ -190,6 +215,32 @@ async def get_bond_yield_ruonia_chart(secid: str):
     """
     result = await asyncio.to_thread(get_yield_ruonia_chart_data, secid)
     return result
+
+
+@router.get("/{secid}/float-params", response_model=BondFloatParamsDTO)
+async def get_bond_float_params(
+    secid: str,
+    service: BondFloatParamsService = Depends(get_bond_float_params_service),
+):
+    """Возвращает параметры плавающей ставки облигации по SECID.
+
+    Args:
+        secid: Идентификатор ценной бумаги (SECID).
+
+    Returns:
+        BondFloatParamsDTO с параметрами флоатера и данными облигации.
+
+    Raises:
+        HTTPException: Если облигация не найдена, параметры флоатера отсутствуют
+            или is_find == 0 (статус 404).
+    """
+    dto = await asyncio.to_thread(service.get_float_params_by_secid, secid)
+    if dto is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Float params not found for bond {secid}",
+        )
+    return dto
 
 
 @router.get("/{secid}", response_model=BondDetail)

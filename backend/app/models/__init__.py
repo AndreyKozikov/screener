@@ -22,6 +22,7 @@ from app.models.entities import (
     TradingHistoryRecord,
 )
 from app.models.schemasDTO import (
+    BondFloatParamsDTO,
     BondDetail,
     BondDetailDTO,
     BondListItem,
@@ -51,6 +52,7 @@ from app.models.schemasDTO import (
 )
 
 __all__ = [
+    "BondFloatParamsDTO",
     "Bond",
     "BondMarketData",
     "BondMarketDataYield",
