@@ -234,20 +234,25 @@ class OpenAIAnalysisService:
 
         use_file_upload: bool = bool(
             edisclosure_data.get("use_file_upload", False)
-            and doc_filenames
+            and md_filenames
             and md_base_dir is not None
         )
 
         if use_file_upload:
             markdown_content: str = "Документы приложены отдельными файлами (см. вложения)."
             logger.info(
-                "[OPENAI] Режим Files API: %d оригинальных файлов (PDF, Word и др.) будут загружены отдельно",
-                len(doc_filenames),
+                "[OPENAI] Режим Files API: %d markdown-файлов (после конвертации и фильтров) будут загружены отдельно",
+                len(md_filenames),
+            )
+            print(
+                f"  [LLM] Модель получает данные: загрузка markdown-файлов ({len(md_filenames)} шт.)",
+                flush=True,
             )
         else:
             markdown_content = self._markdown_repo.read_files(
                 md_filenames, base_dir=md_base_dir
             )
+            print("  [LLM] Модель получает данные: в виде контекста в промте", flush=True)
 
         events_json: str = json.dumps(events, ensure_ascii=False, indent=2)
 
@@ -262,7 +267,7 @@ class OpenAIAnalysisService:
             "(model: %s, длина промта: %d символов, файлов: %d)",
             model_id,
             len(prompt),
-            len(doc_filenames) if use_file_upload else 0,
+            len(md_filenames) if use_file_upload else 0,
         )
         print(
             f"  [API] POST https://api.openai.com/v1/ (OpenAI, model: {model_id})",
@@ -272,7 +277,7 @@ class OpenAIAnalysisService:
         try:
             if use_file_upload:
                 raw_text: str = self._client.generate(
-                    prompt, model=model_id, file_paths=doc_filenames, base_dir=md_base_dir
+                    prompt, model=model_id, file_paths=md_filenames, base_dir=md_base_dir
                 )
             else:
                 raw_text = self._client.generate(prompt, model=model_id)

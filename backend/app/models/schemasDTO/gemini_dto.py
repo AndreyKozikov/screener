@@ -4,9 +4,9 @@
 эмитент, параметры инструмента, параметры флоатера и торговые данные.
 """
 
-from typing import Optional
+from typing import Any, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class GeminiIssuerDTO(BaseModel):
@@ -81,6 +81,21 @@ class GeminiFloatParamsDTO(BaseModel):
     lookback_type: Optional[str] = None
     year_base: Optional[str] = None
     is_daily_accrual: bool = False
+
+    @field_validator("year_base", mode="before")
+    @classmethod
+    def coerce_year_base_to_str(cls, value: Any) -> Optional[str]:
+        """Приводит числовые значения year_base к строке.
+
+        LLM иногда возвращает базу года как число (365, 360, 366),
+        а не строку ("365", "360", "366"). Валидатор нормализует
+        входное значение до строки, не нарушая контракт поля.
+        """
+        if value is None:
+            return None
+        if isinstance(value, (int, float)):
+            return str(int(value))
+        return value
 
     floor_rate: Optional[float] = None
     cap_rate: Optional[float] = None

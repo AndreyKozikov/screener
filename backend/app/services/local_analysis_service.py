@@ -123,6 +123,7 @@ class LocalLLMAnalysisService:
         markdown_content: str = self._markdown_repo.read_files(
             md_filenames, base_dir=md_base_dir
         )
+        print("  [LLM] Модель получает данные: в виде контекста в промте", flush=True)
         events_json: str = json.dumps(events, ensure_ascii=False, indent=2)
 
         prompt: str = build_floater_analysis_prompt(

@@ -57,6 +57,12 @@ _FILES_PAGE_URL = "https://www.e-disclosure.ru/portal/files.aspx"
 # Фраза-маркер, идентифицирующая документ «Решение о выпуске ценных бумаг»
 _BOND_DECISION_PHRASE: str = "РЕШЕНИЕ О ВЫПУСКЕ ЦЕННЫХ БУМАГ"
 
+# Паттерн документа «Изменения в решение о выпуске» (шаги 2–3 не применяются).
+_AMENDMENTS_PHRASE_PATTERN: re.Pattern[str] = re.compile(
+    r"ИЗМЕНЕНИ[ЕЯ]\s+в\s+решение\s+о\s+выпуске",
+    re.IGNORECASE,
+)
+
 # Карта визуально идентичных символов: Кириллица → Латиница.
 # Включены только пары с действительно совпадающим начертанием в обоих алфавитах.
 _CHAR_MAP: Dict[str, str] = {
@@ -192,16 +198,7 @@ def process_markdown_if_bond_decision(content: str) -> str:
 
 
 def clean_markdown_after_pdf2md(content: str) -> str:
-    """Очищает сырой markdown, полученный от сервиса pdf2md, перед сохранением на диск.
-
-    Шаги выполняются строго по порядку:
-
-    1. Проверяет наличие заголовка «РЕШЕНИЕ О ВЫПУСКЕ ЦЕННЫХ БУМАГ» (без учёта регистра).
-    2. Если заголовок найден — удаляет весь текст от начала файла до этого заголовка
-       (сам заголовок сохраняется).
-    3. Если заголовок найден — удаляет блок «Утверждено решением» до (не включая) строки
-       «Вид, категория (тип), ценных бумаг»; вариант «(тип)» разрешает любое содержимое в скобках.
-    4. Удаляет все символы неразрывного пробела (U+00A0) вне зависимости от наличия заголовка.
+    """Очищает сырой markdown от pdf2md перед сохранением.
 
     Args:
         content: Сырой текст markdown-документа.
@@ -209,26 +206,31 @@ def clean_markdown_after_pdf2md(content: str) -> str:
     Returns:
         Очищенный текст.
     """
-    has_header: bool = bool(re.search(_BOND_DECISION_PHRASE, content, re.IGNORECASE))
+    # Шаг 1: сначала очистка от мусора всего файла.
+    content = content.replace("\u00a0", " ")
+    content = re.sub(r"(\d+(?:\.\d+)*)\\.", r"\1.", content)
+    content = content.replace("\\-", "-")
+    content = content.replace("\\\n", "\n").replace("\\\r", "\r")
+    content = re.sub(r"^\s*<!-- -->\s*$", "", content, flags=re.MULTILINE)
+    content = re.sub(r"^\s*#+\s*$", "", content, flags=re.MULTILINE)
 
-    if has_header:
-        # Шаг 2: удалить текст до заголовка (сам заголовок оставить).
-        header_match: Optional[re.Match[str]] = re.search(
-            _BOND_DECISION_PHRASE, content, re.IGNORECASE
-        )
-        if header_match:
-            content = content[header_match.start():]
+    # Шаг 2–3: поиск заголовков в очищенном тексте.
+    is_amendments_doc: bool = bool(_AMENDMENTS_PHRASE_PATTERN.search(content))
+    header_match: Optional[re.Match[str]] = (
+        None if is_amendments_doc else re.search(_BOND_DECISION_PHRASE, content, re.IGNORECASE)
+    )
 
-        # Шаг 3: удалить блок от «Утверждено решением» до (не включая) «Вид, категория...».
+    if header_match is not None:
+        # Шаг 4: удалить текст до заголовка (сам заголовок оставить).
+        content = content[header_match.start():]
+
+        # Шаг 5: удалить блок от «Утверждено решением» до (не включая) «Вид, категория...».
         content = re.sub(
             r"Утверждено\s+решением.*?(?=Вид,\s*категория\s*\([^)]*\),?\s*ценных\s*бумаг)",
             "",
             content,
             flags=re.DOTALL | re.IGNORECASE,
         )
-
-    # Шаг 4: удалить неразрывные пробелы (U+00A0) — всегда.
-    content = content.replace("\u00a0", " ")
 
     return content
 
