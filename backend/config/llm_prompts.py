@@ -177,3 +177,21 @@ def build_floater_analysis_prompt(events_json: str, markdown_content: str) -> st
         events_json=events_json,
         markdown_content=markdown_content,
     )
+
+
+def build_floater_analysis_chatml_message(events_json: str, markdown_content: str) -> str:
+    """Собирает ChatML-сообщение для локального GGUF-сервиса.
+
+    Важно: не изменяет исходный текст системного промпта анализа, а только
+    оборачивает уже существующий шаблон в формат сообщений для chat-template.
+    """
+    prompt: str = build_floater_analysis_prompt(
+        events_json=events_json,
+        markdown_content=markdown_content,
+    )
+    return (
+        "<|im_start|>user\n"
+        f"{prompt}\n"
+        "<|im_end|>\n"
+        "<|im_start|>assistant\n"
+    )

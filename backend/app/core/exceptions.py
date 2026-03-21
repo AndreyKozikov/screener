@@ -15,3 +15,11 @@ class PdfConversionConnectionError(Exception):
         super().__init__(message)
         self.message = message
         self.cause = cause
+
+
+class LlmProviderUnavailableError(Exception):
+    """Raised when no remote LLM provider passes availability probe in auto mode."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message: str = message

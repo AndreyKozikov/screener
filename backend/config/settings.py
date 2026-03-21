@@ -52,7 +52,11 @@ class Settings(BaseSettings):
     OPENROUTER_HTTP_REFERER: str = ""
     OPENROUTER_X_TITLE: str = ""
 
-    LOCAL_LLM_BASE_URL: str = "http://localhost:5000"
+    LOCAL_LLM_BASE_URL: str = "http://127.0.0.1:7000"
+    LOCAL_LLM_GENERATE_PATH: str = "/api/v1/llm/generate"
+    LOCAL_LLM_ANALYSIS_MAX_NEW_TOKENS: int = 1024
+    LOCAL_LLM_ANALYSIS_TEMPERATURE: float = 0.1
+    LOCAL_LLM_ANALYSIS_TOP_P: float = 0.9
 
     model_config = SettingsConfigDict(
         env_file=_env_file_path,

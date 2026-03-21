@@ -50,6 +50,7 @@ from app.parsers.emission_series_parser import (
     markdown_has_decision_header,
 )
 from app.core.exceptions import PdfConversionConnectionError
+from app.services.llm_provider_readiness_service import LlmProviderReadinessService
 from app.repository.db.emission_document_repository import EmissionDocumentRepository
 from app.utils.edisclosure_utils import (
     clean_event_text,
@@ -60,6 +61,7 @@ from app.utils.edisclosure_utils import (
     get_events_with_full_text,
     search_company_by_inn,
 )
+from config.settings import settings
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -153,6 +155,7 @@ class EdisclosureService:
         self._emitent_edisclosure_repo: EmitentEdisclosureRepository = EmitentEdisclosureRepository()
         self._emission_doc_repo: EmissionDocumentRepository = EmissionDocumentRepository()
         self._llm_call_timestamps: List[float] = []
+        self._readiness: LlmProviderReadinessService = LlmProviderReadinessService()
 
     def _get_analysis_service(self, provider: str) -> Any:
         """Возвращает сервис LLM-анализа по имени провайдера.
@@ -235,7 +238,7 @@ class EdisclosureService:
     def get_accrued_income_by_secid(
         self,
         secid: str,
-        provider: str = "gemini",
+        provider: Optional[str] = None,
         use_file_upload: bool = False,
     ) -> Dict[str, str]:
         """Получает данные флоатера по SECID, анализирует через LLM и сохраняет в БД.
@@ -251,6 +254,7 @@ class EdisclosureService:
         Args:
             secid: Идентификатор ценной бумаги.
             provider: Провайдер LLM (gemini, openai-gpt-5.1, openrouter, local).
+                None или пустая строка — режим AUTO (проба удалённых провайдеров).
             use_file_upload: Если True — для Gemini/OpenAI подавать в модель
                 оригинальные файлы (PDF, Word) через Files API; иначе — только Markdown в промпте.
 
@@ -263,6 +267,8 @@ class EdisclosureService:
         secid = (secid or "").strip()
         if not secid:
             raise ValueError("SECID не указан")
+
+        resolved_provider: str = self._readiness.resolve_provider(provider)
 
         logger.info("=" * 60)
         logger.info("[PIPELINE START] Получен запрос от фронтенда: secid=%s", secid)
@@ -302,7 +308,7 @@ class EdisclosureService:
                 date=date_str,
                 regnumber=regnumber,
                 emitent_moex_id=emitent_moex_id,
-                provider=provider,
+                provider=resolved_provider,
                 secid=secid,
                 use_file_upload=use_file_upload,
             )
@@ -473,7 +479,7 @@ class EdisclosureService:
         if doc_filenames:
             logger.info(
                 "[PDF2MD] → POST %s/api/v1/convert | PDF-файлов: %d → %s",
-                "http://localhost:9000",
+                settings.PDF2MD_BASE_URL,
                 len(doc_filenames), doc_filenames,
             )
         converted: Dict[str, Any] = get_pdf_conversion_service().convert(result)
@@ -565,7 +571,7 @@ class EdisclosureService:
 
     def update_all_floaters(
         self,
-        provider: str = "gemini",
+        provider: Optional[str] = None,
         limit: Optional[int] = None,
         use_file_upload: bool = False,
         rating: Optional[str] = None,
@@ -579,7 +585,7 @@ class EdisclosureService:
         Ограничение: не более 7 запросов к LLM в минуту.
 
         Args:
-            provider: Имя LLM-провайдера.
+            provider: Имя LLM-провайдера. None или пустая строка — режим AUTO (проба удалённых).
             limit: Максимальное количество облигаций для обработки. None — все без данных.
             use_file_upload: Если True — для Gemini/OpenAI подавать в модель оригинальные
                 файлы (PDF, Word) через Files API; иначе — только Markdown в промпте.
@@ -588,6 +594,8 @@ class EdisclosureService:
 
         Результаты записываются в БД (upsert — добавление или обновление полей).
         """
+        resolved_provider: str = self._readiness.resolve_provider(provider)
+
         fl_logger: logging.Logger = _get_floaters_pipeline_logger()
 
         all_secids: List[str] = get_floater_secids(rating=rating)
@@ -637,7 +645,10 @@ class EdisclosureService:
             )
             try:
                 success: bool = self._process_single_floater(
-                    secid, fl_logger, provider=provider, use_file_upload=use_file_upload
+                    secid,
+                    fl_logger,
+                    provider=resolved_provider,
+                    use_file_upload=use_file_upload,
                 )
                 if success:
                     saved += 1

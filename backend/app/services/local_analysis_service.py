@@ -1,8 +1,9 @@
-"""Сервис анализа облигационных данных через локальный LLM (Qwen3-4B по API из Docs/API_GUIDE.md).
+"""Сервис анализа облигационных данных через локальный LLM HTTP API.
 
-POST /ask с multipart/form-data: prompt, опционально files.
-Тот же структурированный JSON-анализ, что в gemini_analysis_service.py.
-Возвращает GeminiBondAnalysisDTO.
+Использует отдельный сервис генерации:
+- POST /api/v1/llm/generate
+- application/json: message (+ optional generation params)
+- response JSON в поле "response"
 """
 
 import json
@@ -16,20 +17,20 @@ import requests
 from app.models.schemasDTO.gemini_dto import GeminiBondAnalysisDTO
 from app.repository.files.markdown_repository import MarkdownFileRepository
 from app.utils.llm_response_validation import validate_analysis_response
-from config.llm_prompts import build_floater_analysis_prompt
+from config.llm_prompts import build_floater_analysis_chatml_message
 from config.settings import settings
 
 logger: logging.Logger = logging.getLogger(__name__)
 
 _DATA_DIR: Path = Path(__file__).resolve().parent.parent / "data"
 
-_DEFAULT_LOCAL_LLM_BASE_URL: str = "http://localhost:5000"
-_LOCAL_ASK_PATH: str = "/ask"
-_REQUEST_TIMEOUT: int = 300
-
-
 class LocalLLMClientProtocol(Protocol):
     """Протокол транспортного клиента для локального LLM API."""
+
+    @property
+    def request_url(self) -> str:
+        """Полный URL endpoint для генерации."""
+        ...
 
     def generate(self, prompt: str) -> str:
         """Отправляет промт и возвращает текст ответа."""
@@ -39,23 +40,31 @@ class LocalLLMClientProtocol(Protocol):
 class MarkdownRepositoryProtocol(Protocol):
     """Протокол репозитория для чтения Markdown-файлов."""
 
-    def read_files(self, filenames: List[str]) -> str:
+    def read_files(
+        self, filenames: List[str], base_dir: Optional[Path] = None
+    ) -> str:
         """Читает и объединяет содержимое файлов."""
         ...
 
 
 class LocalLLMClient:
-    """Клиент для локального LLM API (POST /ask по Docs/API_GUIDE.md)."""
+    """Клиент для локального LLM API (POST /api/v1/llm/generate)."""
 
-    def __init__(self, base_url: str) -> None:
+    def __init__(self, base_url: str, generate_path: str) -> None:
         """Инициализирует клиент.
 
         Args:
             base_url: Базовый URL сервиса (например, http://localhost:5000).
+            generate_path: Путь endpoint генерации (например, /api/v1/llm/generate).
         """
         self._base_url: str = base_url.rstrip("/")
-        self._ask_url: str = f"{self._base_url}{_LOCAL_ASK_PATH}"
-        self._timeout: int = _REQUEST_TIMEOUT
+        self._generate_url: str = f"{self._base_url}{generate_path}"
+        self._timeout: Optional[float] = None
+
+    @property
+    def request_url(self) -> str:
+        """Возвращает полный URL endpoint генерации."""
+        return self._generate_url
 
     def generate(self, prompt: str) -> str:
         """Отправляет промт в локальный сервис и возвращает текст ответа.
@@ -70,14 +79,16 @@ class LocalLLMClient:
             RuntimeError: Ошибка при обращении к API или пустой ответ.
         """
         try:
-            resp = requests.post(
-                self._ask_url,
-                data={"prompt": prompt},
-                timeout=self._timeout,
-            )
+            payload: Dict[str, Any] = {
+                "message": prompt,
+                "max_new_tokens": settings.LOCAL_LLM_ANALYSIS_MAX_NEW_TOKENS,
+                "temperature": settings.LOCAL_LLM_ANALYSIS_TEMPERATURE,
+                "top_p": settings.LOCAL_LLM_ANALYSIS_TOP_P,
+            }
+            resp = requests.post(self._generate_url, json=payload, timeout=self._timeout)
             resp.raise_for_status()
-            payload: Dict[str, Any] = resp.json()
-            content: Optional[str] = payload.get("response")
+            response_payload: Dict[str, Any] = resp.json()
+            content: Optional[str] = response_payload.get("response")
             if content is None:
                 raise RuntimeError("Локальный LLM API вернул ответ без поля 'response'")
             return content
@@ -126,14 +137,14 @@ class LocalLLMAnalysisService:
         print("  [LLM] Модель получает данные: в виде контекста в промте", flush=True)
         events_json: str = json.dumps(events, ensure_ascii=False, indent=2)
 
-        prompt: str = build_floater_analysis_prompt(
+        prompt: str = build_floater_analysis_chatml_message(
             events_json=events_json,
             markdown_content=markdown_content,
         )
 
         logger.info(
             "[LOCAL LLM] → POST %s (длина промта: %d символов)",
-            _DEFAULT_LOCAL_LLM_BASE_URL + _LOCAL_ASK_PATH,
+            self._client.request_url,
             len(prompt),
         )
 
@@ -199,11 +210,13 @@ def get_local_analysis_service() -> LocalLLMAnalysisService:
     """
     global _local_analysis_service
     if _local_analysis_service is None:
-        base_url: str = getattr(
-            settings, "LOCAL_LLM_BASE_URL", _DEFAULT_LOCAL_LLM_BASE_URL
-        ) or _DEFAULT_LOCAL_LLM_BASE_URL
+        base_url: str = settings.LOCAL_LLM_BASE_URL
+        generate_path: str = settings.LOCAL_LLM_GENERATE_PATH
         _local_analysis_service = LocalLLMAnalysisService(
-            local_client=LocalLLMClient(base_url=base_url),
+            local_client=LocalLLMClient(
+                base_url=base_url,
+                generate_path=generate_path,
+            ),
             markdown_repository=MarkdownFileRepository(base_dir=_DATA_DIR),
         )
     return _local_analysis_service

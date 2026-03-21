@@ -8,6 +8,7 @@ from app.services.gemini_analysis_service import (
     GeminiQuotaExhaustedError,
     GeminiUnavailableError,
 )
+from app.core.exceptions import LlmProviderUnavailableError
 from app.services.edisclosure_service import get_edisclosure_service
 
 router = APIRouter(prefix="/api/edisclosure", tags=["edisclosure"])
@@ -16,9 +17,9 @@ router = APIRouter(prefix="/api/edisclosure", tags=["edisclosure"])
 @router.get("/accrued-income")
 async def get_company_accrued_income(
     secid: str = Query(..., description="Идентификатор ценной бумаги (SECID)"),
-    provider: str = Query(
-        "gemini",
-        description="AI провайдер: gemini (2.5 Flash Lite), gemini-flash (2.5 Flash), gemini-2.5-pro, gemini-2-flash, gemini-3-flash, gemini-3.1-pro, openai-gpt-5.1, openrouter или local",
+    provider: Optional[str] = Query(
+        None,
+        description="AI провайдер: gemini (2.5 Flash Lite), gemini-flash (2.5 Flash), gemini-2.5-pro, gemini-2-flash, gemini-3-flash, gemini-3.1-pro, openai-gpt-5.1, openrouter или local. Не передавать или пусто — AUTO: проба удалённых провайдеров по очереди.",
     ),
     use_file_upload: bool = Query(
         False,
@@ -51,20 +52,28 @@ async def get_company_accrued_income(
     except HTTPException:
         raise
     except GeminiQuotaExhaustedError as exc:
+        provider_name: str = "Gemini API"
+        provider_limits_hint: str = "или проверьте лимиты в Google AI Studio."
         raise HTTPException(
             status_code=429,
             detail=(
-                "Исчерпана квота Gemini API (429). "
-                "Повторите запрос позже или проверьте лимиты в Google AI Studio."
+                f"Исчерпана квота {provider_name} (429). "
+                f"Повторите запрос позже {provider_limits_hint}"
             ),
         ) from exc
     except GeminiUnavailableError as exc:
+        provider_name = "Gemini API"
         raise HTTPException(
             status_code=503,
             detail=(
-                "Gemini API временно недоступен (503 UNAVAILABLE) после повторов. "
+                f"{provider_name} временно недоступен (503 UNAVAILABLE) после повторов. "
                 "Повторите запрос позже."
             ),
+        ) from exc
+    except LlmProviderUnavailableError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=str(exc),
         ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -77,9 +86,9 @@ async def get_company_accrued_income(
 
 @router.post("/update-floaters")
 async def update_floaters(
-    provider: str = Query(
-        "gemini",
-        description="AI провайдер: gemini (2.5 Flash Lite), gemini-flash (2.5 Flash), gemini-2.5-pro, gemini-2-flash, gemini-3-flash, gemini-3.1-pro, openai-gpt-5.1, openrouter или local",
+    provider: Optional[str] = Query(
+        None,
+        description="AI провайдер: gemini (2.5 Flash Lite), gemini-flash (2.5 Flash), gemini-2.5-pro, gemini-2-flash, gemini-3-flash, gemini-3.1-pro, openai-gpt-5.1, openrouter или local. Не передавать или пусто — AUTO: проба удалённых провайдеров по очереди.",
     ),
     limit: Optional[int] = Query(
         None,
@@ -106,20 +115,28 @@ async def update_floaters(
         )
         return {"status": "ok"}
     except GeminiQuotaExhaustedError as exc:
+        provider_name: str = "Gemini API"
+        provider_limits_hint: str = "или проверьте лимиты в Google AI Studio."
         raise HTTPException(
             status_code=429,
             detail=(
-                "Исчерпана квота Gemini API (429 RESOURCE_EXHAUSTED). "
-                "Пайплайн остановлен. Повторите запрос позже или проверьте лимиты в Google AI Studio."
+                f"Исчерпана квота {provider_name} (429 RESOURCE_EXHAUSTED). "
+                f"Пайплайн остановлен. Повторите запрос позже {provider_limits_hint}"
             ),
         ) from exc
     except GeminiUnavailableError as exc:
+        provider_name = "Gemini API"
         raise HTTPException(
             status_code=503,
             detail=(
-                "Gemini API временно недоступен (503 UNAVAILABLE) после 3 попыток. "
+                f"{provider_name} временно недоступен (503 UNAVAILABLE) после 3 попыток. "
                 "Пайплайн остановлен. Повторите запрос позже."
             ),
+        ) from exc
+    except LlmProviderUnavailableError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=str(exc),
         ) from exc
 
 
