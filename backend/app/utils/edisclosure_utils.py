@@ -6,11 +6,14 @@
 
 import html
 import io
+import random
 import re
+import time
 import zipfile
-from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 from urllib.parse import urljoin
 
 import requests
@@ -46,6 +49,11 @@ _SEARCH_PAGE_URL = "https://www.e-disclosure.ru/poisk-po-kompaniyam"
 _MAIN_PAGE_URL = "https://www.e-disclosure.ru"
 _TIMEOUT = 30  # Увеличен таймаут для медленных соединений
 
+# Параллельная загрузка HTML текстов событий только внутри одного года
+# (:func:`fetch_emitent_year_events_unfiltered`); между годами и эмитентами — по-прежнему последовательно.
+_EMITENT_EVENT_TEXT_MAX_WORKERS: int = 6
+_EMITENT_EVENT_TEXT_JITTER_SEC: Tuple[float, float] = (0.05, 0.2)
+
 # Заголовки событий, которые исключаются из пайплайна (не передаются в LLM).
 _EXCLUDED_EVENT_TITLE = (
     "Перевод эмиссионных ценных бумаг эмитента из одного котировального списка "
@@ -53,6 +61,7 @@ _EXCLUDED_EVENT_TITLE = (
 )
 
 _FILES_PAGE_URL = "https://www.e-disclosure.ru/portal/files.aspx"
+_COMPANY_PORTAL_URL = "https://www.e-disclosure.ru/portal/company.aspx"
 
 # Фраза-маркер, идентифицирующая документ «Решение о выпуске ценных бумаг»
 _BOND_DECISION_PHRASE: str = "РЕШЕНИЕ О ВЫПУСКЕ ЦЕННЫХ БУМАГ"
@@ -277,6 +286,23 @@ def _get_session() -> Tuple[requests.Session, str]:
     _SESSION_CACHE["session"] = session
     _SESSION_CACHE["token"] = token
     return session, token
+
+
+def _get_plain_session() -> requests.Session:
+    """Возвращает сессию без bootstrap страницы поиска и без токена."""
+    global _SESSION_CACHE
+
+    if _SESSION_CACHE["session"] is not None:
+        return _SESSION_CACHE["session"]
+
+    session = requests.Session()
+    session.headers.update(_API_HEADERS)
+    _SESSION_CACHE["session"] = session
+    print(
+        "  [API] INIT plain session (without poisk-po-kompaniyam bootstrap)",
+        flush=True,
+    )
+    return session
 
 
 def search_company_by_inn(inn: str) -> List[Dict[str, Any]]:
@@ -507,7 +533,7 @@ def event_text_matches_reg_number(
 
 def _find_all_events_sorted_by_date(
     events: List[Dict[str, Any]],
-    date_obj: datetime.date,
+    date_obj: date,
 ) -> List[Dict[str, Any]]:
     """Возвращает все события строго раньше ``date_obj``, отсортированные от новых к старым.
 
@@ -521,11 +547,44 @@ def _find_all_events_sorted_by_date(
     Returns:
         Список событий, отсортированных по дате (от более поздних к более ранним).
     """
-    filtered: List[Tuple[datetime.date, Dict[str, Any]]] = []
+    filtered: List[Tuple[date, Dict[str, Any]]] = []
     for event in events:
         event_name = (event.get("eventName") or "").strip()
         if event_name == _EXCLUDED_EVENT_TITLE:
             continue
+        event_date_str = event.get("eventDate")
+        if not event_date_str:
+            continue
+        try:
+            event_date = datetime.fromisoformat(
+                event_date_str.replace("Z", "+00:00")
+            ).date()
+        except (ValueError, TypeError):
+            continue
+        if event_date >= date_obj:
+            continue
+        filtered.append((event_date, event))
+    filtered.sort(key=lambda x: x[0], reverse=True)
+    return [event for _, event in filtered]
+
+
+def _find_all_events_sorted_by_date_include_all(
+    events: List[Dict[str, Any]],
+    date_obj: date,
+) -> List[Dict[str, Any]]:
+    """Как :func:`_find_all_events_sorted_by_date`, но **без** исключения заголовка ``_EXCLUDED_EVENT_TITLE``.
+
+    Используется для выгрузки всех событий эмитента в JSON (пайплайн без фильтров по названию).
+
+    Args:
+        events: Список событий, полученных от API.
+        date_obj: Граничная дата (события с этой датой и позже исключаются).
+
+    Returns:
+        Список событий, отсортированных по дате (от более поздних к более ранним).
+    """
+    filtered: List[Tuple[date, Dict[str, Any]]] = []
+    for event in events:
         event_date_str = event.get("eventDate")
         if not event_date_str:
             continue
@@ -677,6 +736,425 @@ def get_events_with_full_text(
 
     print(f"  [EVENTS ALL] Событий с непустым текстом: {len(result)}", flush=True)
     return result
+
+
+def _fetch_emitent_event_text_worker(
+    task: Tuple[int, str, Any, Any, str, Any, Any],
+) -> Tuple[int, Optional[Dict[str, Optional[str]]]]:
+    """Загружает полный текст одного события (потокобезопасно: своя Session и джиттер).
+
+    Args:
+        task: ``(индекс, pseudoGUID, eventDate, eventName,
+               pseudoGUID_str, isCorrectedByAnotherEvent, fileIconName)``.
+
+    Returns:
+        Пара ``(index, словарь события или None если текста нет)``.
+    """
+    idx: int
+    pseudo_guid: str
+    event_date_raw: Any
+    event_name_raw: Any
+    pseudo_guid_str: str
+    is_corrected_raw: Any
+    file_icon_raw: Any
+    idx, pseudo_guid, event_date_raw, event_name_raw, pseudo_guid_str, is_corrected_raw, file_icon_raw = task
+    lo: float
+    hi: float
+    lo, hi = _EMITENT_EVENT_TEXT_JITTER_SEC
+    time.sleep(random.uniform(lo, hi))
+    session: requests.Session = _get_plain_session()
+    text: Optional[str] = _extract_event_text(str(pseudo_guid), session)
+    if not text:
+        return (idx, None)
+    event_date: str = _format_event_date(event_date_raw)
+    event_name: str = str(event_name_raw or "")
+    return (
+        idx,
+        {
+            "event_name": event_name,
+            "event_date": event_date,
+            "full_text": text,
+            "pseudoGUID": pseudo_guid_str,
+            "is_corrected_by_another_event": bool(is_corrected_raw) if is_corrected_raw is not None else False,
+            "file_icon_name": str(file_icon_raw) if file_icon_raw else None,
+        },
+    )
+
+
+def fetch_emitent_year_events_unfiltered(
+    *,
+    company_id: int,
+    api_year: int,
+    boundary_date: str,
+) -> List[Dict[str, Optional[str]]]:
+    """Загружает события компании за календарный год ``api_year`` с полным текстом, без фильтра по заголовку.
+
+    В запросе к API передаётся ``year=api_year`` (как на вкладках сайта). События фильтруются
+    только по границе ``boundary_date`` (строго раньше этой даты), без исключения
+    ``_EXCLUDED_EVENT_TITLE``.
+
+    Тексты страниц событий (``event.aspx``) загружаются **параллельно только внутри этого года**:
+    до ``_EMITENT_EVENT_TEXT_MAX_WORKERS`` потоков; перед каждым запросом — случайная пауза
+    (джиттер) в диапазоне ``_EMITENT_EVENT_TEXT_JITTER_SEC`` секунд.
+
+    Args:
+        company_id: ID компании на e-disclosure.ru.
+        api_year: Год для параметра ``year`` в ``/api/events/page``.
+        boundary_date: Граничная дата YYYY-MM-DD (как в существующем пайплайне событий).
+
+    Returns:
+        Список словарей с ключами ``event_name``, ``event_date``, ``full_text``.
+    """
+    try:
+        date_obj = datetime.strptime(boundary_date, "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        print(
+            f"  [EMITENT EVENTS] Невалидная граничная дата: {boundary_date!r} — []",
+            flush=True,
+        )
+        return []
+
+    print(
+        f"  [EMITENT EVENTS] Год API={api_year}, граница={boundary_date}, company_id={company_id}",
+        flush=True,
+    )
+
+    session = _get_plain_session()
+    params = {"companyId": company_id, "year": api_year}
+    events_full_url = f"{_EVENTS_URL}?companyId={company_id}&year={api_year}"
+    print(f"  [API] GET {events_full_url}", flush=True)
+    response = session.get(_EVENTS_URL, params=params, timeout=_TIMEOUT)
+    if response.status_code == 403:
+        _clear_session_cache()
+        session = _get_plain_session()
+        response = session.get(_EVENTS_URL, params=params, timeout=_TIMEOUT)
+    response.raise_for_status()
+    events = response.json()
+
+    sorted_events = _find_all_events_sorted_by_date_include_all(events, date_obj)
+    print(f"  [EMITENT EVENTS] Событий после фильтра по дате: {len(sorted_events)}", flush=True)
+
+    indexed_tasks: List[Tuple[int, str, Any, Any, str, Any, Any]] = []
+    for idx, event in enumerate(sorted_events):
+        pseudo_guid = event.get("pseudoGUID")
+        if not pseudo_guid:
+            continue
+        indexed_tasks.append(
+            (
+                idx,
+                str(pseudo_guid),
+                event.get("eventDate"),
+                event.get("eventName"),
+                str(pseudo_guid),
+                event.get("isCorrectedByAnotherEvent"),
+                event.get("fileIconName"),
+            ),
+        )
+
+    if not indexed_tasks:
+        print(
+            f"  [EMITENT EVENTS] Событий с непустым текстом: 0",
+            flush=True,
+        )
+        return []
+
+    workers: int = min(_EMITENT_EVENT_TEXT_MAX_WORKERS, len(indexed_tasks))
+    print(
+        f"  [EMITENT EVENTS] Параллельная загрузка текстов: workers={workers}, "
+        f"jitter_sec={_EMITENT_EVENT_TEXT_JITTER_SEC}",
+        flush=True,
+    )
+
+    result_by_idx: Dict[int, Dict[str, Optional[str]]] = {}
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        future_to_idx: Dict[Any, int] = {
+            executor.submit(_fetch_emitent_event_text_worker, task): task[0]
+            for task in indexed_tasks
+        }
+        for fut in as_completed(future_to_idx):
+            idx_done: int
+            payload: Optional[Dict[str, Optional[str]]]
+            idx_done, payload = fut.result()
+            if payload is not None:
+                result_by_idx[idx_done] = payload
+
+    result: List[Dict[str, Optional[str]]] = [
+        result_by_idx[k] for k in sorted(result_by_idx.keys())
+    ]
+
+    print(f"  [EMITENT EVENTS] Событий с непустым текстом: {len(result)}", flush=True)
+    return result
+
+
+def fetch_events_page_json_only(company_id: int, api_year: int) -> List[Dict[str, Any]]:
+    """Загружает сырой JSON списка событий с ``/api/events/page`` без загрузки текстов страниц.
+
+    Args:
+        company_id: ID компании на e-disclosure.ru.
+        api_year: Параметр ``year`` в запросе.
+
+    Returns:
+        Список объектов событий из ответа API (как есть).
+    """
+    session: requests.Session = _get_plain_session()
+    params: Dict[str, Any] = {"companyId": company_id, "year": api_year}
+    url: str = f"{_EVENTS_URL}?companyId={company_id}&year={api_year}"
+    print(f"  [API] GET (metadata only) {url}", flush=True)
+    response: requests.Response = session.get(_EVENTS_URL, params=params, timeout=_TIMEOUT)
+    if response.status_code == 403:
+        _clear_session_cache()
+        session = _get_plain_session()
+        response = session.get(_EVENTS_URL, params=params, timeout=_TIMEOUT)
+    response.raise_for_status()
+    payload: Any = response.json()
+    if not isinstance(payload, list):
+        return []
+    return payload
+
+
+def _event_date_from_api_item(event: Dict[str, Any]) -> Optional[date]:
+    """Возвращает дату события из поля ``eventDate`` ответа API (только дата, локально)."""
+    event_date_str: Optional[str] = event.get("eventDate")
+    if not event_date_str:
+        return None
+    try:
+        return datetime.fromisoformat(
+            str(event_date_str).replace("Z", "+00:00")
+        ).date()
+    except (ValueError, TypeError):
+        return None
+
+
+def find_latest_event_metadata_across_years(
+    company_id: int,
+    years: List[int],
+    *,
+    not_after: date,
+) -> Optional[Tuple[date, str]]:
+    """По сырым JSON за перечень лет находит событие с максимальной датой (не позже ``not_after``).
+
+    Returns:
+        ``(дата, pseudoGUID)`` или ``None``, если событий с датой нет.
+    """
+    best_date: Optional[date] = None
+    best_guid: str = ""
+    for y in years:
+        raw: List[Dict[str, Any]] = fetch_events_page_json_only(company_id, y)
+        for ev in raw:
+            d: Optional[date] = _event_date_from_api_item(ev)
+            if d is None or d > not_after:
+                continue
+            guid: str = str(ev.get("pseudoGUID") or "")
+            if best_date is None or d > best_date or (d == best_date and guid > best_guid):
+                best_date = d
+                best_guid = guid
+    if best_date is None:
+        return None
+    return (best_date, best_guid)
+
+
+def parse_latest_event_from_emitent_file_payload(
+    data: Dict[str, Any],
+) -> Optional[Tuple[date, str, int]]:
+    """Из сохранённого JSON эмитента (ключи — годы) находит последнее по дате событие.
+
+    Returns:
+        ``(event_date, pseudoGUID, calendar_year_of_event)`` или ``None``.
+    """
+    best: Optional[Tuple[date, str, int]] = None
+    for year_key, events in data.items():
+        if not isinstance(events, list):
+            continue
+        for ev in events:
+            if not isinstance(ev, dict):
+                continue
+            ds: Optional[str] = ev.get("event_date")
+            if not ds or not str(ds).strip():
+                continue
+            try:
+                d: date = datetime.strptime(str(ds)[:10], "%Y-%m-%d").date()
+            except ValueError:
+                continue
+            guid: str = str(ev.get("pseudoGUID") or "")
+            y_ev: int = d.year
+            cand: Tuple[date, str, int] = (d, guid, y_ev)
+            if best is None or cand[0] > best[0] or (
+                cand[0] == best[0] and cand[1] > best[1]
+            ):
+                best = cand
+    return best
+
+
+def merge_emitent_event_lists(
+    existing: List[Dict[str, Optional[str]]],
+    new_items: List[Dict[str, Optional[str]]],
+) -> List[Dict[str, Optional[str]]]:
+    """Объединяет списки событий одного года, убирая дубликаты по (event_date, pseudoGUID)."""
+    seen: Set[Tuple[str, str]] = set()
+    merged: List[Dict[str, Optional[str]]] = []
+    for ev in existing + new_items:
+        key: Tuple[str, str] = (
+            str(ev.get("event_date") or ""),
+            str(ev.get("pseudoGUID") or ""),
+        )
+        if key in seen:
+            continue
+        if not key[0] and not key[1]:
+            continue
+        seen.add(key)
+        merged.append(ev)
+
+    def _sort_key(e: Dict[str, Optional[str]]) -> Tuple[date, str]:
+        ds: Optional[str] = e.get("event_date")
+        nm: str = str(e.get("event_name") or "")
+        if not ds:
+            return (date.min, nm)
+        try:
+            return (datetime.strptime(str(ds)[:10], "%Y-%m-%d").date(), nm)
+        except ValueError:
+            return (date.min, nm)
+
+    merged.sort(key=_sort_key, reverse=True)
+    return merged
+
+
+def _company_portal_html_needs_browser(html: str) -> bool:
+    """Эвристика: HTML — заглушка JS/бот, нужен браузер (Playwright)."""
+    h = html.lower()
+    if "data-event-year" in h:
+        return False
+    if "forbidden" in h and "not a bot" in h:
+        return True
+    if "id_spinner" in h or "servicepipe" in h:
+        return True
+    if len(html) < 4000 and "tabs-control" not in h:
+        return True
+    return False
+
+
+def _fetch_company_portal_html_playwright(page_url: str) -> str:
+    """Загружает страницу компании через Chromium (обход JS-защиты)."""
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError as exc:
+        raise RuntimeError(
+            "Страница e-disclosure не содержит разметки вкладок годов; "
+            "установите пакет playwright и выполните playwright install chromium."
+        ) from exc
+
+    print(f"  [COMPANY PAGE] Playwright GET {page_url}", flush=True)
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        try:
+            context = browser.new_context(
+                user_agent=_HTML_HEADERS.get("User-Agent", ""),
+                locale="ru-RU",
+            )
+            page = context.new_page()
+            page.goto(page_url, wait_until="load", timeout=120000)
+            time.sleep(2.0)
+            content: str = page.content()
+        finally:
+            browser.close()
+    return content
+
+
+def fetch_company_portal_html(company_id: int) -> str:
+    """Загружает HTML страницы ``company.aspx`` (вкладки годов событий)."""
+    page_url = f"{_COMPANY_PORTAL_URL}?id={company_id}"
+    session = _get_plain_session()
+    print(f"  [COMPANY PAGE] GET {page_url}", flush=True)
+    response = session.get(page_url, headers=_HTML_HEADERS, timeout=_TIMEOUT)
+    if response.status_code == 403:
+        _clear_session_cache()
+        session = _get_plain_session()
+        response = session.get(page_url, headers=_HTML_HEADERS, timeout=_TIMEOUT)
+    response.raise_for_status()
+    text: str = response.text
+    if _company_portal_html_needs_browser(text):
+        text = _fetch_company_portal_html_playwright(page_url)
+    return text
+
+
+def _parse_events_years_hidden(html: str) -> Optional[List[int]]:
+    """Извлекает годы из скрытого поля ``<input id="EventsYears" value="...">``.
+
+    Returns:
+        Отсортированный по возрастанию список уникальных годов, либо ``None``,
+        если поле не найдено или из ``value`` не удалось получить ни одного года.
+    """
+    from html import unescape as _html_unescape
+
+    for tag_m in re.finditer(r"<input\b[^>]+>", html, re.IGNORECASE):
+        tag: str = tag_m.group(0)
+        if not re.search(r'\bid\s*=\s*["\']EventsYears["\']', tag, re.IGNORECASE):
+            continue
+        vm = re.search(r'\bvalue\s*=\s*["\']([^"\']*)["\']', tag, re.IGNORECASE)
+        if not vm:
+            return None
+        raw: str = _html_unescape(vm.group(1).strip())
+        if not raw:
+            return None
+        out: List[int] = []
+        for part in raw.split(","):
+            p = part.strip()
+            if not p:
+                continue
+            try:
+                out.append(int(p))
+            except ValueError:
+                continue
+        if not out:
+            return None
+        return sorted(set(out))
+    return None
+
+
+def list_company_portal_event_years(company_id: int) -> List[int]:
+    """Возвращает список календарных годов событий со страницы компании.
+
+    Один запрос :func:`fetch_company_portal_html`. Годы берутся **только** из скрытого
+    поля ``<input id="EventsYears" value="...">``.
+
+    Returns:
+        Уникальные годы по возрастанию.
+
+    Raises:
+        ValueError: Поле ``EventsYears`` отсутствует, пустое или не удалось разобрать годы.
+    """
+    page_html: str = fetch_company_portal_html(company_id)
+    hidden_years: Optional[List[int]] = _parse_events_years_hidden(page_html)
+    if hidden_years is None:
+        raise ValueError(
+            "На странице компании не найдено скрытое поле EventsYears с перечнем годов "
+            "(id=EventsYears) или value пустой/некорректен. Проверьте company_id и HTML страницы."
+        )
+    print(
+        f"  [COMPANY PAGE] EventsYears (hidden): count={len(hidden_years)}, years={hidden_years}",
+        flush=True,
+    )
+    return hidden_years
+
+
+def resolve_company_portal_earliest_event_year(company_id: int) -> int:
+    """Совместимость: минимальный год из :func:`list_company_portal_event_years`.
+
+    Args:
+        company_id: ID компании на e-disclosure.ru.
+
+    Returns:
+        Самый ранний год из списка годов портала.
+
+    Raises:
+        ValueError: Не удалось определить годы (см. :func:`list_company_portal_event_years`).
+    """
+    years: List[int] = list_company_portal_event_years(company_id)
+    earliest: int = min(years)
+    print(
+        f"  [COMPANY PAGE] Начальный год (compat, min): {earliest}",
+        flush=True,
+    )
+    return earliest
 
 
 def fetch_emission_documents_page(edisclosure_id: int) -> str:

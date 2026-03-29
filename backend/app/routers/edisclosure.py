@@ -140,6 +140,51 @@ async def update_floaters(
         ) from exc
 
 
+@router.post("/emitent-events/fetch")
+async def fetch_emitent_events_by_inn(
+    inn: Optional[str] = Query(
+        None,
+        description="ИНН эмитента (10 или 12 цифр). Не указывать или пустая строка — "
+        "выгрузка для всех эмитентов с непустым ИНН из таблицы emitents (пакетный режим).",
+    ),
+    refresh_old: bool = Query(
+        False,
+        description="Если True — обновляет уже скачанные JSON-файлы событий до нового "
+        "формата: дописывает ключи pseudoGUID, is_corrected_by_another_event, "
+        "file_icon_name, сопоставляя старые события с серверными по (дата, заголовок). "
+        "При неоднозначном совпадении перекачивает события с полным текстом.",
+    ),
+) -> Dict[str, Any]:
+    """Все события эмитента с e-disclosure.ru по годам (без фильтра по заголовку) в JSON.
+
+    Определяет начальный год по вкладкам на странице компании, затем для каждого года
+    до текущего загружает события и полный текст, сохраняет в ``app/data/events/{inn}.json``.
+
+    Если параметр ``inn`` отсутствует или пустой — для каждого уникального ИНН из БД
+    (таблица emitents) выполняется тот же пайплайн; ответ — сводка пакета (results/errors).
+
+    Если ``refresh_old=True`` — вместо обычной загрузки/догрузки выполняется обновление
+    существующих файлов: для каждого года запрашиваются метаданные событий с API и
+    сопоставляются со старыми записями для дописывания новых ключей (pseudoGUID и др.).
+    """
+    try:
+        service = get_edisclosure_service()
+        if inn is None or inn.strip() == "":
+            return service.fetch_and_save_emitent_events_for_all_emitents(
+                refresh_old=refresh_old,
+            )
+        return service.fetch_and_save_emitent_events_by_inn(
+            inn.strip(), refresh_old=refresh_old,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ошибка при выгрузке событий эмитента: {exc}",
+        ) from exc
+
+
 @router.post("/fetch-emission-documents")
 async def fetch_emission_documents(
     limit: Optional[int] = Query(
