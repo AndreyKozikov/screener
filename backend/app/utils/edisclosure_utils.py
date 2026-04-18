@@ -738,6 +738,70 @@ def get_events_with_full_text(
     return result
 
 
+def get_events_with_full_text_for_year(
+    company_id: int,
+    year: int,
+) -> List[Dict[str, Any]]:
+    """Загружает все события компании за конкретный календарный год с полным текстом.
+
+    В отличие от :func:`get_events_with_full_text`, **не** применяет фильтрацию
+    по граничной дате — возвращает **все** события за запрошенный год
+    (кроме ``_EXCLUDED_EVENT_TITLE``), отсортированные от новых к старым.
+
+    Args:
+        company_id: ID компании на e-disclosure.ru.
+        year: Календарный год для параметра ``year`` в API.
+
+    Returns:
+        Список словарей с полями ``event_name``, ``event_date``, ``full_text``, ``text``.
+        Пустой список, если событий с текстом нет.
+    """
+    # Far-future boundary to include ALL events without date filtering
+    far_future: date = date(9999, 12, 31)
+
+    print(
+        f"  [EVENTS YEAR] Загрузка всех событий: company_id={company_id}, year={year}",
+        flush=True,
+    )
+
+    session, _ = _get_session()
+    params: Dict[str, Any] = {"companyId": company_id, "year": year}
+    events_full_url: str = f"{_EVENTS_URL}?companyId={company_id}&year={year}"
+    print(f"  [API] GET {events_full_url}", flush=True)
+    response: requests.Response = session.get(_EVENTS_URL, params=params, timeout=_TIMEOUT)
+    if response.status_code == 403:
+        _clear_session_cache()
+        session, _ = _get_session()
+        response = session.get(_EVENTS_URL, params=params, timeout=_TIMEOUT)
+    response.raise_for_status()
+    events: Any = response.json()
+
+    sorted_events: List[Dict[str, Any]] = _find_all_events_sorted_by_date(events, far_future)
+    print(f"  [EVENTS YEAR] Событий после фильтра: {len(sorted_events)}", flush=True)
+
+    result: List[Dict[str, Any]] = []
+    for event in sorted_events:
+        pseudo_guid: Optional[str] = event.get("pseudoGUID")
+        if not pseudo_guid:
+            continue
+        text: Optional[str] = _extract_event_text(pseudo_guid, session)
+        if not text:
+            continue
+        full_text: str = text
+        processed_text: str = clean_event_text(text)
+        event_date: Optional[str] = _format_event_date(event.get("eventDate"))
+        event_name: str = event.get("eventName") or ""
+        result.append({
+            "event_name": event_name,
+            "event_date": event_date,
+            "full_text": full_text,
+            "text": processed_text,
+        })
+
+    print(f"  [EVENTS YEAR] Событий с непустым текстом: {len(result)}", flush=True)
+    return result
+
+
 def _fetch_emitent_event_text_worker(
     task: Tuple[int, str, Any, Any, str, Any, Any],
 ) -> Tuple[int, Optional[Dict[str, Optional[str]]]]:

@@ -7,6 +7,7 @@ JSON файлов (маппинги, columns.json и т.д.) с обработк
 """
 
 import logging
+import os
 from pathlib import Path
 from typing import Any, Dict, Tuple
 
@@ -63,6 +64,51 @@ class FileStorage:
             options |= orjson.OPT_APPEND_NEWLINE
         serialized = orjson.dumps(data, option=options)
         path.write_bytes(serialized)
+
+    def write_json_durable(
+        self,
+        path: Path,
+        data: Any,
+        indent: bool = True,
+        append_newline: bool = True,
+    ) -> None:
+        """Записывает JSON в файл атомарно (временный файл → replace) и fsync при записи.
+
+        Данные сбрасываются на диск с дескриптора, открытого на запись (совместимо с Windows).
+        После ``os.replace`` отдельный fsync не выполняется.
+
+        Args:
+            path: Путь к целевому JSON-файлу.
+            data: Данные для сериализации.
+            indent: Если True — отступы (OPT_INDENT_2).
+            append_newline: Если True — перевод строки в конце.
+
+        Raises:
+            OSError: Если не удалось записать или синхронизировать файл.
+        """
+        options = 0
+        if indent:
+            options |= orjson.OPT_INDENT_2
+        if append_newline:
+            options |= orjson.OPT_APPEND_NEWLINE
+        serialized = orjson.dumps(data, option=options)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path: Path = path.with_name(path.name + ".tmp")
+        try:
+            # fsync только на дескрипторе, открытом на запись. На Windows fsync после open(..., "rb")
+            # для того же файла даёт OSError: [Errno 9] Bad file descriptor.
+            with open(tmp_path, "wb") as tmp_f:
+                tmp_f.write(serialized)
+                tmp_f.flush()
+                os.fsync(tmp_f.fileno())
+            os.replace(tmp_path, path)
+        except OSError:
+            if tmp_path.exists():
+                try:
+                    tmp_path.unlink()
+                except OSError:
+                    pass
+            raise
 
     def save_binary_file(self, path: Path, content: bytes) -> None:
         """Записывает бинарные данные в файл.

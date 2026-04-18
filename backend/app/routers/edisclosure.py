@@ -25,6 +25,11 @@ async def get_company_accrued_income(
         False,
         description="Если True — в LLM (Gemini/OpenAI) подавать оригинальные файлы (PDF, Word) через Files API; по умолчанию — только текст Markdown в промпте.",
     ),
+    use_local_events: bool = Query(
+        False,
+        description="Если True — события берутся из локальных JSON-файлов "
+        "(app/data/events/{ИНН}.json) вместо запросов к e-disclosure.ru.",
+    ),
 ) -> Dict[str, str]:
     """Получает и сохраняет параметры флоатера по SECID.
 
@@ -41,7 +46,8 @@ async def get_company_accrued_income(
     try:
         service = get_edisclosure_service()
         result: Dict[str, str] = service.get_accrued_income_by_secid(
-            secid, provider=provider, use_file_upload=use_file_upload
+            secid, provider=provider, use_file_upload=use_file_upload,
+            use_local_events=use_local_events,
         )
         if result.get("status") == "error":
             raise HTTPException(
@@ -102,6 +108,11 @@ async def update_floaters(
         None,
         description="Фильтр по рейтингу облигаций (например AAA, AA+, BBB). Если не задан — обрабатываются все флоатеры.",
     ),
+    use_local_events: bool = Query(
+        False,
+        description="Если True — события берутся из локальных JSON-файлов "
+        "(app/data/events/{ИНН}.json) вместо запросов к e-disclosure.ru.",
+    ),
 ) -> Dict[str, str]:
     """Запускает пакетное обновление данных по всем флоатерам (bond_kind=8).
 
@@ -111,7 +122,8 @@ async def update_floaters(
     try:
         service = get_edisclosure_service()
         service.update_all_floaters(
-            provider=provider, limit=limit, use_file_upload=use_file_upload, rating=rating
+            provider=provider, limit=limit, use_file_upload=use_file_upload,
+            rating=rating, use_local_events=use_local_events,
         )
         return {"status": "ok"}
     except GeminiQuotaExhaustedError as exc:
@@ -147,13 +159,6 @@ async def fetch_emitent_events_by_inn(
         description="ИНН эмитента (10 или 12 цифр). Не указывать или пустая строка — "
         "выгрузка для всех эмитентов с непустым ИНН из таблицы emitents (пакетный режим).",
     ),
-    refresh_old: bool = Query(
-        False,
-        description="Если True — обновляет уже скачанные JSON-файлы событий до нового "
-        "формата: дописывает ключи pseudoGUID, is_corrected_by_another_event, "
-        "file_icon_name, сопоставляя старые события с серверными по (дата, заголовок). "
-        "При неоднозначном совпадении перекачивает события с полным текстом.",
-    ),
 ) -> Dict[str, Any]:
     """Все события эмитента с e-disclosure.ru по годам (без фильтра по заголовку) в JSON.
 
@@ -162,20 +167,12 @@ async def fetch_emitent_events_by_inn(
 
     Если параметр ``inn`` отсутствует или пустой — для каждого уникального ИНН из БД
     (таблица emitents) выполняется тот же пайплайн; ответ — сводка пакета (results/errors).
-
-    Если ``refresh_old=True`` — вместо обычной загрузки/догрузки выполняется обновление
-    существующих файлов: для каждого года запрашиваются метаданные событий с API и
-    сопоставляются со старыми записями для дописывания новых ключей (pseudoGUID и др.).
     """
     try:
         service = get_edisclosure_service()
         if inn is None or inn.strip() == "":
-            return service.fetch_and_save_emitent_events_for_all_emitents(
-                refresh_old=refresh_old,
-            )
-        return service.fetch_and_save_emitent_events_by_inn(
-            inn.strip(), refresh_old=refresh_old,
-        )
+            return service.fetch_and_save_emitent_events_for_all_emitents()
+        return service.fetch_and_save_emitent_events_by_inn(inn.strip())
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
