@@ -58,6 +58,8 @@ class Settings(BaseSettings):
     LOCAL_LLM_ANALYSIS_TEMPERATURE: float = 0.1
     LOCAL_LLM_ANALYSIS_TOP_P: float = 0.9
 
+    FLOATER_ANALYSIS_PROMPT_MAX_CHARS: int = 980000
+
     model_config = SettingsConfigDict(
         env_file=_env_file_path,
         env_file_encoding="utf-8",

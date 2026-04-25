@@ -11,6 +11,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import FullscreenIcon from '@mui/icons-material/Fullscreen';
 import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
 import CloseIcon from '@mui/icons-material/Close';
+import ShowChartIcon from '@mui/icons-material/ShowChart';
 
 // Register AG Grid modules
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -18,7 +19,7 @@ import { useBondsStore } from '../../stores/bondsStore';
 import { useFiltersStore } from '../../stores/filtersStore';
 import { useUiStore } from '../../stores/uiStore';
 import { usePortfolioStore } from '../../stores/portfolioStore';
-import { fetchBonds, fetchFloaterSecids, fetchFloatParamsBySecid } from '../../api/bonds';
+import { fetchBonds, fetchFloaterSecids, fetchFloatParamsBySecid, fetchPriceHistory, type BondPriceHistoryResponse } from '../../api/bonds';
 import { fetchDescriptions } from '../../api/metadata';
 import type { DescriptionsResponse } from '../../api/metadata';
 import { 
@@ -36,6 +37,7 @@ import AddToComparisonRenderer from './AddToComparisonRenderer';
 import { RatingDisplay } from './RatingDisplay';
 import { SearchFilter } from '../filters/AllFilters';
 import { FloaterCardDialog } from './FloaterCardDialog';
+import { PriceHistoryDialog } from './PriceHistoryDialog';
 
 type FieldDescriptionMap = Record<string, string>;
 
@@ -214,6 +216,14 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
   const [floaterSecids, setFloaterSecids] = useState<Set<string>>(new Set());
   const [floaterDialogOpen, setFloaterDialogOpen] = useState(false);
   const [floaterDialogData, setFloaterDialogData] = useState<BondFloatParamsDTO | null>(null);
+  
+  // Price history chart state
+  const [priceHistoryOpen, setPriceHistoryOpen] = useState(false);
+  const [priceHistoryData, setPriceHistoryData] = useState<BondPriceHistoryResponse | null>(null);
+  const [priceHistoryLoading, setPriceHistoryLoading] = useState(false);
+  const [priceHistoryError, setPriceHistoryError] = useState<string | null>(null);
+  const [priceHistorySecid, setPriceHistorySecid] = useState('');
+  const [priceHistoryBondName, setPriceHistoryBondName] = useState('');
 
   // Load field descriptions
   useEffect(() => {
@@ -368,6 +378,32 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
   const handleCloseFloaterDialog = useCallback(() => {
     setFloaterDialogOpen(false);
     setFloaterDialogData(null);
+  }, []);
+
+  // Handle price history chart click
+  const handleOpenPriceHistory = useCallback(async (secid: string, shortname: string, event?: React.MouseEvent) => {
+    if (event) {
+      event.stopPropagation();
+    }
+    setPriceHistorySecid(secid);
+    setPriceHistoryBondName(shortname);
+    setPriceHistoryOpen(true);
+    setPriceHistoryLoading(true);
+    setPriceHistoryError(null);
+    try {
+      const data = await fetchPriceHistory(secid);
+      setPriceHistoryData(data);
+    } catch (err: unknown) {
+      console.error('Failed to load price history:', err);
+      setPriceHistoryError('Ошибка при загрузке истории цен');
+    } finally {
+      setPriceHistoryLoading(false);
+    }
+  }, []);
+
+  const handleClosePriceHistory = useCallback(() => {
+    setPriceHistoryOpen(false);
+    setPriceHistoryData(null);
   }, []);
 
   // Custom header component with Material-UI Tooltip
@@ -906,6 +942,32 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
       autoHeaderHeight: true,
     }),
     {
+      headerName: '',
+      field: 'priceHistory',
+      minWidth: 40,
+      maxWidth: 40,
+      pinned: 'right',
+      cellRenderer: (params: ICellRendererParams) => (
+        <IconButton
+          size="small"
+          color="primary"
+          className="priceHistory"
+          onClick={(e) => {
+            e.stopPropagation();
+            void handleOpenPriceHistory(params.data.SECID, params.data.SHORTNAME, e);
+          }}
+          sx={{ padding: '2px' }}
+        >
+          <ShowChartIcon fontSize="small" />
+        </IconButton>
+      ),
+      sortable: false,
+      filter: false,
+      suppressMovable: true,
+      headerClass: 'ag-header-center',
+      autoHeaderHeight: true,
+    },
+    {
       field: 'addToComparison',
       headerName: '',
       minWidth: 55,
@@ -942,7 +1004,7 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
       suppressSizeToFit: true, // Prevent auto-sizing to avoid layout shifts
     },
     ];
-  }, [getFieldDescription, floaterSecids, handleFloaterNameClick]);
+  }, [getFieldDescription, floaterSecids, handleFloaterNameClick, handleOpenPriceHistory]);
 
   // Default column properties
   const defaultColDef: ColDef = useMemo(() => ({
@@ -957,22 +1019,21 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
   // Stable reference to AddToPortfolioRenderer to prevent column redefinition
   // const addToPortfolioRenderer = useMemo(() => AddToPortfolioRenderer, []);
 
-  // Track if cell click was on portfolio or comparison column to prevent row click
+  // Track if cell click was on portfolio, comparison or price history column to prevent row click
   const portfolioCellClickedRef = useRef(false);
   const comparisonCellClickedRef = useRef(false);
+  const priceHistoryCellClickedRef = useRef(false);
 
-  // Handle cell click - intercept clicks on portfolio and comparison columns
+  // Handle cell click - intercept clicks on action columns
   const onCellClicked = useCallback((event: CellClickedEvent) => {
     const colId = event.column?.getColId();
-    // If clicking on "Add to Portfolio" or "Add to Comparison" column, mark it and prevent row click
+    // If clicking on an action column, mark it and prevent row click
     if (colId === 'addToPortfolio') {
       portfolioCellClickedRef.current = true;
-      // Prevent event propagation
       if (event.event) {
         event.event.stopPropagation();
         event.event.preventDefault();
       }
-      // Reset flag after a short delay to allow row click check
       setTimeout(() => {
         portfolioCellClickedRef.current = false;
       }, 200);
@@ -980,14 +1041,23 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
     }
     if (colId === 'addToComparison') {
       comparisonCellClickedRef.current = true;
-      // Prevent event propagation
       if (event.event) {
         event.event.stopPropagation();
         event.event.preventDefault();
       }
-      // Reset flag after a short delay to allow row click check
       setTimeout(() => {
         comparisonCellClickedRef.current = false;
+      }, 200);
+      return;
+    }
+    if (colId === 'priceHistory') {
+      priceHistoryCellClickedRef.current = true;
+      if (event.event) {
+        event.event.stopPropagation();
+        event.event.preventDefault();
+      }
+      setTimeout(() => {
+        priceHistoryCellClickedRef.current = false;
       }, 200);
       return;
     }
@@ -995,9 +1065,19 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
 
   // Handle row click
   const onRowClicked = useCallback((event: RowClickedEvent) => {
+    // If an action cell was clicked, don't open the detail dialog
+    if (portfolioCellClickedRef.current || comparisonCellClickedRef.current || priceHistoryCellClickedRef.current) {
+      return;
+    }
+
     // Get the clicked element FIRST - we need it for all checks
     const target = event.event?.target as HTMLElement | null;
     if (!target || !event.event) {
+      return;
+    }
+
+    // Don't open if clicked on an action icon or its button
+    if (target.closest('.addToPortfolio') || target.closest('.addToComparison') || target.closest('.priceHistory')) {
       return;
     }
     
@@ -1618,6 +1698,15 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
         open={floaterDialogOpen}
         onClose={handleCloseFloaterDialog}
         data={floaterDialogData}
+      />
+      <PriceHistoryDialog
+        open={priceHistoryOpen}
+        onClose={handleClosePriceHistory}
+        secid={priceHistorySecid}
+        bondName={priceHistoryBondName}
+        data={priceHistoryData}
+        loading={priceHistoryLoading}
+        error={priceHistoryError}
       />
     </Card>
   );

@@ -28,6 +28,10 @@ from app.models.schemasDTO.yield_ruonia_chart_dto import (
     BondYieldRuoniaChartItem,
     BondYieldRuoniaChartResponse,
 )
+from app.models.schemasDTO.price_history_dto import (
+    BondPriceHistoryItem,
+    BondPriceHistoryResponse,
+)
 
 __all__ = [
     "BondFloatParamsDTO",
@@ -58,4 +62,6 @@ __all__ = [
     "RuoniaDTO",
     "BondYieldRuoniaChartItem",
     "BondYieldRuoniaChartResponse",
+    "BondPriceHistoryItem",
+    "BondPriceHistoryResponse",
 ]

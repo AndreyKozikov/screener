@@ -16,6 +16,7 @@ from google.genai import types
 from app.models.schemasDTO.gemini_dto import GeminiBondAnalysisDTO
 from app.repository.files.markdown_repository import MarkdownFileRepository
 from app.utils.llm_response_validation import validate_analysis_response
+from app.core.exceptions import PromptTooLongError
 from config.llm_prompts import build_floater_analysis_prompt
 from config.settings import settings
 
@@ -269,6 +270,18 @@ class GeminiAnalysisService:
             events_json=events_json,
             markdown_content=markdown_content,
         )
+
+        prompt_len = len(prompt)
+        if prompt_len > settings.FLOATER_ANALYSIS_PROMPT_MAX_CHARS:
+            logger.warning(
+                "[GEMINI] Промпт слишком длинный (%d символов > %d), анализ отменён",
+                prompt_len, settings.FLOATER_ANALYSIS_PROMPT_MAX_CHARS
+            )
+            raise PromptTooLongError(
+                f"Промпт слишком длинный ({prompt_len} символов)",
+                length=prompt_len,
+                limit=settings.FLOATER_ANALYSIS_PROMPT_MAX_CHARS
+            )
 
         model_id: str = model or GEMINI_MODEL_FLASH_LITE
         logger.info(

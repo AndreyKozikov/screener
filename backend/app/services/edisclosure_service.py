@@ -50,7 +50,7 @@ from app.parsers.emission_series_parser import (
     filter_events_by_secid_regnumber_series,
     markdown_has_decision_header,
 )
-from app.core.exceptions import PdfConversionConnectionError
+from app.core.exceptions import PdfConversionConnectionError, PromptTooLongError
 from app.services.llm_provider_readiness_service import LlmProviderReadinessService
 from app.repository.db.emission_document_repository import EmissionDocumentRepository
 from app.utils.edisclosure_utils import (
@@ -440,6 +440,12 @@ class EdisclosureService:
                 secid, exc,
             )
             return {"status": "error", "detail": str(exc)}
+        except PromptTooLongError as exc:
+            logger.info(
+                "[PIPELINE SKIP] secid=%s: %s",
+                secid, exc,
+            )
+            return {"status": "skipped", "detail": str(exc)}
 
         if analysis is None:
             logger.warning(
@@ -1803,7 +1809,15 @@ class EdisclosureService:
         # --- Шаг 5: LLM-анализ с ограничением частоты и повтором при 503 UNAVAILABLE ---
         print(f"  [{secid}] Шаг 5/5: анализ LLM", flush=True)
         self._enforce_llm_rate_limit()
-        analysis: Optional[GeminiBondAnalysisDTO] = self._call_llm_with_retry(converted, provider)
+        try:
+            analysis: Optional[GeminiBondAnalysisDTO] = self._call_llm_with_retry(converted, provider)
+        except PromptTooLongError as exc:
+            fl_logger.info(
+                "[SKIP] secid=%s: промпт слишком длинный, обработка пропущена: %s",
+                secid, exc
+            )
+            print(f"  [{secid}] Пропуск: промпт слишком длинный", flush=True)
+            return False
 
         if analysis is None:
             fl_logger.warning(

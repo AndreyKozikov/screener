@@ -1,10 +1,11 @@
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import bonds, metadata, zerocupon, forecast, llm, qwen, grok, emitent, rating, feedback, currency, ruonia, keyrate, dashboard, trading_history, edisclosure
+from app.routers import bonds, metadata, zerocupon, forecast, llm, qwen, grok, emitent, rating, feedback, currency, ruonia, keyrate, dashboard, trading_history, edisclosure, pipeline
 from app.services.data_loader import init_data_loader
 from app.services.emitent_service import init_emitent_service
 from app.services.currency_service import init_currency_service
@@ -16,6 +17,14 @@ from config.settings import settings
 from app.core.database_init import run_migrations
 from app.repository.db.emitents_repository import EmitentsRepository
 from config.paths import DATA_DIR, DB_PATH
+
+
+# Настройка базового логирования
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(levelname)s:     %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 
 # Lifespan context manager for startup/shutdown events
@@ -91,6 +100,7 @@ app.include_router(keyrate.router)
 app.include_router(dashboard.router)
 app.include_router(trading_history.router)
 app.include_router(edisclosure.router)
+app.include_router(pipeline.router)
 
 # Root endpoint
 @app.get("/")

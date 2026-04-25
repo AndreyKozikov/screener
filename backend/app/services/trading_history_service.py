@@ -245,6 +245,31 @@ class TradingHistoryService:
                 by_date[rec.tradedate] = rec.yieldatwap
         return [(d, by_date[d]) for d in sorted(by_date.keys())]
 
+    def get_price_history(self, secid: str) -> List[Dict[str, Any]]:
+        """Возвращает историю цен (tradedate, open) по облигации.
+
+        Для каждой даты берётся первая запись с непустой ценой открытия.
+        Возвращает список словарей {"date": iso_date, "open": value}.
+        """
+        # Загружаем всю доступную историю
+        records = self._history_repo.get_by_secid_date_range(
+            secid=secid.strip(),
+            date_from=DEFAULT_FROM_DATE,
+            date_to=date.today(),
+        )
+        
+        # Одна точка на дату: первое непустое open при обходе по порядку
+        by_date: Dict[date, Optional[float]] = {}
+        for rec in records:
+            if rec.tradedate not in by_date or by_date[rec.tradedate] is None:
+                if rec.open is not None:
+                    by_date[rec.tradedate] = rec.open
+        
+        return [
+            {"date": d, "open": by_date[d]} 
+            for d in sorted(by_date.keys())
+        ]
+
     def _build_moex_url(
         self, secid: str, from_: str, till: str, start: int
     ) -> str:

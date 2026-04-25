@@ -23,3 +23,13 @@ class LlmProviderUnavailableError(Exception):
     def __init__(self, message: str) -> None:
         super().__init__(message)
         self.message: str = message
+
+
+class PromptTooLongError(Exception):
+    """Raised when the prepared LLM prompt exceeds the allowed character limit."""
+
+    def __init__(self, message: str, length: int, limit: int) -> None:
+        super().__init__(message)
+        self.message: str = message
+        self.length: int = length
+        self.limit: int = limit

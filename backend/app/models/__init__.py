@@ -35,6 +35,8 @@ from app.models.schemasDTO import (
     CouponsBySecid,
     CouponsListResponse,
     MultipleCouponsResponse,
+    BondPriceHistoryItem,
+    BondPriceHistoryResponse,
     Offer,
     DescribeDTO,
     EmitentInfo,
@@ -92,5 +94,7 @@ __all__ = [
     "RuoniaDTO",
     "BondYieldRuoniaChartItem",
     "BondYieldRuoniaChartResponse",
+    "BondPriceHistoryItem",
+    "BondPriceHistoryResponse",
     "round_float_for_api",
 ]

@@ -162,6 +162,30 @@ export const fetchYieldRuoniaChart = async (secid: string): Promise<YieldRuoniaC
 };
 
 /**
+ * Точка графика истории цены облигации
+ */
+export interface BondPriceHistoryPoint {
+  date: string;
+  open: number | null;
+}
+
+/**
+ * Ответ API истории цены облигации
+ */
+export interface BondPriceHistoryResponse {
+  secid: string;
+  data: BondPriceHistoryPoint[];
+}
+
+/**
+ * Загружает историю цен для графика.
+ */
+export const fetchPriceHistory = async (secid: string): Promise<BondPriceHistoryResponse> => {
+  const response = await apiClient.get<BondPriceHistoryResponse>(`/bonds/${secid}/price-history`);
+  return response.data;
+};
+
+/**
  * Fetch bond details by SECID
  */
 export const fetchBondDetail = async (secid: string): Promise<BondDetail> => {

@@ -10,7 +10,6 @@ import asyncio
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Optional
 from datetime import date
-
 from app.models import (
     BondDetail,
     BondFilters,
@@ -19,6 +18,7 @@ from app.models import (
     CouponsBySecid,
     CouponsListResponse,
     MultipleCouponsResponse,
+    BondPriceHistoryResponse,
 )
 from app.models.schemasDTO.bond_float_params_dto import BondFloatParamsDTO
 from app.services.bond_float_params_service import BondFloatParamsService
@@ -31,6 +31,7 @@ from app.services.coupon_service import get_coupon_service
 from app.services.bond_ruonia_chart_service import get_yield_ruonia_chart_data
 from app.services.data_loader import get_data_loader
 from app.services.moex_client import MoexClient
+from app.services.trading_history_service import get_trading_history_service
 from app.repository.db.bonds_repository import BondsRepository
 from app.repository.db.bond_float_params_repository import BondFloatParamsRepository
 from app.repository.db.db_coupon import DBCoupon
@@ -215,6 +216,30 @@ async def get_bond_yield_ruonia_chart(secid: str):
     """
     result = await asyncio.to_thread(get_yield_ruonia_chart_data, secid)
     return result
+
+
+@router.get("/{secid}/price-history", response_model=BondPriceHistoryResponse)
+async def get_bond_price_history(secid: str):
+    """Возвращает историю цен (tradedate, open) для построения графика.
+
+    Данные берутся из таблицы bond_trading_history.
+
+    Args:
+        secid: Идентификатор облигации (SECID).
+
+    Returns:
+        BondPriceHistoryResponse с полем data — список точек (date, open).
+    """
+    try:
+        svc = get_trading_history_service()
+    except RuntimeError as e:
+        raise HTTPException(
+            status_code=503,
+            detail="Сервис истории торгов не инициализирован.",
+        ) from e
+    
+    data = await asyncio.to_thread(svc.get_price_history, secid)
+    return BondPriceHistoryResponse(secid=secid, data=data)
 
 
 @router.get("/{secid}/float-params", response_model=BondFloatParamsDTO)

@@ -7,6 +7,7 @@ from app.models.entities.describe import DescribeField
 from app.models.entities.emitent import Emitent
 from app.models.entities.emitent_edisclosure import EmitentEdisclosure
 from app.models.entities.emission_document import EmissionDocument
+from app.models.entities.event_detail import EventDetail
 from app.models.entities.forecast import (
     Forecast,
     ForecastBalance,
@@ -33,6 +34,7 @@ __all__ = [
     "Emitent",
     "EmitentEdisclosure",
     "EmissionDocument",
+    "EventDetail",
     "Forecast",
     "ForecastBalance",
     "ForecastIndicatorName",
