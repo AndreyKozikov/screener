@@ -26,6 +26,14 @@ def _has_migration_scripts() -> bool:
     return any(versions_dir.glob("*.py"))  # только .py, без __init__ и т.п.
 
 
+def _has_blog_migration_scripts() -> bool:
+    """Проверяет, есть ли в blog_alembic/versions хотя бы один скрипт миграции."""
+    versions_dir = _BACKEND_DIR / "blog_alembic" / "versions"
+    if not versions_dir.is_dir():
+        return False
+    return any(versions_dir.glob("*.py"))
+
+
 def run_migrations() -> None:
     """Применяет неприменённые миграции (alembic upgrade head) в отдельном процессе.
 
@@ -81,6 +89,40 @@ def run_migrations() -> None:
     else:
         print("[STARTUP] alembic upgrade head done", flush=True)
     logger.info("Миграции Alembic применены (upgrade head)")
+
+
+def run_blog_migrations() -> None:
+    """Применяет миграции отдельной базы данных блога."""
+    logger = logging.getLogger(__name__)
+    config_path = _BACKEND_DIR / "blog_alembic.ini"
+    if not config_path.exists():
+        logger.warning("blog_alembic.ini не найден: %s — миграции блога пропущены", config_path)
+        return
+    if not _has_blog_migration_scripts():
+        logger.info("Скриптов миграций блога нет — upgrade пропущен")
+        return
+
+    def _run_alembic(*args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [sys.executable, "-m", "alembic", "-c", str(config_path)] + list(args),
+            cwd=str(_BACKEND_DIR),
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+
+    print("[STARTUP] blog alembic upgrade head start", flush=True)
+    proc = _run_alembic("upgrade", "head")
+    if proc.returncode != 0:
+        combined = (proc.stdout or "") + (proc.stderr or "")
+        if "already exists" in combined.lower():
+            _run_alembic("stamp", "head")
+            print("[STARTUP] blog alembic stamp head done", flush=True)
+            return
+        logger.error("Ошибка миграций блога: %s\n%s", proc.stdout, proc.stderr)
+        raise RuntimeError(f"Blog Alembic upgrade failed: {proc.stderr or proc.stdout}")
+    print("[STARTUP] blog alembic upgrade head done", flush=True)
+    logger.info("Миграции блога применены (upgrade head)")
 
 
 def run_autogenerate(message: str = "auto") -> None:

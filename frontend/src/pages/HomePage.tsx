@@ -12,9 +12,9 @@ import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
 import TimelineIcon from '@mui/icons-material/Timeline';
 import AssessmentIcon from '@mui/icons-material/Assessment';
-import SchoolIcon from '@mui/icons-material/School';
 import AnalyticsIcon from '@mui/icons-material/Analytics';
 import PercentIcon from '@mui/icons-material/Percent';
+import ArticleIcon from '@mui/icons-material/Article';
 import { FiltersModal } from '../components/filters/FiltersModal';
 import { BondsTable } from '../components/bonds/BondsTable';
 import { BondDetails } from '../components/bonds/BondDetails';
@@ -34,7 +34,7 @@ import { RefreshDataDialog } from '../components/common/RefreshDataDialog';
 import { ForecastFileDialog } from '../components/common/ForecastFileDialog';
 import { FeedbackDialog } from '../components/common/FeedbackDialog';
 import { HelpDialog, type HelpSection } from '../components/common/HelpDialog';
-import { BondSelectionGuidePage } from './BondSelectionGuidePage';
+import { BlogPage } from './BlogPage';
 import { refreshBondsData, refreshCouponsData } from '../api/bonds';
 import { refreshFloatersData } from '../api/edisclosure';
 import { refreshZerocuponData, fetchZerocuponData } from '../api/zerocupon';
@@ -572,9 +572,9 @@ export const HomePage: React.FC = () => {
       onClick: () => handleHubCardClick(4),
     },
     {
-      title: 'Советы по выбору',
-      description: 'Пошаговое руководство по отбору облигаций',
-      icon: <SchoolIcon sx={{ fontSize: 48 }} />,
+      title: 'Блог',
+      description: 'Статьи и интерактивный гид по облигациям',
+      icon: <ArticleIcon sx={{ fontSize: 48 }} />,
       color: '#00acc1',
       onClick: () => handleHubCardClick(5),
     },
@@ -1095,7 +1095,7 @@ export const HomePage: React.FC = () => {
 
             {currentTab === 5 && (
               <Box sx={{ flexGrow: 1, minHeight: 0 }}>
-                <BondSelectionGuidePage />
+                <BlogPage />
               </Box>
             )}
           </Container>

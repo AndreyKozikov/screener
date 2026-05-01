@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.routers import (
     bonds, metadata, zerocupon, forecast, llm, qwen, grok, emitent, rating, 
     feedback, currency, ruonia, keyrate, dashboard, trading_history, 
-    edisclosure, pipeline, llm_prompt_pipeline,
+    edisclosure, pipeline, llm_prompt_pipeline, blog,
     vector_retrieval
 )
 from app.services.data_loader import init_data_loader
@@ -19,7 +19,7 @@ from app.services.keyrate_service import init_keyrate_service
 from app.services.trading_history_service import init_trading_history_service
 from app.services.kbd_service import init_kbd_service
 from config.settings import settings
-from app.core.database_init import run_migrations
+from app.core.database_init import run_blog_migrations, run_migrations
 from app.repository.db.emitents_repository import EmitentsRepository
 from config.paths import DATA_DIR, DB_PATH
 
@@ -39,6 +39,9 @@ async def lifespan(app: FastAPI):
     print("[STARTUP] run_migrations start", flush=True)
     run_migrations()
     print("[STARTUP] run_migrations done", flush=True)
+    print("[STARTUP] run_blog_migrations start", flush=True)
+    run_blog_migrations()
+    print("[STARTUP] run_blog_migrations done", flush=True)
     # Startup: Initialize data loaders
     print("[STARTUP] init_data_loader start", flush=True)
     init_data_loader(DATA_DIR)
@@ -106,9 +109,10 @@ app.include_router(dashboard.router)
 app.include_router(trading_history.router)
 app.include_router(edisclosure.router)
 app.include_router(pipeline.router)
-
 app.include_router(llm_prompt_pipeline.router)
 app.include_router(vector_retrieval.router)
+app.include_router(blog.public_router)
+app.include_router(blog.admin_router)
 
 # Root endpoint
 @app.get("/")

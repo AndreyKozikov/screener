@@ -1,7 +1,9 @@
 import React from 'react';
 import { ThemeProvider, CssBaseline, Box, Typography } from '@mui/material';
+import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { theme } from './theme/theme';
 import { HomePage } from './pages/HomePage';
+import { BlogAdminPage } from './pages/BlogAdminPage';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 // import { TestPage } from './TestPage';
 
@@ -20,7 +22,12 @@ function App() {
             <Typography variant="h4">Загрузка...</Typography>
           </Box>
         }>
-          <HomePage />
+          <BrowserRouter>
+            <Routes>
+              <Route path="/" element={<HomePage />} />
+              <Route path="/blog-admin" element={<BlogAdminPage />} />
+            </Routes>
+          </BrowserRouter>
         </React.Suspense>
       </ThemeProvider>
     </ErrorBoundary>

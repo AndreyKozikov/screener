@@ -19,6 +19,9 @@ EMITENT_EVENTS_JSON_DIR: Path = DATA_DIR / "events"
 # Файл базы данных SQLite (облигации, эмитенты, купоны и т.д.)
 DB_PATH: Path = BACKEND_DIR / "db" / "bonds.db"
 
+# Файл базы данных SQLite для блога.
+BLOG_DB_PATH: Path = BACKEND_DIR / "db" / "blog.db"
+
 # Файл базы данных для истории торгов (отдельная БД)
 HISTORY_DB_PATH: Path = BACKEND_DIR / "db" / "history_db.db"
 
@@ -62,3 +65,4 @@ SENT_FEEDBACK_JSON: str = "sent_feedback.json"
 FEEDBACK_FILE_PATH: Path = DATA_DIR / FEEDBACK_JSON
 SENT_FEEDBACK_FILE_PATH: Path = DATA_DIR / SENT_FEEDBACK_JSON
 ZEROCOUPON_CSV_PATH: Path = DATA_DIR / ZEROCOUPON_CSV
+BLOG_UPLOADS_DIR: Path = DATA_DIR / "blog" / "uploads"
