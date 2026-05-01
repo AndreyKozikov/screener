@@ -1,0 +1,47 @@
+from pathlib import Path
+from typing import Any, List
+
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Путь к .env — корень conversion_service
+_SERVICE_DIR = Path(__file__).resolve().parent.parent
+_env_file_path = None
+if (_SERVICE_DIR / ".env").exists():
+    _env_file_path = str(_SERVICE_DIR / ".env")
+
+
+class Settings(BaseSettings):
+    """Настройки приложения Conversion Service."""
+
+    API_V1_STR: str = "/api"
+    PROJECT_NAME: str = "Conversion Service API"
+
+    CORS_ORIGINS: List[str] | str = [
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:3000",
+    ]
+
+    @field_validator("CORS_ORIGINS", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            if v.strip() == "*":
+                return ["*"]
+            return [origin.strip() for origin in v.split(",") if origin.strip()]
+        return v
+
+    PDF2MD_BASE_URL: str = "http://localhost:9000"
+
+    model_config = SettingsConfigDict(
+        env_file=_env_file_path,
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        extra="ignore",
+        env_ignore_empty=True,
+    )
+
+
+settings = Settings()

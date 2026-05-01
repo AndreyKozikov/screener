@@ -17,12 +17,12 @@ Two modes:
 import hashlib
 import json
 import logging
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
 from app.core.exceptions import PdfConversionConnectionError
-from app.repository.db.bond_float_params_repository import BondFloatParamsRepository
 from app.repository.db.emission_document_repository import EmissionDocumentRepository
 from app.repository.files.file_storage import FileStorage
 from app.services.bonds_service import (
@@ -30,18 +30,18 @@ from app.services.bonds_service import (
     get_floater_secids,
     get_reg_number_by_secid,
 )
-from app.services.edisclosure_service import EdisclosureService
 from app.services.pdf_conversion_service import PdfConversionService
 from app.utils.edisclosure_utils import (
     clean_markdown_after_pdf2md,
     download_emission_file,
     extract_zip_to_dir,
 )
+from config.paths import DATA_DIR
 from config.settings import settings
 
 logger: logging.Logger = logging.getLogger(__name__)
 
-_DATA_DIR: Path = Path(__file__).resolve().parent.parent / "data"
+_DATA_DIR: Path = DATA_DIR
 _MANIFEST_FILENAME: str = ".processed.json"
 
 # MIME types supported for conversion.
@@ -62,18 +62,34 @@ def _get_pipeline_logger() -> logging.Logger:
 
     logger_name: str = "emission_doc_download_pipeline"
     pl_logger: logging.Logger = logging.getLogger(logger_name)
-    if pl_logger.handlers:
-        return pl_logger
-
     pl_logger.setLevel(logging.INFO)
     log_file: Path = log_dir / f"emission_doc_download_{datetime.now().strftime('%Y-%m-%d')}.log"
-    fh: logging.FileHandler = logging.FileHandler(log_file, encoding="utf-8")
-    fh.setLevel(logging.INFO)
     fmt: logging.Formatter = logging.Formatter(
         "%(asctime)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
     )
-    fh.setFormatter(fmt)
-    pl_logger.addHandler(fh)
+
+    has_file_handler: bool = any(
+        isinstance(handler, logging.FileHandler)
+        and getattr(handler, "baseFilename", None) == str(log_file)
+        for handler in pl_logger.handlers
+    )
+    if not has_file_handler:
+        fh: logging.FileHandler = logging.FileHandler(log_file, encoding="utf-8")
+        fh.setLevel(logging.INFO)
+        fh.setFormatter(fmt)
+        pl_logger.addHandler(fh)
+
+    has_console_handler: bool = any(
+        getattr(handler, "_emission_doc_console", False)
+        for handler in pl_logger.handlers
+    )
+    if not has_console_handler:
+        ch: logging.StreamHandler = logging.StreamHandler(sys.stdout)
+        ch.setLevel(logging.INFO)
+        ch.setFormatter(fmt)
+        ch._emission_doc_console = True
+        pl_logger.addHandler(ch)
+
     pl_logger.propagate = False
     return pl_logger
 
@@ -88,8 +104,6 @@ class EmissionDocDownloadService:
     def __init__(self) -> None:
         self._file_storage: FileStorage = FileStorage()
         self._emission_doc_repo: EmissionDocumentRepository = EmissionDocumentRepository()
-        self._edisclosure_service: EdisclosureService = EdisclosureService()
-        self._float_params_repo: BondFloatParamsRepository = BondFloatParamsRepository()
 
     # ------------------------------------------------------------------
     # Public entry points
@@ -315,19 +329,32 @@ class EmissionDocDownloadService:
             pl_logger.warning("[SKIP] secid=%s: registration number not found", secid)
             return False
 
-        # CLEANUP: Delete old source files and reset manifest to avoid
-        # file multiplication and naming issues (_1, _2).
-        self._cleanup_source_files(bond_data_dir)
-        self._save_manifest(bond_data_dir, {})
-        manifest: Dict[str, List[str]] = {}
+        manifest: Dict[str, List[str]] = self._load_manifest(bond_data_dir)
 
-        # --- Phase 1: Collect missing conversions from existing archives ---
+        # --- Phase 1: Collect missing conversions from existing manifest ---
         to_convert: List[str] = []
-        for files in manifest.values():
+        stale_urls: Set[str] = set()
+        for url, files in manifest.items():
             for f in files:
                 if Path(f).suffix.lower() in _EXTENSION_MIME_MAP:
-                    if not (bond_data_dir / Path(f).with_suffix(".md")).exists():
+                    source_path: Path = bond_data_dir / f
+                    md_path: Path = bond_data_dir / Path(f).with_suffix(".md")
+                    if md_path.exists():
+                        continue
+                    if source_path.exists():
                         to_convert.append(f)
+                    else:
+                        stale_urls.add(url)
+
+        if stale_urls:
+            for url in stale_urls:
+                manifest.pop(url, None)
+            self._save_manifest(bond_data_dir, manifest)
+            pl_logger.info(
+                "[%s] Removed %d stale manifest URLs for re-download",
+                secid,
+                len(stale_urls),
+            )
 
         # --- Phase 2: Download NEW archives ---
         print(f"  [{secid}] Phase 2: download new documents", flush=True)
@@ -341,6 +368,12 @@ class EmissionDocDownloadService:
                 if Path(f).suffix.lower() in _EXTENSION_MIME_MAP:
                     if not (bond_data_dir / Path(f).with_suffix(".md")).exists():
                         to_convert.append(f)
+                    else:
+                        pl_logger.info(
+                            "[%s] Skip conversion, markdown already exists: %s",
+                            secid,
+                            Path(f).with_suffix(".md"),
+                        )
 
         if not to_convert:
             # If nothing to convert, ensure manifest is up to date (e.g. all XLS files)
@@ -380,6 +413,11 @@ class EmissionDocDownloadService:
         """Download emission ZIP archives and extract files, skipping already processed URLs."""
         emission_records = self._emission_doc_repo.get_by_inn_and_reg_number(inn, regnumber)
         manifest = self._load_manifest(bond_data_dir)
+        pl_logger.info(
+            "[%s] emission_documents records found: %d",
+            secid,
+            len(emission_records),
+        )
 
         url_to_files: Dict[str, List[str]] = {}
         for rec in emission_records:
@@ -387,13 +425,28 @@ class EmissionDocDownloadService:
             if not file_url or file_url in manifest:
                 continue
 
+            pl_logger.info("[%s] Downloading archive: %s", secid, file_url)
             content: Optional[bytes] = download_emission_file(file_url)
             if not content:
+                pl_logger.warning("[%s] Empty download response: %s", secid, file_url)
                 continue
 
             extracted: List[str] = extract_zip_to_dir(content, bond_data_dir)
             if extracted:
+                pl_logger.info(
+                    "[%s] Extracted %d files from %s",
+                    secid,
+                    len(extracted),
+                    file_url,
+                )
                 url_to_files[file_url] = extracted
+            else:
+                pl_logger.warning(
+                    "[%s] No files extracted from %s (downloaded %d bytes)",
+                    secid,
+                    file_url,
+                    len(content),
+                )
 
         return url_to_files
 

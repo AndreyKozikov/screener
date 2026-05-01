@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.routers import (
     bonds, metadata, zerocupon, forecast, llm, qwen, grok, emitent, rating, 
     feedback, currency, ruonia, keyrate, dashboard, trading_history, 
-    edisclosure, pipeline, emission_doc_download, llm_prompt_pipeline,
+    edisclosure, pipeline, llm_prompt_pipeline,
     vector_retrieval
 )
 from app.services.data_loader import init_data_loader
@@ -106,7 +106,7 @@ app.include_router(dashboard.router)
 app.include_router(trading_history.router)
 app.include_router(edisclosure.router)
 app.include_router(pipeline.router)
-app.include_router(emission_doc_download.router)
+
 app.include_router(llm_prompt_pipeline.router)
 app.include_router(vector_retrieval.router)
 
