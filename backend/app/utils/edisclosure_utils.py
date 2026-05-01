@@ -1309,14 +1309,7 @@ def extract_zip_to_dir(content: bytes, extract_dir: Path) -> List[str]:
                 if not base_name:
                     continue
                 target_path: Path = extract_dir / base_name
-                if target_path.exists():
-                    stem: str = target_path.stem
-                    suffix: str = target_path.suffix
-                    idx: int = 1
-                    while target_path.exists():
-                        base_name = f"{stem}_{idx}{suffix}"
-                        target_path = extract_dir / base_name
-                        idx += 1
+                # Overwrite existing files to avoid multiplication and suffixing (_1, _2)
                 try:
                     with zf.open(name, "r") as src:
                         target_path.write_bytes(src.read())

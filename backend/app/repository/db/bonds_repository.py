@@ -1170,6 +1170,40 @@ class BondsRepository:
             )
             return 0
 
+    def get_secids_by_regnumber(self, regnumber: str) -> List[str]:
+        """Returns list of SECIDs for bonds with the given registration number.
+
+        Looks up through bondsecurity.reg_number → bonds.secid.
+
+        Args:
+            regnumber: Registration number of the bond.
+
+        Returns:
+            List of SECIDs matching the registration number. Empty list if none found.
+        """
+        if not regnumber or not str(regnumber).strip():
+            return []
+        stmt = text("""
+            SELECT DISTINCT b.secid
+            FROM bonds b
+            JOIN bondsecurity bs ON bs.bond_id = b.id
+            WHERE TRIM(bs.reg_number) = :regnumber
+                AND b.secid IS NOT NULL AND TRIM(b.secid) != ''
+                AND (b.boardid IS NULL OR UPPER(TRIM(b.boardid)) != 'PACT')
+        """)
+        try:
+            with Session(self._engine) as session:
+                rows = session.execute(
+                    stmt, {"regnumber": regnumber.strip()}
+                ).fetchall()
+                return [str(r[0]).strip() for r in rows if r[0]]
+        except Exception as e:
+            self.logger.error(
+                "Error in get_secids_by_regnumber(%s): %s",
+                regnumber, e, exc_info=True,
+            )
+            return []
+
     def refresh(self, bonds: List[Bond]) -> bool:
         """Сохраняет список готовых объектов Bond в таблицу bonds (INSERT ON CONFLICT).
 

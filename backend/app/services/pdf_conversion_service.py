@@ -27,23 +27,6 @@ _DATA_DIR: Path = Path(__file__).resolve().parent.parent / "data"
 # Таймаут отключён (None): пайплайн всегда дожидается ответа сервиса конвертации.
 _CONVERSION_TIMEOUT: Optional[float] = None
 
-_HEADER_CONDITIONS: str = (
-    "ДОКУМЕНТ, СОДЕРЖАЩИЙ УСЛОВИЯ РАЗМЕЩЕНИЯ ЦЕННЫХ БУМАГ"
-)
-_HEADER_DECISION: str = "РЕШЕНИЕ О ВЫПУСКЕ ЦЕННЫХ БУМАГ"
-_HEADER_NOTICE_ISSUE: str = "Уведомление об итогах выпуска"
-
-# Фразы в имени файла (без учёта регистра), при наличии которых файл не отправляется на конвертацию.
-_FILENAME_EXCLUDE_PHRASES: Tuple[str, ...] = (
-    "Отчетность МСФО",
-    "Отчетность РСБУ",
-    "Отчетность",
-    "МСФО",
-    "РСБУ",
-    "Проспект",
-    "Сертификат",
-)
-
 # MIME-типы для поддерживаемых расширений документов.
 _EXTENSION_MIME_MAP: Dict[str, str] = {
     ".pdf": "application/pdf",
@@ -52,25 +35,6 @@ _EXTENSION_MIME_MAP: Dict[str, str] = {
     ".rtf": "application/rtf",
 }
 
-
-def _filename_excluded_from_conversion(filename: str) -> bool:
-    """True, если имя файла содержит одну из исключающих фраз (проверка без учёта регистра)."""
-    if not filename or not isinstance(filename, str):
-        return False
-    name_lower: str = filename.lower()
-    return any(phrase.lower() in name_lower for phrase in _FILENAME_EXCLUDE_PHRASES)
-
-
-def _markdown_has_any_required_header(markdown: str) -> bool:
-    """True, если в тексте есть хотя бы один из требуемых заголовков (без учёта регистра)."""
-    if not markdown or not markdown.strip():
-        return False
-    md_lower: str = markdown.lower()
-    return (
-        _HEADER_CONDITIONS.lower() in md_lower
-        or _HEADER_DECISION.lower() in md_lower
-        or _HEADER_NOTICE_ISSUE.lower() in md_lower
-    )
 
 
 class PdfConversionService:
@@ -101,22 +65,6 @@ class PdfConversionService:
             Копия *data* с добавленным ключом ``md_filenames: List[str]``.
         """
         doc_filenames: List[str] = data.get("doc_filenames", [])
-
-        if not doc_filenames:
-            return {**data, "md_filenames": []}
-
-        # Исключаем файлы по имени (отчётность, проспект, сертификат и т.д.) — проверка без учёта регистра.
-        original_count: int = len(doc_filenames)
-        doc_filenames = [
-            f for f in doc_filenames
-            if not _filename_excluded_from_conversion(f)
-        ]
-        excluded_count: int = original_count - len(doc_filenames)
-        if excluded_count > 0:
-            logger.info(
-                "Исключено из конвертации по имени (отчётность, проспект, сертификат и т.д.): %d файл(ов)",
-                excluded_count,
-            )
 
         if not doc_filenames:
             return {**data, "md_filenames": []}
@@ -191,14 +139,6 @@ class PdfConversionService:
 
             if not markdown:
                 logger.warning("Пустой markdown для %s", original)
-                continue
-
-            if not _markdown_has_any_required_header(markdown):
-                logger.info(
-                    "Пропуск сохранения %s: в тексте нет ни одного из заголовков "
-                    "(ДОКУМЕНТ, СОДЕРЖАЩИЙ УСЛОВИЯ РАЗМЕЩЕНИЯ..., РЕШЕНИЕ О ВЫПУСКЕ... или Уведомление об итогах выпуска)",
-                    original,
-                )
                 continue
 
             md_filename: str = Path(original).stem + ".md"
