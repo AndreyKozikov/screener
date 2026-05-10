@@ -4,7 +4,7 @@ from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
-from app.core.exceptions import LlmProviderUnavailableError, PdfConversionConnectionError
+from app.core.exceptions import LlmProviderUnavailableError
 from app.services.gemini_analysis_service import (
     GeminiQuotaExhaustedError,
     GeminiUnavailableError,
@@ -81,11 +81,6 @@ async def run_llm_pipeline(
         raise HTTPException(
             status_code=503,
             detail=str(exc),
-        ) from exc
-    except PdfConversionConnectionError as exc:
-        raise HTTPException(
-            status_code=503,
-            detail=f"PDF conversion service unavailable: {exc}",
         ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

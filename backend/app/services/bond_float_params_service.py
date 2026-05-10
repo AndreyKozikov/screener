@@ -1,8 +1,7 @@
-"""Сервис для получения параметров плавающей ставки облигаций.
+"""Сервис для предоставления параметров плавающей процентной ставки облигаций.
 
-Координирует BondsRepository и BondFloatParamsRepository для формирования
-BondFloatParamsDTO. Не содержит прямого доступа к БД — только через
-репозитории.
+Обеспечивает формирование объектов BondFloatParamsDTO, объединяя основные данные
+облигации и специфические условия доходности (флоатеры), извлеченные из документов.
 """
 
 import logging
@@ -17,24 +16,38 @@ from app.repository.db.bonds_repository import BondsRepository
 
 
 class BondFloatParamsService:
-    """Сервис параметров плавающей ставки.
+    """Сервис управления параметрами флоатеров.
 
-    Использует BondsRepository для получения данных облигации и
-    BondFloatParamsRepository для параметров флоатера. Вычисляет
-    days_to_maturity и формирует BondFloatParamsDTO.
+    Координирует взаимодействие между репозиториями облигаций и параметров флоатеров.
+    Выполняет расчет вспомогательных метрик, таких как количество дней до погашения.
+
+    Attributes:
+        _bonds_repo (BondsRepository): Репозиторий для работы с основными данными облигаций.
+        _float_repo (BondFloatParamsRepository): Репозиторий для работы с параметрами флоатеров.
+        _logger (Logger): Объект для ведения журналов событий.
     """
 
     def __init__(self, bonds_repo: BondsRepository, float_repo: BondFloatParamsRepository) -> None:
+        """Инициализирует сервис с необходимыми репозиториями.
+
+        Args:
+            bonds_repo (BondsRepository): Репозиторий для работы с основными данными облигаций.
+            float_repo (BondFloatParamsRepository): Репозиторий для работы с параметрами флоатеров.
+        """
         self._bonds_repo = bonds_repo
         self._float_repo = float_repo
         self._logger = logging.getLogger(__name__)
 
     @staticmethod
     def _compute_days_to_maturity(maturity_date_str: Optional[str]) -> Optional[int]:
-        """Вычисляет количество дней от сегодня до даты погашения.
+        """Вычисляет количество дней от текущей даты до даты погашения.
+
+        Args:
+            maturity_date_str (Optional[str]): Дата погашения в формате ISO (строка).
 
         Returns:
-            Положительное количество дней или None, если дата отсутствует или некорректна.
+            Optional[int]: Положительное количество дней или None, если дата отсутствует,
+                некорректна или погашение уже наступило.
         """
         if not maturity_date_str or not maturity_date_str.strip():
             return None
@@ -51,7 +64,16 @@ class BondFloatParamsService:
         bond: Bond,
         days_to_maturity: Optional[int],
     ) -> BondFloatParamsDTO:
-        """Собирает BondFloatParamsDTO из сущностей Bond и BondFloatParams."""
+        """Собирает объект BondFloatParamsDTO на основе сущностей Bond и BondFloatParams.
+
+        Args:
+            float_params (BondFloatParams): Сущность с параметрами плавающей ставки.
+            bond (Bond): Сущность облигации с базовыми данными.
+            days_to_maturity (Optional[int]): Предварительно вычисленное число дней до погашения.
+
+        Returns:
+            BondFloatParamsDTO: Сформированный объект DTO для передачи данных.
+        """
         return BondFloatParamsDTO(
             secid=bond.secid,
             name_short=bond.name,
@@ -89,13 +111,14 @@ class BondFloatParamsService:
         )
 
     def get_float_params_by_secid(self, secid: str) -> Optional[BondFloatParamsDTO]:
-        """Возвращает параметры флоатера по SECID облигации.
+        """Возвращает параметры флоатера по его SECID.
 
         Args:
-            secid: Идентификатор ценной бумаги.
+            secid (str): Идентификатор ценной бумаги (например, 'RU000A107TT9').
 
         Returns:
-            BondFloatParamsDTO или None, если запись не найдена или is_find == 0.
+            Optional[BondFloatParamsDTO]: Объект DTO с параметрами или None,
+                если облигация не найдена или для нее отсутствуют параметры флоатера.
         """
         bond_id = self._bonds_repo.get_bond_id_by_secid(secid)
         if bond_id is None:
@@ -120,13 +143,13 @@ class BondFloatParamsService:
         return self._build_dto(float_params, bond, days_to_maturity)
 
     def get_floater_secids_from_params(self) -> List[str]:
-        """Возвращает список SECID облигаций с найденными параметрами флоатера.
+        """Возвращает список SECID всех облигаций, для которых успешно найдены параметры флоатера.
 
-        Выбирает bond_id из bond_float_params где is_find != 0,
-        затем маппит их в SECID через BondsRepository.
+        Выбирает все bond_id из таблицы параметров, где флаг поиска установлен (is_find != 0),
+        и преобразует их в SECID через репозиторий облигаций.
 
         Returns:
-            Список SECID. Пустой список при отсутствии данных.
+            List[str]: Список идентификаторов ценных бумаг. Пустой список, если данные не найдены.
         """
         bond_ids = self._float_repo.get_bond_ids_with_find()
         if not bond_ids:

@@ -1,33 +1,35 @@
-import logging
-from contextlib import asynccontextmanager
-
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import emission_doc_download
+from app.routers import emission_doc_download, edisclosure_events
+from config.settings import settings
 
-# Настройка базового логирования
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s: %(message)s",
-    force=True,
-)
-logger = logging.getLogger(__name__)
+def create_app() -> FastAPI:
+    app = FastAPI(
+        title=settings.PROJECT_NAME,
+        openapi_url=f"{settings.API_V1_STR}/openapi.json",
+    )
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    logger.info("[STARTUP] Микросервис конвертации запущен и готов к приему запросов.")
-    yield
-    logger.info("[SHUTDOWN] Микросервис конвертации остановлен.")
+    # Настройка CORS
+    if settings.CORS_ORIGINS:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=[str(origin) for origin in settings.CORS_ORIGINS],
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
 
-app = FastAPI(
-    title="Conversion Service",
-    description="Emission document download and conversion service",
-    version="1.0.0",
-    lifespan=lifespan,
-)
+    # Регистрация роутеров
+    app.include_router(
+        emission_doc_download.router,
+        prefix=settings.API_V1_STR
+    )
+    app.include_router(
+        edisclosure_events.router,
+        prefix=settings.API_V1_STR
+    )
 
-app.include_router(emission_doc_download.router)
+    return app
 
-@app.get("/health")
-async def health():
-    return {"status": "ok"}
+app = create_app()

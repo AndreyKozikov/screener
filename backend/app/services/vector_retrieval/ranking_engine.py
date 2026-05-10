@@ -1,4 +1,5 @@
 import re
+import numpy as np
 from typing import List
 from .models import ScoredChunk
 
@@ -43,4 +44,55 @@ class RankingEngine:
             
         # Re-sort after heuristic adjustment
         chunks.sort(key=lambda x: x.score, reverse=True)
-        return chunks
+        
+        # Применяем MMR для обеспечения разнообразия результатов
+        return self._apply_mmr(chunks)
+
+    def _apply_mmr(self, chunks: List[ScoredChunk], lambda_param: float = 0.5, top_k: int = 15) -> List[ScoredChunk]:
+        """
+        Алгоритм Maximal Marginal Relevance для переранжирования с учетом разнообразия.
+        """
+        if not chunks:
+            return []
+            
+        # Проверяем наличие эмбеддингов
+        if any(c.embedding is None for c in chunks[:top_k]):
+            return chunks
+
+        print(f"  [VECTOR] Applying MMR ranking (diversity filter) for {len(chunks)} chunks...", flush=True)
+
+        selected = [chunks[0]]
+        remaining = chunks[1:]
+        
+        selected_embs = [np.array(chunks[0].embedding)]
+        
+        # Мы хотим отобрать top_k наиболее релевантных и разнообразных чанков
+        target_count = min(top_k, len(chunks))
+        
+        while len(selected) < target_count:
+            mmr_scores = []
+            for candidate in remaining:
+                cand_emb = np.array(candidate.embedding)
+                
+                # Релевантность (score уже включает эмбеддинги и эвристики)
+                # Нормализуем score для MMR (приблизительно, так как точный диапазон неизвестен)
+                rel_score = candidate.score
+                
+                # Сходство с уже выбранными (максимальное из всех)
+                if selected_embs:
+                    # Косинусное сходство (эмбеддинги уже нормализованы в retrieval_engine)
+                    sim_to_selected = max([np.dot(cand_emb, s_emb) for s_emb in selected_embs])
+                else:
+                    sim_to_selected = 0.0
+                
+                # Формула MMR: lambda * Relevance - (1 - lambda) * Similarity
+                mmr_score = lambda_param * rel_score - (1 - lambda_param) * sim_to_selected
+                mmr_scores.append(mmr_score)
+            
+            best_idx = np.argmax(mmr_scores)
+            selected.append(remaining[best_idx])
+            selected_embs.append(np.array(remaining[best_idx].embedding))
+            remaining.pop(best_idx)
+            
+        # Возвращаем отобранные чанки + остальные в исходном порядке (для полноты списка)
+        return selected + remaining

@@ -1,8 +1,8 @@
-"""Сервис для работы с данными эмитентов из API MOEX.
+"""Модуль для работы с данными эмитентов через API Московской биржи (MOEX).
 
-Этот модуль содержит класс EmitentService для загрузки данных об эмитентах
-облигаций из API Московской биржи. Данные возвращаются в оперативную память
-и передаются в репозиторий для записи в БД без промежуточного хранения в файлах.
+Обеспечивает загрузку, обновление и маппинг информации об эмитентах облигаций.
+Включает механизмы получения кредитных рейтингов эмитентов и синхронизации этих данных
+с локальной базой данных приложения.
 """
 
 import logging
@@ -22,16 +22,15 @@ logger = get_data_update_logger()
 
 
 class EmitentService:
-    """Сервис для работы с данными эмитентов из API MOEX.
+    """Сервис управления данными эмитентов.
 
-    Класс обеспечивает загрузку данных об эмитентах облигаций из API Московской биржи.
-    Данные возвращаются в памяти и передаются в EmitentsRepository для записи в БД.
-    Поддерживает получение данных по SECID или ISIN, загрузку рейтингов эмитентов
-    и массовое обновление данных для всех облигаций.
+    Класс инкапсулирует бизнес-логику взаимодействия с API MOEX для получения
+    подробной информации об организациях-эмитентах, включая их ИНН, официальные
+    названия и актуальные кредитные рейтинги.
 
     Attributes:
-        data_dir: Путь к директории с JSON файлами данных.
-        _emitents_repository: Репозиторий для доступа к данным эмитентов в БД.
+        data_dir (Path): Путь к директории с конфигурационными файлами.
+        _emitents_repository (Optional[EmitentsRepository]): Репозиторий для работы с БД.
     """
 
     def __init__(
@@ -39,23 +38,22 @@ class EmitentService:
         data_dir: Path,
         emitents_repository: Optional[Any] = None,
     ):
-        """Инициализирует сервис для работы с эмитентами.
+        """Инициализирует экземпляр сервиса эмитентов.
 
         Args:
-            data_dir: Путь к директории с JSON файлами данных.
-            emitents_repository: Репозиторий EmitentsRepository для чтения из БД.
+            data_dir (Path): Путь к директории с конфигурационными файлами.
+            emitents_repository (Optional[Any]): Репозиторий для взаимодействия с БД.
         """
         self.data_dir = data_dir
         self._emitents_repository = emitents_repository
 
     def get_secid_to_emitent_title_index(self) -> Dict[str, str]:
-        """Получает индекс маппинга SECID на название эмитента из БД.
+        """Строит карту соответствия SECID и названия эмитента.
 
-        Создает словарь для быстрого поиска названия эмитента по SECID облигации.
-        Используется для фильтрации облигаций по эмитенту в сервисном слое.
+        Используется для быстрого поиска названия организации при фильтрации в скринере.
 
         Returns:
-            Словарь, где ключ - SECID облигации, значение - название эмитента.
+            Dict[str, str]: Словарь {SECID: Название_эмитента}.
         """
         if self._emitents_repository is None:
             logger.warning("EmitentsRepository не инициализирован, возвращаю пустой индекс")
@@ -63,27 +61,26 @@ class EmitentService:
         return self._emitents_repository.get_secid_to_emitent_title_index()
 
     def get_emitent_by_secid(self, secid: str) -> Optional[Dict[str, Any]]:
-        """Получает данные эмитента по SECID из БД.
+        """Извлекает данные эмитента для конкретной бумаги из базы данных.
 
         Args:
-            secid: Идентификатор облигации (SECID) для поиска данных эмитента.
+            secid (str): Идентификатор облигации.
 
         Returns:
-            Полные данные эмитента в формате API MOEX или None, если не найдены в БД.
+            Optional[Dict[str, Any]]: Словарь с данными эмитента или None.
         """
         if self._emitents_repository is None:
             return None
         return self._emitents_repository.get_emitent_data_by_secid(secid)
 
     def extract_required_fields(self, emitent_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Извлекает только необходимые поля из полного ответа API MOEX.
+        """Фильтрует сырые данные API, оставляя только необходимые поля.
 
         Args:
-            emitent_data: Полные данные эмитента из ответа API MOEX.
+            emitent_data (Dict[str, Any]): Полный ответ от API MOEX.
 
         Returns:
-            Словарь с извлеченными полями: is_traded, emitent_title, emitent_inn,
-            type, cci_rating_companies.
+            Dict[str, Any]: Словарь с ключевыми характеристиками эмитента.
         """
         return {
             "is_traded": emitent_data.get("is_traded"),
@@ -94,17 +91,13 @@ class EmitentService:
         }
 
     def fetch_emitent_from_moex(self, secid: str) -> Optional[Dict[str, Any]]:
-        """Загружает данные эмитента из API MOEX по SECID без побочных эффектов.
-
-        Выполняет HTTP запрос к API Московской биржи для получения данных об эмитенте
-        по SECID облигации. Также загружает рейтинги эмитента по emitent_id.
+        """Запрашивает актуальную информацию об эмитенте напрямую из MOEX ISS API.
 
         Args:
-            secid: Идентификатор облигации (SECID) для поиска данных эмитента.
+            secid (str): Идентификатор облигации.
 
         Returns:
-            Полные данные эмитента из ответа API MOEX (словарь со всеми полями,
-            включая рейтинги в cci_rating_companies) или None при ошибке.
+            Optional[Dict[str, Any]]: Структурированные данные эмитента, включая рейтинги.
         """
         url = f"https://iss.moex.com/iss/securities.json?q={secid}"
         request = Request(url, headers={"User-Agent": "Mozilla/5.0"})
@@ -163,13 +156,13 @@ class EmitentService:
         return emitent_info
 
     def _fetch_emitent_ratings(self, emitent_id: int) -> Optional[List[Dict[str, Any]]]:
-        """Загружает рейтинги эмитента из API MOEX по emitent_id.
+        """Загружает историю кредитных рейтингов эмитента.
 
         Args:
-            emitent_id: Идентификатор эмитента для загрузки рейтингов.
+            emitent_id (int): Внутренний ID эмитента на MOEX.
 
         Returns:
-            Список словарей с данными рейтингов или None при ошибке.
+            Optional[List[Dict[str, Any]]]: Список рейтингов от различных агентств.
         """
         url = f"https://iss.moex.com/iss/cci/rating/companies/ecbd_{emitent_id}.json?iss.json=extended&iss.meta=off"
 
@@ -205,13 +198,13 @@ class EmitentService:
             return None
 
     def get_or_fetch_emitent(self, secid: str) -> Optional[Dict[str, Any]]:
-        """Получает данные эмитента по SECID: сначала из БД, при отсутствии — из API MOEX.
+        """Обеспечивает получение данных эмитента с приоритетом локальной БД.
 
         Args:
-            secid: Идентификатор облигации (SECID).
+            secid (str): Идентификатор облигации.
 
         Returns:
-            Полные данные эмитента или None, если не найдены ни в БД, ни в API.
+            Optional[Dict[str, Any]]: Данные эмитента.
         """
         emitent_data = self.get_emitent_by_secid(secid)
         if emitent_data is not None:
@@ -219,13 +212,13 @@ class EmitentService:
         return self.fetch_emitent_from_moex(secid)
 
     async def get_isin_by_secid(self, secid: str) -> Optional[str]:
-        """Получает ISIN код облигации по SECID из данных облигаций.
+        """Определяет ISIN код облигации по её SECID.
 
         Args:
-            secid: Идентификатор облигации (SECID) для поиска ISIN.
+            secid (str): Идентификатор облигации.
 
         Returns:
-            ISIN код облигации или None, если облигация не найдена.
+            Optional[str]: Международный код ISIN.
         """
         loader = get_data_loader()
         details = await loader.get_bond_details()
@@ -238,37 +231,20 @@ class EmitentService:
         return securities.get("ISIN")
 
     def _fetch_emitent_from_moex_by_secid(self, secid: str) -> Optional[Dict[str, Any]]:
-        """Загружает данные эмитента из API MOEX по SECID (вспомогательный метод).
-
-        Используется для массового обновления в refresh_all_emitents.
-
-        Args:
-            secid: Идентификатор облигации (SECID).
-
-        Returns:
-            Полные данные эмитента из API или None.
-        """
+        """Вспомогательный метод для загрузки эмитента."""
+        return self.fetch_emitent_from_moex(secid)
         return self.fetch_emitent_from_moex(secid)
 
     def refresh_all_emitents(
         self, bonds_details: Dict[str, Dict]
     ) -> Dict[str, Any]:
-        """Обновляет данные эмитентов для всех облигаций, возвращая их в памяти.
-
-        Итерируется по bonds_details, загружает данные эмитентов из API MOEX
-        и возвращает словарь {secid: api_response} без записи в файлы.
+        """Выполняет массовое обновление данных эмитентов для списка облигаций.
 
         Args:
-            bonds_details: Словарь {secid: bond_data} с детальной информацией
-                об облигациях (ключ SECID используется для запроса к MOEX).
+            bonds_details (Dict[str, Dict]): Детальные данные облигаций для обработки.
 
         Returns:
-            Словарь с ключами:
-            - data: Dict[str, Dict] — {secid: полный ответ API MOEX}
-            - total: int — количество облигаций для обработки
-            - updated: int — успешно загружено
-            - errors: int — ошибки при загрузке
-            - skipped: int — пропущено (пустой SECID)
+            Dict[str, Any]: Результаты обновления со статистикой.
         """
         total_bonds = len(bonds_details)
         updated_count = 0
@@ -350,17 +326,14 @@ class EmitentService:
         secids: List[str],
         db_path: Optional[Path] = None,
     ) -> Dict[str, Any]:
-        """Запрашивает эмитентов по списку SECID из MOEX, сохраняет в БД и обновляет emitent_id в bonds.
-
-        Использует refresh_all_emitents для загрузки данных, затем репозитории
-        для записи в emitents/emitent_ratings и обновления bonds.emitent_id.
+        """Актуализирует данные об эмитентах для заданных идентификаторов и связывает их с бумагами.
 
         Args:
-            secids: Список SECID облигаций без проставленного эмитента.
-            db_path: Путь к БД. Если None — используется config.paths.DB_PATH.
+            secids (List[str]): Список SECID для обновления.
+            db_path (Optional[Path]): Путь к базе данных.
 
         Returns:
-            Словарь: total, updated, errors, skipped, bonds_linked (число обновлённых bonds).
+            Dict[str, Any]: Статистика по количеству обработанных и связанных записей.
         """
         from config.paths import DB_PATH as DEFAULT_DB_PATH
 
@@ -405,24 +378,24 @@ def init_emitent_service(
     data_dir: Path,
     emitents_repository: Optional[Any] = None,
 ) -> None:
-    """Инициализирует singleton экземпляр сервиса эмитентов.
+    """Инициализирует глобальный синглтон сервиса эмитентов.
 
     Args:
-        data_dir: Путь к директории с JSON файлами данных.
-        emitents_repository: Репозиторий EmitentsRepository для чтения из БД.
+        data_dir (Path): Путь к директории данных.
+        emitents_repository (Optional[Any]): Репозиторий эмитентов.
     """
     global _emitent_service
     _emitent_service = EmitentService(data_dir=data_dir, emitents_repository=emitents_repository)
 
 
 def get_emitent_service() -> EmitentService:
-    """Получает singleton экземпляр сервиса эмитентов.
+    """Возвращает инициализированный экземпляр сервиса эмитентов.
 
     Returns:
-        Экземпляр EmitentService.
+        EmitentService: Глобальный сервис.
 
     Raises:
-        RuntimeError: Если сервис не был инициализирован.
+        RuntimeError: Если сервис не был проинициализирован.
     """
     if _emitent_service is None:
         raise RuntimeError("Emitent service not initialized")

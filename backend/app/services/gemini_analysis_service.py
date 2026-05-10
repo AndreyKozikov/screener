@@ -1,8 +1,7 @@
-"""Сервис анализа облигационных данных через Google Gemini API.
+"""Сервис глубокого анализа эмиссионной документации через Google Gemini API.
 
-Принимает результат EdisclosureService.get_accrued_income_by_secid(),
-объединяет события и Markdown-файлы, отправляет промт в Gemini
-и возвращает структурированный результат (GeminiBondAnalysisDTO).
+Обеспечивает интеллектуальную обработку накопленных документов и событий для извлечения
+сложных формул расчета купонов флоатеров и других неструктурированных условий.
 """
 
 import json
@@ -90,10 +89,10 @@ class MarkdownRepositoryProtocol(Protocol):
         ...
 
 class GeminiClient:
-    """Клиент для обращения к Google Gemini API.
+    """Транспортный клиент для Google Gemini API.
 
-    Инкапсулирует инициализацию модели и отправку запросов,
-    отделяя транспортный слой от бизнес-логики сервиса.
+    Инкапсулирует логику взаимодействия с SDK, включая загрузку файлов через Files API
+    и обработку специфических ошибок квот и доступности.
     """
 
     def __init__(self, api_key: str) -> None:
@@ -183,10 +182,10 @@ class GeminiClient:
 
 
 class GeminiAnalysisService:
-    """Анализирует эмиссионную документацию облигаций через Google Gemini.
+    """Сервис-аналитик на базе Gemini.
 
-    Оркеструет получение Markdown-содержимого через репозиторий,
-    формирование промта и валидацию ответа Gemini через Pydantic DTO.
+    Координирует процесс формирования контекста из e-disclosure данных и файлов,
+    выполняет запросы к LLM и обеспечивает строгую валидацию структурированных ответов.
     """
 
     def __init__(
@@ -229,12 +228,14 @@ class GeminiAnalysisService:
         events: List[Dict[str, Any]] = edisclosure_data.get("events", [])
         md_filenames: List[str] = edisclosure_data.get("md_filenames", [])
         doc_filenames: List[str] = edisclosure_data.get("doc_filenames", [])
+        vector_context: str = str(edisclosure_data.get("vector_context") or "").strip()
 
         logger.info(
-            "[GEMINI] Подготовка запроса: событий=%d, md-файлов=%d, doc-файлов=%d → %s",
+            "[GEMINI] Подготовка запроса: событий=%d, md-файлов=%d, doc-файлов=%d, vector_context=%d chars → %s",
             len(events),
             len(md_filenames),
             len(doc_filenames),
+            len(vector_context),
             doc_filenames or md_filenames,
         )
 
@@ -242,22 +243,9 @@ class GeminiAnalysisService:
         if md_base_dir is not None and not isinstance(md_base_dir, Path):
             md_base_dir = Path(str(md_base_dir))
 
-        use_file_upload: bool = bool(
-            edisclosure_data.get("use_file_upload", False)
-            and md_filenames
-            and md_base_dir is not None
-        )
-
-        if use_file_upload:
-            markdown_content: str = "Документы приложены отдельными файлами (см. вложения)."
-            logger.info(
-                "[GEMINI] Режим Files API: %d markdown-файлов (после конвертации и фильтров) будут загружены отдельно",
-                len(md_filenames),
-            )
-            print(
-                f"  [LLM] Модель получает данные: загрузка markdown-файлов ({len(md_filenames)} шт.)",
-                flush=True,
-            )
+        if vector_context:
+            markdown_content: str = vector_context
+            print("  [LLM] Модель получает данные: vector_context после векторного поиска", flush=True)
         else:
             markdown_content = self._markdown_repo.read_files(
                 md_filenames, base_dir=md_base_dir
@@ -295,12 +283,7 @@ class GeminiAnalysisService:
         )
 
         try:
-            if use_file_upload:
-                raw_text: str = self._client.generate(
-                    prompt, model=model_id, file_paths=md_filenames, base_dir=md_base_dir
-                )
-            else:
-                raw_text = self._client.generate(prompt, model=model_id)
+            raw_text: str = self._client.generate(prompt, model=model_id)
         except GeminiQuotaExhaustedError:
             raise
         except GeminiUnavailableError:

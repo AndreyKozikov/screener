@@ -23,7 +23,7 @@ if config.config_file_name is not None:
 
 # Для upgrade достаточно метаданных; для autogenerate модели должны быть
 # зарегистрированы в SQLModel.metadata — импортируем модели с table=True.
-from app.models import DBcurrencyrate, DBkeyrate, DBruonia  # noqa: F401
+from app.models.entities import DBcurrencyrate, DBkeyrate, DBruonia, EventDetail  # noqa: F401
 
 target_metadata = SQLModel.metadata
 

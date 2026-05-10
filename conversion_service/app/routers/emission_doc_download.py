@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Query
 from app.core.exceptions import PdfConversionConnectionError
 from app.services.emission_doc_download_service import get_emission_doc_download_service
 
-router = APIRouter(prefix="/api/emission-doc-download", tags=["emission-doc-download"])
+router = APIRouter(prefix="/emission-doc-download", tags=["emission-doc-download"])
 
 
 @router.post("/run")

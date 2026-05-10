@@ -1,8 +1,8 @@
-"""Сервис-оркестратор для работы с данными о купонах облигаций.
+"""Сервис-оркестратор для управления данными о купонах облигаций.
 
-Модуль содержит класс CouponService, координирующий загрузку данных из API MOEX
-и базы данных. Единственный источник истины для купонов — таблица coupons;
-чтение и запись только через DBCoupon.
+Координирует процессы получения графиков купонных выплат из API Московской Биржи (MOEX)
+и их синхронизации с локальной базой данных. Обеспечивает единый интерфейс доступа
+к купонной информации для других компонентов системы.
 """
 
 from datetime import date, datetime
@@ -16,11 +16,16 @@ from config.paths import DB_PATH
 
 
 class CouponService:
-    """Сервис-оркестратор для работы с данными о купонах облигаций.
+    """Оркестратор купонных данных.
 
-    Координирует загрузку данных из API MOEX и БД. Проверка актуальности —
-    по наличию записей в таблице coupons для secid. Запись только через
-    DBCoupon.save_coupons_bulk после получения данных из API.
+    Класс инкапсулирует логику проверки актуальности данных в БД и, при необходимости,
+    загрузки свежей информации через API. Гарантирует целостность данных за счет
+    использования DBCoupon для всех операций записи.
+
+    Attributes:
+        _moex_client (MoexClient): Клиент для взаимодействия с API Московской Биржи.
+        _db_coupon (DBCoupon): Репозиторий для работы с таблицей купонов.
+        _bonds_repo (BondsRepository): Репозиторий для получения ID облигаций.
     """
 
     def __init__(
@@ -30,17 +35,21 @@ class CouponService:
         """Инициализирует сервис купонов.
 
         Args:
-            moex_client: Клиент MOEX (создается при отсутствии).
+            moex_client (Optional[MoexClient]): Клиент для запросов к MOEX ISS API.
+                Если не указан, создается новый экземпляр MoexClient.
         """
         self._moex_client = moex_client or MoexClient()
         self._db_coupon = DBCoupon(db_path=str(DB_PATH))
         self._bonds_repo = BondsRepository(db_path=DB_PATH)
 
     def _fetch_bond_coupons_from_db(self, secid: str) -> Dict:
-        """Получает данные о купонах облигации из базы данных.
+        """Извлекает историю купонных выплат для бумаги из базы данных.
+
+        Args:
+            secid (str): Идентификатор ценной бумаги (SECID).
 
         Returns:
-            Словарь: last_updated, coupons, offers (пустой).
+            Dict: Словарь с датой обновления, списком купонов и оферт (для фронтенда).
         """
         rows = self._db_coupon.fetch_coupons_for_frontend(secids=[secid])
         coupons = [to_frontend_coupon(row) for row in rows]
@@ -51,21 +60,20 @@ class CouponService:
         }
 
     def get_coupons(self, secid: str, force_refresh: bool = False) -> Dict:
-        """Получает данные о купонах для конкретной облигации.
+        """Получает полный график купонов для облигации.
 
-        Проверяет наличие данных в БД (таблица coupons). Если данных нет или
-        force_refresh — загружает с MOEX, сохраняет через DBCoupon.save_coupons_bulk
-        и возвращает данные из БД.
+        Если данные отсутствуют в БД или установлен флаг force_refresh, сервис
+        обращается к API MOEX, обновляет базу и возвращает актуальный результат.
 
         Args:
-            secid: Идентификатор облигации (SECID).
-            force_refresh: При True принудительно загружает данные из API MOEX.
+            secid (str): Идентификатор ценной бумаги (SECID).
+            force_refresh (bool): Если True, игнорировать кэш БД и загрузить данные из API.
 
         Returns:
-            Словарь с ключами: last_updated, coupons, offers.
+            Dict: Структурированные данные о купонах и офертах.
 
         Raises:
-            RuntimeError: Если не удалось загрузить данные из API и в БД нет данных.
+            RuntimeError: Если данные невозможно получить ни из API, ни из базы.
         """
         if not force_refresh and self._db_coupon.has_coupons_for_secid(secid):
             return self._fetch_bond_coupons_from_db(secid)
@@ -103,14 +111,14 @@ class CouponService:
     def get_coupons_only(
         self, secid: str, force_refresh: bool = False
     ) -> List[Dict]:
-        """Возвращает только список купонов для отображения на фронтенде.
+        """Возвращает упрощенный список только купонных выплат.
 
         Args:
-            secid: Идентификатор облигации (SECID).
-            force_refresh: При True принудительно загружает данные из API MOEX.
+            secid (str): Идентификатор ценной бумаги (SECID).
+            force_refresh (bool): Флаг принудительного обновления из API.
 
         Returns:
-            Список словарей с данными купонов.
+            List[Dict]: Список словарей, каждый из которых описывает одну купонную выплату.
         """
         bond_data = self.get_coupons(secid, force_refresh)
         return bond_data.get("coupons", [])
@@ -118,19 +126,20 @@ class CouponService:
     def get_coupons_batch(
         self, secids: List[str], use_db: bool = True
     ) -> Dict[str, Dict]:
-        """Получает данные о купонах для нескольких облигаций из БД.
+        """Пакетно получает данные о купонах для нескольких облигаций из базы данных.
 
-        Один SQL-запрос к DBCoupon с фильтром WHERE secid IN (...).
+        Оптимизирует количество запросов к БД за счет использования одного SQL-запроса
+        для всего списка SECID.
 
         Args:
-            secids: Список идентификаторов облигаций (SECID).
-            use_db: Должен быть True. Оставлен для совместимости.
+            secids (List[str]): Список идентификаторов ценных бумаг.
+            use_db (bool): Флаг использования БД (всегда True для этого метода).
 
         Returns:
-            Словарь: ключ — SECID, значение — {"coupons": [...]}.
+            Dict[str, Dict]: Словарь, где ключ — SECID, а значение — данные о купонах.
 
         Raises:
-            ValueError: Если use_db=False.
+            ValueError: Если параметр use_db установлен в False.
         """
         if not secids:
             return {}
@@ -151,20 +160,18 @@ class CouponService:
         secids: List[str],
         from_date: Optional[date] = None,
     ) -> Dict[str, Optional[float]]:
-        """Возвращает значение ближайшего будущего купона для каждой облигации.
+        """Определяет размер ближайшей будущей купонной выплаты для списка облигаций.
 
-        Для каждой облигации из списка secids запрашивает купоны с датой выплаты
-        не ранее from_date, выбирает купон с наиболее близкой датой и возвращает
-        значение поля value.
+        Полезно для расчета текущей доходности и отображения в таблице скринера.
 
         Args:
-            secids: Список идентификаторов облигаций (SECID) для получения купонов.
-            from_date: Начальная дата для фильтрации (купоны с coupondate >= from_date).
-                Если None, используется текущая дата.
+            secids (List[str]): Список идентификаторов облигаций (SECID).
+            from_date (Optional[date]): Дата, начиная с которой искать купоны.
+                Если не указана, используется текущая дата.
 
         Returns:
-            Словарь: ключ — SECID, значение — сумма купона (float) или None.
-            При пустом secids или ошибке доступа к БД возвращает пустой словарь.
+            Dict[str, Optional[float]]: Словарь {secid: сумма_купона}.
+                Если купон не найден, значение будет равно None.
         """
         if not secids:
             return {}
@@ -211,14 +218,14 @@ class CouponService:
         coupons: List[Dict],
         current_date: date,
     ) -> Optional[Dict]:
-        """Находит будущий купон с наиболее близкой датой выплаты.
+        """Находит купон с минимальной датой, большей или равной текущей.
 
         Args:
-            coupons: Список словарей с данными купонов (поле coupondate YYYY-MM-DD).
-            current_date: Текущая дата. Список уже отфильтрован (купоны >= current_date).
+            coupons (List[Dict]): Список сырых данных о купонах.
+            current_date (date): Дата отсечки.
 
         Returns:
-            Словарь ближайшего будущего купона или None.
+            Optional[Dict]: Словарь с данными ближайшего купона или None.
         """
         if not coupons:
             return None
@@ -242,10 +249,10 @@ _coupon_service: Optional[CouponService] = None
 
 
 def get_coupon_service() -> CouponService:
-    """Возвращает singleton экземпляр сервиса купонов.
+    """Возвращает глобальный экземпляр (синглтон) сервиса купонов.
 
     Returns:
-        Экземпляр CouponService для работы с данными о купонах.
+        CouponService: Настроенный экземпляр сервиса.
     """
     global _coupon_service
     if _coupon_service is None:

@@ -33,3 +33,12 @@ class EventDetailRepository:
         with Session(self._engine) as session:
             results = session.query(EventDetail.pseudo_guid, EventDetail.event_date).all()
         return {(res.pseudo_guid, str(res.event_date)) for res in results}
+
+    def get_existing_types(self) -> Tuple[Set[str], Set[str]]:
+        """Возвращает уникальные значения message_type и event_type у записей с is_edit=1."""
+        with Session(self._engine) as session:
+            results = session.query(EventDetail.message_type, EventDetail.event_type).filter(EventDetail.is_edit == 1).all()
+        
+        message_types = {res.message_type for res in results if res.message_type}
+        event_types = {res.event_type for res in results if res.event_type}
+        return message_types, event_types

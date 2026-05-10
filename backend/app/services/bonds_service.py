@@ -1,16 +1,8 @@
-"""Сервисный слой для работы с облигациями.
+"""Центральный сервисный модуль для работы с облигациями.
 
-Этот модуль реализует бизнес-логику для получения и фильтрации списка облигаций.
-Получает параметры от роутера, вызывает BondsRepository.select() для выборки данных
-с применением всех фильтров на уровне БД, трансформирует Bond в BondScreenerDTO,
-применяет фильтр по эмитенту (если указан), и возвращает готовый ответ для API.
-
-Основные функции:
-    get_bonds_list(): Получение списка облигаций с применением фильтров.
-
-Note:
-    Вся фильтрация облигаций (кроме фильтрации по эмитенту) выполняется в методе
-    BondsRepository.select() на уровне SQL для повышения производительности.
+Реализует ключевую бизнес-логику скринера: фильтрацию, агрегацию данных из различных
+источников, расчет производных финансовых показателей и оркестрацию процессов
+обновления данных.
 """
 
 from datetime import date
@@ -43,18 +35,18 @@ from app.utils.rating_utils import get_worst_rating, standardize_rating
 
 
 def _load_mappings(data_dir: Path) -> Tuple[Dict[int, str], Dict[int, str]]:
-    """Загружает маппинги типов и видов облигаций и строит обратные словари.
+    """Загружает маппинги типов и видов облигаций из JSON-файлов.
     
-    Загружает маппинги из JSON файлов bonds_type_mapping.json и bonds_type43_mapping.json
-    и создает обратные словари для преобразования числовых ID в строковые значения.
-    
+    Считывает файлы bonds_type_mapping.json и bonds_type43_mapping.json для преобразования
+    числовых идентификаторов MOEX в понятные текстовые описания.
+
     Args:
-        data_dir: Путь к директории с JSON файлами маппингов.
+        data_dir (Path): Путь к директории, содержащей файлы маппингов.
     
     Returns:
-        Кортеж из двух словарей:
-        - type_rev: Обратный маппинг типов облигаций (ID -> строка).
-        - kind_rev: Обратный маппинг видов облигаций (ID -> строка).
+        Tuple[Dict[int, str], Dict[int, str]]: Кортеж из двух словарей:
+            - type_rev: Обратный маппинг типов (ID -> Название).
+            - kind_rev: Обратный маппинг видов (ID -> Название).
     """
     type_rev: Dict[int, str] = {}
     kind_rev: Dict[int, str] = {}
@@ -86,17 +78,14 @@ def _load_mappings(data_dir: Path) -> Tuple[Dict[int, str], Dict[int, str]]:
 
 
 def _parse_date(s: Optional[str]) -> Optional[date]:
-    """Парсит строку даты в объект date.
-    
-    Преобразует строку с датой в формате ISO (YYYY-MM-DD) в объект date.
-    Обрабатывает некорректные значения и пустые строки.
+    """Безопасно преобразует строку в объект даты.
     
     Args:
-        s: Строка с датой в формате ISO (YYYY-MM-DD) или None.
-            Если строка содержит "0000-00-00" или пустая, возвращает None.
-    
+        s (Optional[str]): Строка с датой (обычно в формате YYYY-MM-DD).
+
     Returns:
-        Объект date или None, если строка некорректна, пуста или равна "0000-00-00".
+        Optional[date]: Объект даты или None, если входная строка пуста, 
+            некорректна или содержит заглушку '0000-00-00'.
     """
     if not s or not isinstance(s, str) or s.strip() in ("", "0000-00-00"):
         return None
@@ -111,19 +100,18 @@ def _bond_to_screener_dto(
     type_rev: Dict[int, str],
     kind_rev: Dict[int, str],
 ) -> BondScreenerDTO:
-    """Трансформирует Bond (модель БД) в BondScreenerDTO для API.
+    """Преобразует внутреннюю модель Bond в формат BondScreenerDTO для внешнего API.
 
-    Использует маппинги type_rev и kind_rev для преобразования числовых ID
-    типов/видов облигаций в строковые названия. Все расчётные float-поля
-    округляются до 2 знаков после запятой.
+    Выполняет расчет производных полей (длительность в днях, период купона),
+    форматирует даты и подставляет текстовые значения типов/видов облигаций.
 
     Args:
-        bond: Объект Bond из bonds_repository.select().
-        type_rev: Обратный маппинг типов облигаций (ID -> строка).
-        kind_rev: Обратный маппинг видов облигаций (ID -> строка).
+        bond (Bond): Сущность облигации из базы данных.
+        type_rev (Dict[int, str]): Словарь для расшифровки типа облигации.
+        kind_rev (Dict[int, str]): Словарь для расшифровки вида облигации.
 
     Returns:
-        Объект BondScreenerDTO для ответа API.
+        BondScreenerDTO: Объект данных, готовый для сериализации в JSON.
     """
     maturity_date = _parse_date(bond.maturity_date)
     coupon_period: Optional[int] = None
@@ -202,39 +190,21 @@ def get_bonds_list(
     db_path: Optional[Path] = None,
     data_dir: Optional[Path] = None,
 ) -> BondsListResponse:
-    """Получает список облигаций с применением фильтров.
+    """Получает отфильтрованный список облигаций с учетом всех заданных критериев.
 
-    Основная функция сервисного слоя для получения списка облигаций. Вызывает
-    BondsRepository.select() для получения данных с применением всех фильтров на уровне БД,
-    трансформирует Bond в BondScreenerDTO (с округлением float до 2 знаков и маппингом
-    типов/видов в строки), загружает данные о купонах, применяет фильтр по эмитенту
-    (если указан), и возвращает BondsListResponse.
+    Основной метод для работы скринера. Выполняет эффективную фильтрацию на уровне SQL,
+    обогащает результат данными о ближайших купонах и, при необходимости, выполняет
+    дополнительную фильтрацию по названию эмитента.
 
     Args:
-        filters: Объект BondFilters с параметрами фильтрации облигаций.
-            Включает фильтры по проценту купона, доходности, дате погашения,
-            уровню листинга, валюте, типу облигации, виду облигации и рейтингу.
-        emitent_title: Опциональное название эмитента для фильтрации облигаций.
-            Если указано, возвращаются только облигации указанного эмитента.
-        exclude_spob: Если True, исключает облигации с режимом торгов SPOB.
-        db_path: Опциональный путь к файлу базы данных. Если не указан,
-            используется путь по умолчанию.
-        data_dir: Опциональный путь к директории с JSON файлами данных.
-            Если не указан, используется путь по умолчанию.
+        filters (BondFilters): Набор фильтров (купон, доходность, даты, рейтинги и т.д.).
+        emitent_title (Optional[str]): Текстовое название эмитента для фильтрации.
+        exclude_spob (bool): Флаг исключения режима торгов SPOB (обычно для внебиржевых бумаг).
+        db_path (Optional[Path]): Путь к файлу базы данных.
+        data_dir (Optional[Path]): Путь к директории с файлами конфигурации и маппингов.
 
     Returns:
-        Объект BondsListResponse с отфильтрованным списком облигаций, содержащий:
-        - total: Общее количество облигаций в БД (без фильтров).
-        - filtered: Количество облигаций после применения всех фильтров.
-        - skip: Смещение для пагинации (всегда 0).
-        - limit: Лимит записей (равен filtered).
-        - bonds: Список объектов BondScreenerDTO с данными облигаций.
-
-    Note:
-        Вся фильтрация облигаций (кроме фильтрации по эмитенту) выполняется в методе
-        BondsRepository.select() на уровне SQL для повышения производительности. Фильтрация
-        по эмитенту выполняется в сервисном слое, так как требует дополнительных данных
-        из таблицы эмитентов.
+        BondsListResponse: Объект, содержащий список DTO и статистику выборки (всего/отфильтровано).
     """
     if data_dir is None:
         from config.paths import DATA_DIR
@@ -304,14 +274,14 @@ def get_bonds_list(
 
 
 def get_emitent_inn_by_secid(secid: str, db_path: Optional[Path] = None) -> Optional[str]:
-    """Получает ИНН эмитента по SECID облигации через EmitentService.
+    """Возвращает ИНН эмитента, привязанного к указанной облигации.
 
     Args:
-        secid: Идентификатор ценной бумаги (SECID).
-        db_path: Не используется (для совместимости сигнатуры).
+        secid (str): Идентификатор ценной бумаги (SECID).
+        db_path (Optional[Path]): Путь к БД (для обратной совместимости).
 
     Returns:
-        ИНН эмитента или None, если не найден.
+        Optional[str]: Строка с ИНН или None, если данные не найдены.
     """
     emitent_service = get_emitent_service()
     emitent_data = emitent_service.get_emitent_by_secid(secid)
@@ -322,13 +292,13 @@ def get_emitent_inn_by_secid(secid: str, db_path: Optional[Path] = None) -> Opti
 
 
 def get_emitent_moex_id_by_secid(secid: str) -> Optional[int]:
-    """Получает MOEX ID эмитента по SECID облигации через EmitentService.
+    """Возвращает внутренний идентификатор эмитента на Московской Бирже по SECID.
 
     Args:
-        secid: Идентификатор ценной бумаги (SECID).
+        secid (str): Идентификатор ценной бумаги (SECID).
 
     Returns:
-        MOEX ID эмитента или None, если не найден.
+        Optional[int]: Числовой ID эмитента или None.
     """
     emitent_service = get_emitent_service()
     emitent_data = emitent_service.get_emitent_by_secid(secid)
@@ -339,14 +309,14 @@ def get_emitent_moex_id_by_secid(secid: str) -> Optional[int]:
 
 
 def get_reg_number_by_secid(secid: str, db_path: Optional[Path] = None) -> Optional[str]:
-    """Получает регистрационный номер облигации по SECID.
+    """Получает государственный регистрационный номер выпуска облигации.
 
     Args:
-        secid: Идентификатор ценной бумаги (SECID).
-        db_path: Путь к БД. Если None — путь по умолчанию из config.
+        secid (str): Идентификатор ценной бумаги (SECID).
+        db_path (Optional[Path]): Путь к файлу базы данных.
 
     Returns:
-        Регистрационный номер или None, если не найден.
+        Optional[str]: Регистрационный номер или None.
     """
     from config.paths import DB_PATH
     path = db_path or DB_PATH
@@ -355,17 +325,14 @@ def get_reg_number_by_secid(secid: str, db_path: Optional[Path] = None) -> Optio
 
 
 def get_bond_id_by_secid(secid: str, db_path: Optional[Path] = None) -> Optional[int]:
-    """Возвращает первичный ключ облигации (bonds.id) по SECID.
-
-    Используется для установления связи между облигацией и данными edisclosure
-    перед сохранением в БД.
+    """Возвращает внутренний первичный ключ (ID) облигации в таблице `bonds`.
 
     Args:
-        secid: Идентификатор ценной бумаги (SECID).
-        db_path: Путь к БД. Если None — путь по умолчанию из config.
+        secid (str): Идентификатор ценной бумаги (SECID).
+        db_path (Optional[Path]): Путь к файлу базы данных.
 
     Returns:
-        Первичный ключ (id) записи в таблице bonds или None, если не найден.
+        Optional[int]: Числовой ID записи или None.
     """
     from config.paths import DB_PATH
     path = db_path or DB_PATH
@@ -374,16 +341,14 @@ def get_bond_id_by_secid(secid: str, db_path: Optional[Path] = None) -> Optional
 
 
 def get_floater_secids(db_path: Optional[Path] = None, rating: Optional[str] = None) -> List[str]:
-    """Возвращает список SECID всех флоатеров (bond_kind=8) из БД.
+    """Возвращает список SECID всех облигаций с плавающей ставкой (флоатеров).
 
     Args:
-        db_path: Путь к БД. Если None — путь по умолчанию из config.
-        rating: Если указан — возвращаются только флоатеры с данным рейтингом.
-            Значение нормализуется через standardize_rating перед передачей в репозиторий.
-            None — все флоатеры.
+        db_path (Optional[Path]): Путь к файлу базы данных.
+        rating (Optional[str]): Фильтр по кредитному рейтингу.
 
     Returns:
-        Список SECID флоатеров.
+        List[str]: Список идентификаторов SECID.
     """
     from config.paths import DB_PATH
     path = db_path or DB_PATH
@@ -395,15 +360,13 @@ def get_floater_secids(db_path: Optional[Path] = None, rating: Optional[str] = N
 
 
 def get_secids_without_emitent(db_path: Optional[Path] = None) -> List[str]:
-    """Возвращает SECID облигаций без проставленного эмитента.
-
-    Использует BondsRepository. Для вызова из пайплайна обновления облигаций.
+    """Находит все SECID облигаций, у которых не заполнена информация об эмитенте.
 
     Args:
-        db_path: Путь к БД. Если None — путь по умолчанию из config.
+        db_path (Optional[Path]): Путь к файлу базы данных.
 
     Returns:
-        Отсортированный список уникальных SECID.
+        List[str]: Список идентификаторов SECID.
     """
     from config.paths import DB_PATH
     path = db_path or DB_PATH
@@ -412,15 +375,13 @@ def get_secids_without_emitent(db_path: Optional[Path] = None) -> List[str]:
 
 
 def get_secids_without_rating(db_path: Optional[Path] = None) -> List[str]:
-    """Возвращает SECID облигаций без проставленного рейтинга.
-
-    Использует BondsRepository. Для вызова из пайплайна обновления облигаций.
+    """Находит все SECID облигаций, у которых не заполнен кредитный рейтинг.
 
     Args:
-        db_path: Путь к БД. Если None — путь по умолчанию из config.
+        db_path (Optional[Path]): Путь к файлу базы данных.
 
     Returns:
-        Отсортированный список уникальных SECID.
+        List[str]: Список идентификаторов SECID.
     """
     from config.paths import DB_PATH
     path = db_path or DB_PATH
@@ -429,18 +390,16 @@ def get_secids_without_rating(db_path: Optional[Path] = None) -> List[str]:
 
 
 def fill_ratings_for_bonds_without_rating(db_path: Optional[Path] = None) -> int:
-    """Дозаполняет поле rating в bonds для облигаций без рейтинга.
+    """Выполняет обогащение таблицы облигаций данными о рейтингах из связанных таблиц.
 
-    Берёт рейтинги из bond_ratings, при отсутствии — из emitent_ratings (через
-    данные эмитента по secid). Применяет выбор наихудшего рейтинга и
-    нормализацию (standardize_rating). Использует BondRatingsPipelineService
-    и EmitentService, запись — через BondsRepository.
+    Пытается найти рейтинг сначала в данных конкретной бумаги, затем в данных эмитента.
+    Выбирает наихудший из доступных рейтингов для консервативной оценки риска.
 
     Args:
-        db_path: Путь к БД. Если None — путь по умолчанию из config.
+        db_path (Optional[Path]): Путь к файлу базы данных.
 
     Returns:
-        Количество обновлённых записей в bonds.
+        int: Количество успешно обновленных записей.
     """
     from config.paths import DB_PATH
     path = db_path or DB_PATH
@@ -524,23 +483,21 @@ def refresh_bonds_data(
     db_path: Optional[Path] = None,
     data_dir: Optional[Path] = None,
 ) -> Dict[str, Any]:
-    """Загружает данные облигаций из MOEX и сохраняет в БД.
+    """Запускает процесс синхронизации данных облигаций с Московской Биржей.
 
-    Пайплайн: получение payload от MOEX в памяти -> заполнение кэша loader ->
-    миграция в БД тем же payload -> очистка кэша метаданных. Записи в bonds.json нет.
+    Процесс включает загрузку данных из API MOEX в память, обновление внутренних
+    структур данных и последующую миграцию в базу данных.
 
     Args:
-        source_url: URL для загрузки JSON. Если None — используется settings.MOEX_BONDS_URL.
-        db_path: Путь к БД. Если None — используется путь по умолчанию.
-        data_dir: Путь к директории данных. Если None — используется путь по умолчанию.
+        source_url (Optional[str]): Кастомный URL для загрузки (если не указан, берется из настроек).
+        db_path (Optional[Path]): Путь к файлу базы данных.
+        data_dir (Optional[Path]): Путь к директории данных.
 
     Returns:
-        Словарь с результатом: status, updated (securities, marketdata, marketdata_yields),
-        source, metadata_cache_cleared.
+        Dict[str, Any]: Результат операции со статистикой обновленных записей.
 
     Raises:
-        RuntimeError: Если не удалось загрузить данные из MOEX.
-        ValueError: Если миграция вызвана без payload (внутри orchestrator).
+        RuntimeError: При критических ошибках загрузки или обработки данных.
     """
     log = get_data_update_logger()
     url = source_url or settings.MOEX_BONDS_URL
@@ -599,16 +556,19 @@ def _build_securities_dict(
     type_rev: Dict[int, str],
     kind_rev: Dict[int, str],
 ) -> Dict[str, Any]:
-    """Собирает словарь securities в формате MOEX API (UPPERCASE ключи).
+    """Формирует словарь данных ценной бумаги в формате ответа MOEX API.
+
+    Используется для предоставления детальной информации об облигации фронтенду
+    в привычном для биржевых API виде (ключи в верхнем регистре).
 
     Args:
-        bond: Объект Bond из БД.
-        security: BondSecurity или None.
-        type_rev: Маппинг bond_type ID -> строка.
-        kind_rev: Маппинг bond_kind ID -> строка.
+        bond (Bond): Объект облигации.
+        security (Optional[BondSecurity]): Дополнительные параметры безопасности.
+        type_rev (Dict[int, str]): Словарь типов.
+        kind_rev (Dict[int, str]): Словарь видов.
 
     Returns:
-        Словарь с полями секции securities.
+        Dict[str, Any]: Словарь с данными в формате 'securities'.
     """
     sec: Dict[str, Any] = {
         "SECID": bond.secid,
@@ -683,14 +643,14 @@ def _build_securities_dict(
 def _build_marketdata_dict(
     bond: Bond, market_data: Optional[BondMarketData]
 ) -> Dict[str, Any]:
-    """Собирает словарь marketdata в формате MOEX API (UPPERCASE ключи).
+    """Формирует словарь рыночных данных в формате ответа MOEX API.
 
     Args:
-        bond: Объект Bond (для BOARDID, TRADINGSTATUS).
-        market_data: BondMarketData или None.
+        bond (Bond): Объект облигации.
+        market_data (Optional[BondMarketData]): Текущие рыночные показатели.
 
     Returns:
-        Словарь с полями секции marketdata.
+        Dict[str, Any]: Словарь с данными в формате 'marketdata'.
     """
     if market_data is None:
         return {
@@ -739,16 +699,14 @@ def _build_marketdata_yields_list_from_db(
     market_data_yield: BondMarketDataYield,
     secid: str,
 ) -> List[Dict[str, Any]]:
-    """Преобразует BondMarketDataYield в список словарей формата MOEX API.
-
-    Данные из таблицы bondmarketdatayield (UPPERCASE ключи для фронтенда).
+    """Формирует список данных о доходности в формате ответа MOEX API.
 
     Args:
-        market_data_yield: Запись из таблицы bondmarketdatayield.
-        secid: Идентификатор ценной бумаги (из родительской записи Bond).
+        market_data_yield (BondMarketDataYield): Параметры доходности из БД.
+        secid (str): Идентификатор бумаги.
 
     Returns:
-        Список из одного словаря с полями marketdata_yields.
+        List[Dict[str, Any]]: Список словарей в формате 'marketdata_yields'.
     """
     entry: Dict[str, Any] = {
         "SECID": secid,
@@ -780,18 +738,18 @@ def _build_marketdata_yields_list_from_db(
 def get_bond_detail(
     secid: str, db_path: Optional[Path] = None, data_dir: Optional[Path] = None
 ) -> Optional[BondDetailDTO]:
-    """Получает детальную информацию об облигации из БД в формате DTO.
+    """Возвращает максимально полную информацию об облигации.
 
-    Загружает Bond, BondSecurity и BondMarketData, преобразует в структуру
-    BondDetailDTO (securities, marketdata, marketdata_yields) для фронтенда.
+    Собирает данные из нескольких таблиц (основные данные, параметры листинга,
+    текущие котировки и доходность) в единый объект для отображения на странице детализации.
 
     Args:
-        secid: Идентификатор ценной бумаги.
-        db_path: Путь к БД. Если None — используется путь по умолчанию.
-        data_dir: Путь к директории маппингов. Если None — используется путь по умолчанию.
+        secid (str): Идентификатор ценной бумаги (SECID).
+        db_path (Optional[Path]): Путь к файлу базы данных.
+        data_dir (Optional[Path]): Путь к директории маппингов.
 
     Returns:
-        BondDetailDTO или None, если облигация не найдена.
+        Optional[BondDetailDTO]: Детальная информация об облигации или None.
     """
     if data_dir is None:
         from config.paths import DATA_DIR

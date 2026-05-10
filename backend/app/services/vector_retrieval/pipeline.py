@@ -1,4 +1,5 @@
 import logging
+import re
 from typing import List, Dict, Any
 from .models import Chunk, EmbeddedChunk, ScoredChunk
 from .chunking_service import ChunkingService
@@ -10,11 +11,24 @@ from .context_builder import ContextBuilder
 logger = logging.getLogger(__name__)
 
 DEFAULT_QUERIES = [
-    "Формула расчета купона, порядок определения ставки купона",
-    "Базовый индикатор, ключевая ставка, RUONIA, спред, премия к ставке",
-    "Ограничения ставки купона, минимальная и максимальная ставка (floor, cap)",
-    "Правила фиксации ставки, периоды наблюдения, даты определения индикатора",
-    "Условия изменения параметров выпуска, события, влияющие на расчет купона"
+    # Legacy default queries (kept for reference):
+    # "Формула расчета купона, порядок определения ставки купона",
+    # "Базовый индикатор, ключевая ставка, RUONIA, спред, премия к ставке",
+    # "Ограничения ставки купона, минимальная и максимальная ставка (floor, cap)",
+    # "Правила фиксации ставки, периоды наблюдения, даты определения индикатора",
+    # "Условия изменения параметров выпуска, события, влияющие на расчет купона",
+    "Итоги размещения выпуска: ставка купона, спред, премия к базовой ставке, книга заявок",
+    "Сообщение о начисленных доходах по эмиссионным ценным бумагам: размер и порядок определения купона",
+    "Порядок определения процентной ставки по i-му купону: формула и переменные расчета",
+    "Базовый индикатор купона: ключевая ставка, RUONIA, RUSFAR, CPI, КБД ОФЗ",
+    "Дата фиксации индикатора: T-5 или T-7, рабочие или календарные дни, lookback",
+    "Правило при отсутствии значения индикатора: предыдущее, следующее, последнее опубликованное",
+    "Конвенция day count и база года: ACT/365, ACT/366, 30/360, ACTUAL",
+    "Тип начисления купона: DAILY_ACCRUAL или FIXED_PERIOD, порядок расчета НКД",
+    "Ограничения купона: минимальная ставка floor, максимальная ставка cap, пороги и условия",
+    "Период наблюдения и усреднение: POINT, AVERAGE, INTERVAL, reference period",
+    "Условия изменения параметров выпуска: оферта, пересмотр эмитентом, новые правила после даты",
+    "Формулы с несколькими индикаторами: основной индикатор и дополнительные индексы",
 ]
 
 class RetrievalPipeline:
@@ -24,6 +38,19 @@ class RetrievalPipeline:
         self.retriever = RetrievalEngine()
         self.ranker = RankingEngine()
         self.builder = ContextBuilder()
+
+    def _is_calendar_table(self, text: str) -> bool:
+        """
+        Проверяет, является ли текст таблицей календаря/периодов.
+        Такие чанки обычно содержат много дат и слово 'период'.
+        """
+        date_pattern = r'\d{2}\.\d{2}\.\d{4}'
+        dates = re.findall(date_pattern, text)
+        
+        # Если в чанке более 4 дат и есть слово 'период' - это скорее всего таблица
+        if len(dates) > 4 and ("период" in text.lower()):
+            return True
+        return False
 
     def run(
         self, 
@@ -47,10 +74,13 @@ class RetrievalPipeline:
                 doc["content"], 
                 source_id=doc["filename"]
             )
-            all_chunks.extend(doc_chunks)
+            # Фильтруем чанки с календарями/таблицами периодов
+            filtered_doc_chunks = [c for c in doc_chunks if not self._is_calendar_table(c.text)]
+            all_chunks.extend(filtered_doc_chunks)
             
         event_chunks = self.chunker.chunk_events(events)
-        all_chunks.extend(event_chunks)
+        filtered_event_chunks = [c for c in event_chunks if not self._is_calendar_table(c.text)]
+        all_chunks.extend(filtered_event_chunks)
         
         logger.info("Created %d chunks total", len(all_chunks))
         

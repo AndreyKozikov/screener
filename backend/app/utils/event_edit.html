@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Редактирование события - BondsScreener</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-hover: #4f46e5;
+            --bg: #0f172a;
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --text: #f8fafc;
+            --text-muted: #94a3b8;
+            --border: rgba(255, 255, 255, 0.1);
+            --glass: rgba(255, 255, 255, 0.05);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            background-image: 
+                radial-gradient(circle at 0% 0%, rgba(99, 102, 241, 0.15) 0%, transparent 50%),
+                radial-gradient(circle at 100% 100%, rgba(168, 85, 247, 0.15) 0%, transparent 50%);
+        }
+
+        .container {
+            width: 95%;
+            height: 95vh;
+            max-width: 1200px;
+            background: var(--card-bg);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            padding: 30px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            animation: fadeIn 0.6s ease-out;
+            display: flex;
+            flex-direction: column;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 20px;
+        }
+
+        h1 {
+            font-size: 24px;
+            font-weight: 700;
+            background: linear-gradient(to right, #818cf8, #c084fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .header-center {
+            flex: 1;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            min-width: 0;
+        }
+
+        .header-progress {
+            font-size: 14px;
+            color: var(--text-muted);
+            font-weight: 500;
+            letter-spacing: 0.05em;
+        }
+
+        .header-progress span {
+            color: var(--text);
+            font-weight: 700;
+        }
+
+        .header-events-total {
+            font-size: 11px;
+            color: var(--text-muted);
+            letter-spacing: 0.03em;
+            line-height: 1.2;
+        }
+
+        .header-events-total span {
+            color: var(--text);
+            font-weight: 600;
+        }
+
+        .status-badge {
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .status-edited { background: rgba(34, 197, 94, 0.2); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.3); }
+        .status-new { background: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            grid-template-rows: auto auto auto 1fr;
+            gap: 16px;
+            margin-bottom: 20px;
+            flex: 1;
+            min-height: 0;
+            overflow: hidden;
+        }
+
+        form {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            overflow: hidden;
+            min-height: 0;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            min-height: 0;
+        }
+
+        label {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-muted);
+        }
+
+        input, textarea, select {
+            background: var(--glass);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 12px 16px;
+            color: var(--text);
+            font-family: inherit;
+            font-size: 15px;
+            transition: all 0.2s;
+        }
+
+        input:focus, textarea:focus, select:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
+        }
+
+        input[readonly] {
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        .full-text-container {
+            grid-column: span 3;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            min-height: 0;
+        }
+
+        .full-text-area {
+            flex: 1;
+            resize: none;
+            line-height: 1.6;
+            font-size: 14px;
+            white-space: pre-wrap;
+            overflow-y: auto;
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px;
+            min-height: 0;
+        }
+
+        .actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 10px;
+        }
+
+        .nav-buttons {
+            display: flex;
+            gap: 12px;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border-radius: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            border: none;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-hover);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+        }
+
+        .btn-secondary {
+            background: var(--glass);
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .btn-danger {
+            background: rgba(239, 68, 68, 0.1);
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, 0.2);
+        }
+
+        .btn-danger:hover {
+            background: rgba(239, 68, 68, 0.2);
+            border-color: #ef4444;
+            transform: translateY(-1px);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+            box-shadow: none !important;
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            padding: 16px 24px;
+            border-radius: 12px;
+            background: #10b981;
+            color: white;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            transform: translateY(100px);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .toast.show {
+            transform: translateY(0);
+        }
+
+        /* Context Menu Styles */
+        .context-menu {
+            position: fixed;
+            display: none;
+            background: #1e293b;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+            z-index: 1000;
+            max-height: 200px;
+            overflow-y: auto;
+            min-width: 200px;
+        }
+
+        .context-menu-item {
+            padding: 10px 16px;
+            cursor: pointer;
+            font-size: 14px;
+            color: var(--text);
+            transition: background 0.2s;
+        }
+
+        .context-menu-item:hover {
+            background: var(--primary);
+        }
+
+        /* Modal Styles */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(8px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+        }
+
+        .modal {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            padding: 32px;
+            max-width: 400px;
+            width: 90%;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            text-align: center;
+        }
+
+        .modal-title {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 16px;
+        }
+
+        .modal-text {
+            color: var(--text-muted);
+            line-height: 1.6;
+            margin-bottom: 24px;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <h1 style="margin: 0;">Событие #</h1>
+                <input type="number" id="goto-id" value="{{ event.id }}" 
+                       style="width: 100px; font-size: 24px; font-weight: 700; background: transparent; border: none; border-bottom: 2px solid var(--primary); padding: 0; color: var(--text); border-radius: 0;"
+                       onkeydown="if(event.key==='Enter') goToId(this.value)">
+            </div>
+            <div class="header-center">
+                <p class="header-progress">
+                    ПРОГРЕСС: <span>{{ progress_text }}</span>
+                </p>
+                <p class="header-events-total">
+                    ВСЕГО СОБЫТИЙ В JSON: <span>{{ total_events_in_files }}</span>
+                </p>
+            </div>
+            <span class="status-badge {{ 'status-edited' if event.is_edit else 'status-new' }}">
+                {{ 'Изменено' if event.is_edit else 'Новое' }}
+            </span>
+        </header>
+
+        <form action="/save" method="POST">
+            <input type="hidden" name="id" value="{{ event.id }}">
+            <input type="hidden" id="field-inn-hidden" value="{{ event.emitent_inn }}">
+            <input type="hidden" name="pseudo_guid" value="{{ event.pseudo_guid }}">
+            <input type="hidden" name="event_date" value="{{ event.event_date }}">
+
+            <div class="grid">
+                <div class="form-group">
+                    <label>Pseudo GUID</label>
+                    <input type="text" id="field-guid" value="{{ event.pseudo_guid }}" readonly>
+                </div>
+                <div class="form-group">
+                    <label>Дата события</label>
+                    <input type="text" id="field-date" value="{{ event.event_date }}" readonly>
+                </div>
+                <div class="form-group">
+                    <label>Регистрационный номер выпуска</label>
+                    <input type="text" id="field-reg-num" value="{{ event.registration_number or '' }}" readonly>
+                </div>
+                <div class="form-group">
+                    <label>Рег. номер программы</label>
+                    <input type="text" id="field-issue-reg-num" value="{{ event.issue_registration_number or '' }}" readonly>
+                </div>
+                <div class="form-group">
+                    <label>Серия</label>
+                    <input type="text" id="field-series" value="{{ event.series or '' }}" readonly>
+                </div>
+                <div class="form-group">
+                    <label>ISIN</label>
+                    <input type="text" id="field-isin" value="{{ event.isin or '' }}" readonly>
+                </div>
+                
+                <div class="form-group">
+                    <label>Тип события</label>
+                    <input type="text" id="field-event-type" name="event_type" value="{{ event.event_type or '' }}" placeholder="Введите тип события">
+                </div>
+                <div class="form-group">
+                    <label>Тип сообщения</label>
+                    <input type="text" id="field-message-type" name="message_type" value="{{ event.message_type or '' }}" placeholder="Введите тип сообщения">
+                </div>
+                <div class="form-group">
+                    <label>Тип бумаги</label>
+                    <input type="text" id="field-security-type" name="security_type" value="{{ event.security_type or '' }}" placeholder="Введите тип бумаги">
+                </div>
+
+                <div class="form-group full-text-container">
+                    <label>Текст события (из JSON)</label>
+                    <div class="full-text-area">{{ event_text or 'Текст не найден' }}</div>
+                </div>
+            </div>
+
+            <div class="actions">
+                <div class="nav-buttons">
+                    <a href="/?id={{ nav.prev }}" class="btn btn-secondary {{ 'disabled' if not nav.prev }}" {{ 'style="pointer-events:none"' if not nav.prev }}>
+                        &larr; Назад
+                    </a>
+                    <a href="/?id={{ nav.next }}" class="btn btn-secondary {{ 'disabled' if not nav.next }}" {{ 'style="pointer-events:none"' if not nav.next }}>
+                        Вперед &rarr;
+                    </a>
+                </div>
+                <div style="display: flex; gap: 12px;">
+                    <button type="button" class="btn btn-danger" onclick="confirmDelete()">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                        Удалить
+                    </button>
+                    <button type="button" class="btn btn-secondary" onclick="copyToMarkdown()">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                        Копировать MD
+                    </button>
+                    <button type="submit" class="btn btn-primary">Сохранить изменения</button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <div id="toast" class="toast">Изменения сохранены!</div>
+    <div id="context-menu" class="context-menu"></div>
+
+    <div id="modal-overlay" class="modal-overlay">
+        <div class="modal">
+            <div id="modal-title" class="modal-title">Внимание</div>
+            <div id="modal-text" class="modal-text"></div>
+            <div id="modal-actions" class="modal-actions">
+                <button id="modal-btn-cancel" class="btn btn-secondary">Отмена</button>
+                <button id="modal-btn-ok" class="btn btn-primary">ОК</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden form for deletion -->
+    <form id="delete-form" action="/delete" method="POST" style="display: none;">
+        <input type="hidden" name="id" value="{{ event.id }}">
+    </form>
+
+    <script>
+        // JSON_DATA_PLACEHOLDER
+
+        let activeInput = null;
+
+        function showContextMenu(e, type) {
+            e.preventDefault();
+            activeInput = e.target;
+            const menu = document.getElementById('context-menu');
+            const items = type === 'event' ? existingTypes.event_types : existingTypes.message_types;
+            
+            if (items.length === 0) return;
+
+            menu.innerHTML = items.map(item => `<div class="context-menu-item" onclick="selectItem('${item.replace(/'/g, "\\'")}')">${item}</div>`).join('');
+            
+            menu.style.display = 'block';
+            menu.style.left = `${e.pageX}px`;
+            menu.style.top = `${e.pageY}px`;
+
+            // Adjust position if it goes off screen
+            const menuRect = menu.getBoundingClientRect();
+            if (menuRect.right > window.innerWidth) {
+                menu.style.left = `${window.innerWidth - menuRect.width - 10}px`;
+            }
+            if (menuRect.bottom > window.innerHeight) {
+                menu.style.top = `${window.innerHeight - menuRect.height - 10}px`;
+            }
+        }
+
+        function selectItem(value) {
+            if (activeInput) {
+                activeInput.value = value;
+            }
+            hideContextMenu();
+        }
+
+        function hideContextMenu() {
+            document.getElementById('context-menu').style.display = 'none';
+        }
+
+        window.onclick = hideContextMenu;
+
+        function copyToMarkdown() {
+            const id = document.getElementById('goto-id').value;
+            const guid = document.getElementById('field-guid').value;
+            const date = document.getElementById('field-date').value;
+            const regNum = document.getElementById('field-reg-num').value;
+            const issueRegNum = document.getElementById('field-issue-reg-num').value;
+            const series = document.getElementById('field-series').value;
+            const isin = document.getElementById('field-isin').value;
+            
+            const eventType = document.getElementById('field-event-type').value;
+            const messageType = document.getElementById('field-message-type').value;
+            const securityType = document.getElementById('field-security-type').value;
+            const fullText = document.querySelector('.full-text-area').innerText;
+
+            const markdown = `### Информация о событии #${id}\n` +
+                `- **Pseudo GUID:** ${guid}\n` +
+                `- **Дата события:** ${date}\n` +
+                `- **Рег. номер выпуска:** ${regNum}\n` +
+                `- **Рег. номер программы:** ${issueRegNum}\n` +
+                `- **Серия:** ${series}\n` +
+                `- **ISIN:** ${isin}\n` +
+                `- **Тип события:** ${eventType}\n` +
+                `- **Тип сообщения:** ${messageType}\n` +
+                `- **Тип бумаги:** ${securityType}\n\n` +
+                `**Текст события:**\n${fullText}`;
+
+            navigator.clipboard.writeText(markdown).then(() => {
+                showToast("Скопировано в буфер обмена!");
+            });
+        }
+
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            toast.innerText = message;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+
+        // Attach listeners to inputs
+        document.querySelector('input[name="event_type"]').oncontextmenu = (e) => showContextMenu(e, 'event');
+        document.querySelector('input[name="message_type"]').oncontextmenu = (e) => showContextMenu(e, 'message');
+
+        // Показ уведомления при сохранении (если в URL есть успех)
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.has('saved')) {
+            showToast("Изменения сохранены!");
+        }
+        if (urlParams.has('deleted')) {
+            showToast("Событие удалено");
+        }
+
+        async function goToId(id) {
+            if (!id) return;
+            const response = await fetch(`/check/${id}`);
+            const data = await response.json();
+            if (data.exists) {
+                window.location.href = `/?id=${id}`;
+            } else {
+                showModal("Событие не найдено", `Событие с номером #${id} отсутствует в базе данных.`, { okOnly: true });
+                document.getElementById('goto-id').value = "{{ event.id }}";
+            }
+        }
+
+        function showModal(title, text, options = {}) {
+            const overlay = document.getElementById('modal-overlay');
+            document.getElementById('modal-title').innerText = title;
+            document.getElementById('modal-text').innerText = text;
+            
+            const okBtn = document.getElementById('modal-btn-ok');
+            const cancelBtn = document.getElementById('modal-btn-cancel');
+            
+            cancelBtn.style.display = options.okOnly ? 'none' : 'block';
+            
+            overlay.style.display = 'flex';
+            
+            return new Promise((resolve) => {
+                okBtn.onclick = () => {
+                    overlay.style.display = 'none';
+                    resolve(true);
+                };
+                cancelBtn.onclick = () => {
+                    overlay.style.display = 'none';
+                    resolve(false);
+                };
+            });
+        }
+
+        async function confirmDelete() {
+            const confirmed = await showModal(
+                "Удаление записи", 
+                "Вы уверены, что хотите окончательно удалить это событие из базы данных? Это действие необратимо.",
+                { okOnly: false }
+            );
+            if (confirmed) {
+                document.getElementById('delete-form').submit();
+            }
+        }
+    </script>
+</body>
+</html>

@@ -17,3 +17,4 @@ class EmbeddedChunk:
 class ScoredChunk:
     chunk: Chunk
     score: float
+    embedding: Optional[List[float]] = None

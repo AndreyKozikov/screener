@@ -1,10 +1,8 @@
-"""Сервис анализа эмиссионной документации облигаций через OpenAI API (модель GPT-5.1).
+"""Сервис глубокого анализа эмиссионной документации через OpenAI API (GPT-5.1).
 
-Поведение и формат данных полностью аналогичны Gemini: принимает результат
-EdisclosureService.get_accrued_income_by_secid(), объединяет события и Markdown,
-отправляет промт в OpenAI GPT-5.1 и возвращает GeminiBondAnalysisDTO.
-Для 429/503 пробрасываются GeminiQuotaExhaustedError / GeminiUnavailableError,
-чтобы роутер e-disclosure обрабатывал их единообразно.
+Модуль реализует интеллектуальную обработку накопленных документов и событий
+для извлечения сложных параметров облигаций, обеспечивая единообразную обработку
+ошибок и форматов данных с другими LLM-провайдерами.
 """
 
 import json
@@ -71,10 +69,10 @@ class MarkdownRepositoryProtocol(Protocol):
 
 
 class OpenAIClient:
-    """Клиент для обращения к OpenAI API (чат-модели, в т.ч. GPT-5.1).
+    """Транспортный клиент для OpenAI API.
 
-    Инкапсулирует инициализацию клиента и отправку запросов через
-    chat completions, отделяя транспортный слой от бизнес-логики сервиса.
+    Обеспечивает взаимодействие с моделями семейства GPT, поддерживая как
+    стандартный чат-интерфейс, так и специализированное API для работы с файлами.
     """
 
     def __init__(self, api_key: str) -> None:
@@ -175,10 +173,10 @@ class OpenAIClient:
 
 
 class OpenAIAnalysisService:
-    """Анализирует эмиссионную документацию облигаций через OpenAI GPT-5.1.
+    """Сервис-аналитик на базе OpenAI GPT.
 
-    Оркеструет получение Markdown через репозиторий, формирование промта
-    и валидацию ответа через GeminiBondAnalysisDTO (тот же DTO, что у Gemini).
+    Оркестрирует процесс извлечения данных из документов e-disclosure,
+    используя мощности моделей OpenAI для анализа сложных юридических текстов.
     """
 
     def __init__(
@@ -220,12 +218,14 @@ class OpenAIAnalysisService:
         events: List[Dict[str, Any]] = edisclosure_data.get("events", [])
         md_filenames: List[str] = edisclosure_data.get("md_filenames", [])
         doc_filenames: List[str] = edisclosure_data.get("doc_filenames", [])
+        vector_context: str = str(edisclosure_data.get("vector_context") or "").strip()
 
         logger.info(
-            "[OPENAI] Подготовка запроса: событий=%d, md-файлов=%d, doc-файлов=%d → %s",
+            "[OPENAI] Подготовка запроса: событий=%d, md-файлов=%d, doc-файлов=%d, vector_context=%d chars → %s",
             len(events),
             len(md_filenames),
             len(doc_filenames),
+            len(vector_context),
             doc_filenames or md_filenames,
         )
 
@@ -233,22 +233,9 @@ class OpenAIAnalysisService:
         if md_base_dir is not None and not isinstance(md_base_dir, Path):
             md_base_dir = Path(str(md_base_dir))
 
-        use_file_upload: bool = bool(
-            edisclosure_data.get("use_file_upload", False)
-            and md_filenames
-            and md_base_dir is not None
-        )
-
-        if use_file_upload:
-            markdown_content: str = "Документы приложены отдельными файлами (см. вложения)."
-            logger.info(
-                "[OPENAI] Режим Files API: %d markdown-файлов (после конвертации и фильтров) будут загружены отдельно",
-                len(md_filenames),
-            )
-            print(
-                f"  [LLM] Модель получает данные: загрузка markdown-файлов ({len(md_filenames)} шт.)",
-                flush=True,
-            )
+        if vector_context:
+            markdown_content: str = vector_context
+            print("  [LLM] Модель получает данные: vector_context после векторного поиска", flush=True)
         else:
             markdown_content = self._markdown_repo.read_files(
                 md_filenames, base_dir=md_base_dir
@@ -277,10 +264,9 @@ class OpenAIAnalysisService:
         model_id: str = model or OPENAI_MODEL_GPT_5_1
         logger.info(
             "[OPENAI] → POST https://api.openai.com/v1/ "
-            "(model: %s, длина промта: %d символов, файлов: %d)",
+            "(model: %s, длина промта: %d символов)",
             model_id,
             len(prompt),
-            len(md_filenames) if use_file_upload else 0,
         )
         print(
             f"  [API] POST https://api.openai.com/v1/ (OpenAI, model: {model_id})",
@@ -288,12 +274,7 @@ class OpenAIAnalysisService:
         )
 
         try:
-            if use_file_upload:
-                raw_text: str = self._client.generate(
-                    prompt, model=model_id, file_paths=md_filenames, base_dir=md_base_dir
-                )
-            else:
-                raw_text = self._client.generate(prompt, model=model_id)
+            raw_text: str = self._client.generate(prompt, model=model_id)
         except GeminiQuotaExhaustedError:
             raise
         except GeminiUnavailableError:

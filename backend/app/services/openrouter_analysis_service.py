@@ -1,8 +1,7 @@
-"""Сервис анализа облигационных данных через OpenRouter API (Google Gemini 2.5 Flash Lite).
+"""Сервис анализа облигационных данных через агрегатор OpenRouter API.
 
-Использует OpenAI-совместимый клиент с base_url OpenRouter,
-модель google/gemini-2.5-flash-lite. Тот же алгоритм и промпт, что у Gemini.
-Возвращает структурированный результат (GeminiBondAnalysisDTO).
+Модуль обеспечивает доступ к широкому спектру языковых моделей (преимущественно
+Gemini 2.5 Flash Lite) через единый унифицированный интерфейс OpenRouter.
 """
 
 import json
@@ -55,9 +54,10 @@ def _build_openrouter_headers() -> Dict[str, str]:
 
 
 class OpenRouterClient:
-    """Клиент для обращения к OpenRouter API (модель Google Gemini 2.5 Flash Lite).
+    """Транспортный клиент для OpenRouter.
 
-    Использует OpenAI-совместимый клиент с base_url OpenRouter.
+    Реализует OpenAI-совместимый протокол для взаимодействия с агрегатором моделей,
+    поддерживая специфичные заголовки и маршрутизацию.
     """
 
     def __init__(self, api_key: str) -> None:
@@ -107,9 +107,10 @@ class OpenRouterClient:
 
 
 class OpenRouterAnalysisService:
-    """Анализирует эмиссионную документацию облигаций через OpenRouter (Gemini 2.5 Flash Lite).
+    """Сервис-аналитик на базе OpenRouter.
 
-    Оркеструет получение Markdown-содержимого, формирование промта и валидацию ответа через DTO.
+    Координирует процесс анализа документов, позволяя гибко выбирать
+    наиболее эффективную модель через API OpenRouter.
     """
 
     def __init__(
@@ -131,21 +132,27 @@ class OpenRouterAnalysisService:
         """
         events: List[Dict[str, Any]] = edisclosure_data.get("events", [])
         md_filenames: List[str] = edisclosure_data.get("md_filenames", [])
+        vector_context: str = str(edisclosure_data.get("vector_context") or "").strip()
 
         logger.info(
-            "[OPENROUTER] Подготовка запроса: событий=%d, md-файлов=%d → %s",
+            "[OPENROUTER] Подготовка запроса: событий=%d, md-файлов=%d, vector_context=%d chars → %s",
             len(events),
             len(md_filenames),
+            len(vector_context),
             md_filenames,
         )
 
         md_base_dir: Optional[Path] = edisclosure_data.get("data_dir")
         if md_base_dir is not None and not isinstance(md_base_dir, Path):
             md_base_dir = Path(str(md_base_dir))
-        markdown_content: str = self._markdown_repo.read_files(
-            md_filenames, base_dir=md_base_dir
-        )
-        print("  [LLM] Модель получает данные: в виде контекста в промте", flush=True)
+        if vector_context:
+            markdown_content: str = vector_context
+            print("  [LLM] Модель получает данные: vector_context после векторного поиска", flush=True)
+        else:
+            markdown_content = self._markdown_repo.read_files(
+                md_filenames, base_dir=md_base_dir
+            )
+            print("  [LLM] Модель получает данные: в виде контекста в промте", flush=True)
         events_json: str = json.dumps(events, ensure_ascii=False, indent=2)
 
         prompt: str = build_floater_analysis_prompt(

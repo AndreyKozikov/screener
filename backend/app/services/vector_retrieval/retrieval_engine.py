@@ -46,9 +46,17 @@ class RetrievalEngine:
                 max_sim = np.max(similarities)
                 total_score += max_sim
                 
+            # Representative embedding for the chunk (mean of normalized sentence embeddings)
+            chunk_embedding = np.mean(normalized_sentences, axis=0)
+            # Re-normalize chunk embedding
+            chunk_embedding_norm = np.linalg.norm(chunk_embedding)
+            if chunk_embedding_norm > 0:
+                chunk_embedding = chunk_embedding / chunk_embedding_norm
+
             scored_chunks.append(ScoredChunk(
                 chunk=embedded_chunk.chunk,
-                score=total_score
+                score=total_score,
+                embedding=chunk_embedding.tolist()
             ))
             
         # Sort by score descending

@@ -13,7 +13,8 @@ router = APIRouter(
 async def get_bond_context(
     secid: str = Query(..., description="SECID облигации"),
     regnumber: Optional[str] = Query(None, description="Регистрационный номер (опционально)"),
-    use_local_events: bool = Query(False, description="Использовать локальный кэш событий")
+    use_local_events: bool = Query(False, description="Использовать локальный кэш событий"),
+    query: Optional[str] = Query(None, description="Пользовательский запрос для поиска")
 ):
     """
     Эндпоинт для получения интеллектуально отобранного контекста по облигации
@@ -27,8 +28,16 @@ async def get_bond_context(
         context = service.get_context_for_bond(
             secid=secid, 
             regnumber=regnumber,
-            use_local_events=use_local_events
+            use_local_events=use_local_events,
+            query=query
         )
+        
+        # Если передан пользовательский запрос - возвращаем результат поиска в JSON
+        if query:
+            return {
+                "query": query,
+                "result": context
+            }
         
         # 2. Формируем промпт (события пустые, так как они уже в контексте)
         prompt = build_floater_analysis_prompt(

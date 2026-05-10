@@ -1,3 +1,10 @@
+"""Сервис векторного поиска и формирования контекста для анализа облигаций.
+
+Обеспечивает сбор текстовой информации из различных источников (Markdown документы,
+лента раскрытия информации E-disclosure), фильтрацию по релевантности и запуск
+конвейера векторного поиска для подготовки контекста LLM-запросов.
+"""
+
 import logging
 from pathlib import Path
 from typing import List, Dict, Any, Optional
@@ -27,19 +34,52 @@ logger = logging.getLogger(__name__)
 _DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
 class VectorRetrievalService:
+    """Сервис векторного поиска контекста.
+
+    Агрегирует данные по конкретной облигации, фильтрует нерелевантные документы
+    и события, после чего использует RetrievalPipeline для отбора наиболее
+    значимых фрагментов текста (чанков) на основе семантического сходства.
+
+    Attributes:
+        edisclosure_service (EdisclosureService): Сервис для работы с лентой новостей эмитентов.
+        file_storage (FileStorage): Компонент для чтения локальных Markdown файлов.
+        pipeline (RetrievalPipeline): Конвейер векторного поиска и ранжирования.
+    """
+
     def __init__(self):
+        """Инициализирует сервис векторного поиска."""
         self.edisclosure_service = EdisclosureService()
         self.file_storage = FileStorage()
         self.pipeline = RetrievalPipeline()
 
     def get_context_for_bond(
-        self, 
+        self,
         secid: str, 
         regnumber: Optional[str] = None,
-        use_local_events: bool = False
+        use_local_events: bool = False,
+        query: Optional[str] = None
     ) -> str:
-        """
-        Собирает данные по облигации и формирует векторный контекст.
+        """Собирает данные по облигации и формирует векторный контекст.
+
+        Процесс включает:
+        1. Получение метаданных (ИНН, рег. номер) и ID компании в E-disclosure.
+        2. Загрузку и фильтрацию локальных Markdown-документов (решения, проспекты).
+        3. Загрузку и фильтрацию событий существенных фактов.
+        4. Запуск векторного поиска (RAG) для отбора наиболее релевантных чанков.
+
+        Args:
+            secid: Идентификатор облигации (SECID).
+            regnumber: Государственный регистрационный номер выпуска.
+            use_local_events: Если True, загружает события из локальных файлов,
+                иначе — через API E-disclosure.
+            query: Текстовый запрос для семантического поиска. Если не указан,
+                используется стандартный алгоритм ранжирования.
+
+        Returns:
+            Строка, содержащая отобранный текстовый контекст в формате Markdown.
+
+        Raises:
+            ValueError: Если не найден ИНН для указанного SECID.
         """
         secid = secid.strip()
         inn = get_emitent_inn_by_secid(secid)
@@ -77,7 +117,7 @@ class VectorRetrievalService:
         for md_path in all_md_files:
             # Фильтры исключения (регистронезависимые)
             filename_lower = md_path.name.lower()
-            if "отчетность мсфо" in filename_lower or "отчетность рсбу" in filename_lower:
+            if "отчетность мсфо" in filename_lower or "отчетность рсбу" in filename_lower or filename_lower == "vector_context.md":
                 logger.info(f"Исключен файл по имени: {md_path.name}")
                 continue
                 
@@ -128,7 +168,8 @@ class VectorRetrievalService:
             logger.error(f"Error loading events for {secid}: {e}")
 
         # 5. Run vector retrieval pipeline
-        context = self.pipeline.run(markdown_docs, events)
+        queries = [query] if query else None
+        context = self.pipeline.run(markdown_docs, events, queries=queries)
         
         # Сохранение отобранных чанков для анализа качества
         try:
@@ -143,6 +184,11 @@ class VectorRetrievalService:
 _vector_retrieval_service = None
 
 def get_vector_retrieval_service() -> VectorRetrievalService:
+    """Получает singleton экземпляр сервиса векторного поиска.
+
+    Returns:
+        Экземпляр VectorRetrievalService.
+    """
     global _vector_retrieval_service
     if _vector_retrieval_service is None:
         _vector_retrieval_service = VectorRetrievalService()

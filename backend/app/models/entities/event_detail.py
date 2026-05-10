@@ -22,3 +22,4 @@ class EventDetail(SQLModel, table=True):
     message_type: Optional[str] = Field(default=None)
     event_type: Optional[str] = Field(default=None)
     publication_date: Optional[str] = Field(default=None)
+    is_edit: int = Field(default=0)

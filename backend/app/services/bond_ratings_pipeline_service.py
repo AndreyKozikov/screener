@@ -1,7 +1,7 @@
-"""Сервис пайплайна загрузки и сохранения рейтингов облигаций.
+"""Сервис пайплайна автоматизированного сбора кредитных рейтингов облигаций.
 
-Извлекает облигации из БД, запрашивает рейтинги из API MOEX и сохраняет
-результаты в таблицу bond_ratings. Без использования файлов.
+Обеспечивает циклическую обработку бумаг, запрашивает рейтинги через API MOEX
+и сохраняет их в локальную базу данных, поддерживая актуальность кредитного качества портфеля.
 """
 
 import logging
@@ -30,13 +30,24 @@ MOEX_EMITENT_OFZ = 1228
 
 
 class BondRatingsPipelineService:
-    """Пайплайн загрузки рейтингов облигаций из MOEX API и сохранения в БД."""
+    """Сервис-оркестратор процесса актуализации рейтингов.
+
+    Реализует логику запросов к MOEX ISS API для получения идентификаторов эмитентов
+    и последующего извлечения детальных данных о присвоенных кредитных рейтингах.
+
+    Attributes:
+        db_path (Path): Путь к файлу базы данных SQLite.
+        _bonds_repo (BondsRepository): Репозиторий для доступа к облигациям.
+        _ratings_repo (BondRatingsRepository): Репозиторий для хранения рейтингов.
+        logger (Logger): Объект для ведения журналов обновлений.
+    """
 
     def __init__(self, db_path: Optional[Path] = None) -> None:
-        """Инициализирует сервис.
+        """Инициализирует сервис пайплайна рейтингов.
 
         Args:
-            db_path: Путь к файлу БД. Если не указан — backend/db/bonds.db.
+            db_path (Optional[Path]): Абсолютный или относительный путь к файлу SQLite базы данных.
+                Если не указан, используется значение по умолчанию DB_PATH.
         """
         self.db_path = db_path or DB_PATH
         self._bonds_repo = BondsRepository(db_path=self.db_path)
@@ -44,13 +55,16 @@ class BondRatingsPipelineService:
         self.logger = logging.getLogger(__name__)
 
     def run_pipeline(self) -> Dict[str, int]:
-        """Запускает пайплайн обновления рейтингов.
+        """Запускает основной цикл обновления рейтингов для всех подходящих облигаций.
 
-        Извлекает облигации из БД, для каждой определяет moex_emitent_id
-        (из БД или API), запрашивает рейтинги из MOEX и сохраняет в bond_ratings.
+        Процесс включает:
+        1. Получение списка облигаций, требующих обновления.
+        2. Определение MOEX Emitter ID для каждой бумаги.
+        3. Запрос данных о рейтингах через API MOEX.
+        4. Сохранение полученных данных или фиксация отсутствия рейтинга.
 
         Returns:
-            Словарь со статистикой: updated, errors, skipped.
+            Dict[str, int]: Статистика выполнения пайплайна (всего, обновлено, ошибки, пропущено).
         """
         bonds = self._bonds_repo.get_bonds_for_ratings_pipeline()
         total = len(bonds)
@@ -107,13 +121,14 @@ class BondRatingsPipelineService:
         }
 
     def _fetch_emitent_id_from_moex(self, secid: str) -> Optional[int]:
-        """Запрашивает EMITTER_ID из API MOEX по secid.
+        """Запрашивает внутренний идентификатор эмитента (EMITTER_ID) через API MOEX.
 
         Args:
-            secid: Идентификатор ценной бумаги.
+            secid (str): Идентификатор ценной бумаги (SECID).
 
         Returns:
-            MOEX emitent ID или None при ошибке или отсутствии в ответе.
+            Optional[int]: Идентификатор эмитента MOEX или None, если данные не удалось получить
+                или они отсутствуют в ответе API.
         """
         url = MOEX_SECURITIES_URL.format(secid=secid)
         try:
@@ -151,15 +166,15 @@ class BondRatingsPipelineService:
         secid: str,
         emitent_id: int,
     ) -> List[Dict[str, Any]]:
-        """Запрашивает рейтинги облигации из API MOEX.
+        """Запрашивает детальную информацию о рейтингах конкретной облигации.
 
         Args:
-            secid: Идентификатор ценной бумаги.
-            emitent_id: MOEX ID эмитента.
+            secid (str): Идентификатор ценной бумаги (SECID).
+            emitent_id (int): Внутренний идентификатор эмитента на Московской Бирже.
 
         Returns:
-            Список словарей с полями agency_id, rating_level_name_short_ru,
-            rating_date. Пустой список при ошибке.
+            List[Dict[str, Any]]: Список словарей с данными о рейтингах, включая ID агентства,
+                уровень рейтинга и дату присвоения.
         """
         url = MOEX_RATINGS_URL.format(secid=secid, emitent_id=emitent_id)
         try:
@@ -203,7 +218,16 @@ class BondRatingsPipelineService:
         return result
 
     def _extract_cci_rating_securities(self, data: Any) -> List[Any]:
-        """Извлекает cci_rating_securities из ответа MOEX (разные форматы)."""
+        """Извлекает блок данных cci_rating_securities из JSON-ответа MOEX.
+
+        Поддерживает различные форматы ответа MOEX ISS (список объектов или объект с секциями).
+
+        Args:
+            data (Any): Необработанные данные, полученные от API MOEX.
+
+        Returns:
+            List[Any]: Список записей с рейтингами в виде словарей.
+        """
         if isinstance(data, list):
             for item in data:
                 if isinstance(item, dict) and "cci_rating_securities" in item:
@@ -239,7 +263,14 @@ class BondRatingsPipelineService:
         return []
 
     def _save_empty_rating(self, bond_id: int) -> None:
-        """Сохраняет пустой рейтинг (agency_id=-1) для облигации."""
+        """Фиксирует отсутствие рейтинга для облигации в базе данных.
+
+        Использует специальный идентификатор AGENCY_ID_NO_RATING (-1) для обозначения
+        проверенных бумаг, у которых не обнаружено активных кредитных рейтингов.
+
+        Args:
+            bond_id (int): Внутренний идентификатор облигации в базе данных.
+        """
         self._ratings_repo.upsert_ratings_for_bond(
             bond_id,
             [
@@ -252,7 +283,11 @@ class BondRatingsPipelineService:
         )
 
     def _save_ofz_aaa_rating(self, bond_id: int) -> None:
-        """Сохраняет рейтинг AAA для ОФЗ (agency_id=0)."""
+        """Автоматически присваивает рейтинг AAA для Облигаций Федерального Займа (ОФЗ).
+
+        Args:
+            bond_id (int): Внутренний идентификатор облигации в базе данных.
+        """
         self._ratings_repo.upsert_ratings_for_bond(
             bond_id,
             [
@@ -265,24 +300,23 @@ class BondRatingsPipelineService:
         )
 
     def get_ratings_by_secid(self, secid: str) -> List[Dict[str, Any]]:
-        """Возвращает рейтинги облигации по SECID из БД.
+        """Извлекает сохраненные рейтинги облигации из локальной базы данных.
 
         Args:
-            secid: Идентификатор ценной бумаги.
+            secid (str): Идентификатор ценной бумаги (SECID).
 
         Returns:
-            Список словарей с полями agency_id, rating_level_name, rating_date,
-            agency_name_short_ru.
+            List[Dict[str, Any]]: Список словарей с данными о рейтингах и названиями агентств.
         """
         return self._ratings_repo.get_ratings_by_secid(secid)
 
     def get_agency_name_short_ru(self, agency_id: int) -> Optional[str]:
-        """Возвращает название рейтингового агентства по agency_id из rating_agency.
+        """Получает русскоязычное краткое название рейтингового агентства по его ID.
 
         Args:
-            agency_id: agency_id из bond_ratings / rating_agency.
+            agency_id (int): Идентификатор рейтингового агентства.
 
         Returns:
-            Строка названия или None.
+            Optional[str]: Название агентства или None, если ID не найден в справочнике.
         """
         return self._ratings_repo.get_agency_name_short_ru_by_agency_id(agency_id)

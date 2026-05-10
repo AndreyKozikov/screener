@@ -1,13 +1,14 @@
-"""Сервис обработки среднесрочного прогноза Банка России.
+"""Сервис обработки макроэкономических прогнозов Банка России.
 
-После сохранения .md файла эндпоинт передаёт имя файла в этот сервис. Сервис читает
-файл из data_dir, парсит через forecast_md_parser, преобразует данные в сущности БД
-и сохраняет через ForecastRepository. Только пайплайн: парсинг -> подготовка данных -> вставка.
+Модуль реализует пайплайн импорта прогнозов из Markdown-документов:
+парсинг текста, сопоставление показателей и сохранение временных рядов в БД.
 """
 
 from datetime import date
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+import httpx
 
 from app.models.entities.forecast import (
     Forecast,
@@ -18,8 +19,10 @@ from app.models.entities.forecast import (
 from app.models.schemasDTO.forecast_dto import ForecastDatesResponse
 from app.parsers.forecast_md_parser import ParsedForecast, parse_forecast_content
 from app.repository.db.forecast_repository import ForecastRepository
+from app.repository.files.file_storage import FileStorage
 from app.utils.logger import get_data_update_logger
 from config.paths import DATA_DIR, DB_PATH
+from config.settings import settings
 
 # Маппинг ключей парсера (основные показатели) -> (min_колонка, max_колонка) в ForecastMainIndicators
 _MAIN_KEY_TO_COLUMNS: Dict[str, tuple[str, str]] = {
@@ -119,7 +122,11 @@ def _parsed_to_balance(parsed: ParsedForecast, forecast_date: date) -> List[Fore
 
 
 class ForecastService:
-    """Оркестрирует парсинг .md файла прогноза и сохранение в БД через репозиторий."""
+    """Сервис управления среднесрочными прогнозами.
+
+    Обеспечивает преобразование текстовых данных прогноза в структурированный вид,
+    пригодный для аналитической визуализации на фронтенде.
+    """
 
     def __init__(
         self,
@@ -129,6 +136,75 @@ class ForecastService:
         self._data_dir = Path(data_dir) if data_dir else DATA_DIR
         self._repo = repository or ForecastRepository(db_path=DB_PATH)
         self._log = get_data_update_logger()
+        self._file_storage = FileStorage()
+
+    def convert_pdf_to_md(self, pdf_filename: str) -> str:
+        """Конвертирует PDF файл в Markdown через внешний API.
+
+        Args:
+            pdf_filename: Имя PDF файла в data_dir.
+
+        Returns:
+            Имя созданного Markdown файла.
+
+        Raises:
+            FileNotFoundError: PDF файл не найден.
+            PdfConversionConnectionError: Ошибка связи с сервисом конвертации.
+        """
+        pdf_path = self._data_dir / pdf_filename
+        if not pdf_path.is_file():
+            raise FileNotFoundError(f"PDF файл не найден: {pdf_path}")
+
+        files_payload = [
+            ("files", (pdf_filename, pdf_path.read_bytes(), "application/pdf")),
+        ]
+
+        url = f"{settings.PDF2MD_BASE_URL.rstrip('/')}/api/v1/convert/batch"
+        self._log.info("[FORECAST SERVICE] Отправка PDF на конвертацию: %s", pdf_filename)
+
+        try:
+            with httpx.Client(timeout=None) as client:
+                response = client.post(url, files=files_payload)
+                response.raise_for_status()
+                body = response.json()
+        except httpx.HTTPError as exc:
+            message = f"Ошибка конвертации прогноза: {exc}"
+            self._log.error("[FORECAST SERVICE] %s", message)
+            raise PdfConversionConnectionError(message, cause=exc) from exc
+
+        results = body.get("results", [])
+        if not results:
+            raise ValueError("Пустой ответ от сервиса конвертации")
+
+        item = results[0]
+        error = item.get("error")
+        markdown = item.get("markdown")
+
+        if error:
+            raise ValueError(f"Ошибка в ответе конвертера: {error}")
+        if not markdown:
+            raise ValueError("Конвертер вернул пустой текст")
+
+        md_filename = Path(pdf_filename).stem + ".md"
+        md_path = self._data_dir / md_filename
+
+        # Очистка Markdown ЗАПРЕЩЕНА по требованию пользователя
+        self._file_storage.save_text_file(md_path, markdown)
+        self._log.info("[FORECAST SERVICE] Создан Markdown файл: %s", md_filename)
+
+        return md_filename
+
+    def process_pdf_and_save(self, pdf_filename: str) -> bool:
+        """Пайплайн: PDF -> Конвертация -> MD -> Парсинг -> БД.
+
+        Args:
+            pdf_filename: Имя PDF файла в data_dir.
+
+        Returns:
+            True при успешном сохранении.
+        """
+        md_filename = self.convert_pdf_to_md(pdf_filename)
+        return self.process_and_save(md_filename)
 
     def process_and_save(self, filename: str) -> bool:
         """Читает файл filename из data_dir, парсит, подготавливает данные и сохраняет в БД.

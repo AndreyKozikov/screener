@@ -1,14 +1,8 @@
-"""Pipeline 2 — LLM prompt formation and event loading for bond analysis.
+"""Пайплайн №2 — Формирование промптов и анализ накопленных документов через LLM.
 
-Works ONLY with already-downloaded emission documents (Markdown files
-in backend/app/data/{secid}/). Does NOT download anything itself.
-
-Reuses existing code from:
-- EdisclosureService for company_id resolution, event loading, LLM calls
-- PdfConversionService filters (applied via existing convert() method)
-- emission_series_parser for series extraction and event filtering
-- edisclosure_utils for event fetching and text cleaning
-- BondFloatParamsRepository for saving LLM results
+Данный сервис работает исключительно с локально сохраненными документами
+(Markdown-файлы в backend/app/data/{secid}/). Он не выполняет скачивание,
+а фокусируется на интеллектуальном анализе уже имеющихся данных.
 """
 
 import json
@@ -18,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
-from app.core.exceptions import PdfConversionConnectionError, PromptTooLongError
+from app.core.exceptions import PromptTooLongError
 from app.models.schemasDTO.gemini_dto import GeminiBondAnalysisDTO
 from app.repository.db.bond_float_params_repository import BondFloatParamsRepository
 from app.repository.files.file_storage import FileStorage
@@ -40,6 +34,7 @@ from app.services.gemini_analysis_service import (
 )
 from app.services.llm_provider_readiness_service import LlmProviderReadinessService
 from app.services.trading_history_service import get_trading_history_service
+from app.services.vector_retrieval.pipeline import RetrievalPipeline
 
 from app.parsers.emission_series_parser import (
     extract_series_from_markdown,
@@ -66,6 +61,7 @@ _FILENAME_EXCLUDE_PHRASES: tuple[str, ...] = (
     "РСБУ",
     "Проспект",
     "Сертификат",
+    "vector_context",
 )
 
 _HEADER_CONDITIONS: str = "ДОКУМЕНТ, СОДЕРЖАЩИЙ УСЛОВИЯ РАЗМЕЩЕНИЯ ЦЕННЫХ БУМАГ"
@@ -120,12 +116,11 @@ def _get_pipeline_logger() -> logging.Logger:
 
 
 class LlmPromptPipelineService:
-    """Pipeline 2: form LLM prompts from already-downloaded documents and events.
+    """Сервис конвейерного анализа эмиссионной документации.
 
-    This pipeline does NOT download documents. It reads already-existing
-    Markdown files from ``data/{secid}/``, loads events (locally or from server),
-    applies existing filters (series, regnumber, secid), and sends the prompt
-    to the LLM for analysis.
+    Оркестрирует процесс отбора релевантных файлов, фильтрации событий раскрытия
+    и генерации запросов к LLM для автоматизированного извлечения параметров
+    облигаций-флоатеров.
     """
 
     def __init__(self) -> None:
@@ -133,6 +128,7 @@ class LlmPromptPipelineService:
         self._float_params_repo: BondFloatParamsRepository = BondFloatParamsRepository()
         self._edisclosure_service: EdisclosureService = EdisclosureService()
         self._readiness: LlmProviderReadinessService = LlmProviderReadinessService()
+        self._retrieval_pipeline: RetrievalPipeline = RetrievalPipeline()
         self._llm_call_timestamps: List[float] = []
 
     # ------------------------------------------------------------------
@@ -239,15 +235,6 @@ class LlmPromptPipelineService:
                     flush=True,
                 )
                 raise
-            except PdfConversionConnectionError as exc:
-                pl_logger.error(
-                    "[PDF2MD ERROR] secid=%s: %s", secid, exc, exc_info=True,
-                )
-                print(
-                    f"[LLM] Pipeline stopped: pdf2md connection error — {exc}",
-                    flush=True,
-                )
-                raise
             except Exception as exc:
                 pl_logger.error(
                     "[ERROR] secid=%s: %s", secid, exc, exc_info=True,
@@ -286,7 +273,7 @@ class LlmPromptPipelineService:
         """True if the bond directory exists and contains at least one .md file."""
         if not bond_dir.is_dir():
             return False
-        return any(bond_dir.glob("*.md"))
+        return any(f.name.lower() != "vector_context.md" for f in bond_dir.glob("*.md"))
 
     def _process_single_bond(
         self,
@@ -300,7 +287,7 @@ class LlmPromptPipelineService:
 
         Steps:
         1. Read existing .md files from data/{secid}/.
-        2. Apply existing conversion filters (via PdfConversionService.convert).
+        2. Apply existing filters (filename exclusion + header check).
         3. Extract series from Markdown (existing filter logic).
         4. Load events (locally or from server) and filter by secid/regnumber/series.
         5. Send prompt to LLM and save results.
@@ -340,9 +327,8 @@ class LlmPromptPipelineService:
             flush=True,
         )
 
-        # --- Step 2: Apply existing conversion filters via PdfConversionService ---
-        # This reuses the existing filter logic (filename exclusion + header check)
-        # without re-downloading or re-converting.
+        # --- Step 2: Apply existing filters (filename exclusion + header check) ---
+        # This reuses the filter logic without re-downloading or re-converting.
         company_id: int
         companies: List[Dict[str, Any]]
         try:
@@ -367,10 +353,12 @@ class LlmPromptPipelineService:
             return False
 
         # --- Step 2: Filter existing Markdown files ---
-        # Instead of calling PdfConversionService, we manually filter the .md files
+        # We manually filter the .md files
         # created by Pipeline 1 based on filename and header criteria.
         all_md_files: List[Path] = list(bond_data_dir.glob("*.md"))
         md_filenames: List[str] = []
+        md_text_by_name: Dict[str, str] = {}
+        markdown_docs: List[Dict[str, str]] = []
 
         for md_path in all_md_files:
             # 1. Filter by filename (Pipeline 1 saves original_name.md)
@@ -385,6 +373,11 @@ class LlmPromptPipelineService:
                     pl_logger.info("[FILTER] Excluded by headers: %s", md_path.name)
                     continue
                 md_filenames.append(md_path.name)
+                md_text_by_name[md_path.name] = md_content
+                markdown_docs.append({
+                    "filename": md_path.name,
+                    "content": md_content,
+                })
             except OSError as exc:
                 pl_logger.error("[ERROR] Failed to read %s: %s", md_path.name, exc)
 
@@ -407,17 +400,22 @@ class LlmPromptPipelineService:
         series: Optional[str] = None
         for md_name in md_filenames:
             try:
-                md_path: Path = bond_data_dir / md_name
-                md_content: str = self._file_storage.read_text_file(md_path)
+                md_content: str = md_text_by_name.get(md_name, "")
+                if not md_content:
+                    md_path: Path = bond_data_dir / md_name
+                    md_content = self._file_storage.read_text_file(md_path)
                 if not markdown_has_decision_header(md_content):
                     continue
                 series = extract_series_from_markdown(md_content)
                 if series is not None:
                     print(f"  [{secid}] Series extracted: {series!r}", flush=True)
+                    if series.isdigit():
+                        print(f"  [{secid}] Series {series!r} is digits only, ignoring filter", flush=True)
+                        series = None
                     break
             except OSError as exc:
                 pl_logger.warning(
-                    "[PDF2MD] secid=%s: failed to read %s: %s", secid, md_name, exc,
+                    "[DOCS] secid=%s: failed to read %s: %s", secid, md_name, exc,
                 )
 
         # --- Step 4: Load events and filter ---
@@ -482,10 +480,7 @@ class LlmPromptPipelineService:
             }
             for e in events
         ]
-        converted["events"] = events_for_llm
-        converted["use_file_upload"] = use_file_upload
-
-        if not events and not doc_filenames:
+        if not events and not markdown_docs:
             pl_logger.warning(
                 "[NOT FOUND] secid=%s: no events and no documents", secid,
             )
@@ -495,8 +490,32 @@ class LlmPromptPipelineService:
                 )
             return False
 
+        # Vector retrieval must be applied before sending data to LLM.
+        try:
+            vector_context: str = self._retrieval_pipeline.run(
+                markdown_docs=markdown_docs,
+                events=events_for_llm,
+            )
+            self._file_storage.save_text_file(
+                bond_data_dir / "vector_context.md", vector_context
+            )
+        except Exception as exc:
+            pl_logger.error(
+                "[VECTOR] secid=%s: vector retrieval failed: %s", secid, exc,
+                exc_info=True,
+            )
+            return False
+
+        converted["events"] = []
+        converted["md_filenames"] = []
+        converted["vector_context"] = vector_context
+        converted["use_file_upload"] = False
+
         # --- Step 5: LLM analysis ---
-        print(f"  [{secid}] Sending to LLM", flush=True)
+        print(
+            f"  [{secid}] Sending vector context to LLM ({len(vector_context)} chars)",
+            flush=True,
+        )
         self._enforce_llm_rate_limit()
         try:
             analysis: Optional[GeminiBondAnalysisDTO] = (

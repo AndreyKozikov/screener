@@ -1,9 +1,7 @@
-"""Сервис анализа облигационных данных через локальный LLM HTTP API.
+"""Сервис анализа облигационных данных через локальный HTTP API языковых моделей.
 
-Использует отдельный сервис генерации:
-- POST /api/v1/llm/generate
-- application/json: message (+ optional generation params)
-- response JSON в поле "response"
+Обеспечивает взаимодействие с локально развернутыми моделями (например, Qwen или Llama)
+для выполнения конфиденциального анализа документов без отправки данных во внешние облака.
 """
 
 import json
@@ -49,7 +47,11 @@ class MarkdownRepositoryProtocol(Protocol):
 
 
 class LocalLLMClient:
-    """Клиент для локального LLM API (POST /api/v1/llm/generate)."""
+    """HTTP-клиент для взаимодействия с локальным сервером вывода LLM.
+
+    Реализует специфичный для проекта протокол обмена данными с внутренним
+    сервисом генерации текста.
+    """
 
     def __init__(self, base_url: str, generate_path: str) -> None:
         """Инициализирует клиент.
@@ -104,9 +106,10 @@ class LocalLLMClient:
 
 
 class LocalLLMAnalysisService:
-    """Анализирует эмиссионную документацию через локальную модель (Qwen3-4B).
+    """Сервис-аналитик на базе локальных моделей.
 
-    Тот же алгоритм, что у Gemini/OpenRouter: промпт + парсинг JSON + DTO.
+    Выполняет полный цикл подготовки контекста и извлечения данных из документов,
+    используя мощности локального GPU/CPU для обработки конфиденциальной информации.
     """
 
     def __init__(
@@ -121,21 +124,27 @@ class LocalLLMAnalysisService:
         """Анализирует данные e-disclosure и возвращает структурированный результат."""
         events: List[Dict[str, Any]] = edisclosure_data.get("events", [])
         md_filenames: List[str] = edisclosure_data.get("md_filenames", [])
+        vector_context: str = str(edisclosure_data.get("vector_context") or "").strip()
 
         logger.info(
-            "[LOCAL LLM] Подготовка запроса: событий=%d, md-файлов=%d → %s",
+            "[LOCAL LLM] Подготовка запроса: событий=%d, md-файлов=%d, vector_context=%d chars → %s",
             len(events),
             len(md_filenames),
+            len(vector_context),
             md_filenames,
         )
 
         md_base_dir: Optional[Path] = edisclosure_data.get("data_dir")
         if md_base_dir is not None and not isinstance(md_base_dir, Path):
             md_base_dir = Path(str(md_base_dir))
-        markdown_content: str = self._markdown_repo.read_files(
-            md_filenames, base_dir=md_base_dir
-        )
-        print("  [LLM] Модель получает данные: в виде контекста в промте", flush=True)
+        if vector_context:
+            markdown_content: str = vector_context
+            print("  [LLM] Модель получает данные: vector_context после векторного поиска", flush=True)
+        else:
+            markdown_content = self._markdown_repo.read_files(
+                md_filenames, base_dir=md_base_dir
+            )
+            print("  [LLM] Модель получает данные: в виде контекста в промте", flush=True)
         events_json: str = json.dumps(events, ensure_ascii=False, indent=2)
 
         prompt: str = build_floater_analysis_chatml_message(

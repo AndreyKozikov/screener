@@ -61,19 +61,19 @@ def _load_forecast_data() -> dict:
         raise HTTPException(status_code=500, detail=f"Error reading forecast data: {str(e)}")
 
 
-ALLOWED_FORECAST_EXTENSION = ".md"
+ALLOWED_FORECAST_EXTENSION = ".pdf"
 
 
 @router.post("/upload")
-async def upload_forecast_md(file: UploadFile = File(..., description="Markdown file with Bank of Russia forecast (.md)")):
-    """Загружает файл прогноза в формате Markdown и сохраняет в backend/app/data.
+async def upload_forecast_pdf(file: UploadFile = File(..., description="PDF file with Bank of Russia forecast (.pdf)")):
+    """Загружает файл прогноза в формате PDF, конвертирует в Markdown и сохраняет данные в БД.
 
-    Принимает только файлы с расширением .md. Имя файла sanitize-ится (только буквы, цифры, подчёркивание, дефис, точка).
+    Принимает только файлы с расширением .pdf. Имя файла sanitize-ится.
     """
     if not file.filename or not file.filename.lower().endswith(ALLOWED_FORECAST_EXTENSION):
         raise HTTPException(
             status_code=400,
-            detail=f"Разрешён только формат Markdown (.md). Получено: {file.filename or 'без имени'}",
+            detail=f"Разрешён только формат PDF (.pdf). Получено: {file.filename or 'без имени'}",
         )
     safe_name = re.sub(r"[^\w.\-]", "_", file.filename)
     if not safe_name.lower().endswith(ALLOWED_FORECAST_EXTENSION):
@@ -88,13 +88,16 @@ async def upload_forecast_md(file: UploadFile = File(..., description="Markdown 
         raise HTTPException(status_code=500, detail=f"Ошибка записи файла: {str(e)}")
 
     try:
-        get_forecast_service().process_and_save(safe_name)
+        get_forecast_service().process_pdf_and_save(safe_name)
+    except PdfConversionConnectionError as e:
+        raise HTTPException(status_code=503, detail=f"Сервис конвертации недоступен: {str(e)}")
     except FileNotFoundError as e:
         raise HTTPException(status_code=500, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    return {"filename": safe_name, "saved_to": str(dest)}
+    md_filename = Path(safe_name).stem + ".md"
+    return {"filename": safe_name, "md_file": md_filename, "saved_to": str(dest)}
 
 
 @router.get("/dates", response_model=ForecastDatesResponse)
