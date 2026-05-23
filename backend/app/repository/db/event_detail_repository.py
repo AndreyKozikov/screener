@@ -42,3 +42,11 @@ class EventDetailRepository:
         message_types = {res.message_type for res in results if res.message_type}
         event_types = {res.event_type for res in results if res.event_type}
         return message_types, event_types
+
+    def get_by_guid_and_date(self, pseudo_guid: str, event_date: str) -> Optional[EventDetail]:
+        """Возвращает детали события по pseudo_guid и event_date."""
+        with Session(self._engine) as session:
+            return session.query(EventDetail).filter(
+                EventDetail.pseudo_guid == pseudo_guid,
+                EventDetail.event_date == event_date
+            ).first()

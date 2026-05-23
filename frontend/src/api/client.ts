@@ -20,7 +20,7 @@ const API_BASE_URL = getApiBaseUrl();
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 10000,
+  timeout: 300000, // Увеличено до 5 минут для очень тяжелых запросов (LLM)
   headers: {
     'Content-Type': 'application/json',
   },

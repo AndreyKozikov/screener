@@ -10,8 +10,8 @@ import {
 } from '@mui/material';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 
-const ALLOWED_EXTENSION = '.md';
-const ACCEPT = '.md';
+const ALLOWED_EXTENSION = '.pdf';
+const ACCEPT = '.pdf';
 
 interface ForecastFileDialogProps {
   open: boolean;
@@ -20,7 +20,7 @@ interface ForecastFileDialogProps {
 }
 
 /**
- * Диалог выбора файла прогноза Банка России. Разрешён только формат .md.
+ * Диалог выбора файла прогноза Банка России. Разрешён только формат .pdf.
  */
 export const ForecastFileDialog: React.FC<ForecastFileDialogProps> = ({
   open,
@@ -86,7 +86,7 @@ export const ForecastFileDialog: React.FC<ForecastFileDialogProps> = ({
       </DialogTitle>
       <DialogContent>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Допустим только формат Markdown ({ALLOWED_EXTENSION}). Файл будет сохранён на сервере в разделе «Среднесрочный прогноз Банка России».
+          Допустим только формат PDF ({ALLOWED_EXTENSION}). Файл будет автоматически сконвертирован и сохранён на сервере в разделе «Среднесрочный прогноз Банка России».
         </Typography>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
           <input

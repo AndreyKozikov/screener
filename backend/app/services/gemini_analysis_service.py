@@ -16,7 +16,7 @@ from app.models.schemasDTO.gemini_dto import GeminiBondAnalysisDTO
 from app.repository.files.markdown_repository import MarkdownFileRepository
 from app.utils.llm_response_validation import validate_analysis_response
 from app.core.exceptions import PromptTooLongError
-from config.llm_prompts import build_floater_analysis_prompt
+from config.llm_prompts import build_floater_analysis_prompt, build_qa_prompt
 from config.settings import settings
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -317,6 +317,38 @@ class GeminiAnalysisService:
         logger.info("[GEMINI] Валидация успешна")
         print(result.model_dump_json(indent=2))
         return result
+
+
+
+    def answer_question(
+        self,
+        context: str,
+        query: str,
+        model: Optional[str] = None,
+    ) -> str:
+        """Отвечает на вопрос пользователя на основе предоставленного контекста.
+
+        Args:
+            context: Текстовый контекст (результат векторного поиска).
+            query: Вопрос пользователя.
+            model: Идентификатор модели Gemini.
+
+        Returns:
+            Текст ответа.
+        """
+        prompt: str = build_qa_prompt(context=context, query=query)
+        model_id: str = model or GEMINI_MODEL_3_FLASH
+
+        logger.info(
+            "[GEMINI] QA Запрос: длина контекста=%d, длина вопроса=%d → %s",
+            len(context), len(query), model_id
+        )
+
+        try:
+            return self._client.generate(prompt, model=model_id)
+        except Exception as exc:
+            logger.error("[GEMINI] Ошибка в QA-запросе: %s", exc)
+            return f"Извините, не удалось получить ответ от модели: {str(exc)}"
 
 
 def _parse_json_response(raw_text: str) -> Dict[str, Any]:

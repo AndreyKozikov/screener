@@ -73,3 +73,31 @@ def get_floater_secids(db_path: Optional[Path] = None, rating: Optional[str] = N
             return [row[0] for row in rows]
     except Exception:
         return []
+
+def get_all_bond_secids(db_path: Optional[Path] = None, rating: Optional[str] = None) -> List[str]:
+    """Returns SECIDs for all bonds that have a registration number."""
+    path = db_path or DB_PATH
+    if not path.exists():
+        return []
+        
+    query = """
+        SELECT b.secid 
+        FROM bonds b
+        JOIN bondsecurity bs ON bs.bond_id = b.id
+        WHERE bs.reg_number IS NOT NULL AND trim(bs.reg_number) != ''
+          AND (b.boardid IS NULL OR UPPER(TRIM(b.boardid)) != 'PACT')
+    """
+    params = []
+    
+    if rating and rating.strip():
+        query += " AND UPPER(TRIM(b.rating)) = ?"
+        params.append(rating.strip().upper())
+        
+    try:
+        with sqlite3.connect(path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            return [row[0] for row in rows]
+    except Exception:
+        return []

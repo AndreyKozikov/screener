@@ -335,3 +335,22 @@ export const fetchBondsCoupons = async (
     throw error;
   }
 };
+
+export interface BondChatResponse {
+  query: string;
+  answer: string;
+}
+
+/**
+ * Send a question about a bond to the LLM (Vector Retrieval + LLM)
+ */
+export const askBondQuestion = async (secid: string, query: string): Promise<BondChatResponse> => {
+  const response = await apiClient.post<BondChatResponse>('/vector-retrieval/bond-context', {
+    secid,
+    query,
+    use_local_events: true
+  }, {
+    timeout: 300000 // 5 минут для генерации ответа LLM
+  });
+  return response.data;
+};

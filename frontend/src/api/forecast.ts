@@ -58,10 +58,10 @@ export const fetchForecastData = async (date?: string | null): Promise<ForecastD
 };
 
 /**
- * Upload forecast Markdown file to backend (saved to backend/app/data).
- * Only .md files are accepted by the backend.
+ * Upload forecast PDF file to backend (saved to backend/app/data).
+ * Only .pdf files are accepted by the backend.
  */
-export const uploadForecastMd = async (file: File): Promise<{ filename: string }> => {
+export const uploadForecastPdf = async (file: File): Promise<{ filename: string }> => {
   const formData = new FormData();
   formData.append('file', file);
   const response = await apiClient.post<{ filename: string; saved_to: string }>('/forecast/upload', formData, {

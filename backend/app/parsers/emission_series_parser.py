@@ -257,10 +257,8 @@ def event_matches_secid(subsection_text: str, secid: str) -> bool:
         print(f"  [MATCH SECID] ошибка regex — {exc}", flush=True)
         return False
 
-    print(
-        f"  [MATCH SECID] secid={secid_clean!r} → {'найден' if found else 'не найден'}",
-        flush=True,
-    )
+    if found:
+        print(f"  [MATCH SECID] secid={secid_clean!r} → найден", flush=True)
     return found
 
 
@@ -283,21 +281,16 @@ def event_matches_reg_number(subsection_text: str, reg_number: str) -> bool:
     reg_number_clean: str = reg_number.strip()
 
     try:
-        reg_num_ru: str
-        reg_num_lat: str
-        reg_num_ru, reg_num_lat = normalize_reg_number(reg_number_clean)
+        _, reg_num_lat = normalize_reg_number(reg_number_clean)
         found: bool = event_text_matches_reg_number(
-            subsection_text, reg_num_ru, reg_num_lat
+            subsection_text, reg_num_lat
         )
     except Exception as exc:
         print(f"  [MATCH REG_NUMBER] ошибка проверки — {exc}", flush=True)
         return False
 
-    print(
-        f"  [MATCH REG_NUMBER] reg_number={reg_number_clean!r} → "
-        f"{'найден' if found else 'не найден'}",
-        flush=True,
-    )
+    if found:
+        print(f"  [MATCH REG_NUMBER] reg_number={reg_number_clean!r} → найден", flush=True)
     return found
 
 
@@ -318,7 +311,6 @@ def event_matches_series(
         ``True``, если серия найдена; ``False``, если серия пуста/None или не найдена.
     """
     if not series or not series.strip():
-        print("  [MATCH SERIES] серия не задана → False", flush=True)
         return False
     if not subsection_text:
         return False
@@ -336,11 +328,8 @@ def event_matches_series(
         print(f"  [MATCH SERIES] ошибка regex — {exc}", flush=True)
         return False
 
-    print(
-        f"  [MATCH SERIES] series={series_clean!r} → "
-        f"{'найден' if found else 'не найден'}",
-        flush=True,
-    )
+    if found:
+        print(f"  [MATCH SERIES] series={series_clean!r} → найден", flush=True)
     return found
 
 

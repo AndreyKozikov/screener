@@ -58,3 +58,26 @@ export const analyzeBondsWithLLM = async (
   return response.data;
 };
 
+/**
+ * Run LLM prompt pipeline for a specific bond to update its float parameters
+ */
+export const runLlmPromptPipeline = async (
+  secid: string,
+  useLocalEvents: boolean = true,
+  provider: string = 'gemini-3-flash'
+): Promise<any> => {
+  const response = await apiClient.post(
+    '/llm-prompt-pipeline/run',
+    null,
+    {
+      params: {
+        secid,
+        use_local_events: useLocalEvents,
+        provider: provider
+      },
+      timeout: 300000, // 5 minutes
+    }
+  );
+  return response.data;
+};
+

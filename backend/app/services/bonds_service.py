@@ -359,6 +359,25 @@ def get_floater_secids(db_path: Optional[Path] = None, rating: Optional[str] = N
     return repo.get_floater_secids(rating=normalized_rating)
 
 
+def get_all_bond_secids(db_path: Optional[Path] = None, rating: Optional[str] = None) -> List[str]:
+    """Возвращает список SECID всех облигаций, имеющих регистрационный номер.
+
+    Args:
+        db_path (Optional[Path]): Путь к файлу базы данных.
+        rating (Optional[str]): Фильтр по кредитному рейтингу.
+
+    Returns:
+        List[str]: Список идентификаторов SECID.
+    """
+    from config.paths import DB_PATH
+    path = db_path or DB_PATH
+    repo = BondsRepository(db_path=path)
+    normalized_rating: Optional[str] = None
+    if rating is not None and rating.strip():
+        normalized_rating = standardize_rating(rating.strip()) or rating.strip()
+    return repo.get_all_bond_secids(rating=normalized_rating)
+
+
 def get_secids_without_emitent(db_path: Optional[Path] = None) -> List[str]:
     """Находит все SECID облигаций, у которых не заполнена информация об эмитенте.
 

@@ -17,7 +17,12 @@ import {
   SwapHoriz as SwapHorizIcon,
   Warning as WarningIcon,
   OpenInNew as OpenInNewIcon,
+  Chat as ChatIcon,
+  Refresh as RefreshIcon,
 } from '@mui/icons-material';
+import { BondChat } from './BondChat';
+import { runLlmPromptPipeline } from '../../api/llm';
+import { useUiStore } from '../../stores/uiStore';
 import type { BondDetail as BondDetailType } from '../../types/bond';
 import { getEmitentBySecid, type EmitentInfo } from '../../api/emitent';
 import {
@@ -43,6 +48,9 @@ export const PremiumBondCard: React.FC<PremiumBondCardProps> = ({ bondDetail }) 
   const securities = bondDetail?.securities;
   const market = bondDetail?.marketdata;
   const [emitentInfo, setEmitentInfo] = useState<EmitentInfo | null>(null);
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [isUpdatingParams, setIsUpdatingParams] = useState(false);
+  const { triggerDataRefresh } = useUiStore();
   
   // Fetch emitent info with ratings
   useEffect(() => {
@@ -226,6 +234,23 @@ export const PremiumBondCard: React.FC<PremiumBondCardProps> = ({ bondDetail }) 
 
   const currencySymbol = getCurrencySymbol(faceUnit);
 
+  const handleUpdateParams = async () => {
+    if (!secid || isUpdatingParams) return;
+    
+    try {
+      setIsUpdatingParams(true);
+      await runLlmPromptPipeline(secid);
+      triggerDataRefresh();
+      // Можно добавить уведомление об успехе, если в проекте есть Snackbar
+      alert(`Параметры для ${secid} успешно обновлены`);
+    } catch (error) {
+      console.error('Failed to update bond parameters:', error);
+      alert('Ошибка при обновлении параметров');
+    } finally {
+      setIsUpdatingParams(false);
+    }
+  };
+
   return (
     <Paper
       elevation={2}
@@ -277,6 +302,39 @@ export const PremiumBondCard: React.FC<PremiumBondCardProps> = ({ bondDetail }) 
                   label={isActive ? 'Активна' : 'Не торгуется'}
                   color={isActive ? 'success' : 'default'}
                   size="small"
+                />
+                <Chip
+                  icon={<ChatIcon sx={{ fontSize: '16px !important' }} />}
+                  label="Чат с ИИ"
+                  color="primary"
+                  variant="filled"
+                  size="small"
+                  onClick={() => setIsChatOpen(true)}
+                  sx={{ 
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    '&:hover': {
+                      bgcolor: 'primary.dark',
+                    },
+                    pl: 0.5
+                  }}
+                />
+                <Chip
+                  icon={<RefreshIcon sx={{ fontSize: '16px !important' }} />}
+                  label={isUpdatingParams ? "Обновление..." : "Обновить параметры"}
+                  color="secondary"
+                  variant="filled"
+                  size="small"
+                  onClick={handleUpdateParams}
+                  disabled={isUpdatingParams}
+                  sx={{
+                    cursor: isUpdatingParams ? 'default' : 'pointer',
+                    fontWeight: 600,
+                    '&:hover': {
+                      bgcolor: 'secondary.dark',
+                    },
+                    pl: 0.5
+                  }}
                 />
               </Box>
               {secName && secName !== shortName && (
@@ -600,6 +658,15 @@ export const PremiumBondCard: React.FC<PremiumBondCardProps> = ({ bondDetail }) 
             </Tooltip>
           )}
         </Box>
+      )}
+      
+      {secid && (
+        <BondChat
+          isOpen={isChatOpen}
+          onClose={() => setIsChatOpen(false)}
+          secid={secid}
+          shortName={shortName || 'облигация'}
+        />
       )}
     </Paper>
   );

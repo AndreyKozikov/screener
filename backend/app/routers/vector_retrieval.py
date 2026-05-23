@@ -1,20 +1,24 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Body
 from typing import Optional
+from pydantic import BaseModel, Field
 from app.services.vector_retrieval_service import get_vector_retrieval_service
 from app.services.gemini_analysis_service import get_gemini_analysis_service, GEMINI_MODEL_3_FLASH
 from config.llm_prompts import build_floater_analysis_prompt
 
 router = APIRouter(
-    prefix="/vector-retrieval",
+    prefix="/api/vector-retrieval",
     tags=["vector-retrieval"]
 )
 
-@router.get("/bond-context")
+class BondContextRequest(BaseModel):
+    secid: str = Field(..., description="SECID облигации")
+    regnumber: Optional[str] = Field(None, description="Регистрационный номер (опционально)")
+    use_local_events: bool = Field(False, description="Использовать локальный кэш событий")
+    query: Optional[str] = Field(None, description="Пользовательский запрос для поиска")
+
+@router.post("/bond-context")
 async def get_bond_context(
-    secid: str = Query(..., description="SECID облигации"),
-    regnumber: Optional[str] = Query(None, description="Регистрационный номер (опционально)"),
-    use_local_events: bool = Query(False, description="Использовать локальный кэш событий"),
-    query: Optional[str] = Query(None, description="Пользовательский запрос для поиска")
+    request: BondContextRequest
 ):
     """
     Эндпоинт для получения интеллектуально отобранного контекста по облигации
@@ -26,17 +30,22 @@ async def get_bond_context(
     try:
         # 1. Получаем контекст через векторный поиск
         context = service.get_context_for_bond(
-            secid=secid, 
-            regnumber=regnumber,
-            use_local_events=use_local_events,
-            query=query
+            secid=request.secid, 
+            regnumber=request.regnumber,
+            use_local_events=request.use_local_events,
+            query=request.query
         )
         
-        # Если передан пользовательский запрос - возвращаем результат поиска в JSON
-        if query:
+        # Если передан пользовательский запрос - возвращаем ответ от ЛЛМ
+        if request.query:
+            # Используем существующий механизм ответа на вопросы
+            answer = gemini_service.answer_question(
+                context=context,
+                query=request.query
+            )
             return {
-                "query": query,
-                "result": context
+                "query": request.query,
+                "answer": answer
             }
         
         # 2. Формируем промпт (события пустые, так как они уже в контексте)

@@ -1073,6 +1073,36 @@ class BondsRepository:
             self.logger.error("Ошибка при получении списка флоатеров: %s", e, exc_info=True)
             return []
 
+    def get_all_bond_secids(self, rating: Optional[str] = None) -> List[str]:
+        """Возвращает список SECID всех облигаций, имеющих регистрационный номер.
+
+        Args:
+            rating: Если указан — фильтр по рейтингу.
+
+        Returns:
+            Список SECID.
+        """
+        stmt = select(Bond.secid).join(BondSecurity, BondSecurity.bond_id == Bond.id).where(
+            and_(
+                BondSecurity.reg_number.isnot(None),
+                func.trim(BondSecurity.reg_number) != "",
+                or_(
+                    Bond.boardid.is_(None),
+                    func.upper(func.trim(Bond.boardid)) != "PACT",
+                ),
+            )
+        )
+        if rating is not None and rating.strip():
+            stmt = stmt.where(func.upper(func.trim(Bond.rating)) == rating.strip().upper())
+            
+        try:
+            with Session(self._engine) as session:
+                rows = session.exec(stmt).all()
+                return [str(r) for r in rows if r]
+        except Exception as e:
+            self.logger.error("Ошибка при получении всех SECID облигаций: %s", e, exc_info=True)
+            return []
+
     def get_secids_without_emitent(self) -> List[str]:
         """Возвращает список SECID облигаций, у которых не проставлен emitent_id.
 

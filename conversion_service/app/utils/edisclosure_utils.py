@@ -4,17 +4,19 @@
 регистрационному номеру облигации.
 """
 
+import hashlib
 import html
 import io
 import random
 import re
 import time
 import zipfile
+import rarfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
-from urllib.parse import urljoin
+from urllib.parse import urljoin, unquote
 
 import requests
 
@@ -526,26 +528,79 @@ def _resolve_emission_file_url(url: str) -> str:
     return urljoin(_MAIN_PAGE_URL + "/", u.lstrip("/"))
 
 
-def download_emission_file(file_url: str) -> Optional[bytes]:
-    """Скачивает файл по ссылке с e-disclosure.ru."""
+def download_emission_file(file_url: str, referer: Optional[str] = None) -> Tuple[Optional[bytes], Optional[str]]:
+    """Скачивает файл по ссылке с e-disclosure.ru.
+    
+    Returns:
+        Кортеж (содержимое_файла, имя_файла_из_заголовков).
+    """
     resolved = _resolve_emission_file_url(file_url)
     if not resolved:
-        return None
+        return None, None
+    
     print(f"  [E-DISCLOSURE FILE] GET {resolved[:80]}...", flush=True)
     session, _ = _get_session()
+    
+    headers = _HTML_HEADERS.copy()
+    if referer:
+        headers["Referer"] = referer
+    
     try:
-        response = session.get(resolved, headers=_HTML_HEADERS, timeout=_TIMEOUT)
+        # stream=True позволяет прочитать заголовки до загрузки всего тела
+        response = session.get(resolved, headers=headers, timeout=_TIMEOUT, stream=True)
         response.raise_for_status()
-        return response.content
+        
+        # Пытаемся достать имя файла из Content-Disposition
+        filename = None
+        cd = response.headers.get("Content-Disposition")
+        if cd:
+            # Try RFC 5987 filename*=UTF-8''...
+            m_utf8 = re.search(r"filename\*=UTF-8''([^;]+)", cd, re.IGNORECASE)
+            if m_utf8:
+                filename = unquote(m_utf8.group(1))
+            else:
+                # Try double quoted filename="..."
+                m_quoted = re.search(r'filename="([^"]+)"', cd, re.IGNORECASE)
+                if m_quoted:
+                    filename = m_quoted.group(1)
+                else:
+                    # Try unquoted filename=...
+                    m_unquoted = re.search(r'filename=([^;]+)', cd, re.IGNORECASE)
+                    if m_unquoted:
+                        filename = m_unquoted.group(1).strip(" \"'")
+        
+        return response.content, filename
     except requests.RequestException as e:
         print(f"  [E-DISCLOSURE FILE] Ошибка загрузки: {e}", flush=True)
-        return None
+        return None, None
 
 
-def extract_zip_to_dir(content: bytes, extract_dir: Path) -> List[str]:
-    """Извлекает содержимое ZIP-архива в директорию."""
+def sanitize_filename(filename: str, max_length: int = 50) -> str:
+    """Очищает имя файла от запрещенных символов и ограничивает его длину."""
+    safe_name = re.sub(r'[<>:"/\\|?*]', '_', filename)
+    safe_name = re.sub(r'[\x00-\x1f\x7f]', '', safe_name)
+    
+    if len(safe_name) <= max_length:
+        return safe_name
+        
+    path = Path(safe_name)
+    ext = path.suffix
+    stem = path.stem
+    
+    hash_str = hashlib.md5(filename.encode('utf-8', errors='ignore')).hexdigest()[:6]
+    
+    allowed_stem_len = max_length - len(hash_str) - 1 - len(ext)
+    
+    if allowed_stem_len > 0:
+        return f"{stem[:allowed_stem_len]}_{hash_str}{ext}"
+    else:
+        return f"{hash_str}{ext}"[:max_length]
+
+
+def extract_zip_to_dir(content: bytes, extract_dir: Path) -> Dict[str, str]:
+    """Извлекает содержимое ZIP-архива в директорию. Возвращает маппинг {safe_name: original_name}."""
     extract_dir.mkdir(parents=True, exist_ok=True)
-    result = []
+    result = {}
     try:
         with zipfile.ZipFile(io.BytesIO(content), "r", metadata_encoding="cp866") as zf:
             for name in zf.namelist():
@@ -554,17 +609,62 @@ def extract_zip_to_dir(content: bytes, extract_dir: Path) -> List[str]:
                 base_name = Path(name).name
                 if not base_name:
                     continue
-                target_path = extract_dir / base_name
+                safe_name = sanitize_filename(base_name)
+                target_path = extract_dir / safe_name
                 try:
                     with zf.open(name, "r") as src:
                         target_path.write_bytes(src.read())
                 except (zipfile.BadZipFile, OSError) as e:
                     print(f"  [ZIP] Ошибка извлечения {name}: {e}", flush=True)
                     continue
-                result.append(base_name)
+                result[safe_name] = base_name
     except zipfile.BadZipFile as e:
         print(f"  [ZIP] Невалидный архив: {e}", flush=True)
     return result
+
+
+def extract_rar_to_dir(file_path: Path, extract_dir: Path) -> Dict[str, str]:
+    """Извлекает содержимое RAR-архива в директорию.
+    
+    Поддерживает многотомные архивы, если передан путь к первому тому.
+    Для работы требуется установленная утилита unrar.
+    Возвращает маппинг {safe_name: original_name}.
+    """
+    extract_dir.mkdir(parents=True, exist_ok=True)
+    result = {}
+    try:
+        with rarfile.RarFile(file_path) as rf:
+            for info in rf.infolist():
+                if info.isdir() or ".." in info.filename:
+                    continue
+                base_name = Path(info.filename).name
+                if not base_name:
+                    continue
+                safe_name = sanitize_filename(base_name)
+                target_path = extract_dir / safe_name
+                try:
+                    with rf.open(info.filename, "r") as src:
+                        target_path.write_bytes(src.read())
+                except (rarfile.Error, OSError, EOFError) as e:
+                    print(f"  [RAR] Ошибка извлечения {info.filename}: {e}", flush=True)
+                    # Если данных не хватает, возможно файл поврежден или не все тома доступны
+                    if "read enough data" in str(e).lower():
+                        print(f"  [RAR] Критическая ошибка: данные неполные. Возможно, отсутствуют тома.", flush=True)
+                    continue
+                result[safe_name] = base_name
+    except rarfile.Error as e:
+        print(f"  [RAR] Невалидный архив или отсутствует unrar: {e}", flush=True)
+    return result
+
+
+def extract_archive_to_dir(file_path: Path, extract_dir: Path) -> Dict[str, str]:
+    """Определяет тип архива по расширению и извлекает его."""
+    ext = file_path.suffix.lower()
+    if ext == ".zip":
+        return extract_zip_to_dir(file_path.read_bytes(), extract_dir)
+    if ext == ".rar":
+        return extract_rar_to_dir(file_path, extract_dir)
+    return {}
 
 
 def clean_markdown_after_pdf2md(content: str) -> str:

@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List, Optional, Dict
 
 @dataclass
 class Chunk:
@@ -12,6 +12,7 @@ class Chunk:
 class EmbeddedChunk:
     chunk: Chunk
     sentence_embeddings: List[List[float]]
+    lexical_weights: List[Dict[str, float]]
 
 @dataclass
 class ScoredChunk:

@@ -40,7 +40,7 @@ import { refreshFloatersData } from '../api/edisclosure';
 import { refreshZerocuponData, fetchZerocuponData } from '../api/zerocupon';
 import { refreshRatingsData } from '../api/rating';
 import { refreshRuoniaData } from '../api/ruonia';
-import { fetchForecastDates, uploadForecastMd } from '../api/forecast';
+import { fetchForecastDates, uploadForecastPdf } from '../api/forecast';
 import { refreshEmitentsData } from '../api/emitent';
 import { refreshTradingHistory } from '../api/tradingHistory';
 import { getDashboardRates, type MacroRatesResponse } from '../api/dashboard';
@@ -273,7 +273,7 @@ export const HomePage: React.FC = () => {
       },
       forecast: async () => {
         if (forecastFileRef) {
-          await uploadForecastMd(forecastFileRef);
+          await uploadForecastPdf(forecastFileRef);
         }
       },
       floaters: async () => {

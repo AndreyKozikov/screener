@@ -99,49 +99,41 @@ class VectorRetrievalService:
         
         # 3. Collect and filter Markdown files
         bond_data_dir = _DATA_DIR / secid
-        if not bond_data_dir.is_dir():
-            # If directory doesn't exist, we can't do much. 
-            # In a real scenario, we might trigger a download, 
-            # but here we assume docs are already there as per LlmPromptPipelineService logic.
-            logger.warning(f"Data directory for {secid} not found")
-            return "Данные (Markdown) не найдены. Сначала запустите загрузку документов."
-
         markdown_docs = []
-        all_md_files = list(bond_data_dir.glob("*.md"))
-        
         series = None
-        markdown_docs = []
-        all_md_files = list(bond_data_dir.glob("*.md"))
         
-        series = None
-        for md_path in all_md_files:
-            # Фильтры исключения (регистронезависимые)
-            filename_lower = md_path.name.lower()
-            if "отчетность мсфо" in filename_lower or "отчетность рсбу" in filename_lower or filename_lower == "vector_context.md":
-                logger.info(f"Исключен файл по имени: {md_path.name}")
-                continue
-                
-            try:
-                md_content = self.file_storage.read_text_file(md_path)
-                
-                # Проверка начала файла на наличие исключаемых фраз
-                content_prefix = md_content[:1000].lower()
-                if "учетная политика" in content_prefix or \
-                   "бухгалтерская отчетность" in content_prefix or \
-                   "консолидированная отчетность" in content_prefix:
-                    logger.info(f"Исключен файл по содержимому: {md_path.name}")
+        if bond_data_dir.is_dir():
+            all_md_files = list(bond_data_dir.glob("*.md"))
+            for md_path in all_md_files:
+                # Фильтры исключения (регистронезависимые)
+                filename_lower = md_path.name.lower()
+                if "отчетность мсфо" in filename_lower or "отчетность рсбу" in filename_lower or filename_lower == "vector_context.md":
+                    logger.info(f"Исключен файл по имени: {md_path.name}")
                     continue
+                    
+                try:
+                    md_content = self.file_storage.read_text_file(md_path)
+                    
+                    # Проверка начала файла на наличие исключаемых фраз
+                    content_prefix = md_content[:1000].lower()
+                    if "учетная политика" in content_prefix or \
+                       "бухгалтерская отчетность" in content_prefix or \
+                       "консолидированная отчетность" in content_prefix:
+                        logger.info(f"Исключен файл по содержимому: {md_path.name}")
+                        continue
 
-                markdown_docs.append({
-                    "filename": md_path.name,
-                    "content": md_content
-                })
-                
-                # Попытка извлечь серию для фильтрации событий все еще полезна, если файл - Решение
-                if series is None and markdown_has_decision_header(md_content):
-                    series = extract_series_from_markdown(md_content)
-            except Exception as e:
-                logger.error(f"Error reading {md_path}: {e}")
+                    markdown_docs.append({
+                        "filename": md_path.name,
+                        "content": md_content
+                    })
+                    
+                    # Попытка извлечь серию для фильтрации событий все еще полезна, если файл - Решение
+                    if series is None and markdown_has_decision_header(md_content):
+                        series = extract_series_from_markdown(md_content)
+                except Exception as e:
+                    logger.error(f"Error reading {md_path}: {e}")
+        else:
+            logger.warning(f"Data directory for {secid} not found. Proceeding with events only.")
 
         # 4. Load and filter events
         event_years = self.edisclosure_service._compute_event_years(date_str)

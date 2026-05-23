@@ -93,6 +93,8 @@ class PdfConversionService:
             Список имён успешно созданных .md файлов.
         """
         files_payload: List[Tuple[str, Tuple[str, bytes, str]]] = []
+        name_mapping: Dict[str, str] = {}  # temp_name -> original_name
+
         for filename in filenames:
             file_path: Path = base_dir / filename
             ext: str = file_path.suffix.lower()
@@ -107,8 +109,14 @@ class PdfConversionService:
             if not file_path.is_file():
                 logger.error("Файл не найден, пропуск: %s", file_path)
                 continue
+
+            # Используем условное имя для передачи (например, 1.pdf, 2.pdf)
+            # Это помогает избежать проблем с кодировкой кириллицы в именах файлов
+            temp_name = f"{len(files_payload) + 1}{ext}"
+            name_mapping[temp_name] = filename
+
             files_payload.append(
-                ("files", (filename, file_path.read_bytes(), mime_type)),
+                ("files", (temp_name, file_path.read_bytes(), mime_type)),
             )
 
         if not files_payload:
@@ -130,7 +138,8 @@ class PdfConversionService:
 
         md_filenames: List[str] = []
         for item in results:
-            original: str = item.get("filename", "")
+            temp_filename: str = item.get("filename", "")
+            original: str = name_mapping.get(temp_filename, temp_filename)
             error: Optional[str] = item.get("error")
             markdown: Optional[str] = item.get("markdown")
 

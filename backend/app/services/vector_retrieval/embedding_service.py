@@ -1,6 +1,6 @@
 import re
 import httpx
-from typing import List, Optional
+from typing import List, Optional, Dict, Tuple, Any
 from .models import Chunk, EmbeddedChunk
 
 class EmbeddingService:
@@ -16,9 +16,9 @@ class EmbeddingService:
         sentences = re.split(r'(?<=[.!?])\s+', text)
         return [s.strip() for s in sentences if s.strip()]
 
-    def _call_embedding_service(self, sentences: List[str]) -> List[List[float]]:
+    def _call_embedding_service(self, sentences: List[str]) -> Dict[str, Any]:
         """
-        Calls the local microservice to get embeddings.
+        Calls the local microservice to get hybrid embeddings (dense + sparse).
         """
         try:
             with httpx.Client(timeout=self.timeout) as client:
@@ -27,31 +27,43 @@ class EmbeddingService:
                     json={"sentences": sentences}
                 )
                 response.raise_for_status()
-                return response.json()["embeddings"]
+                return response.json()
         except Exception as e:
             print(f"Error calling local embedding service: {e}")
-            return []
+            return {"dense_embeddings": [], "lexical_weights": []}
 
     def embed_chunk(self, chunk: Chunk) -> EmbeddedChunk:
         """
-        Строит sentence-level embeddings для каждого чанка через локальный микросервис.
+        Строит sentence-level hybrid embeddings для каждого чанка через локальный микросервис.
         """
         sentences = self.split_into_sentences(chunk.text)
         if not sentences:
             sentences = [chunk.text] if chunk.text.strip() else [" "]
 
-        sentence_embeddings = self._call_embedding_service(sentences)
+        data = self._call_embedding_service(sentences)
+        
+        # BGE-M3 service returns 'dense_embeddings' and 'lexical_weights'
+        dense_embeddings = data.get("dense_embeddings", [])
+        lexical_weights = data.get("lexical_weights", [])
 
         return EmbeddedChunk(
             chunk=chunk,
-            sentence_embeddings=sentence_embeddings
+            sentence_embeddings=dense_embeddings,
+            lexical_weights=lexical_weights
         )
 
-    def embed_query(self, query: str) -> List[float]:
+    def embed_query(self, query: str) -> Tuple[List[float], Dict[str, float]]:
         """
-        Преобразует запрос в эмбеддинг через локальный микросервис.
+        Преобразует запрос в гибридный эмбеддинг через локальный микросервис.
         """
-        embeddings = self._call_embedding_service([query])
-        if embeddings:
-            return embeddings[0]
-        return []
+        data = self._call_embedding_service([query])
+        
+        dense = []
+        sparse = {}
+        
+        if data.get("dense_embeddings"):
+            dense = data["dense_embeddings"][0]
+        if data.get("lexical_weights"):
+            sparse = data["lexical_weights"][0]
+            
+        return dense, sparse

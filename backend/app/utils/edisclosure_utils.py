@@ -295,26 +295,29 @@ def normalize_reg_number(reg_number: str) -> Tuple[str, str]:
 
 def event_text_matches_reg_number(
     text: str,
-    reg_num_ru: str,
     reg_num_lat: str,
 ) -> bool:
     """Проверяет, содержит ли текст события полный регистрационный номер.
 
-    Учитываются только полные совпадения (кириллическая и латинская нормализации).
+    Нормализует текст события (заменяет кириллицу на латиницу для визуально схожих символов)
+    и ищет в нём латинскую версию регистрационного номера.
 
     Args:
         text: Текст события.
-        reg_num_ru: Регистрационный номер в кириллической нормализации.
         reg_num_lat: Регистрационный номер в латинской нормализации.
 
     Returns:
-        ``True``, если в тексте есть полный номер; иначе ``False``.
+        ``True``, если в тексте найден номер; иначе ``False``.
     """
-    text_lower = text.lower()
-    return (
-        (reg_num_ru and reg_num_ru.lower() in text_lower)
-        or (reg_num_lat and reg_num_lat.lower() in text_lower)
-    )
+    if not text or not reg_num_lat:
+        return False
+
+    # Нормализуем текст события: переводим в нижний регистр и заменяем кириллицу на латиницу
+    text_norm = text.lower()
+    for ru_char, lat_char in _CHAR_MAP.items():
+        text_norm = text_norm.replace(ru_char.lower(), lat_char.lower())
+
+    return reg_num_lat.lower() in text_norm
 
 
 def _format_event_date(event_date_str: Optional[str]) -> Optional[str]:
@@ -343,14 +346,22 @@ def _find_all_events_sorted_by_date(
         if not event_date_str:
             continue
         try:
-            event_date = datetime.fromisoformat(
-                event_date_str.replace("Z", "+00:00")
-            ).date()
+            # Надежный парсинг даты (учитываем возможные форматы и наличие времени)
+            date_part = str(event_date_str)[:10]
+            if "-" in date_part:
+                event_date = datetime.strptime(date_part, "%Y-%m-%d").date()
+            elif "." in date_part:
+                event_date = datetime.strptime(date_part, "%d.%m.%Y").date()
+
+            else:
+                event_date = datetime.fromisoformat(event_date_str.replace("Z", "+00:00")).date()
         except (ValueError, TypeError):
             continue
-        if event_date >= date_obj:
-            continue
+            
+        # Ограничение по конкретной дате снято: возвращаем все события года
         filtered.append((event_date, event))
+
+
     filtered.sort(key=lambda x: x[0], reverse=True)
     return [event for _, event in filtered]
 
@@ -381,9 +392,8 @@ def find_events_by_reg_number(
 
     sorted_events = _find_all_events_sorted_by_date(events, date_obj)
 
-    # Нормализация номера (упрощенно)
-    reg_num_ru = reg_number.replace("A", "А").replace("B", "В") # и т.д.
-    reg_num_lat = reg_number.replace("А", "A").replace("В", "B")
+    # Нормализация номера
+    _, reg_num_lat = normalize_reg_number(reg_number)
 
     result: List[Dict[str, Optional[str]]] = []
     for event in sorted_events:
@@ -393,11 +403,11 @@ def find_events_by_reg_number(
         text = _extract_event_text(pseudo_guid, session)
         if not text:
             continue
-        text_lower = text.lower()
-        if reg_num_ru.lower() in text_lower or reg_num_lat.lower() in text_lower:
+        if event_text_matches_reg_number(text, reg_num_lat):
             result.append({
                 "event_name": event.get("eventName") or "",
                 "event_date": _format_event_date(event.get("eventDate")),
+                "pseudo_guid": pseudo_guid,
                 "full_text": text,
                 "text": clean_event_text(text),
             })
@@ -436,6 +446,7 @@ def get_events_with_full_text_for_year(
         result.append({
             "event_name": event.get("eventName") or "",
             "event_date": _format_event_date(event.get("eventDate")),
+            "pseudo_guid": pseudo_guid,
             "full_text": text,
             "text": clean_event_text(text),
         })

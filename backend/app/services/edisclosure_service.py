@@ -359,6 +359,7 @@ class EdisclosureService:
             result.append({
                 "event_name": ev.get("event_name", ""),
                 "event_date": ev.get("event_date"),
+                "pseudo_guid": ev.get("pseudoGUID"),
                 "full_text": full_text,
                 "text": processed_text,
             })
@@ -366,19 +367,25 @@ class EdisclosureService:
 
     @staticmethod
     def _compute_event_years(first_tradedate_str: str) -> List[int]:
-        """Определяет временной диапазон для поиска документов."""
+        """Определяет временной диапазон для поиска документов (от года даты - 1 до текущего)."""
         try:
             trade_date: date = datetime.strptime(first_tradedate_str, "%Y-%m-%d").date()
         except (ValueError, TypeError):
+            print("Ошибка парсинга даты, берем текущий год", first_tradedate_str)
             current_year: int = date.today().year
-            return [current_year]
+            return [current_year - 1, current_year]
 
+        # Начинаем поиск на 1 год раньше года в дате, чтобы захватить регистрацию и размещение
         trade_year: int = trade_date.year
+        start_year: int = trade_year - 1
+        print("Начальный год", start_year)
+
         current_year = date.today().year
-        event_years: List[int] = [trade_year]
-        if trade_year < current_year:
-            event_years.append(trade_year + 1)
-        return event_years
+        print("Текущий год", current_year)
+        # Возвращаем все годы от (год в дате - 1) до текущего включительно
+        return list(range(start_year, current_year + 1))
+
+
 
     def _list_and_filter_local_documents(self, bond_data_dir: Path) -> List[str]:
         """Выполняет поиск и фильтрацию Markdown-документов в локальной директории."""
@@ -405,7 +412,7 @@ class EdisclosureService:
     def _get_accrued_income_by_inn(
         self,
         inn: str,
-        date: str = "2025-04-24",
+        date: str = "1900-01-01",
         regnumber: Optional[str] = None,
         emitent_moex_id: Optional[int] = None,
         provider: str = "gemini",
@@ -468,6 +475,7 @@ class EdisclosureService:
                     {
                         "event_name": e.get("event_name"),
                         "event_date": e.get("event_date"),
+                        "pseudo_guid": e.get("pseudo_guid"),
                         "full_text": e.get("full_text", ""),
                         "processed_text": e.get("text", ""),
                     }

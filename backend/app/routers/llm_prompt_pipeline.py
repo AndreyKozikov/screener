@@ -42,6 +42,11 @@ async def run_llm_pipeline(
         description="If True — load events from local JSON files "
         "(app/data/events/{INN}.json) instead of e-disclosure.ru.",
     ),
+    secid: Optional[str] = Query(
+        None,
+        description="Specific bond secid to process. If provided, "
+        "it will be processed regardless of whether it's already in the database.",
+    ),
 ) -> Dict[str, Any]:
     """Run LLM analysis pipeline for floater bonds with already-downloaded documents.
 
@@ -60,6 +65,7 @@ async def run_llm_pipeline(
             rating=rating,
             use_file_upload=use_file_upload,
             use_local_events=use_local_events,
+            secid=secid,
         )
     except GeminiQuotaExhaustedError as exc:
         raise HTTPException(

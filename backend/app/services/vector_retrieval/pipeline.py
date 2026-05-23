@@ -1,6 +1,6 @@
 import logging
 import re
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from .models import Chunk, EmbeddedChunk, ScoredChunk
 from .chunking_service import ChunkingService
 from .embedding_service import EmbeddingService
@@ -56,7 +56,7 @@ class RetrievalPipeline:
         self, 
         markdown_docs: List[Dict[str, str]], 
         events: List[Dict[str, Any]], 
-        queries: List[str] = None
+        queries: Optional[List[str]] = None
     ) -> str:
         """
         Основной пайплайн векторного поиска и формирования контекста.
@@ -85,10 +85,10 @@ class RetrievalPipeline:
         logger.info("Created %d chunks total", len(all_chunks))
         
         # 2. Embedding
-        # Pre-embed queries
-        query_embeddings = [self.embedder.embed_query(q) for q in queries]
+        # Pre-embed queries (Hybrid: Dense + Sparse)
+        query_data = [self.embedder.embed_query(q) for q in queries]
         
-        # Embed chunks (sentence-level)
+        # Embed chunks (sentence-level, Hybrid)
         embedded_chunks: List[EmbeddedChunk] = []
         total_chunks = len(all_chunks)
         for i, chunk in enumerate(all_chunks, start=1):
@@ -101,8 +101,9 @@ class RetrievalPipeline:
         # 3. Retrieval
         retrieved_chunks: List[ScoredChunk] = self.retriever.retrieve(
             embedded_chunks,
-            query_embeddings,
-            top_k=30
+            query_data,
+            top_k=30,
+            alpha=0.5 # Баланс между семантикой и лексикой
         )
         
         logger.info("Retrieved top %d candidates", len(retrieved_chunks))

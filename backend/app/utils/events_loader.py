@@ -101,20 +101,27 @@ def get_first_unedited_id() -> Optional[int]:
         ).first()
 
 def get_existing_types() -> Dict[str, List[str]]:
-    """Возвращает уникальные значения event_type и message_type из отредактированных записей."""
+    """Возвращает уникальные значения event_type и message_type из всех записей базы данных."""
     with Session(engine) as session:
+        # Получаем все уникальные типы событий, исключая пустые
         event_types = session.exec(
             select(EventDetail.event_type)
-            .where(EventDetail.is_edit == 1, EventDetail.event_type != None)
-        ).all()
-        message_types = session.exec(
-            select(EventDetail.message_type)
-            .where(EventDetail.is_edit == 1, EventDetail.message_type != None)
+            .where(EventDetail.event_type != None)
         ).all()
         
+        # Получаем все уникальные типы сообщений, исключая пустые
+        message_types = session.exec(
+            select(EventDetail.message_type)
+            .where(EventDetail.message_type != None)
+        ).all()
+        
+        # Фильтруем пустые строки и убираем дубликаты
+        unique_event_types = sorted(list(set(t for t in event_types if t and t.strip())))
+        unique_message_types = sorted(list(set(t for t in message_types if t and t.strip())))
+        
         return {
-            "event_types": sorted(list(set(event_types))),
-            "message_types": sorted(list(set(message_types)))
+            "event_types": unique_event_types,
+            "message_types": unique_message_types
         }
 
 def get_stats() -> Dict[str, int]:

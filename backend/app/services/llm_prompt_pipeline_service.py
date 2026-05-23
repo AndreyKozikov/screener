@@ -130,6 +130,10 @@ class LlmPromptPipelineService:
         self._readiness: LlmProviderReadinessService = LlmProviderReadinessService()
         self._retrieval_pipeline: RetrievalPipeline = RetrievalPipeline()
         self._llm_call_timestamps: List[float] = []
+        
+        # New repo for event_details
+        from app.repository.db.event_detail_repository import EventDetailRepository
+        self._event_detail_repo: EventDetailRepository = EventDetailRepository()
 
     # ------------------------------------------------------------------
     # Public entry points
@@ -142,6 +146,7 @@ class LlmPromptPipelineService:
         rating: Optional[str] = None,
         use_file_upload: bool = False,
         use_local_events: bool = False,
+        secid: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Run LLM analysis pipeline for floater bonds with already-downloaded documents.
 
@@ -158,26 +163,38 @@ class LlmPromptPipelineService:
         resolved_provider: str = self._readiness.resolve_provider(provider)
         pl_logger: logging.Logger = _get_pipeline_logger()
 
-        all_secids: List[str] = get_floater_secids(rating=rating)
-        total_all: int = len(all_secids)
-
-        # Filter: only bonds that have downloaded documents (.md files) AND
-        # are not yet in bond_float_params.
-        existing_bond_ids: Set[int] = self._float_params_repo.get_existing_bond_ids()
-        to_process: List[str] = []
-        already_done: int = 0
-        no_documents: int = 0
-
-        for secid in all_secids:
-            bond_id: Optional[int] = get_bond_id_by_secid(secid)
-            if bond_id is not None and bond_id in existing_bond_ids:
-                already_done += 1
-                continue
+        if secid:
+            all_secids = [secid]
+            total_all = 1
+            to_process = [secid]
+            already_done = 0
+            no_documents = 0
+            # Check if documents exist for the specific secid
             bond_dir: Path = _DATA_DIR / secid
             if not self._has_markdown_files(bond_dir):
-                no_documents += 1
-                continue
-            to_process.append(secid)
+                no_documents = 1
+                to_process = []
+        else:
+            all_secids = get_floater_secids(rating=rating)
+            total_all = len(all_secids)
+
+            # Filter: only bonds that have downloaded documents (.md files) AND
+            # are not yet in bond_float_params.
+            existing_bond_ids: Set[int] = self._float_params_repo.get_existing_bond_ids()
+            to_process = []
+            already_done = 0
+            no_documents = 0
+
+            for s in all_secids:
+                bond_id: Optional[int] = get_bond_id_by_secid(s)
+                if bond_id is not None and bond_id in existing_bond_ids:
+                    already_done += 1
+                    continue
+                bond_dir = _DATA_DIR / s
+                if not self._has_markdown_files(bond_dir):
+                    no_documents += 1
+                    continue
+                to_process.append(s)
 
         if limit is not None:
             to_process = to_process[:limit]
@@ -200,26 +217,28 @@ class LlmPromptPipelineService:
         saved: int = 0
         not_found_secids: List[str] = []
         quota_exhausted_error: Optional[GeminiQuotaExhaustedError] = None
+        is_forced_update = secid is not None
 
-        for idx, secid in enumerate(to_process, start=1):
+        for idx, s in enumerate(to_process, start=1):
             processed += 1
             try:
                 success: bool = self._process_single_bond(
-                    secid, pl_logger,
+                    s, pl_logger,
                     provider=resolved_provider,
                     use_file_upload=use_file_upload,
                     use_local_events=use_local_events,
+                    is_forced=is_forced_update,
                 )
                 if success:
                     saved += 1
-                    print(f"[LLM] {idx}/{total} — {secid}: saved", flush=True)
+                    print(f"[LLM] {idx}/{total} — {s}: saved", flush=True)
                 else:
-                    not_found_secids.append(secid)
-                    print(f"[LLM] {idx}/{total} — {secid}: not found", flush=True)
+                    not_found_secids.append(s)
+                    print(f"[LLM] {idx}/{total} — {s}: not found", flush=True)
             except GeminiQuotaExhaustedError as exc:
                 quota_exhausted_error = exc
                 pl_logger.error(
-                    "[QUOTA EXHAUSTED] secid=%s: %s", secid, exc, exc_info=True,
+                    "[QUOTA EXHAUSTED] secid=%s: %s", s, exc, exc_info=True,
                 )
                 print(
                     "[LLM] Pipeline stopped: Gemini API quota exhausted (429).",
@@ -228,7 +247,7 @@ class LlmPromptPipelineService:
                 break
             except GeminiUnavailableError as exc:
                 pl_logger.error(
-                    "[UNAVAILABLE] secid=%s: %s", secid, exc, exc_info=True,
+                    "[UNAVAILABLE] secid=%s: %s", s, exc, exc_info=True,
                 )
                 print(
                     "[LLM] Pipeline stopped: Gemini API 503 UNAVAILABLE.",
@@ -237,10 +256,10 @@ class LlmPromptPipelineService:
                 raise
             except Exception as exc:
                 pl_logger.error(
-                    "[ERROR] secid=%s: %s", secid, exc, exc_info=True,
+                    "[ERROR] secid=%s: %s", s, exc, exc_info=True,
                 )
-                not_found_secids.append(secid)
-                print(f"[LLM] {idx}/{total} — {secid}: error ({exc})", flush=True)
+                not_found_secids.append(s)
+                print(f"[LLM] {idx}/{total} — {s}: error ({exc})", flush=True)
 
         summary: str = (
             f"[LLM PIPELINE DONE] Processed: {processed}, "
@@ -282,6 +301,7 @@ class LlmPromptPipelineService:
         provider: str = "gemini",
         use_file_upload: bool = False,
         use_local_events: bool = False,
+        is_forced: bool = False,
     ) -> bool:
         """Run the LLM analysis pipeline for a single bond.
 
@@ -305,7 +325,7 @@ class LlmPromptPipelineService:
         if not inn:
             pl_logger.warning("[SKIP] secid=%s: emitent INN not found", secid)
             bond_id: Optional[int] = get_bond_id_by_secid(secid)
-            if bond_id is not None:
+            if bond_id is not None and not is_forced:
                 self._float_params_repo.upsert_not_found(
                     bond_id, _get_not_found_float_params_data()
                 )
@@ -337,7 +357,7 @@ class LlmPromptPipelineService:
             pl_logger.warning(
                 "[SKIP] secid=%s: company with INN=%s not found", secid, inn,
             )
-            if bond_id is not None:
+            if bond_id is not None and not is_forced:
                 self._float_params_repo.upsert_not_found(
                     bond_id, _get_not_found_float_params_data()
                 )
@@ -346,7 +366,7 @@ class LlmPromptPipelineService:
             pl_logger.warning(
                 "[SKIP] secid=%s: company lookup error: %s", secid, exc,
             )
-            if bond_id is not None:
+            if bond_id is not None and not is_forced:
                 self._float_params_repo.upsert_not_found(
                     bond_id, _get_not_found_float_params_data()
                 )
@@ -448,6 +468,32 @@ class LlmPromptPipelineService:
                 "[EVENTS] secid=%s: event loading error: %s", secid, exc,
             )
 
+        # --- Step 4.5: Filter events by event_type from DB ---
+        allowed_event_types: Set[str] = {"размещение", "регистрация", "ставка купона"}
+        filtered_events: List[Dict[str, Any]] = []
+        for e in events:
+            pseudo_guid = e.get("pseudo_guid")
+            event_date = e.get("event_date")
+            if pseudo_guid and event_date:
+                dt_str = str(event_date)[:10]
+                detail = self._event_detail_repo.get_by_guid_and_date(pseudo_guid, dt_str)
+                event_name = e.get("event_name", "Без названия")
+                if detail is None:
+                    print(f"  [{secid}] Событие '{event_name}' ({pseudo_guid}) оставлено (нет записи в БД)", flush=True)
+                    filtered_events.append(e)
+                else:
+                    evt_type = (detail.event_type or "").strip().lower()
+                    if evt_type in allowed_event_types:
+                        print(f"  [{secid}] Событие '{event_name}' ({pseudo_guid}) оставлено (тип: {evt_type!r})", flush=True)
+                        filtered_events.append(e)
+                    else:
+                        print(f"  [{secid}] Событие '{event_name}' ({pseudo_guid}) исключено (тип: {evt_type!r})", flush=True)
+            else:
+                event_name = e.get("event_name", "Без названия")
+                print(f"  [{secid}] Событие '{event_name}' оставлено (нет GUID/даты)", flush=True)
+                filtered_events.append(e)
+        events = filtered_events
+
         # Clean event text (existing logic)
         for e in events:
             full: str = e.get("full_text", "")
@@ -462,6 +508,7 @@ class LlmPromptPipelineService:
                     {
                         "event_name": e.get("event_name"),
                         "event_date": e.get("event_date"),
+                        "pseudo_guid": e.get("pseudo_guid"),
                         "full_text": e.get("full_text", ""),
                         "processed_text": e.get("text", ""),
                     }
@@ -484,7 +531,7 @@ class LlmPromptPipelineService:
             pl_logger.warning(
                 "[NOT FOUND] secid=%s: no events and no documents", secid,
             )
-            if bond_id is not None:
+            if bond_id is not None and not is_forced:
                 self._float_params_repo.upsert_not_found(
                     bond_id, _get_not_found_float_params_data()
                 )
@@ -532,7 +579,7 @@ class LlmPromptPipelineService:
             pl_logger.warning(
                 "[NOT FOUND] secid=%s: LLM returned invalid response", secid,
             )
-            if bond_id is not None:
+            if bond_id is not None and not is_forced:
                 self._float_params_repo.upsert_not_found(
                     bond_id, _get_not_found_float_params_data()
                 )

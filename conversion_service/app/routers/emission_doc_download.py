@@ -16,7 +16,7 @@ async def run_download_pipeline(
         None,
         description="SECID of a specific bond. "
         "If provided — downloads and converts documents only for this bond. "
-        "If not provided — processes all unprocessed floater bonds.",
+        "If not provided — processes all unprocessed bonds.",
     ),
     limit: Optional[int] = Query(
         None,
@@ -25,7 +25,7 @@ async def run_download_pipeline(
     rating: Optional[str] = Query(
         None,
         description="Filter by bond credit rating (e.g. AAA, AA+, BBB). "
-        "If not set — all floaters are processed.",
+        "If not set — all bonds are processed.",
     ),
 ) -> Dict[str, Any]:
     """Download emission documents and convert ALL to Markdown.
@@ -34,7 +34,7 @@ async def run_download_pipeline(
     extracts files, and converts every document to Markdown (no filters applied).
 
     Two modes:
-    - Initial load: processes all floater bonds without a data directory.
+    - Initial load: processes all bonds without a data directory.
     - Update: re-processes only bonds that previously failed (no .md files in data dir).
 
     If ``secid`` is provided, processes only the bond with that SECID.
