@@ -1,7 +1,7 @@
 """Сервис анализа облигационных данных через агрегатор OpenRouter API.
 
 Модуль обеспечивает доступ к широкому спектру языковых моделей (преимущественно
-Gemini 2.5 Flash Lite) через единый унифицированный интерфейс OpenRouter.
+DeepSeek v4 Pro) через единый унифицированный интерфейс OpenRouter.
 """
 
 import json
@@ -24,7 +24,7 @@ logger: logging.Logger = logging.getLogger(__name__)
 _DATA_DIR: Path = Path(__file__).resolve().parent.parent / "data"
 
 OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
-OPENROUTER_MODEL: str = "google/gemini-2.5-flash-lite"
+OPENROUTER_MODEL: str = "deepseek/deepseek-v4-pro"
 
 
 class OpenRouterClientProtocol(Protocol):
@@ -88,10 +88,16 @@ class OpenRouterClient:
             RuntimeError: Ошибка при обращении к OpenRouter API.
         """
         try:
+            # Для DeepSeek v4 Pro добавляем поддержку reasoning режима
+            extra_body = {}
+            if "deepseek-v4-pro" in self._model:
+                extra_body["reasoning"] = {"enabled": True}
+            
             completion = self._client.chat.completions.create(
                 model=self._model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=self._temperature,
+                extra_body=extra_body if extra_body else None,
             )
             content: Optional[str] = (
                 completion.choices[0].message.content if completion.choices else None

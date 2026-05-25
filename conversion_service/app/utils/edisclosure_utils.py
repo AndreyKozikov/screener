@@ -597,6 +597,18 @@ def sanitize_filename(filename: str, max_length: int = 50) -> str:
         return f"{hash_str}{ext}"[:max_length]
 
 
+def _is_safe_archive_member(name: str) -> bool:
+    """Проверяет, что имя файла внутри архива не ведет к path traversal."""
+    normalized = (name or "").replace("\\", "/")
+    if not normalized or normalized.startswith("/"):
+        return False
+    if re.match(r"^[A-Za-z]:/", normalized):
+        return False
+
+    parts = [part for part in normalized.split("/") if part not in ("", ".")]
+    return all(part != ".." for part in parts)
+
+
 def extract_zip_to_dir(content: bytes, extract_dir: Path) -> Dict[str, str]:
     """Извлекает содержимое ZIP-архива в директорию. Возвращает маппинг {safe_name: original_name}."""
     extract_dir.mkdir(parents=True, exist_ok=True)
@@ -604,7 +616,11 @@ def extract_zip_to_dir(content: bytes, extract_dir: Path) -> Dict[str, str]:
     try:
         with zipfile.ZipFile(io.BytesIO(content), "r", metadata_encoding="cp866") as zf:
             for name in zf.namelist():
-                if name.endswith("/") or ".." in name:
+                if name.endswith("/") or not _is_safe_archive_member(name):
+                    print(
+                        f"  [ZIP] Пропуск подозрительного пути в архиве: {ascii(name)}",
+                        flush=True,
+                    )
                     continue
                 base_name = Path(name).name
                 if not base_name:
@@ -635,7 +651,11 @@ def extract_rar_to_dir(file_path: Path, extract_dir: Path) -> Dict[str, str]:
     try:
         with rarfile.RarFile(file_path) as rf:
             for info in rf.infolist():
-                if info.isdir() or ".." in info.filename:
+                if info.isdir() or not _is_safe_archive_member(info.filename):
+                    print(
+                        f"  [RAR] Пропуск подозрительного пути в архиве: {ascii(info.filename)}",
+                        flush=True,
+                    )
                     continue
                 base_name = Path(info.filename).name
                 if not base_name:
@@ -657,6 +677,50 @@ def extract_rar_to_dir(file_path: Path, extract_dir: Path) -> Dict[str, str]:
     return result
 
 
+def extract_7z_to_dir(file_path: Path, extract_dir: Path) -> Dict[str, str]:
+    """Извлекает содержимое 7z-архива в директорию.
+    
+    Возвращает маппинг {safe_name: original_name}.
+    """
+    extract_dir.mkdir(parents=True, exist_ok=True)
+    result = {}
+    try:
+        import py7zr
+        import tempfile
+        import shutil
+    except ImportError:
+        print("  [7Z] Ошибка: библиотека py7zr не установлена.", flush=True)
+        return result
+
+    try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            with py7zr.SevenZipFile(file_path, mode='r') as sz:
+                sz.extractall(path=temp_path)
+            
+            for p in temp_path.rglob("*"):
+                if p.is_file():
+                    rel_path = str(p.relative_to(temp_path))
+                    if not _is_safe_archive_member(rel_path):
+                        print(
+                            f"  [7Z] Пропуск подозрительного пути в архиве: {ascii(p.name)}",
+                            flush=True,
+                        )
+                        continue
+                    base_name = p.name
+                    safe_name = sanitize_filename(base_name)
+                    target_path = extract_dir / safe_name
+                    try:
+                        shutil.copy2(p, target_path)
+                        result[safe_name] = base_name
+                    except Exception as e:
+                        print(f"  [7Z] Ошибка копирования {base_name}: {e}", flush=True)
+                        continue
+    except Exception as e:
+        print(f"  [7Z] Невалидный архив или ошибка py7zr: {e}", flush=True)
+    return result
+
+
 def extract_archive_to_dir(file_path: Path, extract_dir: Path) -> Dict[str, str]:
     """Определяет тип архива по расширению и извлекает его."""
     ext = file_path.suffix.lower()
@@ -664,6 +728,8 @@ def extract_archive_to_dir(file_path: Path, extract_dir: Path) -> Dict[str, str]
         return extract_zip_to_dir(file_path.read_bytes(), extract_dir)
     if ext == ".rar":
         return extract_rar_to_dir(file_path, extract_dir)
+    if ext == ".7z":
+        return extract_7z_to_dir(file_path, extract_dir)
     return {}
 
 

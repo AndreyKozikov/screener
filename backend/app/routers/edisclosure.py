@@ -19,7 +19,7 @@ async def get_company_accrued_income(
     secid: str = Query(..., description="Идентификатор ценной бумаги (SECID)"),
     provider: Optional[str] = Query(
         None,
-        description="AI провайдер: gemini (2.5 Flash Lite), gemini-flash (2.5 Flash), gemini-2.5-pro, gemini-2-flash, gemini-3-flash, gemini-3.1-pro, openai-gpt-5.1, openrouter или local. Не передавать или пусто — AUTO: проба удалённых провайдеров по очереди.",
+        description="AI провайдер: gemini (2.5 Flash Lite), gemini-flash (2.5 Flash), gemini-2.5-pro, gemini-2-flash, gemini-3-flash, gemini-3.1-pro, openai-gpt-5.1, openrouter (deepseek-v4-pro) или local. Не передавать или пусто — AUTO: проба удалённых провайдеров по очереди.",
     ),
     use_file_upload: bool = Query(
         False,
@@ -94,7 +94,7 @@ async def get_company_accrued_income(
 async def update_floaters(
     provider: Optional[str] = Query(
         None,
-        description="AI провайдер: gemini (2.5 Flash Lite), gemini-flash (2.5 Flash), gemini-2.5-pro, gemini-2-flash, gemini-3-flash, gemini-3.1-pro, openai-gpt-5.1, openrouter или local. Не передавать или пусто — AUTO: проба удалённых провайдеров по очереди.",
+        description="AI провайдер: gemini (2.5 Flash Lite), gemini-flash (2.5 Flash), gemini-2.5-pro, gemini-2-flash, gemini-3-flash, gemini-3.1-pro, openai-gpt-5.1, openrouter (deepseek-v4-pro) или local. Не передавать или пусто — AUTO: проба удалённых провайдеров по очереди.",
     ),
     limit: Optional[int] = Query(
         None,

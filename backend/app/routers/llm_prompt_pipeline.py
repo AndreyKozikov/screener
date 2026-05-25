@@ -20,7 +20,7 @@ async def run_llm_pipeline(
         None,
         description="AI provider: gemini (2.5 Flash Lite), gemini-flash (2.5 Flash), "
         "gemini-2.5-pro, gemini-2-flash, gemini-3-flash, gemini-3.1-pro, "
-        "openai-gpt-5.1, openrouter or local. "
+        "openai-gpt-5.1, openrouter (deepseek-v4-pro) or local. "
         "Empty or not set — AUTO: tries remote providers in order.",
     ),
     limit: Optional[int] = Query(

@@ -26,6 +26,7 @@ from app.services.bonds_service import (
     get_emitent_inn_by_secid,
     get_all_bond_secids,
     get_reg_number_by_secid,
+    get_all_bonds_metadata,
 )
 from app.services.pdf_conversion_service import PdfConversionService
 from app.utils.edisclosure_utils import (
@@ -85,7 +86,7 @@ def _get_pipeline_logger() -> logging.Logger:
         ch: logging.StreamHandler = logging.StreamHandler(sys.stdout)
         ch.setLevel(logging.INFO)
         ch.setFormatter(fmt)
-        ch._emission_doc_console = True
+        setattr(ch, "_emission_doc_console", True)
         pl_logger.addHandler(ch)
 
     pl_logger.propagate = False
@@ -112,6 +113,8 @@ class EmissionDocDownloadService:
         secid: Optional[str] = None,
         limit: Optional[int] = None,
         rating: Optional[str] = None,
+        force_recheck: bool = False,
+        keep_source_files: bool = True,
     ) -> Dict[str, Any]:
         """Download and convert emission documents for bonds.
 
@@ -119,6 +122,8 @@ class EmissionDocDownloadService:
             secid: If provided — process only the bond with this SECID.
             limit: Maximum number of bonds to process. None — all unprocessed / failed.
             rating: If set — only bonds with this credit rating.
+            force_recheck: If True — checks all bonds completeness even if marked completed.
+            keep_source_files: If False — deletes source files after successful conversion.
 
         Returns:
             Summary dict with processing statistics.
@@ -126,7 +131,30 @@ class EmissionDocDownloadService:
         pl_logger: logging.Logger = _get_pipeline_logger()
 
         if secid and secid.strip():
-            return self._process_single_by_secid(secid.strip(), pl_logger)
+            sid = secid.strip()
+            inn = get_emitent_inn_by_secid(sid)
+            reg_number = get_reg_number_by_secid(sid)
+            expected_urls = None
+            if inn and reg_number:
+                db_records = self._emission_doc_repo.get_by_inn_and_reg_number(inn, reg_number)
+                expected_urls = [str(rec["file_url"]).strip() for rec in db_records if rec.get("file_url")]
+
+            return self._process_single_by_secid(
+                sid,
+                pl_logger,
+                force_recheck=force_recheck,
+                keep_source_files=keep_source_files,
+                inn=inn,
+                reg_number=reg_number,
+                expected_urls=expected_urls,
+            )
+
+        # Пакетное извлечение метаданных и документов для оптимизации проверки
+        bonds_metadata = {}
+        all_docs_by_metadata = {}
+        if force_recheck:
+            bonds_metadata = get_all_bonds_metadata(rating=rating)
+            all_docs_by_metadata = self._emission_doc_repo.get_all_documents_by_metadata()
 
         all_secids: List[str] = get_all_bond_secids(rating=rating)
         total_all: int = len(all_secids)
@@ -136,7 +164,20 @@ class EmissionDocDownloadService:
         already_done: int = 0
         for sid in all_secids:
             bond_dir: Path = _DATA_DIR / sid
-            if self._is_bond_fully_processed(sid, bond_dir, pl_logger):
+            inn, reg_number = bonds_metadata.get(sid, (None, None))
+            expected_urls = None
+            if inn and reg_number:
+                expected_urls = all_docs_by_metadata.get((inn, reg_number))
+
+            if self._is_bond_fully_processed(
+                sid,
+                bond_dir,
+                pl_logger,
+                force_recheck=force_recheck,
+                inn=inn,
+                reg_number=reg_number,
+                expected_urls=expected_urls,
+            ):
                 already_done += 1
                 continue
             to_process.append(sid)
@@ -162,8 +203,21 @@ class EmissionDocDownloadService:
 
         for idx, sid in enumerate(to_process, start=1):
             processed += 1
+            inn, reg_number = bonds_metadata.get(sid, (None, None))
+            expected_urls = None
+            if inn and reg_number:
+                expected_urls = all_docs_by_metadata.get((inn, reg_number))
+
             try:
-                ok: bool = self._process_single_bond(sid, pl_logger)
+                ok: bool = self._process_single_bond(
+                    sid,
+                    pl_logger,
+                    force_recheck=force_recheck,
+                    keep_source_files=keep_source_files,
+                    inn=inn,
+                    reg_number=reg_number,
+                    expected_urls=expected_urls,
+                )
                 if ok:
                     succeeded += 1
                     print(f"[DOWNLOAD] {idx}/{total} — {sid}: OK", flush=True)
@@ -203,6 +257,7 @@ class EmissionDocDownloadService:
             "failed": len(failed_secids),
             "failed_secids": failed_secids,
         }
+
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -326,7 +381,7 @@ class EmissionDocDownloadService:
         
         # 2. General cleanup for common extensions (only if no specific filenames were requested to be deleted)
         if not filenames:
-            extensions = list(_EXTENSION_MIME_MAP.keys()) + [".zip", ".rar"]
+            extensions = list(_EXTENSION_MIME_MAP.keys()) + [".zip", ".rar", ".7z"]
             for ext in extensions:
                 for f in bond_dir.glob(f"*{ext}"):
                     try:
@@ -340,80 +395,110 @@ class EmissionDocDownloadService:
                         pass
 
     def _is_bond_fully_processed(
-        self, secid: str, bond_dir: Path, pl_logger: logging.Logger
+        self,
+        secid: str,
+        bond_dir: Path,
+        pl_logger: logging.Logger,
+        force_recheck: bool = False,
+        inn: Optional[str] = None,
+        reg_number: Optional[str] = None,
+        expected_urls: Optional[List[str]] = None,
     ) -> bool:
         """Analyze if the bond's documents are fully downloaded and converted."""
         if not bond_dir.is_dir():
             return False
 
         manifest = self._load_manifest(bond_dir)
-        if manifest.get("fully_processed"):
+        if not force_recheck and manifest.get("fully_processed"):
             return True
 
-        inn = get_emitent_inn_by_secid(secid)
-        regnumber = get_reg_number_by_secid(secid)
-        if not inn or not regnumber:
+        if not inn or not reg_number:
+            inn = get_emitent_inn_by_secid(secid)
+            reg_number = get_reg_number_by_secid(secid)
+
+        if not inn or not reg_number:
             return False
 
-        db_records = self._emission_doc_repo.get_by_inn_and_reg_number(inn, regnumber)
-        if not db_records:
+        if expected_urls is None:
+            db_records = self._emission_doc_repo.get_by_inn_and_reg_number(inn, reg_number)
+            urls = [str(rec["file_url"]).strip() for rec in db_records if rec.get("file_url")]
+        else:
+            urls = expected_urls
+
+        if not urls:
+            if manifest.get("fully_processed") is not True:
+                manifest["fully_processed"] = True
+                self._save_manifest(bond_dir, manifest)
             return True
 
-        # Use .get() and ensure it's a dict
         archives = manifest.get("archives")
         if not isinstance(archives, dict):
             archives = {}
 
-        for rec in db_records:
-            url = getattr(rec, "file_url", None) or rec.get("file_url")
-            if not url:
-                continue
+        for url in urls:
             entry = archives.get(url)
+            is_completed = False
+
             if (
-                not isinstance(entry, dict)
-                or entry.get("status") != "completed"
-                or entry.get("error")
+                isinstance(entry, dict)
+                and entry.get("status") == "completed"
+                and not entry.get("error")
             ):
-                # Check if we have .md files for this URL in manifest
-                if isinstance(entry, dict) and entry.get("files"):
-                    files = entry.get("files", [])
-                    converted = entry.get("converted_files", [])
-                    if not isinstance(converted, list):
-                        converted = []
-                    
+                files = entry.get("files", [])
+                converted = entry.get("converted_files", [])
+                
+                # Строгая проверка: списки файлов не должны быть пустыми
+                if isinstance(files, list) and files and isinstance(converted, list) and converted:
                     all_md_needed = [f for f in files if Path(f).suffix.lower() in _EXTENSION_MIME_MAP]
                     if not all_md_needed:
-                        entry["status"] = "completed"
-                        continue
+                        is_completed = True
+                    else:
+                        all_md_exist = True
+                        for f in all_md_needed:
+                            md_file = bond_dir / Path(f).with_suffix(".md")
+                            if f not in converted or not md_file.exists():
+                                all_md_exist = False
+                                break
+                        if all_md_exist:
+                            is_completed = True
 
-                    all_md_exist = True
-                    for f in all_md_needed:
-                        # Check both the flag in manifest and physical existence of .md file
-                        if f not in converted or not (bond_dir / Path(f).with_suffix(".md")).exists():
-                            all_md_exist = False
-                            break
-                    
-                    if all_md_exist:
-                        entry["status"] = "completed"
-                        entry["error"] = None
-                        entry["converted_files"] = all_md_needed
-                        continue
-                
+            if not is_completed:
                 pl_logger.debug("[%s] URL not fully processed: %s", secid, url)
+                # Первым делом делаем отметку, что документы обработаны не полностью
+                if manifest.get("fully_processed") is not False:
+                    manifest["fully_processed"] = False
+                    self._save_manifest(bond_dir, manifest)
                 return False
 
         # If we reached here, all URLs are completed. Mark as fully processed.
-        manifest["fully_processed"] = True
-        manifest["archives"] = archives
-        self._save_manifest(bond_dir, manifest)
+        if manifest.get("fully_processed") is not True:
+            manifest["fully_processed"] = True
+            manifest["archives"] = archives
+            self._save_manifest(bond_dir, manifest)
         return True
 
+
     def _process_single_by_secid(
-        self, secid: str, pl_logger: logging.Logger,
+        self,
+        secid: str,
+        pl_logger: logging.Logger,
+        force_recheck: bool = False,
+        keep_source_files: bool = True,
+        inn: Optional[str] = None,
+        reg_number: Optional[str] = None,
+        expected_urls: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """Process a single bond identified by its SECID."""
         try:
-            ok: bool = self._process_single_bond(secid, pl_logger)
+            ok: bool = self._process_single_bond(
+                secid,
+                pl_logger,
+                force_recheck=force_recheck,
+                keep_source_files=keep_source_files,
+                inn=inn,
+                reg_number=reg_number,
+                expected_urls=expected_urls,
+            )
             return {
                 "status": "ok",
                 "secid": secid,
@@ -428,10 +513,17 @@ class EmissionDocDownloadService:
             }
 
     def _process_single_bond(
-        self, secid: str, pl_logger: logging.Logger,
+        self,
+        secid: str,
+        pl_logger: logging.Logger,
+        force_recheck: bool = False,
+        keep_source_files: bool = True,
+        inn: Optional[str] = None,
+        reg_number: Optional[str] = None,
+        expected_urls: Optional[List[str]] = None,
     ) -> bool:
         """Download and convert emission documents for a single bond.
-        
+
         Logic for multi-volume RAR:
         - Download all missing URLs to local files.
         - Iterate through archives.
@@ -443,17 +535,24 @@ class EmissionDocDownloadService:
         bond_data_dir: Path = _DATA_DIR / secid
         bond_data_dir.mkdir(parents=True, exist_ok=True)
 
-        inn: Optional[str] = get_emitent_inn_by_secid(secid)
-        regnumber: Optional[str] = get_reg_number_by_secid(secid)
-        if not inn or not regnumber:
+        if not inn or not reg_number:
+            inn = get_emitent_inn_by_secid(secid)
+            reg_number = get_reg_number_by_secid(secid)
+
+        if not inn or not reg_number:
             pl_logger.warning("[SKIP] secid=%s: metadata missing", secid)
             return False
 
         manifest: Dict[str, Any] = self._load_manifest(bond_data_dir)
         archives: Dict[str, Any] = manifest["archives"]
 
-        db_records = self._emission_doc_repo.get_by_inn_and_reg_number(inn, regnumber)
-        if not db_records:
+        if expected_urls is None:
+            db_records = self._emission_doc_repo.get_by_inn_and_reg_number(inn, reg_number)
+            urls = [str(rec["file_url"]).strip() for rec in db_records if rec.get("file_url")]
+        else:
+            urls = expected_urls
+
+        if not urls:
             return True
 
         # --- Phase 1: Download missing URLs and collect all local files for processing ---
@@ -464,8 +563,7 @@ class EmissionDocDownloadService:
         files_to_process: Set[Path] = set()
         any_download_error = False
 
-        for rec in db_records:
-            url = getattr(rec, "file_url", None) or rec.get("file_url")
+        for url in urls:
             if not url:
                 continue
 
@@ -477,11 +575,35 @@ class EmissionDocDownloadService:
             if entry is not None and not isinstance(entry, dict):
                 entry = self._normalize_archive_entry(entry)
                 archives[url] = entry
+            is_completed = False
             if (
                 isinstance(entry, dict)
                 and entry.get("status") == "completed"
                 and not entry.get("error")
             ):
+                files = entry.get("files", [])
+                converted = entry.get("converted_files", [])
+                if isinstance(files, list) and files and isinstance(converted, list) and converted:
+                    all_md_needed = [f for f in files if Path(f).suffix.lower() in _EXTENSION_MIME_MAP]
+                    if not all_md_needed:
+                        is_completed = True
+                    else:
+                        all_md_exist = True
+                        for f in all_md_needed:
+                            md_file = bond_data_dir / Path(f).with_suffix(".md")
+                            if f not in converted or not md_file.exists():
+                                all_md_exist = False
+                                break
+                        if all_md_exist:
+                            is_completed = True
+
+                if not is_completed:
+                    entry["status"] = "error"
+                    entry["error"] = "Missing physical files or empty file lists (recheck triggered)"
+                    manifest["fully_processed"] = False
+                    self._save_manifest(bond_data_dir, manifest)
+
+            if is_completed:
                 continue
 
             # Determine local filename (initial guess)
@@ -539,14 +661,22 @@ class EmissionDocDownloadService:
                 path_to_url[str(local_path.absolute())] = url
 
         # Also add any existing source files in the directory that are not yet completed
-        for ext in list(_EXTENSION_MIME_MAP.keys()) + [".zip", ".rar"]:
+        for ext in list(_EXTENSION_MIME_MAP.keys()) + [".zip", ".rar", ".7z"]:
             for f in bond_data_dir.glob(f"*{ext}"):
                 files_to_process.add(f)
             for f in bond_data_dir.glob(f"*{ext.upper()}"):
                 files_to_process.add(f)
 
         if not files_to_process:
-            return self._is_bond_fully_processed(secid, bond_data_dir, pl_logger)
+            return self._is_bond_fully_processed(
+                secid,
+                bond_data_dir,
+                pl_logger,
+                force_recheck=force_recheck,
+                inn=inn,
+                reg_number=reg_number,
+                expected_urls=urls,
+            )
 
         # --- Phase 2: Extraction ---
         pl_logger.info("[%s] Phase 2/4: Extracting archives", secid)
@@ -577,12 +707,47 @@ class EmissionDocDownloadService:
                 else:
                     any_error = True
                     url = path_to_url.get(str(local_path.absolute()))
+                    pl_logger.warning(
+                        "[%s] ZIP extraction produced no files: %s (url=%s)",
+                        secid,
+                        local_path.name,
+                        url or "unknown",
+                    )
                     if url:
                         entry = archives.setdefault(
                             url, {"status": "error", "processed_at": datetime.now().isoformat()}
                         )
                         entry["status"] = "error"
                         entry["error"] = f"ZIP extraction failed: {local_path.name}"
+                continue
+
+            if ext == ".7z":
+                extracted = extract_archive_to_dir(local_path, bond_data_dir)
+                if extracted:
+                    extracted_all.update(extracted.keys())
+                    # Mark URL as completed if we know it
+                    url = path_to_url.get(str(local_path.absolute()))
+                    if url:
+                        entry = archives.setdefault(url, {"status": "downloaded", "files": list(extracted.keys())})
+                        entry["status"] = "downloaded"
+                        entry["files"] = list(extracted.keys())
+                        entry["files_mapping"] = extracted
+                        entry["processed_at"] = datetime.now().isoformat()
+                else:
+                    any_error = True
+                    url = path_to_url.get(str(local_path.absolute()))
+                    pl_logger.warning(
+                        "[%s] 7Z extraction produced no files: %s (url=%s)",
+                        secid,
+                        local_path.name,
+                        url or "unknown",
+                    )
+                    if url:
+                        entry = archives.setdefault(
+                            url, {"status": "error", "processed_at": datetime.now().isoformat()}
+                        )
+                        entry["status"] = "error"
+                        entry["error"] = f"7Z extraction failed: {local_path.name}"
                 continue
 
             if ext == ".rar":
@@ -691,6 +856,22 @@ class EmissionDocDownloadService:
                         entry["error"] = f"RAR exception: {str(exc)}"
                 continue
 
+            # If we reached here, the file extension is not supported
+            any_error = True
+            url = path_to_url.get(str(local_path.absolute()))
+            pl_logger.warning(
+                "[%s] Unsupported file extension: %s (url=%s)",
+                secid,
+                local_path.name,
+                url or "unknown",
+            )
+            if url:
+                entry = archives.setdefault(
+                    url, {"status": "error", "processed_at": datetime.now().isoformat()}
+                )
+                entry["status"] = "error"
+                entry["error"] = f"Unsupported file extension: {local_path.name}"
+
         # --- Phase 3: Save intermediate manifest before conversion ---
         pl_logger.info("[%s] Phase 3/4: Saving intermediate manifest", secid)
         
@@ -764,13 +945,20 @@ class EmissionDocDownloadService:
         archives = manifest.get("archives", {})
         
         all_md_present = True
+        incomplete_entries: List[Tuple[str, str, Optional[str], List[str], List[str]]] = []
         if not archives:
             all_md_present = False
         else:
             for url, entry in archives.items():
-                if entry.get("status") != "completed":
+                status = entry.get("status")
+                error = entry.get("error")
+                files = entry.get("files", [])
+                converted_files = entry.get("converted_files", [])
+                if status != "completed" or error:
                     all_md_present = False
-                    break
+                    incomplete_entries.append(
+                        (url, str(status), error, list(files), list(converted_files))
+                    )
         
         if all_md_present and not any_error:
             manifest["fully_processed"] = True
@@ -778,8 +966,24 @@ class EmissionDocDownloadService:
             manifest["fully_processed"] = False
             if not archives:
                 pl_logger.warning("[%s] No files found in manifest to verify", secid)
+            else:
+                for url, status, error, files, converted_files in incomplete_entries:
+                    pl_logger.warning(
+                        "[%s] Incomplete archive: status=%s, error=%s, files=%s, converted=%s, url=%s",
+                        secid,
+                        status,
+                        error or "-",
+                        files,
+                        converted_files,
+                        url,
+                    )
 
         self._save_manifest(bond_data_dir, manifest)
+
+        # --- Phase 6: Cleanup source files if requested ---
+        if not keep_source_files and manifest.get("fully_processed"):
+            pl_logger.info("[%s] Phase 6/6: Cleaning up source files", secid)
+            self._cleanup_source_files(bond_data_dir)
         
         return manifest.get("fully_processed", False)
 

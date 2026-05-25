@@ -27,6 +27,14 @@ async def run_download_pipeline(
         description="Filter by bond credit rating (e.g. AAA, AA+, BBB). "
         "If not set — all bonds are processed.",
     ),
+    force_recheck: bool = Query(
+        False,
+        description="If True — checks all bonds completeness even if marked completed in manifest.",
+    ),
+    keep_source_files: bool = Query(
+        True,
+        description="If False — deletes source files (pdf, doc, etc.) after successful conversion.",
+    ),
 ) -> Dict[str, Any]:
     """Download emission documents and convert ALL to Markdown.
 
@@ -45,6 +53,8 @@ async def run_download_pipeline(
             secid=secid,
             limit=limit,
             rating=rating,
+            force_recheck=force_recheck,
+            keep_source_files=keep_source_files,
         )
     except PdfConversionConnectionError as exc:
         raise HTTPException(

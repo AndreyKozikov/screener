@@ -6,3 +6,4 @@ pydantic-settings==2.7.0
 httpx==0.28.1
 requests==2.32.3
 rarfile==4.2
+py7zr==0.22.0

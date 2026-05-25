@@ -20,6 +20,7 @@ cachetools==5.5.0
 
 # Archives (e-disclosure ZIP with correct encoding handling)
 patool==4.0.4  # распаковка архивов, корректное определение кодировок
+py7zr==0.22.0
 
 # Additional
 httpx==0.28.1  # для HTTP запросов

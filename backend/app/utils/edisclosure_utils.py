@@ -503,7 +503,11 @@ def extract_zip_to_dir(content: bytes, extract_dir: Path) -> List[str]:
     try:
         with zipfile.ZipFile(io.BytesIO(content), "r", metadata_encoding="cp866") as zf:
             for name in zf.namelist():
-                if name.endswith("/") or ".." in name:
+                if name.endswith("/") or not _is_safe_archive_member(name):
+                    print(
+                        f"  [ZIP] Пропуск подозрительного пути в архиве: {ascii(name)}",
+                        flush=True,
+                    )
                     continue
                 base_name: str = Path(name).name
                 if not base_name:
@@ -519,6 +523,18 @@ def extract_zip_to_dir(content: bytes, extract_dir: Path) -> List[str]:
     except zipfile.BadZipFile as e:
         print(f"  [ZIP] Невалидный архив: {e}", flush=True)
     return result
+
+
+def _is_safe_archive_member(name: str) -> bool:
+    """Проверяет, что имя файла внутри архива не ведет к path traversal."""
+    normalized = (name or "").replace("\\", "/")
+    if not normalized or normalized.startswith("/"):
+        return False
+    if re.match(r"^[A-Za-z]:/", normalized):
+        return False
+
+    parts = [part for part in normalized.split("/") if part not in ("", ".")]
+    return all(part != ".." for part in parts)
 
 
 def clean_markdown_after_pdf2md(content: str) -> str:

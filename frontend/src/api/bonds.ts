@@ -344,11 +344,12 @@ export interface BondChatResponse {
 /**
  * Send a question about a bond to the LLM (Vector Retrieval + LLM)
  */
-export const askBondQuestion = async (secid: string, query: string): Promise<BondChatResponse> => {
+export const askBondQuestion = async (secid: string, query: string, model?: string): Promise<BondChatResponse> => {
   const response = await apiClient.post<BondChatResponse>('/vector-retrieval/bond-context', {
     secid,
     query,
-    use_local_events: true
+    use_local_events: true,
+    model
   }, {
     timeout: 300000 // 5 минут для генерации ответа LLM
   });

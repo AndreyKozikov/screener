@@ -6,7 +6,7 @@
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
@@ -136,3 +136,29 @@ class EmissionDocumentRepository:
             for row in rows
             if row[0] is not None and row[1]
         ]
+
+    def get_all_documents_by_metadata(self) -> Dict[Tuple[str, str], List[str]]:
+        """Возвращает словарь с ключом (inn, reg_number) и значением в виде списка file_url.
+
+        Выбираются только записи с непустым file_url.
+        """
+        query = text(
+            "SELECT trim(e.inn), trim(ed.reg_number), ed.file_url "
+            "FROM emission_documents ed "
+            "JOIN emitent_edisclosure ee ON ed.emitent_edisclosure_id = ee.id "
+            "JOIN emitents e ON ee.emitent_id = e.id "
+            "WHERE ed.file_url IS NOT NULL AND trim(ed.file_url) != ''"
+        )
+        result: Dict[Tuple[str, str], List[str]] = {}
+        try:
+            with Session(self._engine) as session:
+                rows = session.execute(query).fetchall()
+            for row in rows:
+                if row[0] and row[1] and row[2]:
+                    key = (str(row[0]).strip(), str(row[1]).strip())
+                    url = str(row[2]).strip()
+                    result.setdefault(key, []).append(url)
+        except Exception as exc:
+            self.logger.error("Failed to fetch all documents by metadata: %s", exc)
+        return result
+

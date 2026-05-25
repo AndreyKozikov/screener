@@ -1,8 +1,9 @@
 import sqlite3
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from config.paths import DB_PATH
+
 
 def get_emitent_inn_by_secid(secid: str, db_path: Optional[Path] = None) -> Optional[str]:
     path = db_path or DB_PATH
@@ -101,3 +102,40 @@ def get_all_bond_secids(db_path: Optional[Path] = None, rating: Optional[str] = 
             return [row[0] for row in rows]
     except Exception:
         return []
+
+
+def get_all_bonds_metadata(
+    db_path: Optional[Path] = None, rating: Optional[str] = None
+) -> Dict[str, Tuple[str, str]]:
+    """Returns a dict mapping secid to (inn, reg_number) for all bonds with registration numbers."""
+    path = db_path or DB_PATH
+    if not path.exists():
+        return {}
+
+    query = """
+        SELECT b.secid, trim(e.inn), trim(bs.reg_number)
+        FROM bonds b
+        JOIN bondsecurity bs ON bs.bond_id = b.id
+        JOIN emitents e ON b.emitent_id = e.id
+        WHERE bs.reg_number IS NOT NULL AND trim(bs.reg_number) != ''
+          AND (b.boardid IS NULL OR UPPER(TRIM(b.boardid)) != 'PACT')
+    """
+    params = []
+
+    if rating and rating.strip():
+        query += " AND UPPER(TRIM(b.rating)) = ?"
+        params.append(rating.strip().upper())
+
+    try:
+        with sqlite3.connect(path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            return {
+                str(row[0]).strip(): (str(row[1]).strip(), str(row[2]).strip())
+                for row in rows
+                if row[0] and row[1] and row[2]
+            }
+    except Exception:
+        return {}
+

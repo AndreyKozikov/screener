@@ -1,5 +1,6 @@
 import re
 import numpy as np
+from datetime import datetime, date
 from typing import List
 from .models import ScoredChunk
 
@@ -34,7 +35,28 @@ class RankingEngine:
             if len(text) > self.length_threshold:
                 heuristic_score += 1.0
                 
-            # Normalize heuristic score? 
+            # Бонус за свежесть для событий (Recency Boosting)
+            if sc.chunk.source_type == "event":
+                try:
+                    # Извлекаем дату из source_id (формат event_YYYY-MM-DD)
+                    date_str = sc.chunk.source_id.replace("event_", "")
+                    event_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+                    
+                    current_date = date.today()
+                    days_diff = (current_date - event_date).days
+                    
+                    if days_diff >= 0:
+                        # Экспоненциальное затухание: бонус плавно уменьшается со временем.
+                        # Используем полупериод около 1000 дней (~3 года), чтобы поддерживать события за 3-4 года.
+                        # decay_rate = ln(2) / 1000 ≈ 0.0007
+                        # max_bonus = 3.0 (сопоставимо с другими эвристиками)
+                        decay_rate = 0.0007
+                        recency_bonus = 3.0 * np.exp(-decay_rate * days_diff)
+                        heuristic_score += recency_bonus
+                except Exception:
+                    pass
+
+            # Normalize heuristic score?
             # The embedding score is sum of cosine similarities (0 to 1 each).
             # If we have 5 queries, max score is 5.
             # Heuristics can add up to 6. This might overshadow embeddings.

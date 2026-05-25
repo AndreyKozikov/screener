@@ -111,8 +111,9 @@ class RetrievalPipeline:
         # 4. Ranking
         ranked_chunks = self.ranker.rerank(retrieved_chunks)
         
-        # 5. Final Selection (top 10-15)
-        final_chunks = [sc.chunk for sc in ranked_chunks[:15]]
+        # 5. Final Selection (top 15-20)
+        # Возвращено ограничение на количество чанков (до 20), так как MMR теперь эффективно дедуплицирует их
+        final_chunks = [sc.chunk for sc in ranked_chunks[:20]]
         
         logger.info("Final selection: %d chunks", len(final_chunks))
         

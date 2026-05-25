@@ -68,6 +68,7 @@ class GeminiClientProtocol(Protocol):
         model: Optional[str] = None,
         file_paths: Optional[List[str]] = None,
         base_dir: Optional[Path] = None,
+        system_instruction: Optional[str] = None,
     ) -> str:
         """Отправляет промт в указанную модель и возвращает текст ответа.
 
@@ -112,6 +113,7 @@ class GeminiClient:
         model: Optional[str] = None,
         file_paths: Optional[List[str]] = None,
         base_dir: Optional[Path] = None,
+        system_instruction: Optional[str] = None,
     ) -> str:
         """Отправляет промт в Gemini и возвращает текст ответа.
 
@@ -126,6 +128,7 @@ class GeminiClient:
             file_paths: Список имён файлов (PDF, Word и др.) для загрузки через Files API.
                 Требует base_dir. Если None или пуст — только текст промта.
             base_dir: Базовая директория, в которой расположены файлы из file_paths.
+            system_instruction: Системная инструкция для модели.
 
         Returns:
             Текст ответа модели.
@@ -137,6 +140,13 @@ class GeminiClient:
         """
         model_id: str = model or GEMINI_MODEL_FLASH_LITE
         try:
+            config = self._config
+            if system_instruction is not None:
+                config = types.GenerateContentConfig(
+                    temperature=self._config.temperature,
+                    system_instruction=system_instruction
+                )
+
             if file_paths and base_dir is not None:
                 uploaded_files: List[Any] = []
                 for filename in file_paths:
@@ -148,13 +158,13 @@ class GeminiClient:
                 response: types.GenerateContentResponse = self._client.models.generate_content(
                     model=model_id,
                     contents=contents,
-                    config=self._config,
+                    config=config,
                 )
             else:
                 response = self._client.models.generate_content(
                     model=model_id,
                     contents=prompt,
-                    config=self._config,
+                    config=config,
                 )
             return response.text
         except Exception as exc:
@@ -349,6 +359,43 @@ class GeminiAnalysisService:
         except Exception as exc:
             logger.error("[GEMINI] Ошибка в QA-запросе: %s", exc)
             return f"Извините, не удалось получить ответ от модели: {str(exc)}"
+
+    def expand_query(
+        self,
+        query: str,
+        model: Optional[str] = None,
+    ) -> str:
+        """Обогащает пользовательский запрос для векторного поиска.
+
+        Args:
+            query: Исходный вопрос пользователя.
+            model: Идентификатор модели Gemini.
+
+        Returns:
+            Обогащенный поисковый запрос.
+        """
+        from config.llm_prompts import QUERY_EXPANSION_SYSTEM_PROMPT
+        model_id: str = model or GEMINI_MODEL_3_FLASH
+
+        logger.info(
+            "[GEMINI] Query Expansion: исходный запрос='%s', модель=%s",
+            query, model_id
+        )
+
+        try:
+            expanded_query = self._client.generate(
+                prompt=query,
+                model=model_id,
+                system_instruction=QUERY_EXPANSION_SYSTEM_PROMPT
+            )
+            # Очистим кавычки, если модель случайно их вернула
+            expanded_query = expanded_query.strip().strip('"').strip("'").strip()
+            logger.info("[GEMINI] Expanded query: '%s'", expanded_query)
+            return expanded_query
+        except Exception as exc:
+            logger.error("[GEMINI] Ошибка при обогащении запроса: %s", exc)
+            # В случае ошибки возвращаем исходный запрос, чтобы не ломать пайплайн
+            return query
 
 
 def _parse_json_response(raw_text: str) -> Dict[str, Any]:

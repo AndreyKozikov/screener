@@ -8,9 +8,13 @@ import {
   Stack,
   Avatar,
   CircularProgress,
-  Divider,
   Drawer,
   Tooltip,
+  Popover,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
 } from '@mui/material';
 import {
   Send as SendIcon,
@@ -18,6 +22,7 @@ import {
   SmartToy as BotIcon,
   Person as UserIcon,
   ContentCopy as CopyIcon,
+  Settings as SettingsIcon,
 } from '@mui/icons-material';
 import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
@@ -52,6 +57,38 @@ export const BondChat: React.FC<BondChatProps> = ({ isOpen, onClose, secid, shor
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const [settingsAnchorEl, setSettingsAnchorEl] = useState<HTMLButtonElement | null>(null);
+  const [selectedModel, setSelectedModel] = useState<string>(() => {
+    return localStorage.getItem('bond_chat_model') || 'gemini-3-flash-preview';
+  });
+
+  const handleSettingsClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+    setSettingsAnchorEl(event.currentTarget);
+  };
+
+  const handleSettingsClose = () => {
+    setSettingsAnchorEl(null);
+  };
+
+  const handleModelChange = (event: any) => {
+    const model = event.target.value as string;
+    setSelectedModel(model);
+    localStorage.setItem('bond_chat_model', model);
+  };
+
+  const isSettingsOpen = Boolean(settingsAnchorEl);
+  const settingsId = isSettingsOpen ? 'bond-chat-settings-popover' : undefined;
+
+  const AVAILABLE_MODELS = [
+    { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite' },
+    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
+    { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' },
+    { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash' },
+    { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash Preview' },
+    { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro Preview' },
+    { id: 'openrouter/deepseek-v4-pro', name: 'DeepSeek v4 Pro (OpenRouter)' },
+  ];
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -75,7 +112,7 @@ export const BondChat: React.FC<BondChatProps> = ({ isOpen, onClose, secid, shor
     setIsLoading(true);
 
     try {
-      const response = await askBondQuestion(secid, userMessage.text);
+      const response = await askBondQuestion(secid, userMessage.text, selectedModel);
       
       const botMessage: Message = {
         id: (Date.now() + 1).toString(),
@@ -144,6 +181,11 @@ export const BondChat: React.FC<BondChatProps> = ({ isOpen, onClose, secid, shor
           </Box>
         </Box>
         <Box sx={{ display: 'flex', gap: 0.5 }}>
+          <Tooltip title="Настройки чата">
+            <IconButton onClick={handleSettingsClick} size="small" sx={{ color: 'white' }}>
+              <SettingsIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
           <Tooltip title="Скопировать весь чат (Markdown)">
             <IconButton onClick={handleCopyChat} size="small" sx={{ color: 'white' }}>
               <CopyIcon fontSize="small" />
@@ -273,6 +315,43 @@ export const BondChat: React.FC<BondChatProps> = ({ isOpen, onClose, secid, shor
           </IconButton>
         </Stack>
       </Box>
+      <Popover
+        id={settingsId}
+        open={isSettingsOpen}
+        anchorEl={settingsAnchorEl}
+        onClose={handleSettingsClose}
+        anchorOrigin={{
+          vertical: 'bottom',
+          horizontal: 'right',
+        }}
+        transformOrigin={{
+          vertical: 'top',
+          horizontal: 'right',
+        }}
+        PaperProps={{
+          sx: { p: 2, width: 280 }
+        }}
+      >
+        <Typography variant="subtitle2" sx={{ mb: 1.5, fontWeight: 600 }}>
+          Настройки чата
+        </Typography>
+        <FormControl fullWidth size="small">
+          <InputLabel id="model-select-label">Модель ИИ</InputLabel>
+          <Select
+            labelId="model-select-label"
+            id="model-select"
+            value={selectedModel}
+            label="Модель ИИ"
+            onChange={handleModelChange}
+          >
+            {AVAILABLE_MODELS.map((model) => (
+              <MenuItem key={model.id} value={model.id}>
+                {model.name}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+      </Popover>
     </Drawer>
   );
 };

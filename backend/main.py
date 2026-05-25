@@ -6,8 +6,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.routers import (
-    bonds, metadata, zerocupon, forecast, llm, qwen, grok, emitent, rating, 
-    feedback, currency, ruonia, keyrate, dashboard, trading_history, 
+    bonds, metadata, zerocupon, forecast, llm, emitent, rating,
+    feedback, currency, ruonia, keyrate, dashboard, trading_history,
     edisclosure, pipeline, llm_prompt_pipeline, blog,
     vector_retrieval
 )
@@ -97,8 +97,6 @@ app.include_router(metadata.router)
 app.include_router(zerocupon.router)
 app.include_router(forecast.router)
 app.include_router(llm.router)
-app.include_router(qwen.router)
-app.include_router(grok.router)
 app.include_router(emitent.router)
 app.include_router(rating.router)
 app.include_router(feedback.router)
