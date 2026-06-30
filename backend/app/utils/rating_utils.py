@@ -25,36 +25,29 @@ RATINGS: List[str] = [
 Используется для определения позиции рейтинга в общей шкале.
 """
 
+RU_INDICATORS_PATTERN = re.compile(
+    r"\s*\(RU\)\s*$|\.ru\s*$|^ru\s*|\|ru\|",
+    flags=re.IGNORECASE,
+)
+
 
 def standardize_rating(rating: Optional[str]) -> Optional[str]:
-    """Стандартизирует обозначение рейтинга, удаляя русские индикаторы рынка.
-
-    Удаляет из строки рейтинга все русские индикаторы рынка, оставляя только
-    основное значение рейтинга (например, AAA, AA+, BBB-) с модификаторами (+ и -).
-
-    Args:
-        rating: Строка с рейтингом, которая может содержать русские индикаторы рынка.
-            Может быть None или пустой строкой.
-
-    Returns:
-        Стандартизированная строка рейтинга или None, если входное значение
-        None или пустое.
-    """
-    if not rating or not isinstance(rating, str):
+    """Стандартизирует обозначение рейтинга, удаляя русские индикаторы рынка."""
+    if not isinstance(rating, str):
         return None
 
     normalized = rating.strip()
     if not normalized:
         return None
 
-    normalized = re.sub(r'\s*\(RU\)\s*$', '', normalized, flags=re.IGNORECASE)
-    normalized = re.sub(r'\.ru\s*$', '', normalized, flags=re.IGNORECASE)
-    normalized = re.sub(r'^ru\s*', '', normalized, flags=re.IGNORECASE)
-    normalized = re.sub(r'\|ru\|', '', normalized, flags=re.IGNORECASE)
-    normalized = re.sub(r'\|RU\|', '', normalized, flags=re.IGNORECASE)
+    prev = None
+    while normalized != prev:
+        prev = normalized
+        normalized = RU_INDICATORS_PATTERN.sub("", normalized)
+
     normalized = normalized.strip()
 
-    return normalized if normalized else None
+    return normalized or None
 
 
 def get_rating_index(rating: Optional[str]) -> Optional[int]:

@@ -2,10 +2,6 @@
 
 from typing import Optional
 
-
-
-
-
 class LlmProviderUnavailableError(Exception):
     """Raised when no remote LLM provider passes availability probe in auto mode."""
 
@@ -22,3 +18,19 @@ class PromptTooLongError(Exception):
         self.message: str = message
         self.length: int = length
         self.limit: int = limit
+
+
+class GeminiQuotaExhaustedError(Exception):
+    """Raised when Gemini API quota is exhausted (429)."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message: str = message
+
+
+class GeminiUnavailableError(Exception):
+    """Raised when Gemini API is temporarily unavailable (503)."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message: str = message

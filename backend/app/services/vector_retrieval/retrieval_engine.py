@@ -19,7 +19,7 @@ class RetrievalEngine:
         chunks: List[EmbeddedChunk],
         query_data: List[Tuple[List[float], Dict[str, float]]],
         top_k: int = 30,
-        alpha: float = 0.5
+        alpha: float = 0.8
     ) -> List[ScoredChunk]:
         """
         Выполняет многозапросный гибридный поиск (Dense + Sparse).

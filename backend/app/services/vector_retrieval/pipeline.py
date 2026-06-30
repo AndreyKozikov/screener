@@ -3,38 +3,17 @@ import re
 from typing import List, Dict, Any, Optional
 from .models import Chunk, EmbeddedChunk, ScoredChunk
 from .chunking_service import ChunkingService
-from .embedding_service import EmbeddingService
+from .embedding_models import DEFAULT_EMBEDDING_MODEL, normalize_embedding_model
+from .embedding_provider_factory import get_embedding_provider
 from .retrieval_engine import RetrievalEngine
 from .ranking_engine import RankingEngine
 from .context_builder import ContextBuilder
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_QUERIES = [
-    # Legacy default queries (kept for reference):
-    # "Формула расчета купона, порядок определения ставки купона",
-    # "Базовый индикатор, ключевая ставка, RUONIA, спред, премия к ставке",
-    # "Ограничения ставки купона, минимальная и максимальная ставка (floor, cap)",
-    # "Правила фиксации ставки, периоды наблюдения, даты определения индикатора",
-    # "Условия изменения параметров выпуска, события, влияющие на расчет купона",
-    "Итоги размещения выпуска: ставка купона, спред, премия к базовой ставке, книга заявок",
-    "Сообщение о начисленных доходах по эмиссионным ценным бумагам: размер и порядок определения купона",
-    "Порядок определения процентной ставки по i-му купону: формула и переменные расчета",
-    "Базовый индикатор купона: ключевая ставка, RUONIA, RUSFAR, CPI, КБД ОФЗ",
-    "Дата фиксации индикатора: T-5 или T-7, рабочие или календарные дни, lookback",
-    "Правило при отсутствии значения индикатора: предыдущее, следующее, последнее опубликованное",
-    "Конвенция day count и база года: ACT/365, ACT/366, 30/360, ACTUAL",
-    "Тип начисления купона: DAILY_ACCRUAL или FIXED_PERIOD, порядок расчета НКД",
-    "Ограничения купона: минимальная ставка floor, максимальная ставка cap, пороги и условия",
-    "Период наблюдения и усреднение: POINT, AVERAGE, INTERVAL, reference period",
-    "Условия изменения параметров выпуска: оферта, пересмотр эмитентом, новые правила после даты",
-    "Формулы с несколькими индикаторами: основной индикатор и дополнительные индексы",
-]
-
 class RetrievalPipeline:
     def __init__(self):
         self.chunker = ChunkingService()
-        self.embedder = EmbeddingService()
         self.retriever = RetrievalEngine()
         self.ranker = RankingEngine()
         self.builder = ContextBuilder()
@@ -56,16 +35,24 @@ class RetrievalPipeline:
         self, 
         markdown_docs: List[Dict[str, str]], 
         events: List[Dict[str, Any]], 
-        queries: Optional[List[str]] = None
+        queries: Optional[List[str]] = None,
+        embedding_model: Optional[str] = DEFAULT_EMBEDDING_MODEL,
     ) -> str:
         """
         Основной пайплайн векторного поиска и формирования контекста.
         """
-        if queries is None:
-            queries = DEFAULT_QUERIES
-            
-        logger.info("Starting RetrievalPipeline. Processing %d docs and %d events", 
-                    len(markdown_docs), len(events))
+
+        normalized_embedding_model = normalize_embedding_model(embedding_model)
+        embedder = get_embedding_provider(normalized_embedding_model)
+        retrieval_alpha = 0.8 if getattr(embedder, "supports_sparse", True) else 1.0
+
+        logger.info(
+            "Starting RetrievalPipeline. Processing %d docs and %d events. embedding_model=%s alpha=%.1f",
+            len(markdown_docs),
+            len(events),
+            normalized_embedding_model,
+            retrieval_alpha,
+        )
         
         # 1. Chunking
         all_chunks: List[Chunk] = []
@@ -75,47 +62,82 @@ class RetrievalPipeline:
                 source_id=doc["filename"]
             )
             # Фильтруем чанки с календарями/таблицами периодов
-            filtered_doc_chunks = [c for c in doc_chunks if not self._is_calendar_table(c.text)]
+            #filtered_doc_chunks = [c for c in doc_chunks if not self._is_calendar_table(c.text)]
+            filtered_doc_chunks = doc_chunks
             all_chunks.extend(filtered_doc_chunks)
             
         event_chunks = self.chunker.chunk_events(events)
-        filtered_event_chunks = [c for c in event_chunks if not self._is_calendar_table(c.text)]
+        filtered_event_chunks = event_chunks
+        #filtered_event_chunks = [c for c in event_chunks if not self._is_calendar_table(c.text)]
         all_chunks.extend(filtered_event_chunks)
         
         logger.info("Created %d chunks total", len(all_chunks))
         
         # 2. Embedding
         # Pre-embed queries (Hybrid: Dense + Sparse)
-        query_data = [self.embedder.embed_query(q) for q in queries]
+        query_data = [embedder.embed_query(q) for q in queries]
         
         # Embed chunks (sentence-level, Hybrid)
         embedded_chunks: List[EmbeddedChunk] = []
         total_chunks = len(all_chunks)
         for i, chunk in enumerate(all_chunks, start=1):
-            print(f"  [VECTOR] Embedding chunk {i}/{total_chunks}...", flush=True)
-            embedded = self.embedder.embed_chunk(chunk)
+            print(
+                f"  [VECTOR] Embedding chunk {i}/{total_chunks} "
+                f"({normalized_embedding_model})...",
+                flush=True,
+            )
+            embedded = embedder.embed_chunk(chunk)
             embedded_chunks.append(embedded)
-            
+
         logger.info("Embeddings generated for all chunks")
-        
-        # 3. Retrieval
-        retrieved_chunks: List[ScoredChunk] = self.retriever.retrieve(
-            embedded_chunks,
-            query_data,
-            top_k=30,
-            alpha=0.5 # Баланс между семантикой и лексикой
+
+        # 3. Retrieval (раздельный поиск для документов и событий)
+        # Разделяем эмбеддинги на документы и события, чтобы они не конкурировали друг с другом
+        markdown_embedded = [ec for ec in embedded_chunks if ec.chunk.source_type == "markdown"]
+        event_embedded = [ec for ec in embedded_chunks if ec.chunk.source_type == "event"]
+
+        retrieved_docs = []
+        if markdown_embedded:
+            retrieved_docs = self.retriever.retrieve(
+                markdown_embedded,
+                query_data,
+                top_k=30,
+                alpha=retrieval_alpha # Баланс между семантикой и лексикой
+            )
+
+        retrieved_events = []
+        if event_embedded:
+            # Забираем все найденные события без предварительного отсечения по score документов
+            retrieved_events = self.retriever.retrieve(
+                event_embedded,
+                query_data,
+                top_k=30,
+                #top_k=len(event_embedded),
+                alpha=retrieval_alpha
+            )
+
+        retrieved_chunks = retrieved_docs + retrieved_events
+
+        logger.info(
+            "Retrieved %d candidates (%d docs, %d events)",
+            len(retrieved_chunks), len(retrieved_docs), len(retrieved_events)
         )
-        
-        logger.info("Retrieved top %d candidates", len(retrieved_chunks))
-        
+
         # 4. Ranking
         ranked_chunks = self.ranker.rerank(retrieved_chunks)
-        
-        # 5. Final Selection (top 15-20)
-        # Возвращено ограничение на количество чанков (до 20), так как MMR теперь эффективно дедуплицирует их
-        final_chunks = [sc.chunk for sc in ranked_chunks[:20]]
-        
-        logger.info("Final selection: %d chunks", len(final_chunks))
-        
+
+        # 5. Final Selection (top 15-20 для документов, все найденные события без отсечения)
+        # Для документов оставляем ограничение (до 20), так как MMR эффективно дедуплицирует их.
+        # Для событий исключаем отсечение и передаем все найденные векторным поиском события.
+        final_markdown_chunks = [sc.chunk for sc in ranked_chunks if sc.chunk.source_type == "markdown"][:20]
+        final_event_chunks = [sc.chunk for sc in ranked_chunks if sc.chunk.source_type == "event"]
+
+        final_chunks = final_markdown_chunks + final_event_chunks
+
+        logger.info(
+            "Final selection: %d chunks (%d docs, %d events)",
+            len(final_chunks), len(final_markdown_chunks), len(final_event_chunks)
+        )
+
         # 6. Build Context
         return self.builder.build(final_chunks)

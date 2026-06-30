@@ -15,6 +15,7 @@ from sqlmodel import Session, create_engine, select
 
 from app.models import Bond, BondFilters, BondMarketData, BondMarketDataYield, BondSecurity
 from app.repository.db.constants import RATINGS_ORDER
+from app.utils.bond_lifecycle import is_bond_not_matured
 from app.utils.logger import get_data_update_logger
 from config.paths import DB_PATH
 
@@ -59,12 +60,65 @@ class BondsRepository:
             return val.strftime("%Y-%m-%d")
         return str(val) if val else None
 
+    @staticmethod
+    def _not_pact_condition() -> Any:
+        """Исключает режим PACT из рабочих выборок."""
+        return or_(
+            Bond.boardid.is_(None),
+            func.upper(func.trim(Bond.boardid)) != "PACT",
+        )
+
+    @staticmethod
+    def _not_spob_condition() -> Any:
+        """Исключает режим SPOB из рабочих выборок."""
+        return or_(
+            Bond.boardid.is_(None),
+            func.upper(func.trim(Bond.boardid)) != "SPOB",
+        )
+
+    @staticmethod
+    def _not_matured_condition(reference_date: Optional[date] = None) -> Any:
+        """Исключает облигации с датой погашения сегодня или раньше."""
+        cutoff = (reference_date or date.today()).isoformat()
+        maturity = func.trim(Bond.maturity_date)
+        return or_(
+            Bond.maturity_date.is_(None),
+            maturity == "",
+            maturity == "0000-00-00",
+            maturity > cutoff,
+        )
+
+    @staticmethod
+    def _not_matured_sql(alias: str = "b") -> str:
+        """SQL-фрагмент для text-запросов с параметром active_cutoff_date."""
+        return (
+            f"({alias}.maturity_date IS NULL "
+            f"OR TRIM({alias}.maturity_date) = '' "
+            f"OR TRIM({alias}.maturity_date) = '0000-00-00' "
+            f"OR TRIM({alias}.maturity_date) > :active_cutoff_date)"
+        )
+
+    @staticmethod
+    def _active_cutoff_params() -> Dict[str, str]:
+        """Параметры для text-запросов, исключающих погашенные бумаги."""
+        return {"active_cutoff_date": date.today().isoformat()}
+
+    def _base_bond_conditions(self, *, exclude_spob: bool = False) -> List[Any]:
+        """Базовые условия для рабочих выборок облигаций."""
+        conditions = [
+            self._not_pact_condition(),
+            self._not_matured_condition(),
+        ]
+        if exclude_spob:
+            conditions.append(self._not_spob_condition())
+        return conditions
+
     def save_bonds(self, bonds: List[Bond]) -> bool:
         """Upsert облигаций: INSERT ... ON CONFLICT(secid, boardid) DO UPDATE.
 
         Не выполняет DELETE. При конфликте по (secid, boardid) обновляет
         рыночные данные, не затрагивая id. Сохраняет стабильность id.
-        Исключает облигации с boardid=PACT из сохранения.
+        Исключает облигации с boardid=PACT и уже погашенные бумаги.
 
         Args:
             bonds: Список объектов Bond для вставки/обновления.
@@ -76,10 +130,14 @@ class BondsRepository:
             self.logger.warning("Нет данных для вставки")
             return False
         
-        # Фильтруем облигации с boardid=PACT перед сохранением
+        # Фильтруем технические режимы и погашенные бумаги перед сохранением.
         filtered_bonds = [
             bond for bond in bonds
             if bond.boardid is None or str(bond.boardid).strip().upper() != "PACT"
+        ]
+        filtered_bonds = [
+            bond for bond in filtered_bonds
+            if is_bond_not_matured(bond.maturity_date)
         ]
         
         if not filtered_bonds:
@@ -89,7 +147,7 @@ class BondsRepository:
         excluded_count = len(bonds) - len(filtered_bonds)
         if excluded_count > 0:
             self.logger.info(
-                "Исключено %s облигаций с boardid=PACT из сохранения (всего: %s, отфильтровано: %s)",
+                "Исключено %s облигаций с boardid=PACT или погашением из сохранения (всего: %s, отфильтровано: %s)",
                 excluded_count,
                 len(bonds),
                 len(filtered_bonds)
@@ -219,14 +277,7 @@ class BondsRepository:
         Returns:
             Выражение SQLAlchemy (and_ из условий) или True (1=1).
         """
-        conditions: List[Any] = []
-        # Всегда исключаем облигации с boardid=PACT
-        conditions.append(
-            or_(
-                Bond.boardid.is_(None),
-                func.upper(func.trim(Bond.boardid)) != "PACT",
-            )
-        )
+        conditions: List[Any] = self._base_bond_conditions(exclude_spob=exclude_spob)
         if coupon_percent_min is not None:
             conditions.append(Bond.coupon_percent >= coupon_percent_min)
         if coupon_percent_max is not None:
@@ -256,13 +307,6 @@ class BondsRepository:
             conditions.append(Bond.rating.isnot(None))
             conditions.append(Bond.rating != "")
             conditions.append(func.upper(func.trim(Bond.rating)).in_([r.upper() for r in ratings_in_range]))
-        if exclude_spob:
-            conditions.append(
-                or_(
-                    Bond.boardid.is_(None),
-                    func.upper(func.trim(Bond.boardid)) != "SPOB",
-                )
-            )
         return and_(*conditions)
 
     def _rating_range_list(
@@ -447,21 +491,7 @@ class BondsRepository:
         Returns:
             Количество записей в таблице bonds.
         """
-        conditions: List[Any] = []
-        # Всегда исключаем облигации с boardid=PACT
-        conditions.append(
-            or_(
-                Bond.boardid.is_(None),
-                func.upper(func.trim(Bond.boardid)) != "PACT",
-            )
-        )
-        if exclude_spob:
-            conditions.append(
-                or_(
-                    Bond.boardid.is_(None),
-                    func.upper(func.trim(Bond.boardid)) != "SPOB",
-                )
-            )
+        conditions: List[Any] = self._base_bond_conditions(exclude_spob=exclude_spob)
         where = and_(*conditions) if conditions else True
         stmt = select(func.count()).select_from(Bond).where(where)
         try:
@@ -756,14 +786,11 @@ class BondsRepository:
         """
         try:
             with Session(self._engine) as session:
-                # Ищем Bond по secid, исключая boardid=PACT
+                # Ищем активный Bond по secid, исключая boardid=PACT
                 stmt = select(Bond).where(
                     and_(
                         Bond.secid == secid,
-                        or_(
-                            Bond.boardid.is_(None),
-                            func.upper(func.trim(Bond.boardid)) != "PACT",
-                        )
+                        *self._base_bond_conditions(),
                     )
                 )
                 bond = session.exec(stmt).first()
@@ -803,18 +830,20 @@ class BondsRepository:
         Returns:
             Регистрационный номер или None, если не найден.
         """
-        stmt = text("""
+        stmt = text(f"""
             SELECT bs.reg_number
             FROM bonds b
             JOIN bondsecurity bs ON bs.bond_id = b.id
             WHERE b.secid = :secid 
                 AND bs.reg_number IS NOT NULL AND trim(bs.reg_number) != ''
                 AND (b.boardid IS NULL OR UPPER(TRIM(b.boardid)) != 'PACT')
+                AND {self._not_matured_sql("b")}
             LIMIT 1
         """)
         try:
             with Session(self._engine) as session:
-                row = session.execute(stmt, {"secid": secid.strip()}).fetchone()
+                params = {"secid": secid.strip(), **self._active_cutoff_params()}
+                row = session.execute(stmt, params).fetchone()
                 if row is None:
                     return None
                 reg = row[0]
@@ -838,17 +867,19 @@ class BondsRepository:
         Returns:
             ИНН эмитента или None, если эмитент или ИНН отсутствуют.
         """
-        stmt = text("""
+        stmt = text(f"""
             SELECT e.inn
             FROM bonds b
             JOIN emitents e ON b.emitent_id = e.id
             WHERE b.secid = :secid 
                 AND e.inn IS NOT NULL AND trim(e.inn) != ''
                 AND (b.boardid IS NULL OR UPPER(TRIM(b.boardid)) != 'PACT')
+                AND {self._not_matured_sql("b")}
         """)
         try:
             with Session(self._engine) as session:
-                row = session.execute(stmt, {"secid": secid}).fetchone()
+                params = {"secid": secid, **self._active_cutoff_params()}
+                row = session.execute(stmt, params).fetchone()
                 if row is None:
                     return None
                 inn = row[0]
@@ -907,12 +938,7 @@ class BondsRepository:
             Список кортежей (bond_id, secid). Пустой список при ошибке или
             отсутствии записей.
         """
-        stmt = select(Bond.id, Bond.secid).where(
-            or_(
-                Bond.boardid.is_(None),
-                func.upper(func.trim(Bond.boardid)) != "PACT",
-            )
-        )
+        stmt = select(Bond.id, Bond.secid).where(and_(*self._base_bond_conditions()))
         try:
             with Session(self._engine) as session:
                 rows = session.exec(stmt).all()
@@ -923,9 +949,6 @@ class BondsRepository:
 
     def get_bond_id_by_secid(self, secid: str) -> Optional[int]:
         """Возвращает bond_id (id в таблице bonds) по SECID облигации.
-
-        Используется при сохранении купонов после загрузки из API MOEX для
-        одной облигации.
 
         Args:
             secid: Идентификатор облигации (SECID).
@@ -938,10 +961,7 @@ class BondsRepository:
         stmt = select(Bond.id).where(
             and_(
                 Bond.secid == secid.strip(),
-                or_(
-                    Bond.boardid.is_(None),
-                    func.upper(func.trim(Bond.boardid)) != "PACT",
-                )
+                *self._base_bond_conditions(),
             )
         )
         try:
@@ -964,11 +984,10 @@ class BondsRepository:
         if not bond_ids:
             return []
         stmt = select(Bond.secid).where(
-            Bond.id.in_(bond_ids),
-            or_(
-                Bond.boardid.is_(None),
-                func.upper(func.trim(Bond.boardid)) != "PACT",
-            ),
+            and_(
+                Bond.id.in_(bond_ids),
+                *self._base_bond_conditions(),
+            )
         )
         try:
             with Session(self._engine) as session:
@@ -990,12 +1009,7 @@ class BondsRepository:
             Отсортированный список уникальных непустых SECID. Пустой список
             при ошибке или отсутствии записей.
         """
-        stmt = select(Bond.secid).where(
-            or_(
-                Bond.boardid.is_(None),
-                func.upper(func.trim(Bond.boardid)) != "PACT",
-            )
-        )
+        stmt = select(Bond.secid).where(and_(*self._base_bond_conditions()))
         try:
             with Session(self._engine) as session:
                 rows = session.exec(stmt).all()
@@ -1017,16 +1031,17 @@ class BondsRepository:
             Список кортежей (bond_id, secid, moex_emitent_id).
             moex_emitent_id — MOEX ID эмитента (EMITTER_ID) или None.
         """
-        stmt = text("""
+        stmt = text(f"""
             SELECT b.id, b.secid, e.moex_id
             FROM bonds b
             LEFT JOIN emitents e ON e.id = b.emitent_id
             WHERE b.secid IS NOT NULL AND TRIM(b.secid) != ''
                 AND (b.boardid IS NULL OR UPPER(TRIM(b.boardid)) != 'PACT')
+                AND {self._not_matured_sql("b")}
         """)
         try:
             with Session(self._engine) as session:
-                rows = session.execute(stmt).fetchall()
+                rows = session.execute(stmt, self._active_cutoff_params()).fetchall()
             return [
                 (int(r[0]), str(r[1]).strip(), int(r[2]) if r[2] is not None else None)
                 for r in rows
@@ -1055,10 +1070,7 @@ class BondsRepository:
             Bond.bond_kind == 8,
             Bond.bond_type.isnot(None),
             Bond.bond_type.notin_(_EXCLUDED_BOND_TYPES),
-            or_(
-                Bond.boardid.is_(None),
-                func.upper(func.trim(Bond.boardid)) != "PACT",
-            ),
+            *self._base_bond_conditions(),
         ]
         if rating is not None and rating.strip():
             conditions.append(
@@ -1086,10 +1098,7 @@ class BondsRepository:
             and_(
                 BondSecurity.reg_number.isnot(None),
                 func.trim(BondSecurity.reg_number) != "",
-                or_(
-                    Bond.boardid.is_(None),
-                    func.upper(func.trim(Bond.boardid)) != "PACT",
-                ),
+                *self._base_bond_conditions(),
             )
         )
         if rating is not None and rating.strip():
@@ -1112,10 +1121,7 @@ class BondsRepository:
         stmt = select(Bond.secid).where(
             Bond.secid.isnot(None),
             or_(Bond.emitent_id.is_(None), Bond.emitent_id == 0),
-            or_(
-                Bond.boardid.is_(None),
-                func.upper(func.trim(Bond.boardid)) != "PACT",
-            )
+            *self._base_bond_conditions(),
         )
         try:
             with Session(self._engine) as session:
@@ -1141,10 +1147,7 @@ class BondsRepository:
                 Bond.rating == "",
                 func.trim(Bond.rating) == "",
             ),
-            or_(
-                Bond.boardid.is_(None),
-                func.upper(func.trim(Bond.boardid)) != "PACT",
-            )
+            *self._base_bond_conditions(),
         )
         try:
             with Session(self._engine) as session:
@@ -1213,18 +1216,23 @@ class BondsRepository:
         """
         if not regnumber or not str(regnumber).strip():
             return []
-        stmt = text("""
+        stmt = text(f"""
             SELECT DISTINCT b.secid
             FROM bonds b
             JOIN bondsecurity bs ON bs.bond_id = b.id
             WHERE TRIM(bs.reg_number) = :regnumber
                 AND b.secid IS NOT NULL AND TRIM(b.secid) != ''
                 AND (b.boardid IS NULL OR UPPER(TRIM(b.boardid)) != 'PACT')
+                AND {self._not_matured_sql("b")}
         """)
         try:
             with Session(self._engine) as session:
+                params = {
+                    "regnumber": regnumber.strip(),
+                    **self._active_cutoff_params(),
+                }
                 rows = session.execute(
-                    stmt, {"regnumber": regnumber.strip()}
+                    stmt, params
                 ).fetchall()
                 return [str(r[0]).strip() for r in rows if r[0]]
         except Exception as e:

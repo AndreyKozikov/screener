@@ -1,8 +1,11 @@
+import logging
 import re
 import numpy as np
 from datetime import datetime, date
 from typing import List
 from .models import ScoredChunk
+
+logger = logging.getLogger(__name__)
 
 class RankingEngine:
     def __init__(self, length_threshold: int = 1500):
@@ -67,8 +70,41 @@ class RankingEngine:
         # Re-sort after heuristic adjustment
         chunks.sort(key=lambda x: x.score, reverse=True)
         
-        # Применяем MMR для обеспечения разнообразия результатов
-        return self._apply_mmr(chunks)
+        # Разделяем чанки на документы и события
+        markdown_chunks = [sc for sc in chunks if sc.chunk.source_type == "markdown"]
+        event_chunks = [sc for sc in chunks if sc.chunk.source_type == "event"]
+        
+        # Применяем MMR только к документам
+        ranked_markdown = self._apply_mmr(markdown_chunks)
+        
+        # События оставляем без MMR (они уже отсортированы по score)
+        ranked_events = event_chunks
+        
+        # Объединяем результаты слиянием, сохраняющим относительный порядок
+        return self._merge_preserving_order(ranked_markdown, ranked_events)
+
+    def _merge_preserving_order(self, list1: List[ScoredChunk], list2: List[ScoredChunk]) -> List[ScoredChunk]:
+        """
+        Сливает два списка ScoredChunk, сохраняя относительный порядок элементов в каждом из них.
+        Сравнение идет по score.
+        """
+        merged = []
+        i, j = 0, 0
+        while i < len(list1) and j < len(list2):
+            if list1[i].score >= list2[j].score:
+                merged.append(list1[i])
+                i += 1
+            else:
+                merged.append(list2[j])
+                j += 1
+        
+        # Добавляем оставшиеся элементы
+        if i < len(list1):
+            merged.extend(list1[i:])
+        if j < len(list2):
+            merged.extend(list2[j:])
+            
+        return merged
 
     def _apply_mmr(self, chunks: List[ScoredChunk], lambda_param: float = 0.5, top_k: int = 15) -> List[ScoredChunk]:
         """
@@ -81,7 +117,7 @@ class RankingEngine:
         if any(c.embedding is None for c in chunks[:top_k]):
             return chunks
 
-        print(f"  [VECTOR] Applying MMR ranking (diversity filter) for {len(chunks)} chunks...", flush=True)
+        logger.info("[VECTOR] Applying MMR ranking (diversity filter) for %d chunks...", len(chunks))
 
         selected = [chunks[0]]
         remaining = chunks[1:]

@@ -340,11 +340,19 @@ export const BlogAdminPage: React.FC = () => {
                   component="img"
                   src={form.cover_image_url}
                   alt={form.title}
-                  sx={{ width: '100%', maxHeight: 240, objectFit: 'cover', mb: 2 }}
+                  sx={{ width: '100%', height: 'auto', mb: 2 }}
                 />
               )}
               <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
-                {form.content_markdown || 'Начните писать Markdown...'}
+                {(() => {
+                  const content = form.content_markdown;
+                  const cover = form.cover_image_url;
+                  if (!content) return 'Начните писать Markdown...';
+                  if (!cover) return content;
+                  const escapedUrl = cover.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                  const regex = new RegExp(`\\s*!\\[[^\\]]*\\]\\(${escapedUrl}\\)\\s*`, 'g');
+                  return content.replace(regex, '\n\n').trim();
+                })()}
               </ReactMarkdown>
             </Box>
           </Paper>

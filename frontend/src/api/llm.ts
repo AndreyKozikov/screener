@@ -64,20 +64,20 @@ export const analyzeBondsWithLLM = async (
 export const runLlmPromptPipeline = async (
   secid: string,
   useLocalEvents: boolean = true,
-  provider: string = 'gemini-3-flash'
+  provider: string = 'gemini-3-flash',
+  embeddingModel: string = 'local'
 ): Promise<any> => {
   const response = await apiClient.post(
-    '/llm-prompt-pipeline/run',
-    null,
+    '/float-bonds-llm-analize/run',
     {
-      params: {
-        secid,
-        use_local_events: useLocalEvents,
-        provider: provider
-      },
+      secid,
+      use_local_events: useLocalEvents,
+      provider: provider,
+      embedding_model: embeddingModel,
+    },
+    {
       timeout: 300000, // 5 minutes
     }
   );
   return response.data;
 };
-

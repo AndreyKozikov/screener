@@ -1,0 +1,241 @@
+from typing import Any, Dict, Optional
+from app.services.llm.tasks.base import BaseAnalysisTask
+from pydantic import ValidationError
+import re
+import json
+import logging
+
+from app.models.schemasDTO.llm_floatbond_dto import LLMBondAnalysisDTO
+
+logger: logging.Logger = logging.getLogger(__name__)
+
+# Разрешённые корневые ключи ответа LLM (остальные отбрасываются).
+ALLOWED_ROOT_KEYS: frozenset[str] = frozenset({
+    "issuer",
+    "instrument",
+    "float_params",
+    "trading",
+    "calculation_engine",
+})
+
+FLOATER_ANALYSIS_PROMPT_TEMPLATE: str = """\
+Роль: Ты — аналитик данных долгового рынка, специализирующийся на алгоритмической обработке эмиссионной документации (флоатеров).
+
+Задача: Проанализировать текст событий (JSON) и приложенные Markdown-файлы. Извлечь параметры выпуска облигаций и вернуть строго валидный JSON.
+
+Правила извлечения параметров (Float & Logic):
+1. Обработка лимитов и барьеров:
+
+floor_rate: Ищи минимально возможную ставку (фразы: «не менее X%», «не ниже Y%», «минимальный купон»). Запиши как float. Если ограничений нет — null.
+
+cap_rate: Ищи максимально возможную ставку (фразы: «не более X%», «ограничена сверху Y%»). Запиши как float.
+
+2. Множественные индикаторы:
+
+base_indicator_code: Сюда пиши только самый первый/главный индикатор.
+
+extra_indicators: Если в формуле участвуют другие индексы (например, ВВП, RUSFAR или второй ИПЦ), перечисли их коды через запятую. Если индикатор один — null.
+
+3. Сложная логика и условия:
+
+condition_logic: Если расчет купона зависит от условий (например: «если X больше Y, то...», «если ВВП отрицательный, то...»), кратко опиши это условие текстом.
+
+formula_raw: Записывай формулу в текстовом виде (псевдокод), используя названия переменных. Никакого LaTeX. Используй стандартные знаки: +, -, *, /.
+
+4. Метод и период наблюдения:
+
+observation_type: Классифицируй, как берется значение:
+
+POINT — значение на конкретную дату.
+
+AVERAGE — среднее арифметическое за период.
+
+INTERVAL — значение за фиксированный макроэкономический период (квартал, год).
+
+reference_period_desc: Словесное описание периода из текста (например: «за 4 квартала до текущего года», «с июля по июнь»).
+
+5. Математические параметры:
+
+spread: Если есть фиксированная добавка (в процентах или б.п.), пересчитай в float (например, 150 б.п. -> 1.5). Если спред не фиксирован, а заложен в формулу — 0.0. Если в формуле плавающей ставки указана фиксированная добавка (например, +1%), обязательно записывай её в поле spread, даже если формула извлечена целиком в formula_raw, при этом в поле spread указывай ровно то число, которое указано в формуле, но без знака %. Не переводи проценты в числа.
+
+year_base: Строго числом или константой: 360, 365, 366 или ACTUAL.
+
+Дополнительно: Даты — ISO 8601 (YYYY-MM-DD). Округление — rounding_precision (целое число или null). calculation_type: "DAILY" или "FIXED" или null. Если accrual_type == FIXED_PERIOD, то calculation_type должен быть FIXED. key_rate_method: "SPOT" или "MA" or null (только для KEY_RATE). lookback_type: "CALENDAR" или "BUSINESS" или null. is_daily_accrual: true/false.
+
+Правила идентификации базового индикатора (base_indicator_code):
+При анализе текста ориентируйся на следующие формулировки:
+
+KEY_RATE (Ключевая ставка):
+Ключевые слова: "Ключевая ставка Банка России", "Ставка ЦБ РФ", "Ключевая ставка (в процентах годовых)".
+Контекст: Упоминание официального сайта cbr.ru или решение Совета директоров Банка России.
+
+RUONIA (Rouble OverNight Index Average):
+Ключевые слова: "RUONIA", "Руониа", "взвешенная ставка по межбанковским кредитам овернайт".
+Контекст: Упоминание Банка России как администратора ставки.
+
+RUSFAR (Russian Standard Floating Actual Rate):
+Ключевые слова: "RUSFAR", "Русфар", "индикатор денежного рынка", "ставка репо с ЦК".
+Контекст: Упоминание ПАО Московская Биржа (MOEX) как администратора индикатора.
+
+CPI (Consumer Price Index / Инфляция):
+Ключевые слова: "индекс потребительских цен", "ИПЦ", "инфляция", "индекс цен на товары и услуги".
+Контекст: Упоминание Росстата и индексация номинала или купона с лагом.
+
+GCURVE (Кривая ОФЗ):
+Ключевые слова: "КБД", "Кривая бескупонной доходности", "доходность государственных облигаций".
+Контекст: Привязка к доходности ОФЗ на определенном сроке (например, 2 года или 5 лет).
+
+Инструкция по заполнению блока calculation_engine (глоссарий флагов):
+Заполняй блок, используя строго следующие значения:
+
+offset_calendar:
+  CALENDAR — календарные дни, включая выходные (например, "5-й день").
+  BUSINESS — только рабочие дни (например, "5-й рабочий/банковский день").
+
+day_count:
+  ACT/365 — база 365 дней.
+  ACT/366 — учёт високосного года (фактическое кол-во дней в году).
+  30/360  — немецкий/американский стандарт (каждый месяц = 30 дней, год = 360).
+
+fallback:
+  PRECEDING — если на дату T-n нет ставки, брать за T-n-1, T-n-2 и т.д.
+  FOLLOWING — брать следующую доступную ставку.
+
+accrual_type:
+  DAILY_ACCRUAL — НКД растёт ежедневно на основе актуальной на этот день ставки.
+  FIXED_PERIOD  — ставка фиксируется один раз в начале купона на весь период.
+
+interest_compounding: true — если есть капитализация/сложный процент; false — в остальных случаях.
+offset_days: Количество дней отступа (lookback). Целое число или null.
+
+6. Фиксированная ставка на ограниченное число купонов:
+Внимание: если в документах указана фиксированная ставка только на определенное количество купонов (например, с 1-го по 12-й), классифицируй выпуск как FIXED_PERIOD.
+Если после этого периода предусмотрено право эмитента изменить ставку или право владельцев на оферту (пут-опцион), обязательно укажи дату окончания текущего фиксированного периода в поле "rate_determination_rule".
+Если формула для расчета ставки после этого периода (после 2024 года) в тексте отсутствует, в полях "base_indicator_code" и "formula_raw" оставляй значения из текущего (фиксированного) периода, но в поле "condition_logic" добавь текст: «Ставка установлена до [Дата]; далее — пересмотр эмитентом».
+
+JSON Structure:
+{{
+  "issuer": {{
+    "name_short": "Краткое название",
+    "inn": "Строка",
+    "rating_ru": "Текущий кредитный рейтинг, если упомянут"
+  }},
+  "instrument": {{
+    "isin": "Строка или null",
+    "series": "Строка",
+    "nominal": 1000.0,
+    "maturity_date": "YYYY-MM-DD",
+    "days_to_maturity": 1440
+  }},
+  "float_params": {{
+    "base_indicator_code": "KEY_RATE | RUONIA | RUSFAR | CPI | GCURVE | CUSTOM",
+    "spread": 1.2,
+    "floor_rate": null,
+    "cap_rate": null,
+    "extra_indicators": null,
+    "condition_logic": null,
+    "observation_type": "POINT | AVERAGE | INTERVAL | null",
+    "reference_period_desc": null,
+    "coupon_frequency_days": 30,
+    "lookback_period": 5,
+    "averaging_period": 0,
+    "formula_raw": "Формула в виде псевдокода (+, -, *, /), без LaTeX",
+    "rate_determination_rule": "Описание: за сколько дней и как фиксируется ставка",
+    "calculation_type": "DAILY | FIXED | null",
+    "rounding_precision": 2,
+    "key_rate_method": "SPOT | MA | null",
+    "lookback_type": "CALENDAR | BUSINESS | null",
+    "year_base": "360 | 365 | 366 | ACTUAL | null",
+    "is_daily_accrual": false
+  }},
+  "trading": {{
+    "listing_level": 1,
+    "placement_date": "YYYY-MM-DD",
+    "underwriter": "Название организации"
+  }},
+  "calculation_engine": {{
+    "offset_days": 5,
+    "offset_calendar": "CALENDAR | BUSINESS | null",
+    "day_count": "ACT/365 | ACT/366 | 30/360 | null",
+    "fallback": "PRECEDING | FOLLOWING | null",
+    "accrual_type": "DAILY_ACCRUAL | FIXED_PERIOD",
+    "interest_compounding": false
+  }}
+}}
+
+Инструкция по приоритетам:
+- Сначала ищи значение спреда в events (событиях), так как там публикуются финальные итоги сбора заявок.
+- Формулу и правила фиксации (lookback) бери из "Решения о выпуске" или "ДСУР (Документ, содержащий условия размещения ценных бумаг)".
+- Если данных о спреде нет, напиши null, не выдумывай число.
+- Если в тексте указано несколько формул для разных периодов, извлекай параметры для самого актуального (будущего) периода
+
+Входные данные для анализа:
+{vector_context}
+"""
+
+
+class FloaterAnalysisTask(BaseAnalysisTask):
+    """Стратегия для анализа параметров облигаций с плавающим купоном."""
+
+    def build_prompt(self, data: Dict[str, Any]) -> str:
+        """Использует существующую функцию для сборки промпта."""
+        vector_context: str = str(data.get("vector_context") or "").strip()
+
+        logger.info(
+            "[LLM] Подготовка запроса: vector_context=%d chars → %s",
+            len(vector_context),
+        )
+        return FLOATER_ANALYSIS_PROMPT_TEMPLATE.format(vector_context=vector_context)
+
+    def parse_response_and_validate(self, raw_text: str, **kwargs) -> Optional[LLMBondAnalysisDTO]:
+        """Парсит JSON и прогоняет его через Pydantic-валидатор."""
+
+        inn = kwargs.get("inn", None)
+        
+        cleaned: str = re.sub(
+            r"^\s*```(?:json)?\s*\n?", "", raw_text, flags=re.MULTILINE,
+        )
+        cleaned = re.sub(
+            r"\n?\s*```\s*$", "", cleaned, flags=re.MULTILINE,
+        )
+        cleaned = cleaned.strip()
+
+        try:
+            parsed = json.loads(cleaned)
+        except json.JSONDecodeError as exc:
+            logger.error("Невалидный JSON в ответе LLM: %s", exc)
+            raise ValueError(
+                f"Ответ LLM не содержит валидный JSON: {exc}"
+            ) from exc
+
+        data: Dict[str, Any] = {
+            k: v for k, v in parsed.items()
+            if k in ALLOWED_ROOT_KEYS
+        }  # Оставляет в словаре только разрешённые корневые ключи.
+        try:
+            return LLMBondAnalysisDTO(**data)
+        except ValidationError as exc:
+            logger.warning(
+                "[LLM VALIDATION] Первая попытка не прошла (%d ошибок), применяю подстановки: %s",
+                exc.error_count(),
+                exc,
+            )
+            for err in exc.errors():
+                loc: str = ".".join(str(x) for x in err.get("loc", ()))
+                logger.debug("  — поле %r: %s", loc, err.get("msg", ""))
+            if inn is not None:
+                issuer = data.get("issuer")
+                if isinstance(issuer, dict) and issuer.get("inn") is None:
+                    issuer["inn"] = inn
+            try:
+                return LLMBondAnalysisDTO(**data)
+            except ValidationError as retry_exc:
+                logger.warning(
+                    "[LLM VALIDATION] Повторная валидация не прошла (%d ошибок): %s",
+                    retry_exc.error_count(),
+                    retry_exc,
+                )
+                for err in retry_exc.errors():
+                    loc = ".".join(str(x) for x in err.get("loc", ()))
+                    logger.debug("  — поле %r: %s", loc, err.get("msg", ""))
+                return None

@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional, Protocol
 
 import requests
 
-from app.models.schemasDTO.gemini_dto import GeminiBondAnalysisDTO
+from app.models.schemasDTO.llm_floatbond_dto import GeminiBondAnalysisDTO
 from app.repository.files.markdown_repository import MarkdownFileRepository
 from app.utils.llm_response_validation import validate_analysis_response
 from app.core.exceptions import PromptTooLongError

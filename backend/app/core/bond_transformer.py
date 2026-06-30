@@ -19,6 +19,7 @@ from config.paths import (
     BONDS_TYPE_MAPPING_JSON,
     BONDS_TYPE43_MAPPING_JSON,
 )
+from app.utils.bond_lifecycle import is_bond_not_matured
 from app.utils.rating_utils import get_rating_index, standardize_rating
 from app.services.emitent_service import get_emitent_service
 
@@ -79,6 +80,7 @@ class BondTransformer:
         yields_section = data.get("marketdata_yields", {})
         yields_columns = yields_section.get("columns", [])
         yields_data = yields_section.get("data", [])
+        skipped_matured_count = 0
 
         marketdata_map: Dict[str, Dict[str, Any]] = {}
         for row in md_data:
@@ -104,6 +106,9 @@ class BondTransformer:
             secid = bond_dict.get("SECID")
             if not secid:
                 continue
+            if not is_bond_not_matured(bond_dict.get("MATDATE")):
+                skipped_matured_count += 1
+                continue
 
             if "BONDTYPE" in bond_dict:
                 bondtype43_value = bond_dict.get("BONDTYPE")
@@ -121,7 +126,11 @@ class BondTransformer:
 
             bonds_data.append(bond_dict)
 
-        self.logger.debug("Преобразовано из payload: %s облигаций", len(bonds_data))
+        self.logger.debug(
+            "Преобразовано из payload: %s облигаций, пропущено погашенных: %s",
+            len(bonds_data),
+            skipped_matured_count,
+        )
         return bonds_data
 
     def load_mappings(self) -> Tuple[Dict[str, int], Dict[str, int]]:
@@ -456,6 +465,8 @@ class BondTransformer:
             return None
 
         maturity_date = _fmt_date(raw_data.get("MATDATE"))
+        if not is_bond_not_matured(maturity_date):
+            return None
         offer_date = _fmt_date(raw_data.get("OFFERDATE"))
         next_coupon = _fmt_date(raw_data.get("NEXTCOUPON"))
         call_option_date = _fmt_date(raw_data.get("CALLOPTIONDATE"))

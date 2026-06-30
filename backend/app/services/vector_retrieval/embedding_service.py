@@ -4,6 +4,8 @@ from typing import List, Optional, Dict, Tuple, Any
 from .models import Chunk, EmbeddedChunk
 
 class EmbeddingService:
+    supports_sparse = True
+
     def __init__(self, base_url: str = "http://localhost:8001"):
         self.base_url = base_url
         self.timeout = 300.0 # Increased timeout for heavy loads

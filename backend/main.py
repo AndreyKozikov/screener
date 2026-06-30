@@ -1,16 +1,15 @@
 import logging
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.routers import (
-    bonds, metadata, zerocupon, forecast, llm, emitent, rating,
+    bonds, metadata, zerocupon, forecast, emitent, rating,
     feedback, currency, ruonia, keyrate, dashboard, trading_history,
-    edisclosure, pipeline, llm_prompt_pipeline, blog,
-    vector_retrieval
+    edisclosure, pipeline, llm_router, blog
 )
+
 from app.services.data_loader import init_data_loader
 from app.services.emitent_service import init_emitent_service
 from app.services.currency_service import init_currency_service
@@ -21,8 +20,13 @@ from app.services.kbd_service import init_kbd_service
 from config.settings import settings
 from app.core.database_init import run_blog_migrations, run_migrations
 from app.repository.db.emitents_repository import EmitentsRepository
-from config.paths import DATA_DIR, DB_PATH
-
+from config.paths import DATA_DIR, DB_PATH, HISTORY_DB_PATH, EMITENT_EVENTS_JSON_DIR
+from app.core.exception_handlers import register_pipeline_exception_handlers
+from app.repository.db import init_bonds_repository, init_history_repository, init_bond_float_repository
+from app.repository.files import init_markdownfile_repository, init_file_storage
+from app.processors import init_events_processor, init_bond_llm_processor
+from app.services.vector_retrieval import init_retrieval_pipeline
+from app.services import init_llm_provider_resolution_service, init_llm_analysis_service
 
 # Настройка базового логирования
 logging.basicConfig(
@@ -66,6 +70,18 @@ async def lifespan(app: FastAPI):
     print("[STARTUP] init_kbd_service start", flush=True)
     init_kbd_service()
     print("[STARTUP] init_kbd_service done", flush=True)
+    init_bonds_repository(DB_PATH)
+    init_bond_float_repository(DB_PATH)
+    print("[STARTUP] init_bonds_repository done", flush=True)
+    init_history_repository(HISTORY_DB_PATH)
+    print("[STARTUP] init_history_repository done", flush=True)
+    init_markdownfile_repository(DATA_DIR)
+    init_events_processor(DB_PATH, EMITENT_EVENTS_JSON_DIR)
+    init_bond_llm_processor(DATA_DIR)
+    init_file_storage()
+    init_retrieval_pipeline()
+    init_llm_provider_resolution_service()
+    init_llm_analysis_service()
     print("[STARTUP] Application startup complete", flush=True)
     yield
     # Shutdown: cleanup if needed
@@ -82,6 +98,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+register_pipeline_exception_handlers(app)
+
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
@@ -96,7 +114,7 @@ app.include_router(bonds.router)
 app.include_router(metadata.router)
 app.include_router(zerocupon.router)
 app.include_router(forecast.router)
-app.include_router(llm.router)
+app.include_router(llm_router.router)
 app.include_router(emitent.router)
 app.include_router(rating.router)
 app.include_router(feedback.router)
@@ -107,8 +125,8 @@ app.include_router(dashboard.router)
 app.include_router(trading_history.router)
 app.include_router(edisclosure.router)
 app.include_router(pipeline.router)
-app.include_router(llm_prompt_pipeline.router)
-app.include_router(vector_retrieval.router)
+#app.include_router(llm_float_analize_param.router)
+#app.include_router(vector_retrieval.router)
 app.include_router(blog.public_router)
 app.include_router(blog.admin_router)
 

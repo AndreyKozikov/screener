@@ -13,7 +13,7 @@ from pydantic import BaseModel, field_validator
 DEFAULT_ISSUER_NAME_SHORT: str = "Не указано"
 
 
-class GeminiIssuerDTO(BaseModel):
+class LLMIssuerDTO(BaseModel):
     """Данные эмитента, извлечённые из документации.
 
     Attributes:
@@ -41,7 +41,7 @@ class GeminiIssuerDTO(BaseModel):
         return str(value)
 
 
-class GeminiInstrumentDTO(BaseModel):
+class LLMInstrumentDTO(BaseModel):
     """Параметры выпуска облигации.
 
     Attributes:
@@ -59,7 +59,7 @@ class GeminiInstrumentDTO(BaseModel):
     days_to_maturity: Optional[int] = None
 
 
-class GeminiFloatParamsDTO(BaseModel):
+class LLMFloatParamsDTO(BaseModel):
     """Параметры плавающей ставки (флоатера).
 
     Attributes:
@@ -123,7 +123,7 @@ class GeminiFloatParamsDTO(BaseModel):
     reference_period_desc: Optional[str] = None
 
 
-class GeminiCalculationEngineDTO(BaseModel):
+class LLMCalculationEngineDTO(BaseModel):
     """Технические параметры алгоритма расчёта купона.
 
     Нормализованные флаги для автоматического воспроизведения расчёта
@@ -149,7 +149,7 @@ class GeminiCalculationEngineDTO(BaseModel):
     interest_compounding: bool = False
 
 
-class GeminiTradingDTO(BaseModel):
+class LLMTradingDTO(BaseModel):
     """Торговые параметры выпуска.
 
     Attributes:
@@ -163,8 +163,8 @@ class GeminiTradingDTO(BaseModel):
     underwriter: Optional[str] = None
 
 
-class GeminiBondAnalysisDTO(BaseModel):
-    """Корневая DTO — полный результат анализа облигации через Gemini.
+class LLMBondAnalysisDTO(BaseModel):
+    """Корневая DTO — полный результат анализа облигации через LLM.
 
     Attributes:
         issuer: Данные эмитента.
@@ -174,8 +174,8 @@ class GeminiBondAnalysisDTO(BaseModel):
         calculation_engine: Технические параметры алгоритма расчёта купона.
     """
 
-    issuer: GeminiIssuerDTO
-    instrument: GeminiInstrumentDTO
-    float_params: GeminiFloatParamsDTO
-    trading: GeminiTradingDTO
-    calculation_engine: Optional[GeminiCalculationEngineDTO] = None
+    issuer: LLMIssuerDTO
+    instrument: LLMInstrumentDTO
+    float_params: LLMFloatParamsDTO
+    trading: LLMTradingDTO
+    calculation_engine: Optional[LLMCalculationEngineDTO] = None

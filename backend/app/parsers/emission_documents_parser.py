@@ -9,7 +9,41 @@ https://www.e-disclosure.ru/portal/files.aspx?id={id}&type=7.
 
 import re
 from html.parser import HTMLParser
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union, Tuple
+
+_DECISION_HEADER_PHRASE: str = r"РЕШЕНИЕ\s+О\s+ВЫПУСКЕ\s+ЦЕННЫХ\s+БУМАГ"
+
+# Начало раздела 1 (серия ищется только в этом разделе).
+# Допускаются варианты: «1. Вид, категория (тип), идентификационные признаки ценных бумаг»
+# и «1. Вид, категория (тип), ценных бумаг»; возможны обрамление звёздочками (markdown) и пробелы.
+_SECTION_1_START_PHRASE: str = (
+    r"\*?\s*1\.\s*Вид[,\s]*категория\s*\(тип\)[,\s]*"
+    r"(?:идентификационные\s+признаки\s+)?ценных\s+бумаг\s*\*?"
+)
+
+# Граница раздела 2: начало любой строки с "2." (название пункта 2 может быть любым)
+_SECTION_2_BOUNDARY_PHRASE: str = r"\n\s*2\.\s"
+
+# Паттерны извлечения серии (проверяются по порядку в блоке раздела 1):
+# 1) строка вида «Серия облигаций выпуска: СУБ-Т2-2.»
+# 2) строка вида «Серия: *БО-19*» или «Серия: БО-19»
+# 3) слово «серии» с последующим значением (например «серии БО-19»)
+_SERIES_PATTERNS: Tuple[str, ...] = (
+    r"Серия\s+облигаций\s+выпуска\s*:\s*([A-Za-zА-Яа-яЁё0-9][A-Za-zА-Яа-яЁё0-9\-]*)",
+    r"Серия\s*:\s*\*?\s*([A-Za-zА-Яа-яЁё0-9][A-Za-zА-Яа-яЁё0-9\-]*)\s*\*?",
+    r"серии\s+([A-Za-zА-Яа-яЁё0-9][A-Za-zА-Яа-яЁё0-9\-]*)",
+)
+
+_SUBSECTION_2_1_START: str = (
+    r"2\.1\.\s*Вид[,\s]*категория\s*\(тип\)[,\s]*серия\s*\(при\s+наличии\)"
+)
+
+_SUBSECTION_2_3_START: str = (
+    r"2\.3\.\s*Регистрационный\s+номер\s+выпуска\s+ценных\s+бумаг"
+    r"\s+и\s+дата\s+его\s+регистрации"
+)
+
+_NEXT_SUBSECTION_BOUNDARY: str = r"(?:^\s*(?:##\s*)?(?:2\.\d+|3)\.)"
 
 
 def _normalize_header_cell(text: str) -> str:
@@ -105,7 +139,7 @@ def _extract_table_by_cont_wrap_space_tbl(html_content: str) -> Optional[str]:
         print(f"[emission_docs] Полученный HTML целиком ({len(html_content)} символов):", flush=True)
         print(html_content, flush=True)
         return None
-    after_cont: str = html_content[cont_match.end() :]
+    after_cont: str = html_content[cont_match.end():]
     print(f"[emission_docs] Этап 1: cont_wrap найден, остаток {len(after_cont)} символов", flush=True)
 
     space_match = re.search(
@@ -116,7 +150,7 @@ def _extract_table_by_cont_wrap_space_tbl(html_content: str) -> Optional[str]:
     if not space_match:
         print("[emission_docs] Этап 2: не найден div.spaceTbl после cont_wrap", flush=True)
         return None
-    after_space: str = after_cont[space_match.end() :]
+    after_space: str = after_cont[space_match.end():]
     print(f"[emission_docs] Этап 2: div.spaceTbl найден, остаток {len(after_space)} символов", flush=True)
 
     table_open = re.search(r"<table\b", after_space, re.IGNORECASE)
@@ -151,9 +185,9 @@ def _extract_table_by_cont_wrap_space_tbl(html_content: str) -> Optional[str]:
 
 
 def _row_to_document(
-    header: List[str],
-    row: List[str],
-    log_unmapped: bool = False,
+        header: List[str],
+        row: List[str],
+        log_unmapped: bool = False,
 ) -> Dict[str, Optional[Union[str, int]]]:
     """Превращает строку таблицы (список ячеек) в словарь полей для БД."""
     row_padded: List[str] = row + [""] * (len(header) - len(row))
@@ -242,3 +276,91 @@ def parse_emission_documents(html_content: str) -> List[Dict[str, Optional[Union
             flush=True,
         )
     return result
+
+
+def extract_series_from_markdown(md_text: str) -> Optional[str]:
+    """Извлекает серию облигации только из раздела 1 документа «Решение о выпуске ценных бумаг».
+
+    В рассмотрение берётся только текст, где есть заголовок «РЕШЕНИЕ О ВЫПУСКЕ ЦЕННЫХ БУМАГ».
+    Раздел 1 может иметь вид «1. Вид, категория (тип), ценных бумаг» или с фразой
+    «идентификационные признаки»; допускается обрамление звёздочками (markdown).
+    Серия извлекается из блока раздела 1 до начала раздела 2 (строка с «2.»).
+    Поддерживаемые форматы в тексте: «Серия облигаций выпуска: СУБ-Т2-2.»,
+    «Серия: *БО-19*» (или «Серия: БО-19»), либо слово «серии» с последующим значением.
+
+    Args:
+        md_text: Полный текст markdown-документа.
+
+    Returns:
+        Значение серии (например «БО-19», «ПБО-002Р-31») или ``None``, если не найдено.
+    """
+    if not md_text or not md_text.strip():
+        print("  [SERIES] extract: входной текст пуст", flush=True)
+        return None
+
+    print(
+        f"  [SERIES] extract: входной текст {len(md_text)} символов",
+        flush=True,
+    )
+
+    try:
+        header_match: Optional[re.Match[str]] = re.search(
+            _DECISION_HEADER_PHRASE, md_text, re.IGNORECASE
+        )
+        if not header_match:
+            print(
+                "  [SERIES] extract: заголовок «РЕШЕНИЕ О ВЫПУСКЕ ЦЕННЫХ БУМАГ» не найден",
+                flush=True,
+            )
+            return None
+        print(
+            f"  [SERIES] extract: заголовок найден на позиции {header_match.start()}",
+            flush=True,
+        )
+
+        text_after_header: str = md_text[header_match.start():]
+
+        section_1_match: Optional[re.Match[str]] = re.search(
+            _SECTION_1_START_PHRASE, text_after_header, re.IGNORECASE
+        )
+        if not section_1_match:
+            print(
+                "  [SERIES] extract: раздел 1 (идентификационные признаки) не найден",
+                flush=True,
+            )
+            return None
+
+        # Текст раздела 1: от начала раздела 1 до первой строки с «2.» (название пункта 2 любое)
+        text_from_section_1: str = text_after_header[section_1_match.start():]
+        section_2_match: Optional[re.Match[str]] = re.search(
+            _SECTION_2_BOUNDARY_PHRASE, text_from_section_1
+        )
+        if section_2_match:
+            block: str = text_from_section_1[: section_2_match.start()]
+        else:
+            block = text_from_section_1
+
+        print(
+            f"  [SERIES] extract: блок раздела 1 (до «2.») — {len(block)} символов",
+            flush=True,
+        )
+
+        series_value: Optional[str] = None
+        for pattern in _SERIES_PATTERNS:
+            series_match = re.search(pattern, block, re.IGNORECASE)
+            if series_match:
+                series_value = series_match.group(1).strip()
+                break
+        if not series_value:
+            print(
+                "  [SERIES] extract: ни один паттерн серии не найден в разделе 1",
+                flush=True,
+            )
+            return None
+
+        print(f"  [SERIES] extract: серия извлечена → {series_value!r}", flush=True)
+        return series_value
+
+    except re.error as exc:
+        print(f"  [SERIES] extract: ошибка regex — {exc}", flush=True)
+        return None

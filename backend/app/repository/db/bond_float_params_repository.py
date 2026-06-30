@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional, Set
 from sqlmodel import Session, create_engine, select
 
 from app.models.entities.bond_float_params import BondFloatParams
-from app.models.schemasDTO.gemini_dto import GeminiBondAnalysisDTO
+from app.models.schemasDTO.llm_floatbond_dto import LLMBondAnalysisDTO
 from app.utils.logger import get_data_update_logger
 from config.paths import DB_PATH
 
@@ -41,7 +41,7 @@ class BondFloatParamsRepository:
         )
         self.logger = logging.getLogger(__name__)
 
-    def upsert(self, bond_id: int, analysis: GeminiBondAnalysisDTO) -> None:
+    def upsert(self, bond_id: int, analysis: LLMBondAnalysisDTO) -> None:
         """Сохраняет или обновляет параметры флоатера для облигации.
 
         Если запись с данным bond_id уже существует — обновляет все поля.

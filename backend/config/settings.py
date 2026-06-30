@@ -3,6 +3,8 @@
 Загружаются из .env и переменных окружения. Путь к .env берётся из config.paths.
 """
 
+import tomllib
+from pydantic import BaseModel
 from pathlib import Path
 from typing import Any, List
 
@@ -15,6 +17,17 @@ _env_file_path = None
 if (_BACKEND_DIR / ".env").exists():
     _env_file_path = str(_BACKEND_DIR / ".env")
 
+_CONFIG_LLM_PATH = _BACKEND_DIR / "config" / "config_llm.toml"
+
+class ProviderConfig(BaseModel):
+    model: str
+    type: str
+
+
+class LlmConfig(BaseModel):
+    probe_prompt: str
+    remote_providers: list[str]
+    providers: dict[str, ProviderConfig]
 
 class Settings(BaseSettings):
     """Настройки приложения BondsScreener."""
@@ -28,6 +41,8 @@ class Settings(BaseSettings):
         "http://127.0.0.1:5173",
         "http://127.0.0.1:3000",
     ]
+
+    llm: LlmConfig | None = None
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
@@ -60,6 +75,15 @@ class Settings(BaseSettings):
 
     FLOATER_ANALYSIS_PROMPT_MAX_CHARS: int = 980000
 
+    def model_post_init(self, __context: Any) -> None:
+        if _CONFIG_LLM_PATH.exists():
+            with open(_CONFIG_LLM_PATH, "rb") as f:
+                data = tomllib.load(f)
+
+            llm_data = data.get("llm")
+            if llm_data:
+                self.llm = LlmConfig.model_validate(llm_data)
+
     model_config = SettingsConfigDict(
         env_file=_env_file_path,
         env_file_encoding="utf-8",
@@ -67,6 +91,5 @@ class Settings(BaseSettings):
         extra="ignore",
         env_ignore_empty=True,
     )
-
 
 settings = Settings()

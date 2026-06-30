@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Container, Box, Typography, AppBar, Toolbar, Button, CircularProgress, Dialog, DialogTitle, DialogContent, DialogActions, Alert, IconButton, Card, CardContent, alpha } from '@mui/material';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import SettingsIcon from '@mui/icons-material/Settings';
 import PsychologyIcon from '@mui/icons-material/Psychology';
 import FeedbackIcon from '@mui/icons-material/Feedback';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
@@ -34,6 +35,7 @@ import { RefreshDataDialog } from '../components/common/RefreshDataDialog';
 import { ForecastFileDialog } from '../components/common/ForecastFileDialog';
 import { FeedbackDialog } from '../components/common/FeedbackDialog';
 import { HelpDialog, type HelpSection } from '../components/common/HelpDialog';
+import { SettingsDialog } from '../components/common/SettingsDialog';
 import { BlogPage } from './BlogPage';
 import { refreshBondsData, refreshCouponsData } from '../api/bonds';
 import { refreshFloatersData } from '../api/edisclosure';
@@ -49,6 +51,7 @@ import { loadKeyRateData } from '../api/keyrate';
 import { useUiStore } from '../stores/uiStore';
 import { useBondsStore } from '../stores/bondsStore';
 import { useComparisonStore } from '../stores/comparisonStore';
+import { useSettingsStore } from '../stores/settingsStore';
 import { getBondsDataForLLM, getZerocuponDataForLLM, getForecastDataForLLM } from '../utils/llmDataExport';
 import { analyzeBondsWithLLM } from '../api/llm';
 import { analyzeBondsWithQwen } from '../api/qwen';
@@ -66,6 +69,7 @@ export const HomePage: React.FC = () => {
   const triggerDataRefresh = useUiStore((state) => state.triggerDataRefresh);
   const setError = useBondsStore((state) => state.setError);
   const comparisonBonds = useComparisonStore((state) => state.comparisonBonds);
+  const settings = useSettingsStore((state) => state.settings);
   const [viewMode, setViewMode] = useState<ViewMode>('HUB');
   const [currentTab, setCurrentTab] = useState(0);
   const [forecastSubView, setForecastSubView] = useState<'zerocupon' | 'forecast' | 'ruonia' | 'keyrate' | null>(null);
@@ -110,6 +114,7 @@ export const HomePage: React.FC = () => {
   const [isFiltersModalOpen, setIsFiltersModalOpen] = useState(false);
   const [isFeedbackDialogOpen, setIsFeedbackDialogOpen] = useState(false);
   const [isHelpDialogOpen, setIsHelpDialogOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   
   // Dashboard rates (currency, RUONIA, key rate) — один ответ с бэкенда, отображаем как есть
   const [dashboardRates, setDashboardRates] = useState<MacroRatesResponse | null>(null);
@@ -406,7 +411,7 @@ export const HomePage: React.FC = () => {
           bondsData,
           zerocuponData,
           forecastData,
-          'gpt-5.1',
+          settings.llmGptModel,
           params.includeZerocupon,
           params.includeForecast
         );
@@ -417,7 +422,7 @@ export const HomePage: React.FC = () => {
           bondsData,
           zerocuponData,
           forecastData,
-          'qwen/qwen3-235b-a22b:free',
+          settings.llmQwenModel,
           params.includeZerocupon,
           params.includeForecast
         );
@@ -428,7 +433,7 @@ export const HomePage: React.FC = () => {
           bondsData,
           zerocuponData,
           forecastData,
-          'x-ai/grok-4.1-fast:free',
+          settings.llmGrokModel,
           params.includeZerocupon,
           params.includeForecast
         );
@@ -610,6 +615,18 @@ export const HomePage: React.FC = () => {
               </Typography>
             </Box>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <IconButton
+                size="small"
+                onClick={() => setIsSettingsOpen(true)}
+                sx={{ 
+                  color: 'text.primary',
+                  '&:hover': {
+                    bgcolor: 'action.hover',
+                  },
+                }}
+              >
+                <SettingsIcon sx={{ fontSize: 18 }} />
+              </IconButton>
               <IconButton
                 size="small"
                 onClick={handleRefreshDataClick}
@@ -1226,6 +1243,10 @@ export const HomePage: React.FC = () => {
         onClose={() => setIsFeedbackDialogOpen(false)}
         onSend={handleFeedbackSend}
         tabName={getCurrentTabName()}
+      />
+      <SettingsDialog
+        open={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
       />
       <HelpDialog
         open={isHelpDialogOpen}

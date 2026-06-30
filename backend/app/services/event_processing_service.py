@@ -1,19 +1,17 @@
-import json
-import logging
-import os
-import re
-from datetime import datetime
-from pathlib import Path
-from typing import Any, Dict, List, Optional
 
-import httpx
-
-from config.paths import EMITENT_EVENTS_JSON_DIR
-from config.settings import settings
 from app.models.entities.event_detail import EventDetail
 from app.repository.db.event_detail_repository import EventDetailRepository
 from app.repository.db.bonds_repository import BondsRepository
-
+from typing import Dict, Any, Optional
+import httpx
+import logging
+import os
+from pathlib import Path
+from config.paths import EMITENT_EVENTS_JSON_DIR
+import config.settings as settings
+import json
+import re
+from datetime import datetime
 
 SYSTEM_PROMPT_TEMPLATE = """Ты — система извлечения структурированных данных из текста. Твоя единственная задача — извлечь параметры ценных бумаг из предоставленного сообщения о существенном факте и вернуть результат в виде строго валидного JSON.
 
@@ -136,7 +134,7 @@ SYSTEM_PROMPT_TEMPLATE = """Ты — система извлечения стр�
 }
 
 """
-
+logger = logging.getLogger(__name__)
 
 class EventProcessingService:
     """Сервис интеллектуальной обработки событий раскрытия информации.
@@ -179,60 +177,105 @@ class EventProcessingService:
             self.logger.warning("Директория с событиями не найдена: %s", EMITENT_EVENTS_JSON_DIR)
             return stats
 
+        # 1. Предварительный подсчет общего количества событий для прогресс-бара
+        total_events_count = 0
+        for root, _, files in os.walk(EMITENT_EVENTS_JSON_DIR):
+            for file in files:
+                if not file.endswith(".json"):
+                    continue
+                
+                current_inn = file.replace(".json", "")
+                if target_inn and current_inn != target_inn:
+                    continue
+                
+                file_path = Path(root) / file
+                try:
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                except Exception:
+                    continue
+
+                if isinstance(data, dict):
+                    for year, events_list in data.items():
+                        if isinstance(events_list, list):
+                            total_events_count += len(events_list)
+                elif isinstance(data, list):
+                    total_events_count += len(data)
+
+        self.logger.info("Всего найдено событий для обработки: %d", total_events_count)
+
         url = f"{settings.LOCAL_LLM_BASE_URL.rstrip('/')}{settings.LOCAL_LLM_GENERATE_PATH}"
 
-        with httpx.Client(timeout=300.0) as client:
-            for root, _, files in os.walk(EMITENT_EVENTS_JSON_DIR):
-                for file in files:
-                    if not file.endswith(".json"):
-                        continue
-                    
-                    current_inn = file.replace(".json", "")
-                    if target_inn and current_inn != target_inn:
-                        continue
-                    
-                    file_path = Path(root) / file
-                    try:
-                        with open(file_path, "r", encoding="utf-8") as f:
-                            data = json.load(f)
-                    except Exception as e:
-                        self.logger.error("Ошибка чтения JSON файла %s: %s", file_path, e)
-                        continue
+        from tqdm import tqdm
+        import sys
+        from tqdm.contrib.logging import logging_redirect_tqdm
 
-                    # Если JSON содержит список событий (по годам или плоский список)
-                    # Структура: {"2024": [{"pseudoGUID": "...", "event_date": "...", "full_text": "..."}, ...]}
-                    self.logger.info("Начата обработка событий для ИНН: %s", current_inn)
-                    
-                    if isinstance(data, dict):
-                        for year, events_list in data.items():
-                            if isinstance(events_list, list):
-                                self.logger.info("Обработка событий за %s год (всего в списке: %d)", year, len(events_list))
-                                self._process_event_list(events_list, processed_keys, client, url, stats, emitent_inn=current_inn)
-                    elif isinstance(data, list):
-                        self.logger.info("Обработка плоского списка событий (всего в списке: %d)", len(data))
-                        self._process_event_list(data, processed_keys, client, url, stats, emitent_inn=current_inn)
+        with logging_redirect_tqdm(), tqdm(
+            total=total_events_count,
+            desc="Обработка событий",
+            file=sys.stdout,
+            dynamic_ncols=True,
+            leave=True
+        ) as pbar:
+            with httpx.Client(timeout=300.0) as client:
+                for root, _, files in os.walk(EMITENT_EVENTS_JSON_DIR):
+                    for file in files:
+                        if not file.endswith(".json"):
+                            continue
+                        
+                        current_inn = file.replace(".json", "")
+                        if target_inn and current_inn != target_inn:
+                            continue
+                        
+                        file_path = Path(root) / file
+                        try:
+                            with open(file_path, "r", encoding="utf-8") as f:
+                                data = json.load(f)
+                        except Exception as e:
+                            self.logger.error("Ошибка чтения JSON файла %s: %s", file_path, e)
+                            continue
+
+                        # Если JSON содержит список событий (по годам или плоский список)
+                        # Структура: {"2024": [{"pseudoGUID": "...", "event_date": "...", "full_text": "..."}, ...]}
+                        self.logger.info("Начата обработка событий для ИНН: %s", current_inn)
+                        
+                        if isinstance(data, dict):
+                            for year, events_list in data.items():
+                                if isinstance(events_list, list):
+                                    self.logger.info("Обработка событий за %s год (всего в списке: %d)", year, len(events_list))
+                                    self._process_event_list(events_list, processed_keys, client, url, stats, emitent_inn=current_inn, pbar=pbar)
+                        elif isinstance(data, list):
+                            self.logger.info("Обработка плоского списка событий (всего в списке: %d)", len(data))
+                            self._process_event_list(data, processed_keys, client, url, stats, emitent_inn=current_inn, pbar=pbar)
 
         return stats
 
     def _process_event_list(
-        self, 
-        events: List[Dict[str, Any]], 
-        processed_keys: set, 
-        client: httpx.Client, 
-        url: str, 
+        self,
+        events: list[Dict[str, Any]],
+        processed_keys: set,
+        client: httpx.Client,
+        url: str,
         stats: Dict[str, int],
-        emitent_inn: str
+        emitent_inn: str,
+        pbar: Optional[Any] = None
     ) -> None:
         """Обрабатывает список событий, фильтрует и отправляет в LLM."""
         total_in_list = len(events)
         skipped_count = 0
         
+        if pbar is not None:
+            pbar.set_description(f"ИНН {emitent_inn}")
+
         for i, event in enumerate(events, 1):
             pseudo_guid = event.get("pseudoGUID") or event.get("pseudo_guid")
             event_date_raw = event.get("eventDate") or event.get("event_date")
             full_text = event.get("full_text") or event.get("text") or event.get("MessageText")
 
             if not pseudo_guid or not event_date_raw or not full_text:
+                if pbar is not None:
+                    pbar.update(1)
+                    pbar.set_postfix(processed=stats["processed"], skipped=stats["skipped"], errors=stats["errors"])
                 continue
 
             # Очистка текста от мусорных символов
@@ -249,6 +292,9 @@ class EventProcessingService:
             except ValueError:
                 self.logger.warning("Некорректный формат даты события %s для GUID %s", event_date_raw, pseudo_guid)
                 stats["errors"] += 1
+                if pbar is not None:
+                    pbar.update(1)
+                    pbar.set_postfix(processed=stats["processed"], skipped=stats["skipped"], errors=stats["errors"])
                 continue
 
             date_str = str(date_obj)
@@ -256,6 +302,9 @@ class EventProcessingService:
             if (pseudo_guid, date_str) in processed_keys:
                 stats["skipped"] += 1
                 skipped_count += 1
+                if pbar is not None:
+                    pbar.update(1)
+                    pbar.set_postfix(processed=stats["processed"], skipped=stats["skipped"], errors=stats["errors"])
                 continue
 
             # Если были пропущенные события перед текущим новым - сообщим об этом
@@ -265,15 +314,18 @@ class EventProcessingService:
 
             text_len = len(full_text)
             if text_len > 30000:
-                self.logger.warning(
-                    "[%s] Событие пропущено: текст слишком длинный (%d симв. > 30000)", 
-                    emitent_inn, text_len
-                )
+                # self.logger.warning(
+                #     "[%s] Событие пропущено: текст слишком длинный (%d симв. > 30000)",
+                #     emitent_inn, text_len
+                # )
                 stats["skipped"] += 1
+                if pbar is not None:
+                    pbar.update(1)
+                    pbar.set_postfix(processed=stats["processed"], skipped=stats["skipped"], errors=stats["errors"])
                 continue
 
-            self.logger.info("[%s] Обработка события %d/%d (GUID: %s). Размер текста: %d симв.", 
-                             emitent_inn, i, total_in_list, pseudo_guid, text_len)
+            # self.logger.info("[%s] Обработка события %d/%d (GUID: %s). Размер текста: %d симв.",
+            #                  emitent_inn, i, total_in_list, pseudo_guid, text_len)
 
             # Отправляем в LLM
             prompt = f"{self.current_prompt}\n\nТекст события:\n{full_text}"
@@ -285,10 +337,10 @@ class EventProcessingService:
             }
 
             try:
-                self.logger.info("[%s] Отправка запроса в LLM (ожидание ответа может занять несколько минут)...", emitent_inn)
+                #self.logger.info("[%s] Отправка запроса в LLM (ожидание ответа может занять несколько минут)...", emitent_inn)
                 response = client.post(url, json=payload, timeout=600.0)
                 response.raise_for_status()
-                self.logger.info("[%s] Ответ от LLM получен", emitent_inn)
+                #self.logger.info("[%s] Ответ от LLM получен", emitent_inn)
                 response_data = response.json()
                 llm_text = response_data.get("response", "")
                 
@@ -344,12 +396,16 @@ class EventProcessingService:
                 self.repository.save(new_event)
                 processed_keys.add((pseudo_guid, date_str))
                 stats["processed"] += 1
-                self.logger.info("[%s] Событие успешно сохранено: %s (ISIN: %s)", 
-                                 emitent_inn, new_event.message_type, new_event.isin)
+                # self.logger.info("[%s] Событие успешно сохранено: %s (ISIN: %s)",
+                #                  emitent_inn, new_event.message_type, new_event.isin)
 
             except Exception as e:
                 self.logger.error("Ошибка обработки события GUID %s: %s", pseudo_guid, e)
                 stats["errors"] += 1
+            finally:
+                if pbar is not None:
+                    pbar.update(1)
+                    pbar.set_postfix(processed=stats["processed"], skipped=stats["skipped"], errors=stats["errors"])
         
         if skipped_count > 0:
             self.logger.info("[%s] В конце списка пропущено уже обработанных событий: %d", emitent_inn, skipped_count)

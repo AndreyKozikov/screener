@@ -15,7 +15,6 @@ from app.services.bonds_service import (
     get_bond_id_by_secid
 )
 from app.services.edisclosure_service import EdisclosureService
-from app.services.llm_prompt_pipeline_service import LlmPromptPipelineService, _markdown_has_any_required_header, _filename_excluded_from_pipeline
 from app.repository.files.file_storage import FileStorage
 from app.parsers.emission_series_parser import (
     extract_series_from_markdown,
@@ -54,10 +53,12 @@ class VectorRetrievalService:
 
     def get_context_for_bond(
         self,
-        secid: str, 
+        secid: str,
         regnumber: Optional[str] = None,
         use_local_events: bool = False,
-        query: Optional[str] = None
+        query: Optional[str] = None,
+        start_date: Optional[str] = None,
+        embedding_model: Optional[str] = None,
     ) -> str:
         """Собирает данные по облигации и формирует векторный контекст.
 
@@ -74,6 +75,8 @@ class VectorRetrievalService:
                 иначе — через API E-disclosure.
             query: Текстовый запрос для семантического поиска. Если не указан,
                 используется стандартный алгоритм ранжирования.
+            start_date: Дата, с которой необходимо искать события.
+            embedding_model: Тип модели эмбеддингов: local или remote/OpenRouter BGE-M3.
 
         Returns:
             Строка, содержащая отобранный текстовый контекст в формате Markdown.
@@ -96,12 +99,15 @@ class VectorRetrievalService:
         trading_service = get_trading_history_service()
         first_tradedate = trading_service.get_first_tradedate(secid)
         date_str = first_tradedate.isoformat() if first_tradedate else "2025-04-24"
-        
+
+        # Если передан start_date, используем его для ограничения диапазона лет
+        calc_date_str = start_date if start_date else date_str
+
         # 3. Collect and filter Markdown files
         bond_data_dir = _DATA_DIR / secid
         markdown_docs = []
         series = None
-        
+
         if bond_data_dir.is_dir():
             all_md_files = list(bond_data_dir.glob("*.md"))
             for md_path in all_md_files:
@@ -110,10 +116,10 @@ class VectorRetrievalService:
                 if "отчетность мсфо" in filename_lower or "отчетность рсбу" in filename_lower or filename_lower == "vector_context.md":
                     logger.info(f"Исключен файл по имени: {md_path.name}")
                     continue
-                    
+
                 try:
                     md_content = self.file_storage.read_text_file(md_path)
-                    
+
                     # Проверка начала файла на наличие исключаемых фраз
                     content_prefix = md_content[:1000].lower()
                     if "учетная политика" in content_prefix or \
@@ -126,7 +132,7 @@ class VectorRetrievalService:
                         "filename": md_path.name,
                         "content": md_content
                     })
-                    
+
                     # Попытка извлечь серию для фильтрации событий все еще полезна, если файл - Решение
                     if series is None and markdown_has_decision_header(md_content):
                         series = extract_series_from_markdown(md_content)
@@ -136,7 +142,7 @@ class VectorRetrievalService:
             logger.warning(f"Data directory for {secid} not found. Proceeding with events only.")
 
         # 4. Load and filter events
-        event_years = self.edisclosure_service._compute_event_years(date_str)
+        event_years = self.edisclosure_service._compute_event_years(calc_date_str)
         events = []
         try:
             if use_local_events:
@@ -150,9 +156,18 @@ class VectorRetrievalService:
             filtered_events = filter_events_by_secid_regnumber_series(
                 all_events, secid, regnumber or "", series
             )
-            
-            # Clean event text
+
+            # Clean event text and filter by start_date
             for ev in filtered_events:
+                ev_date_str = ev.get("event_date")
+                if start_date and ev_date_str:
+                    try:
+                        if ev_date_str < start_date:
+                            logger.info(f"Событие {ev.get('event_name')} ({ev_date_str}) отфильтровано, так как оно раньше start_date ({start_date})")
+                            continue
+                    except Exception as e:
+                        logger.error(f"Error comparing event date {ev_date_str} with start_date {start_date}: {e}")
+
                 full_text = ev.get("full_text", "")
                 ev["text"] = clean_event_text(full_text)
                 events.append(ev)
@@ -161,7 +176,12 @@ class VectorRetrievalService:
 
         # 5. Run vector retrieval pipeline
         queries = [query] if query else None
-        context = self.pipeline.run(markdown_docs, events, queries=queries)
+        context = self.pipeline.run(
+            markdown_docs,
+            events,
+            queries=queries,
+            embedding_model=embedding_model,
+        )
         
         # Сохранение отобранных чанков для анализа качества
         try:

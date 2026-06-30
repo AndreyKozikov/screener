@@ -23,6 +23,7 @@ import {
 import { BondChat } from './BondChat';
 import { runLlmPromptPipeline } from '../../api/llm';
 import { useUiStore } from '../../stores/uiStore';
+import { useSettingsStore } from '../../stores/settingsStore';
 import type { BondDetail as BondDetailType } from '../../types/bond';
 import { getEmitentBySecid, type EmitentInfo } from '../../api/emitent';
 import {
@@ -51,6 +52,7 @@ export const PremiumBondCard: React.FC<PremiumBondCardProps> = ({ bondDetail }) 
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isUpdatingParams, setIsUpdatingParams] = useState(false);
   const { triggerDataRefresh } = useUiStore();
+  const settings = useSettingsStore((state) => state.settings);
   
   // Fetch emitent info with ratings
   useEffect(() => {
@@ -239,7 +241,7 @@ export const PremiumBondCard: React.FC<PremiumBondCardProps> = ({ bondDetail }) 
     
     try {
       setIsUpdatingParams(true);
-      await runLlmPromptPipeline(secid);
+      await runLlmPromptPipeline(secid, true, settings.floatPipelineProvider, settings.floatPipelineEmbeddingModel);
       triggerDataRefresh();
       // Можно добавить уведомление об успехе, если в проекте есть Snackbar
       alert(`Параметры для ${secid} успешно обновлены`);

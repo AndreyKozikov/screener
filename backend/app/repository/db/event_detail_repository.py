@@ -2,17 +2,14 @@ from pathlib import Path
 from typing import Optional, Set, Tuple
 
 from sqlmodel import Session, create_engine
-
-from config.paths import DB_PATH
 from app.models.entities.event_detail import EventDetail
 
 
 class EventDetailRepository:
     """Репозиторий для работы с сущностью EventDetail в SQLite."""
 
-    def __init__(self, db_path: Optional[Path] = None):
-        if db_path is None:
-            db_path = DB_PATH
+    def __init__(self, db_path: Optional[Path]):
+
         self.db_path = Path(db_path)
         self._engine = create_engine(
             f"sqlite:///{self.db_path.resolve()}",
@@ -50,3 +47,13 @@ class EventDetailRepository:
                 EventDetail.pseudo_guid == pseudo_guid,
                 EventDetail.event_date == event_date
             ).first()
+
+events_detail_repository: Optional[EventDetailRepository] = None
+
+def get_events_detail_repository(db_path: Optional[Path]):
+    global events_detail_repository
+
+    if events_detail_repository is None:
+        events_detail_repository = EventDetailRepository(db_path)
+
+    return events_detail_repository

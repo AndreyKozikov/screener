@@ -152,6 +152,8 @@ memory_bank/
 DEPLOYMENT_GUIDE.md
 backend/app/data/
 backend/db/history_db.db
+tmp_files/
+.kilo/
 
 # IDE and Editor
 *.sublime-project

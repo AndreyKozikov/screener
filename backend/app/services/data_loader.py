@@ -12,6 +12,7 @@ from app.models import BondListItem
 from app.repository.db.bond_ratings_repository import BondRatingsRepository
 from app.repository.db.emitents_repository import EmitentsRepository
 from app.repository.files.file_storage import FileStorage
+from app.utils.bond_lifecycle import is_bond_not_matured
 from app.utils.rating_utils import get_rating_index
 from app.services.moex_client import MoexClient
 from app.utils.logger import get_data_update_logger
@@ -169,6 +170,7 @@ class DataLoader:
         bonds_list: List[BondListItem] = []
         details_map: Dict[str, Dict] = {}
         skipped_spob_count = 0
+        skipped_matured_count = 0
 
         for row in sec_data:
             bond_dict = dict(zip(sec_columns, row))
@@ -185,6 +187,10 @@ class DataLoader:
             ]:
                 if date_field in bond_dict and bond_dict[date_field]:
                     bond_dict[date_field] = self._parse_date(bond_dict[date_field])
+
+            if not is_bond_not_matured(bond_dict.get("MATDATE")):
+                skipped_matured_count += 1
+                continue
 
             try:
                 bondtype43_value = bond_dict.get("BONDTYPE")
@@ -311,6 +317,8 @@ class DataLoader:
         )
         if skipped_spob_count > 0:
             logger.info("[POPULATE CACHE] Skipped %s bonds with trading mode SPOB", skipped_spob_count)
+        if skipped_matured_count > 0:
+            logger.info("[POPULATE CACHE] Skipped %s matured bonds", skipped_matured_count)
     
     def _load_column_mapping(self) -> Dict[str, str]:
         """Загружает описания колонок из локального файла columns.json.

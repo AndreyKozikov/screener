@@ -32,3 +32,4 @@ sendgrid==6.11.0  # для отправки email через SendGrid API (бе�
 python-dotenv==1.0.0  # для загрузки переменных окружения из .env файла
 # openrouter==0.1.0  # больше не используется, заменен на OpenAI клиент
 google-genai  # Google Gemini API (новый SDK, заменяет google-generativeai)
+tqdm==4.66.2  # для отображения прогресса обработки событий

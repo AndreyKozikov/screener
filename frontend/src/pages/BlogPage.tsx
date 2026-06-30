@@ -94,7 +94,7 @@ export const BlogPage: React.FC = () => {
               component="img"
               image={selectedArticle.cover_image_url}
               alt={selectedArticle.title}
-              sx={{ width: '100%', maxHeight: 360, objectFit: 'cover' }}
+              sx={{ width: '100%', height: 'auto' }}
             />
           )}
           <Box sx={{ p: { xs: 2, md: 4 } }}>
@@ -109,7 +109,14 @@ export const BlogPage: React.FC = () => {
             )}
             <Box sx={{ '& img': { maxWidth: '100%', borderRadius: 1 } }}>
               <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
-                {selectedArticle.content_markdown}
+                {(() => {
+                  const content = selectedArticle.content_markdown;
+                  const cover = selectedArticle.cover_image_url;
+                  if (!cover) return content;
+                  const escapedUrl = cover.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                  const regex = new RegExp(`\\s*!\\[[^\\]]*\\]\\(${escapedUrl}\\)\\s*`, 'g');
+                  return content.replace(regex, '\n\n').trim();
+                })()}
               </ReactMarkdown>
             </Box>
           </Box>
@@ -175,7 +182,21 @@ export const BlogPage: React.FC = () => {
 
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, 1fr)' }, gap: 2 }}>
         {articles.map((article) => (
-          <Card key={article.id} sx={{ borderRadius: 2, display: 'flex', flexDirection: 'column' }}>
+          <Card
+            key={article.id}
+            onClick={() => openArticle(article)}
+            sx={{
+              borderRadius: 2,
+              display: 'flex',
+              flexDirection: 'column',
+              cursor: 'pointer',
+              transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+              '&:hover': {
+                transform: 'translateY(-4px)',
+                boxShadow: 4,
+              },
+            }}
+          >
             {article.cover_image_url && (
               <CardMedia component="img" height="150" image={article.cover_image_url} alt={article.title} />
             )}
@@ -187,12 +208,9 @@ export const BlogPage: React.FC = () => {
               <Typography variant="h6" fontWeight={700} gutterBottom>
                 {article.title}
               </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              <Typography variant="body2" color="text.secondary">
                 {article.summary || 'Без описания'}
               </Typography>
-              <Button variant="outlined" onClick={() => openArticle(article)} sx={{ textTransform: 'none' }}>
-                Читать
-              </Button>
             </CardContent>
           </Card>
         ))}
