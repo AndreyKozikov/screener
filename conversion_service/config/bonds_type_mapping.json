@@ -1,0 +1,7 @@
+{
+  "exchange_bond": 1,
+  "ofz_bond": 2,
+  "corporate_bond": 3,
+  "municipal_bond": 4,
+  "subfederal_bond": 5
+}

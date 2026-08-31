@@ -96,7 +96,7 @@ class DBOrchestrator:
             )
             with Session(engine) as session:
                 transformer = BondTransformer(data_dir, storage, session)
-                raw_bonds = transformer.transform_raw_payload(payload)
+                raw_bonds = transformer.transform_raw_payload(payload) #Обработано
                 raw_bonds = transformer.prepare_bonds_for_db(raw_bonds)
             data_log.info(
                 "[API /bonds/refresh] Загружено из JSON (MOEX): %s облигаций",

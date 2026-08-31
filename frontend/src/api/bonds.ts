@@ -1,9 +1,9 @@
-import {apiClient} from './client';
-import type {BondsListResponse} from '../types/api';
-import type {BondDetail} from '../types/bond';
-import type {BondFloatParamsDTO} from '../types/bondFloatParams';
-import type {BondFilters} from '../types/filters';
-import type {CouponsListResponse, MultipleCouponsResponse} from '../types/coupon';
+import { apiClient } from './client';
+import type { BondsListResponse } from '../types/api';
+import type { BondDetail } from '../types/bond';
+import type { BondFloatParamsDTO } from '../types/bondFloatParams';
+import type { BondFilters } from '../types/filters';
+import type { CouponsListResponse, MultipleCouponsResponse } from '../types/coupon';
 
 /**
  * Fetch filtered bonds list
@@ -12,97 +12,44 @@ import type {CouponsListResponse, MultipleCouponsResponse} from '../types/coupon
  * @param excludeSpob If true, exclude bonds with trading mode SPOB
  */
 export const fetchBonds = async (filters: BondFilters, emitentTitle?: string, excludeSpob?: boolean): Promise<BondsListResponse> => {
-    const params: Record<string, string | number | (string | number)[] | boolean | null> = {};
+    // Формируем payload в соответствии со схемой BondsListFiltersDTO на бэкенде
+    const payload = {
+        coupon_min: filters.couponMin,
+        coupon_max: filters.couponMax,
+        yield_min: filters.yieldMin,
+        yield_max: filters.yieldMax,
+        coupon_yield_min: filters.couponYieldMin,
+        coupon_yield_max: filters.couponYieldMax,
+        matdate_from: filters.matdateFrom || null,
+        matdate_to: filters.matdateTo || null,
+        listlevel: filters.listlevel && filters.listlevel.length > 0 ? filters.listlevel : null,
+        faceunit: filters.faceunit && filters.faceunit.length > 0 ? filters.faceunit : null,
+        bondtype: filters.bondtype && filters.bondtype.length > 0 ? filters.bondtype : null,
+        bondtype43: filters.bondtype43 && filters.bondtype43.length > 0 ? filters.bondtype43 : null,
+        rating_min: filters.ratingMin,
+        rating_max: filters.ratingMax,
+        emitent_title: emitentTitle || null,
+        exclude_spob: excludeSpob === false,
+        skip: 0,
+        limit: 1000
+    };
 
-    // Build query parameters (exclude search and skip/limit for client-side operations)
-    if (filters.couponMin !== null) params.coupon_min = filters.couponMin;
-    if (filters.couponMax !== null) params.coupon_max = filters.couponMax;
-    if (filters.yieldMin !== null) params.yield_min = filters.yieldMin;
-    if (filters.yieldMax !== null) params.yield_max = filters.yieldMax;
-    if (filters.couponYieldMin !== null) params.coupon_yield_min = filters.couponYieldMin;
-    if (filters.couponYieldMax !== null) params.coupon_yield_max = filters.couponYieldMax;
-    if (filters.matdateFrom) params.matdate_from = filters.matdateFrom;
-    if (filters.matdateTo) params.matdate_to = filters.matdateTo;
-    if (emitentTitle) params.emitent_title = emitentTitle;
-    if (excludeSpob === true) params.exclude_spob = true;
-    if (filters.listlevel && Array.isArray(filters.listlevel) && filters.listlevel.length > 0) {
-        // FastAPI expects array parameters to be sent as repeated query params: listlevel=1&listlevel=2
-        // Convert numbers to strings for URL serialization
-        params.listlevel = filters.listlevel.map(String);
-    }
-    if (filters.faceunit && Array.isArray(filters.faceunit) && filters.faceunit.length > 0) {
-        // FastAPI expects array parameters to be sent as repeated query params: faceunit=RUB&faceunit=USD
-        params.faceunit = filters.faceunit;
-    }
-    // bondtype и bondtype43 теперь содержат ID (числа) вместо строковых названий
-    if (filters.bondtype && Array.isArray(filters.bondtype) && filters.bondtype.length > 0) {
-        // FastAPI expects array parameters to be sent as repeated query params: bondtype=1&bondtype=3
-        params.bondtype = filters.bondtype.map(String);
-    }
-    if (filters.bondtype43 && Array.isArray(filters.bondtype43) && filters.bondtype43.length > 0) {
-        // FastAPI expects array parameters to be sent as repeated query params: bondtype43=6&bondtype43=8
-        params.bondtype43 = filters.bondtype43.map(String);
-    }
-    if (filters.ratingMin !== null) params.rating_min = filters.ratingMin;
-    if (filters.ratingMax !== null) params.rating_max = filters.ratingMax;
-    // Note: search is NOT sent to server - it will be filtered on client side
-    // Note: skip/limit are NOT sent - we load all data by not sending limit parameter
-
-    // Load all filtered data in one request (limit is not sent, so backend returns all)
-    // Use paramsSerializer to ensure arrays are serialized correctly for FastAPI
-    console.log('[Bonds API] Fetching bonds with filters:', filters);
-    console.log('[Bonds API] Request params:', params);
+    console.log('[Bonds API] Fetching bonds with payload DTO:', payload);
 
     let response;
     try {
-        // Сериализуем параметры вручную для правильной работы с FastAPI
-        const paramsSerializer = (params: Record<string, any>): string => {
-            const searchParams = new URLSearchParams();
-            Object.entries(params).forEach(([key, value]) => {
-                if (value === null || value === undefined) {
-                    return;
-                }
-                if (Array.isArray(value)) {
-                    // For arrays, add each value as a separate query parameter (FastAPI format)
-                    value.forEach((item) => {
-                        searchParams.append(key, String(item));
-                    });
-                } else {
-                    searchParams.append(key, String(value));
-                }
-            });
-            const serialized = searchParams.toString();
-            console.log('[Bonds API] Serialized params:', serialized);
-            return serialized;
-        };
-
-        // Важно: эндпоинт определен как "/" с префиксом "/api/bonds",
-        // что означает полный путь "/api/bonds/" (с trailing slash)
-        // FastAPI автоматически редиректит "/api/bonds" на "/api/bonds/", что вызывает 307
-        // Используем "/bonds/" с trailing slash чтобы избежать редиректа
         const endpoint = '/bonds/';
         console.log('[Bonds API] Making request to:', apiClient.defaults.baseURL + endpoint);
-        console.log('[Bonds API] Full URL will be:', apiClient.defaults.baseURL + endpoint + '?' + paramsSerializer(params));
 
-        response = await apiClient.get<BondsListResponse>(endpoint, {
-            params,
-            paramsSerializer,
-        });
+        // Передаем данные в теле POST-запроса
+        response = await apiClient.post<BondsListResponse>(endpoint, payload);
 
         console.log('[Bonds API] Response received:', response.status, response.data ? 'data OK' : 'no data');
     } catch (error) {
         console.error('[Bonds API] Error fetching bonds:', error);
-        if (error instanceof Error) {
-            console.error('[Bonds API] Error message:', error.message);
-            if (error.stack) {
-                console.error('[Bonds API] Error stack:', error.stack);
-            }
-        }
         throw error;
     }
 
-    // Apply client-side search filter if provided
-    // Проверяем, что данные есть
     if (!response || !response.data || !response.data.bonds) {
         console.error('[Bonds API] Invalid response:', response);
         throw new Error('Invalid response from server: missing bonds data');
@@ -134,6 +81,7 @@ export const fetchBonds = async (filters: BondFilters, emitentTitle?: string, ex
         bonds: allBonds,
     };
 };
+
 
 /**
  * Точка графика сравнения доходности облигации и RUONIA
@@ -198,7 +146,7 @@ export const fetchBondDetail = async (secid: string): Promise<BondDetail> => {
  */
 export const exportBondsJson = (bonds: Array<Record<string, unknown>>): void => {
     const dataStr = JSON.stringify(bonds, null, 2);
-    const dataBlob = new Blob([dataStr], {type: 'application/json'});
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
     const url = URL.createObjectURL(dataBlob);
 
     const link = document.createElement('a');
@@ -225,7 +173,7 @@ export const refreshCouponsData = async (forceRefresh: boolean = false): Promise
     if (forceRefresh) {
         params.force_refresh = true;
     }
-    await apiClient.post('/bonds/refresh-coupons', null, {params});
+    await apiClient.post('/bonds/refresh-coupons', null, { params });
 };
 
 /**
@@ -238,7 +186,7 @@ export const fetchBondCoupons = async (secid: string, forceRefresh: boolean = fa
     if (forceRefresh) {
         params.force_refresh = true;
     }
-    const response = await apiClient.get<CouponsListResponse>(`/bonds/${secid}/coupons`, {params});
+    const response = await apiClient.get<CouponsListResponse>(`/bonds/${secid}/coupons`, { params });
     return response.data;
 };
 
@@ -320,12 +268,12 @@ export const fetchBondsCoupons = async (
         // Convert response to Map for easy lookup
         const result = new Map<string, CouponsListResponse>();
         response.data.data.forEach((item) => {
-            result.set(item.secid, {coupons: item.coupons});
+            result.set(item.secid, { coupons: item.coupons });
         });
 
         uniqueSecids.forEach((secid) => {
             if (!result.has(secid)) {
-                result.set(secid, {coupons: []});
+                result.set(secid, { coupons: [] });
             }
         });
 

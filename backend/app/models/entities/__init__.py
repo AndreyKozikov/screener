@@ -1,6 +1,6 @@
 """Модели БД (SQLModel) для таблиц SQLite."""
 
-from app.models.entities.bond import Bond, BondMarketData, BondMarketDataYield, BondSecurity
+from db_repository.models.bond import Bond, BondMarketData, BondMarketDataYield, BondSecurity
 from app.models.entities.bond_float_params import BondFloatParams
 from app.models.entities.currencyrate import DBcurrencyrate
 from app.models.entities.describe import DescribeField

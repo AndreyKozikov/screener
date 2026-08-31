@@ -46,9 +46,6 @@ class EmitentsRepository:
     ) -> Tuple[List[Dict[str, Any]], Dict[str, str], Dict[str, List[Dict[str, Any]]]]:
         """Преобразует данные из API MOEX в модели для записи в БД.
 
-        Выполняет ту же логику парсинга, что была в parse_bonds_emitent_json,
-        но работает с данными в памяти без обращения к файлам.
-
         Args:
             api_data: Словарь {secid: полный ответ API MOEX} из EmitentService.refresh_all_emitents.
 

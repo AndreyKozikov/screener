@@ -343,10 +343,7 @@ class DBCoupon:
             ValueError: Если формат даты некорректен (не соответствует YYYY-MM-DD).
             sqlite3.Error: Если произошла ошибка при работе с базой данных.
         """
-        if not self._table_exists("coupons"):
-            self.logger.warning("Таблица coupons не существует, fetch_coupons_raw возвращает []")
-            return []
-        
+
         # Валидация и нормализация дат
         if from_date:
             try:

@@ -29,7 +29,7 @@ from app.utils.edisclosure_utils import (
     clean_event_text,
     fetch_emission_documents_page,
     get_events_with_full_text_for_year,
-    search_company_by_inn,
+
 )
 from config.paths import EMITENT_EVENTS_JSON_DIR
 

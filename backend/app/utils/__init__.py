@@ -8,7 +8,7 @@ from app.utils.coupon_utils import (
 )
 from app.utils.edisclosure_utils import (
     find_events_by_reg_number,
-    search_company_by_inn,
+
 )
 
 __all__ = [
@@ -17,6 +17,6 @@ __all__ = [
     "clean_string_value",
     "extract_coupon_for_storage",
     "to_frontend_coupon",
-    "search_company_by_inn",
+
 ]
 

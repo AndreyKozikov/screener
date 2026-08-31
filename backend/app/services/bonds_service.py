@@ -8,8 +8,13 @@
 from datetime import date
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+import httpx
 
 import orjson
+
+from db_repository.config.paths import DATA_DIR, DB_PATH
+
+URL="http://127.0.0.1:8964"
 
 from config.settings import settings
 
@@ -96,9 +101,9 @@ def _parse_date(s: Optional[str]) -> Optional[date]:
 
 
 def _bond_to_screener_dto(
-    bond: Bond,
-    type_rev: Dict[int, str],
-    kind_rev: Dict[int, str],
+        bond: Bond,
+        type_rev: Dict[int, str],
+        kind_rev: Dict[int, str],
 ) -> BondScreenerDTO:
     """Преобразует внутреннюю модель Bond в формат BondScreenerDTO для внешнего API.
 
@@ -135,7 +140,8 @@ def _bond_to_screener_dto(
     rating = (bond.rating or "").strip() or None
     ratings: Optional[List[Dict[str, Any]]] = None
     if rating:
-        ratings = [{"rating_level_name_short_ru": rating, "agency_name_short_ru": getattr(bond, "rating_agency", None) or ""}]
+        ratings = [
+            {"rating_level_name_short_ru": rating, "agency_name_short_ru": getattr(bond, "rating_agency", None) or ""}]
 
     bond_type_str = type_rev.get(bond.bond_type) if isinstance(bond.bond_type, int) else None
     bond_kind_str = kind_rev.get(bond.bond_kind) if isinstance(bond.bond_kind, int) else None
@@ -183,79 +189,74 @@ def _bond_to_screener_dto(
     )
 
 
-def get_bonds_list(
-    filters: BondFilters,
-    emitent_title: Optional[str] = None,
-    exclude_spob: bool = False,
-    db_path: Optional[Path] = None,
-    data_dir: Optional[Path] = None,
+async def get_bonds_list(
+        filters: BondFilters,
+        emitent_title: Optional[str] = None,
+        exclude_spob: bool = False
 ) -> BondsListResponse:
-    """Получает отфильтрованный список облигаций с учетом всех заданных критериев.
 
-    Основной метод для работы скринера. Выполняет эффективную фильтрацию на уровне SQL,
-    обогащает результат данными о ближайших купонах и, при необходимости, выполняет
-    дополнительную фильтрацию по названию эмитента.
+    type_rev, kind_rev = _load_mappings(DATA_DIR)
 
-    Args:
-        filters (BondFilters): Набор фильтров (купон, доходность, даты, рейтинги и т.д.).
-        emitent_title (Optional[str]): Текстовое название эмитента для фильтрации.
-        exclude_spob (bool): Флаг исключения режима торгов SPOB (обычно для внебиржевых бумаг).
-        db_path (Optional[Path]): Путь к файлу базы данных.
-        data_dir (Optional[Path]): Путь к директории с файлами конфигурации и маппингов.
+    url = URL + "/api/bonds"
+    url_bond_count = URL + "/api/bond_counts"
 
-    Returns:
-        BondsListResponse: Объект, содержащий список DTO и статистику выборки (всего/отфильтровано).
-    """
-    if data_dir is None:
-        from config.paths import DATA_DIR
-        data_dir = DATA_DIR
-    data_dir = Path(data_dir)
+    json_filters = filters.model_dump()
 
-    type_rev, kind_rev = _load_mappings(data_dir)
+    emitent_title = emitent_title
+    async with httpx.AsyncClient() as client:
+        try:
+            response_bonds = await client.post(
+                url=url,
+                json=json_filters,
+                headers={"Content-Type": "application/json"}
+            )
 
-    db = BondsRepository(db_path=db_path)
+            response_bonds.raise_for_status()
 
-    # Выборка через SQLModel API; возвращаются объекты Bond
-    try:
-        bond_rows = db.select(
-            filters=filters,
-            bond_type_ids=filters.bondtype,
-            bond_kind_ids=filters.bondtype43,
-            exclude_spob=exclude_spob,
-        )
-    except Exception as e:
-        if "no such table" in str(e).lower():
-            bond_rows = []
-        else:
+            response_count = await client.get(
+                url=url_bond_count,
+                params={"exclude_spob": exclude_spob},
+            )
+
+            response_count.raise_for_status()
+
+        except httpx.RequestError as e:
+            raise
+        except httpx.HTTPStatusError as e:
             raise
 
-    try:
-        total = db.count_bonds(exclude_spob=False)
-    except Exception as e:
-        if "no such table" in str(e).lower():
-            total = 0
-        else:
-            raise
+    bonds_data = response_bonds.json()
 
+    bond_rows = [
+        Bond.model_validate(item)
+        for item in bonds_data
+    ]
+
+    total = response_count.json().get("total", 0)
+
+    today = date.today()
     bonds: List[BondScreenerDTO] = []
     for bond in bond_rows:
         try:
-            bonds.append(_bond_to_screener_dto(bond, type_rev, kind_rev))
+            next_coupon = min(
+                (
+                    coupon
+                    for coupon in bond.coupons
+                    if coupon.coupondate >= today
+                ),
+                key=lambda x: x.coupondate,
+                default=None
+            )
+
+            dto = _bond_to_screener_dto(bond, type_rev, kind_rev)
+
+            if next_coupon:
+                dto.coupon_value = next_coupon.value
+
+            bonds.append(dto)
         except Exception:
             continue
 
-    # Получаем значения ближайших купонов через CouponService
-    current_date = date.today()
-    secids = [b.SECID for b in bonds if b.SECID]
-    coupons_map = get_coupon_service().get_nearest_coupon_values(
-        secids=secids,
-        from_date=current_date,
-    )
-
-    # Обновляем COUPONVALUE для каждой облигации из данных купонов (округление до 2 знаков)
-    for dto in bonds:
-        if dto.SECID in coupons_map:
-            dto.COUPONVALUE = round_float_for_api(coupons_map[dto.SECID])
 
     # Фильтр по эмитенту
     if emitent_title and str(emitent_title).strip():
@@ -498,9 +499,9 @@ def fill_ratings_for_bonds_without_rating(db_path: Optional[Path] = None) -> int
 
 
 def refresh_bonds_data(
-    source_url: Optional[str] = None,
-    db_path: Optional[Path] = None,
-    data_dir: Optional[Path] = None,
+        source_url: Optional[str] = None,
+        db_path: Optional[Path] = None,
+        data_dir: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """Запускает процесс синхронизации данных облигаций с Московской Биржей.
 
@@ -570,10 +571,10 @@ def refresh_bonds_data(
 
 
 def _build_securities_dict(
-    bond: Bond,
-    security: Optional[BondSecurity],
-    type_rev: Dict[int, str],
-    kind_rev: Dict[int, str],
+        bond: Bond,
+        security: Optional[BondSecurity],
+        type_rev: Dict[int, str],
+        kind_rev: Dict[int, str],
 ) -> Dict[str, Any]:
     """Формирует словарь данных ценной бумаги в формате ответа MOEX API.
 
@@ -660,7 +661,7 @@ def _build_securities_dict(
 
 
 def _build_marketdata_dict(
-    bond: Bond, market_data: Optional[BondMarketData]
+        bond: Bond, market_data: Optional[BondMarketData]
 ) -> Dict[str, Any]:
     """Формирует словарь рыночных данных в формате ответа MOEX API.
 
@@ -715,8 +716,8 @@ def _build_marketdata_dict(
 
 
 def _build_marketdata_yields_list_from_db(
-    market_data_yield: BondMarketDataYield,
-    secid: str,
+        market_data_yield: BondMarketDataYield,
+        secid: str,
 ) -> List[Dict[str, Any]]:
     """Формирует список данных о доходности в формате ответа MOEX API.
 
@@ -755,7 +756,9 @@ def _build_marketdata_yields_list_from_db(
 
 
 def get_bond_detail(
-    secid: str, db_path: Optional[Path] = None, data_dir: Optional[Path] = None
+        secid: str,
+        db_path: Optional[Path] = None,
+        data_dir: Optional[Path] = None
 ) -> Optional[BondDetailDTO]:
     """Возвращает максимально полную информацию об облигации.
 
@@ -770,24 +773,30 @@ def get_bond_detail(
     Returns:
         Optional[BondDetailDTO]: Детальная информация об облигации или None.
     """
-    if data_dir is None:
-        from config.paths import DATA_DIR
-        data_dir = DATA_DIR
-    data_dir = Path(data_dir)
-    type_rev, kind_rev = _load_mappings(data_dir)
+
+    type_rev, kind_rev = _load_mappings(DATA_DIR)
+
     repo = BondsRepository(db_path=db_path)
+
     result = repo.get_bond_detail_by_secid(secid)
+
     if result is None:
         return None
+
     bond, security, market_data, market_data_yield = result
+
     securities = _build_securities_dict(bond, security, type_rev, kind_rev)
+
     marketdata = _build_marketdata_dict(bond, market_data)
+
     marketdata_yields = (
         _build_marketdata_yields_list_from_db(market_data_yield, bond.secid)
         if market_data_yield is not None
         else []
     )
+
     emitent_inn: Optional[str] = get_emitent_inn_by_secid(secid, db_path)
+
     return BondDetailDTO(
         securities=securities,
         marketdata=marketdata,

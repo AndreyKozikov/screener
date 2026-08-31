@@ -9,6 +9,7 @@ from app.repository.db.emitents_repository import EmitentsRepository
 from app.repository.db.emitent_edisclosure_repository import EmitentEdisclosureRepository
 from app.repository.files.file_storage import FileStorage
 from app.utils.edisclosure_utils import (
+    #ensure_search_page_bootstrap,
     fetch_emitent_year_events_unfiltered,
     find_latest_event_metadata_across_years,
     list_company_portal_event_years,
@@ -70,6 +71,8 @@ class EdisclosureEventsService:
         if not re.fullmatch(r"\d{10}(?:\d{2})?", inn_clean):
             raise ValueError("Некорректный ИНН: ожидается 10 или 12 цифр.")
 
+        #ensure_search_page_bootstrap()
+
         company_id = self._resolve_company_id_by_inn(inn_clean)
         today = date.today()
         calendar_year_today = today.year
@@ -86,7 +89,7 @@ class EdisclosureEventsService:
                     file_exists = True
                     processing_state = raw_file.get(_PROCESSING_STATE_KEY)
             except Exception as exc:
-                print(f"[EMITENT EVENTS] Не удалось прочитать {out_path}: {exc} — полная выгрузка", flush=True)
+                print(f"  [ИНН {inn_clean}] Не удалось прочитать {out_path}: {exc} — полная выгрузка", flush=True)
                 raw_file = None
 
         resume_mode = False
@@ -94,16 +97,16 @@ class EdisclosureEventsService:
         years_processed: List[int] = []
 
         if file_exists and processing_state is not None and raw_file is not None:
-            print(f"[EMITENT EVENTS] Обнаружен маркер незавершённой загрузки.", flush=True)
+            print(f"  [ИНН {inn_clean}] Обнаружен маркер незавершённой загрузки.", flush=True)
             years_payload = {str(yk): evs for yk, evs in raw_file.items() if isinstance(evs, list)}
             years_processed = sorted(processing_state.get("pending_years", []))
         elif file_exists and raw_file is not None:
             resume_mode = True
-            print(f"[EMITENT EVENTS] Файл найден — догрузка только за {calendar_year_today}", flush=True)
+            print(f"  [ИНН {inn_clean}] Файл найден — догрузка только за {calendar_year_today}", flush=True)
             years_payload = {str(yk): evs for yk, evs in raw_file.items() if isinstance(evs, list)}
             years_processed = [calendar_year_today]
         else:
-            print("[EMITENT EVENTS] Полная выгрузка (список годов с портала)", flush=True)
+            print(f"  [ИНН {inn_clean}] Полная выгрузка (список годов с портала)", flush=True)
             years_from_portal = list_company_portal_event_years(company_id)
             years_processed = sorted(set(years_from_portal + [calendar_year_today]))
             years_payload = {}
@@ -111,7 +114,7 @@ class EdisclosureEventsService:
         counts_by_year = {}
         for y in years_processed:
             boundary = (today + timedelta(days=1)).isoformat() if y >= calendar_year_today else f"{y + 1}-01-01"
-            print(f"[EMITENT EVENTS] Загружается год={y}, boundary_date={boundary}", flush=True)
+            print(f"  [ИНН {inn_clean}] Загружается год={y}, boundary_date={boundary}", flush=True)
             year_events = fetch_emitent_year_events_unfiltered(company_id=company_id, api_year=y, boundary_date=boundary)
             
             key = str(y)
@@ -130,11 +133,11 @@ class EdisclosureEventsService:
                 if remaining_years:
                     save_payload[_PROCESSING_STATE_KEY] = {"pending_years": remaining_years, "company_id": company_id}
                 self._file_storage.write_json_durable(out_path, save_payload)
-                print(f"[EMITENT EVENTS] Год {y} сохранён в файл", flush=True)
+                print(f"  [ИНН {inn_clean}] Год {y} сохранён в файл", flush=True)
 
         if resume_mode:
             self._file_storage.write_json_durable(out_path, years_payload)
-            print(f"[EMITENT EVENTS] Файл обновлён (resume_mode)", flush=True)
+            print(f"  [ИНН {inn_clean}] Файл обновлён (resume_mode)", flush=True)
 
         return {
             "status": "ok",
@@ -151,16 +154,20 @@ class EdisclosureEventsService:
         unique_inns = sorted(set(str(e["inn"]).strip() for e in emitents if e.get("inn")))
         
         print(f"[EMITENT EVENTS BATCH] Старт пакета: уникальных эмитентов (ИНН) к обработке: {len(unique_inns)}", flush=True)
+        #ensure_search_page_bootstrap()
         
         results = []
         errors = []
         for num, inn in enumerate(unique_inns, start=1):
+            print(f"\n{'='*75}", flush=True)
+            print(f"[EMITENT EVENTS BATCH {num}/{len(unique_inns)}] Старт обработки ИНН: {inn}", flush=True)
+            print(f"{'='*75}", flush=True)
             try:
                 res = self.fetch_and_save_emitent_events_by_inn(inn)
                 results.append(res)
-                print(f"[EMITENT EVENTS BATCH] ИНН={inn}: выгрузка завершена ({num}/{len(unique_inns)})", flush=True)
+                print(f"[EMITENT EVENTS BATCH {num}/{len(unique_inns)}] ИНН {inn} -> УСПЕХ", flush=True)
             except Exception as e:
-                print(f"[EMITENT EVENTS BATCH] ИНН={inn}: ошибка ({num}/{len(unique_inns)}) — {e}", flush=True)
+                print(f"[EMITENT EVENTS BATCH {num}/{len(unique_inns)}] ИНН {inn} -> ОШИБКА: {e}", flush=True)
                 errors.append({"inn": inn, "detail": str(e)})
 
         return {

@@ -145,11 +145,11 @@ class EmitentService:
         if emitent_id is not None:
             try:
                 emitent_id_int = int(emitent_id)
-                logger.debug("Fetching ratings for emitent_id=%s", emitent_id_int)
+
                 ratings = self._fetch_emitent_ratings(emitent_id_int)
                 if ratings is not None:
                     emitent_info["cci_rating_companies"] = ratings
-                    logger.debug("Added %s ratings to emitent data", len(ratings))
+
             except (ValueError, TypeError) as exc:
                 logger.warning("Invalid emitent_id format: %s, error: %s", emitent_id, exc)
 
@@ -233,7 +233,7 @@ class EmitentService:
     def _fetch_emitent_from_moex_by_secid(self, secid: str) -> Optional[Dict[str, Any]]:
         """Вспомогательный метод для загрузки эмитента."""
         return self.fetch_emitent_from_moex(secid)
-        return self.fetch_emitent_from_moex(secid)
+
 
     def refresh_all_emitents(
         self, bonds_details: Dict[str, Dict]

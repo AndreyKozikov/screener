@@ -5,11 +5,10 @@
 Используется для стандартизации формата ответов всех эндпоинтов приложения.
 """
 
-from typing import List, Dict, Any, Optional
+from typing import List, Optional
 from pydantic import BaseModel
 
 from .bonds_dto import BondScreenerDTO
-from .kbd_dto import KbdDTO, KbdDataResponse
 
 
 class BondsListResponse(BaseModel):
@@ -28,16 +27,6 @@ class BondsListResponse(BaseModel):
         bonds: Список объектов BondScreenerDTO с данными об облигациях.
             Количество элементов в списке не превышает значение limit.
 
-    Examples:
-        Пример ответа для запроса первой страницы из 50 записей:
-
-        >>> response = BondsListResponse(
-        ...     total=1000,
-        ...     filtered=250,
-        ...     skip=0,
-        ...     limit=50,
-        ...     bonds=[...]  # список из 50 BondScreenerDTO
-        ... )
     """
     total: int
     filtered: int

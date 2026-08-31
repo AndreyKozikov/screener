@@ -15,7 +15,7 @@ from sqlmodel import Session, create_engine, select
 
 from app.models import Bond, BondFilters, BondMarketData, BondMarketDataYield, BondSecurity
 from app.repository.db.constants import RATINGS_ORDER
-from app.utils.bond_lifecycle import is_bond_not_matured
+
 from app.utils.logger import get_data_update_logger
 from config.paths import DB_PATH
 
@@ -255,21 +255,7 @@ class BondsRepository:
 
     def _build_where_conditions(
         self,
-        *,
-        coupon_percent_min: Optional[float] = None,
-        coupon_percent_max: Optional[float] = None,
-        yield_to_maturity_min: Optional[float] = None,
-        yield_to_maturity_max: Optional[float] = None,
-        coupon_yield_to_price_min: Optional[float] = None,
-        coupon_yield_to_price_max: Optional[float] = None,
-        maturity_date_from: Optional[str] = None,
-        maturity_date_to: Optional[str] = None,
-        listlevel: Optional[List[int]] = None,
-        currency: Optional[List[str]] = None,
-        bond_type_ids: Optional[List[int]] = None,
-        bond_kind_ids: Optional[List[int]] = None,
-        rating_min: Optional[str] = None,
-        rating_max: Optional[str] = None,
+        filters: BondFilters,
         exclude_spob: bool = False,
     ) -> Any:
         """Формирует комбинированное условие WHERE для запросов к Bond.
@@ -278,31 +264,31 @@ class BondsRepository:
             Выражение SQLAlchemy (and_ из условий) или True (1=1).
         """
         conditions: List[Any] = self._base_bond_conditions(exclude_spob=exclude_spob)
-        if coupon_percent_min is not None:
-            conditions.append(Bond.coupon_percent >= coupon_percent_min)
-        if coupon_percent_max is not None:
-            conditions.append(Bond.coupon_percent <= coupon_percent_max)
-        if yield_to_maturity_min is not None:
-            conditions.append(Bond.yield_to_maturity >= yield_to_maturity_min)
-        if yield_to_maturity_max is not None:
-            conditions.append(Bond.yield_to_maturity <= yield_to_maturity_max)
-        if coupon_yield_to_price_min is not None:
-            conditions.append(Bond.coupon_yield_to_price >= coupon_yield_to_price_min)
-        if coupon_yield_to_price_max is not None:
-            conditions.append(Bond.coupon_yield_to_price <= coupon_yield_to_price_max)
-        if maturity_date_from is not None:
-            conditions.append(Bond.maturity_date >= maturity_date_from)
-        if maturity_date_to is not None:
-            conditions.append(Bond.maturity_date <= maturity_date_to)
-        if listlevel is not None and len(listlevel) > 0:
-            conditions.append(Bond.listing_level.in_(listlevel))
-        if currency is not None and len(currency) > 0:
-            conditions.append(Bond.face_unit.in_(currency))
-        if bond_type_ids is not None and len(bond_type_ids) > 0:
-            conditions.append(Bond.bond_type.in_(bond_type_ids))
-        if bond_kind_ids is not None and len(bond_kind_ids) > 0:
-            conditions.append(Bond.bond_kind.in_(bond_kind_ids))
-        ratings_in_range = self._rating_range_list(rating_min, rating_max)
+        if filters.coupon_min is not None:
+            conditions.append(Bond.coupon_percent >= filters.coupon_min)
+        if filters.coupon_max is not None:
+            conditions.append(Bond.coupon_percent <= filters.coupon_max)
+        if filters.yield_min is not None:
+            conditions.append(Bond.yield_to_maturity >= filters.yield_min)
+        if filters.yield_max is not None:
+            conditions.append(Bond.yield_to_maturity <= filters.yield_max)
+        if filters.coupon_yield_min is not None:
+            conditions.append(Bond.coupon_yield_to_price >= filters.coupon_yield_min)
+        if filters.coupon_yield_max is not None:
+            conditions.append(Bond.coupon_yield_to_price <= filters.coupon_yield_max)
+        if filters.matdate_from is not None:
+            conditions.append(Bond.maturity_date >= filters.matdate_from.isoformat())
+        if filters.matdate_to is not None:
+            conditions.append(Bond.maturity_date <= filters.matdate_to.isoformat())
+        if filters.listlevel:
+            conditions.append(Bond.listing_level.in_(filters.listlevel))
+        if filters.faceunit:
+            conditions.append(Bond.face_unit.in_(filters.faceunit))
+        if filters.bondtype:
+            conditions.append(Bond.bond_type.in_(filters.bondtype))
+        if filters.bondtype43:
+            conditions.append(Bond.bond_kind.in_(filters.bondtype43))
+        ratings_in_range = self._rating_range_list(filters.rating_min, filters.rating_max)
         if ratings_in_range:
             conditions.append(Bond.rating.isnot(None))
             conditions.append(Bond.rating != "")
@@ -330,176 +316,6 @@ class BondsRepository:
         low = min(idx_start, idx_end)
         high = max(idx_start, idx_end)
         return RATINGS_ORDER[low : high + 1]
-
-    def select(
-        self,
-        filters: Optional[BondFilters] = None,
-        *,
-        coupon_percent_min: Optional[float] = None,
-        coupon_percent_max: Optional[float] = None,
-        yield_to_maturity_min: Optional[float] = None,
-        yield_to_maturity_max: Optional[float] = None,
-        coupon_yield_to_price_min: Optional[float] = None,
-        coupon_yield_to_price_max: Optional[float] = None,
-        maturity_date_from: Optional[str] = None,
-        maturity_date_to: Optional[str] = None,
-        listlevel: Optional[List[int]] = None,
-        currency: Optional[List[str]] = None,
-        bond_type_ids: Optional[List[int]] = None,
-        bond_kind_ids: Optional[List[int]] = None,
-        rating_min: Optional[str] = None,
-        rating_max: Optional[str] = None,
-        exclude_spob: bool = False,
-    ) -> List[Bond]:
-        """Выборка облигаций с динамическими фильтрами через SQLModel API.
-
-        Условия формируются через _build_where_conditions; запрос выполняется
-        через select(Bond).where(...). Возвращает список объектов Bond.
-
-        Args:
-            filters: Объект BondFilters; при наличии подставляется вместо
-                прямых параметров.
-            Остальные аргументы — прямые параметры фильтрации (как в BondFilters).
-
-        Returns:
-            Список объектов Bond, удовлетворяющих фильтрам.
-
-        Raises:
-            Exception: При ошибке работы с БД.
-        """
-        if filters is not None:
-            coupon_percent_min = filters.coupon_min
-            coupon_percent_max = filters.coupon_max
-            yield_to_maturity_min = filters.yield_min
-            yield_to_maturity_max = filters.yield_max
-            coupon_yield_to_price_min = filters.coupon_yield_min
-            coupon_yield_to_price_max = filters.coupon_yield_max
-            maturity_date_from = filters.matdate_from.isoformat() if filters.matdate_from else None
-            maturity_date_to = filters.matdate_to.isoformat() if filters.matdate_to else None
-            listlevel = filters.listlevel
-            currency = filters.faceunit
-            rating_min = filters.rating_min
-            rating_max = filters.rating_max
-            bond_type_ids = filters.bondtype
-            bond_kind_ids = filters.bondtype43
-
-        where = self._build_where_conditions(
-            coupon_percent_min=coupon_percent_min,
-            coupon_percent_max=coupon_percent_max,
-            yield_to_maturity_min=yield_to_maturity_min,
-            yield_to_maturity_max=yield_to_maturity_max,
-            coupon_yield_to_price_min=coupon_yield_to_price_min,
-            coupon_yield_to_price_max=coupon_yield_to_price_max,
-            maturity_date_from=maturity_date_from,
-            maturity_date_to=maturity_date_to,
-            listlevel=listlevel,
-            currency=currency,
-            bond_type_ids=bond_type_ids,
-            bond_kind_ids=bond_kind_ids,
-            rating_min=rating_min,
-            rating_max=rating_max,
-            exclude_spob=exclude_spob,
-        )
-        stmt = select(Bond).where(where)
-        try:
-            with Session(self._engine) as session:
-                result = list(session.exec(stmt).all())
-            self.logger.debug("Выбрано %s записей из таблицы bonds с применением фильтров", len(result))
-            return result
-        except Exception as e:
-            self.logger.error("Ошибка при select: %s", e, exc_info=True)
-            raise
-
-    def count(
-        self,
-        filters: Optional[BondFilters] = None,
-        *,
-        coupon_percent_min: Optional[float] = None,
-        coupon_percent_max: Optional[float] = None,
-        yield_to_maturity_min: Optional[float] = None,
-        yield_to_maturity_max: Optional[float] = None,
-        coupon_yield_to_price_min: Optional[float] = None,
-        coupon_yield_to_price_max: Optional[float] = None,
-        maturity_date_from: Optional[str] = None,
-        maturity_date_to: Optional[str] = None,
-        listlevel: Optional[List[int]] = None,
-        currency: Optional[List[str]] = None,
-        bond_type_ids: Optional[List[int]] = None,
-        bond_kind_ids: Optional[List[int]] = None,
-        rating_min: Optional[str] = None,
-        rating_max: Optional[str] = None,
-        exclude_spob: bool = False,
-    ) -> int:
-        """Подсчёт облигаций с теми же фильтрами, что и select.
-
-        Returns:
-            Количество записей Bond, удовлетворяющих условиям.
-        """
-        if filters is not None:
-            coupon_percent_min = filters.coupon_min
-            coupon_percent_max = filters.coupon_max
-            yield_to_maturity_min = filters.yield_min
-            yield_to_maturity_max = filters.yield_max
-            coupon_yield_to_price_min = filters.coupon_yield_min
-            coupon_yield_to_price_max = filters.coupon_yield_max
-            maturity_date_from = filters.matdate_from.isoformat() if filters.matdate_from else None
-            maturity_date_to = filters.matdate_to.isoformat() if filters.matdate_to else None
-            listlevel = filters.listlevel
-            currency = filters.faceunit
-            rating_min = filters.rating_min
-            rating_max = filters.rating_max
-            bond_type_ids = filters.bondtype
-            bond_kind_ids = filters.bondtype43
-
-        where = self._build_where_conditions(
-            coupon_percent_min=coupon_percent_min,
-            coupon_percent_max=coupon_percent_max,
-            yield_to_maturity_min=yield_to_maturity_min,
-            yield_to_maturity_max=yield_to_maturity_max,
-            coupon_yield_to_price_min=coupon_yield_to_price_min,
-            coupon_yield_to_price_max=coupon_yield_to_price_max,
-            maturity_date_from=maturity_date_from,
-            maturity_date_to=maturity_date_to,
-            listlevel=listlevel,
-            currency=currency,
-            bond_type_ids=bond_type_ids,
-            bond_kind_ids=bond_kind_ids,
-            rating_min=rating_min,
-            rating_max=rating_max,
-            exclude_spob=exclude_spob,
-        )
-        stmt = select(func.count()).select_from(Bond).where(where)
-        try:
-            with Session(self._engine) as session:
-                return int(session.exec(stmt).one())
-        except Exception as e:
-            self.logger.error("Ошибка при count: %s", e, exc_info=True)
-            raise
-
-    def count_bonds(
-        self,
-        *,
-        exclude_spob: bool = False,
-    ) -> int:
-        """Возвращает общее количество облигаций в таблице bonds (без фильтров по рейтингу и др.).
-
-        Используется для поля total в ответе API.
-
-        Args:
-            exclude_spob: Исключить облигации с режимом торгов SPOB.
-
-        Returns:
-            Количество записей в таблице bonds.
-        """
-        conditions: List[Any] = self._base_bond_conditions(exclude_spob=exclude_spob)
-        where = and_(*conditions) if conditions else True
-        stmt = select(func.count()).select_from(Bond).where(where)
-        try:
-            with Session(self._engine) as session:
-                return int(session.exec(stmt).one())
-        except Exception as e:
-            self.logger.error("Ошибка при count_bonds: %s", e, exc_info=True)
-            raise
 
     def save_bond_securities(
         self, securities: List[Dict[str, Any]]
@@ -1001,10 +817,6 @@ class BondsRepository:
 
     def get_all_secids(self) -> List[str]:
         """Возвращает отсортированный список уникальных SECID из таблицы bonds.
-
-        Используется для массовой загрузки истории торгов: один запрос к БД
-        вместо чтения bonds.json.
-
         Returns:
             Отсортированный список уникальных непустых SECID. Пустой список
             при ошибке или отсутствии записей.

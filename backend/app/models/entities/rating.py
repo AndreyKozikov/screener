@@ -6,7 +6,7 @@
 
 from typing import Optional
 
-from sqlmodel import SQLModel, Field as SQLField
+from sqlmodel import SQLModel, Field as SQLField, UniqueConstraint
 
 
 class RatingAgency(SQLModel, table=True):
@@ -48,6 +48,9 @@ class EmitentRating(SQLModel, table=True):
     """
 
     __tablename__ = "emitent_ratings"
+    __table_args__ = (
+        UniqueConstraint("emitent_id", "agency_id", name="uq_emitent_ratings_emitent_agency"),
+    )
 
     id: Optional[int] = SQLField(default=None, primary_key=True)
     emitent_id: int = SQLField(foreign_key="emitents.id")

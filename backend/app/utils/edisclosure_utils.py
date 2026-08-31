@@ -24,11 +24,16 @@ _SESSION_CACHE: Dict[str, Optional[Any]] = {
     "token": None,    # type: Optional[str]
 }
 
+# Базовые заголовки сессии
+_BASE_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+    "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+}
+
 # Заголовки для API запросов
 _API_HEADERS = {
-    "Accept": "application/json",
-    "Accept-Language": "ru,en;q=0.9",
-    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+    "Accept": "application/json, text/javascript, */*; q=0.01",
+    "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
     "Origin": "https://www.e-disclosure.ru",
     "Referer": "https://www.e-disclosure.ru/poisk-po-kompaniyam",
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
@@ -37,8 +42,8 @@ _API_HEADERS = {
 
 # Заголовки для HTML страниц
 _HTML_HEADERS = {
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "ru,en;q=0.9",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+    "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
 }
 
@@ -80,107 +85,7 @@ _CHAR_MAP: Dict[str, str] = {
 }
 
 
-def _get_session_data() -> Tuple[requests.Session, str]:
-    """Получает сессию и токен через requests."""
-    session = requests.Session()
-    session.headers.update(_API_HEADERS)
-    
-    print(f"  [API] GET {_SEARCH_PAGE_URL}", flush=True)
-    response = session.get(_SEARCH_PAGE_URL, headers=_HTML_HEADERS, timeout=_TIMEOUT)
-    response.raise_for_status()
-    
-    token_match = re.search(
-        r'<input[^>]*name=["\']__RequestVerificationToken["\'][^>]*value=["\']([^"\']+)["\']',
-        response.text,
-        re.IGNORECASE
-    )
-    
-    if not token_match:
-        raise RuntimeError("Не удалось найти токен __RequestVerificationToken на странице")
-    
-    token = token_match.group(1)
-    return session, token
 
-
-def _clear_session_cache() -> None:
-    """Очищает кэш сессии и токена."""
-    global _SESSION_CACHE
-    _SESSION_CACHE["session"] = None
-    _SESSION_CACHE["token"] = None
-
-
-def _get_session() -> Tuple[requests.Session, str]:
-    """Инициализирует сессию и получает токен антифоргери."""
-    global _SESSION_CACHE
-
-    if _SESSION_CACHE["session"] is not None and _SESSION_CACHE["token"] is not None:
-        return _SESSION_CACHE["session"], _SESSION_CACHE["token"]
-
-    session, token = _get_session_data()
-    _SESSION_CACHE["session"] = session
-    _SESSION_CACHE["token"] = token
-    return session, token
-
-
-def _get_plain_session() -> requests.Session:
-    """Возвращает сессию без bootstrap страницы поиска и без токена."""
-    global _SESSION_CACHE
-
-    if _SESSION_CACHE["session"] is not None:
-        return _SESSION_CACHE["session"]
-
-    session = requests.Session()
-    session.headers.update(_API_HEADERS)
-    _SESSION_CACHE["session"] = session
-    print(
-        "  [API] INIT plain session (without poisk-po-kompaniyam bootstrap)",
-        flush=True,
-    )
-    return session
-
-
-def search_company_by_inn(inn: str) -> List[Dict[str, Any]]:
-    """Ищет компанию по ИНН на e-disclosure.ru."""
-    _clear_session_cache()
-    session, token = _get_session()
-
-    data = {
-        "textfield": inn,
-        "radReg": "FederalDistricts",
-        "districtsCheckboxGroup": "-1",
-        "regionsCheckboxGroup": "-1",
-        "branchesCheckboxGroup": "-1",
-        "lastPageSize": "10",
-        "lastPageNumber": "1",
-        "query": inn,
-        "__RequestVerificationToken": token,
-    }
-
-    print(f"  [API] POST {_URL}", flush=True)
-    response = session.post(_URL, data=data, timeout=_TIMEOUT)
-
-    if response.status_code == 403:
-        _clear_session_cache()
-        session, token = _get_session()
-        data["__RequestVerificationToken"] = token
-        response = session.post(_URL, data=data, timeout=_TIMEOUT)
-
-    response.raise_for_status()
-    payload = response.json()
-
-    found_list = payload.get("foundCompaniesList") or []
-
-    result: List[Dict[str, Any]] = []
-    for item in found_list:
-        result.append({
-            "id": item.get("id"),
-            "name": item.get("name"),
-            "district": item.get("district"),
-            "region": item.get("region"),
-            "branch": item.get("branch"),
-        })
-
-    return result
 
 
 def _extract_event_text(pseudo_guid: str, session: requests.Session) -> Optional[str]:

@@ -8,7 +8,7 @@ import logging
 from datetime import date
 from typing import List, Optional
 
-from app.models.entities.bond import Bond
+from db_repository.models.bond import Bond
 from app.models.entities.bond_float_params import BondFloatParams
 from app.models.schemasDTO.bond_float_params_dto import BondFloatParamsDTO
 from app.repository.db.bond_float_params_repository import BondFloatParamsRepository

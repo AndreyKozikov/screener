@@ -126,7 +126,7 @@ def _run_emitent_pipeline_sync() -> Dict[str, Any]:
     emitent_service = get_emitent_service()
     data_loader = get_data_loader()
 
-    bonds_details = data_loader.get_bond_details_sync()
+    bonds_details = data_loader.get_bond_details_sync() # получение данных из кеша
     if not bonds_details:
         logger.warning(
             "[API /emitent/refresh] Bonds details cache is empty, loading SECIDs from database"
@@ -196,7 +196,7 @@ async def refresh_emitents_data() -> Dict[str, Any]:
     """Единый пайплайн обновления данных эмитентов с сохранением в БД.
 
     Загружает данные эмитентов из API MOEX в память, сохраняет в таблицы emitents
-    и emitent_ratings, обновляет поле emitent_id в таблице bonds. Без промежуточных файлов.
+    и emitent_ratings, обновляет поле emitent_id в таблице bonds.
 
     Returns:
         Словарь со статистикой: status, total, updated, errors, skipped.

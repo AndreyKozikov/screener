@@ -7,8 +7,10 @@
 import hashlib
 import html
 import io
+import json
 import random
 import re
+import os
 import time
 import zipfile
 import rarfile
@@ -17,20 +19,47 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 from urllib.parse import urljoin, unquote
-
 import requests
 
-# Кэш сессии и токена
+PROJECT_ROOT = Path(__file__).parent.absolute()
+COOKIES_FILE = PROJECT_ROOT / "cookies_data.json"
+
+
+def _load_cookies_from_file() -> Tuple[Dict[str, str], str]:
+    """Загружает cookies и токен из файла."""
+    print(COOKIES_FILE)
+    if not os.path.exists(COOKIES_FILE):
+        raise FileNotFoundError(
+            f"❌ Файл {COOKIES_FILE} не найден.\n"
+            f"Запустите get_cookies_selenium.py для его создания."
+        )
+
+    with open(COOKIES_FILE, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    cookies = data.get("cookies", {})
+    token = data.get("token", "")
+
+    if not cookies or not token:
+        raise ValueError("❌ В файле отсутствуют cookies или токен. Обновите данные через get_cookies_selenium.py")
+
+    return cookies, token
+
 _SESSION_CACHE: Dict[str, Optional[Any]] = {
     "session": None,  # type: Optional[requests.Session]
     "token": None,    # type: Optional[str]
 }
 
+# Базовые заголовки сессии
+_BASE_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+    "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+}
+
 # Заголовки для API запросов
 _API_HEADERS = {
-    "Accept": "application/json",
-    "Accept-Language": "ru,en;q=0.9",
-    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+    "Accept": "application/json, text/javascript, */*; q=0.01",
+    "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
     "Origin": "https://www.e-disclosure.ru",
     "Referer": "https://www.e-disclosure.ru/poisk-po-kompaniyam",
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
@@ -39,8 +68,8 @@ _API_HEADERS = {
 
 # Заголовки для HTML страниц
 _HTML_HEADERS = {
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "ru,en;q=0.9",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+    "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
 }
 
@@ -48,13 +77,22 @@ _URL = "https://www.e-disclosure.ru/api/search/companies"
 _EVENTS_URL = "https://www.e-disclosure.ru/api/events/page"
 _EVENT_PAGE_URL = "https://www.e-disclosure.ru/portal/event.aspx"
 _SEARCH_PAGE_URL = "https://www.e-disclosure.ru/poisk-po-kompaniyam"
-_COMPANY_PORTAL_URL = "https://www.e-disclosure.ru/portal/company.aspx"
 _MAIN_PAGE_URL = "https://www.e-disclosure.ru"
-_TIMEOUT = 30
+_TIMEOUT = 30  # Увеличен таймаут для медленных соединений
 
 # Параллельная загрузка HTML текстов событий только внутри одного года
 _EMITENT_EVENT_TEXT_MAX_WORKERS: int = 6
 _EMITENT_EVENT_TEXT_JITTER_SEC: Tuple[float, float] = (0.05, 0.2)
+
+# Заголовки событий, которые исключаются из пайплайна (не передаются в LLM).
+_EXCLUDED_EVENT_TITLE = (
+    "Перевод эмиссионных ценных бумаг эмитента из одного котировального списка "
+    "в другой котировальный список"
+)
+
+_FILES_PAGE_URL = "https://www.e-disclosure.ru/portal/files.aspx"
+_COMPANY_PORTAL_URL = "https://www.e-disclosure.ru/portal/company.aspx"
+
 
 _BOND_DECISION_PHRASE: str = "РЕШЕНИЕ О ВЫПУСКЕ ЦЕННЫХ БУМАГ"
 _AMENDMENTS_PHRASE_PATTERN: re.Pattern[str] = re.compile(
@@ -64,32 +102,43 @@ _AMENDMENTS_PHRASE_PATTERN: re.Pattern[str] = re.compile(
 
 
 def _get_session_data() -> Tuple[requests.Session, str]:
-    """Получает сессию и токен через requests."""
+    cookies, token = _load_cookies_from_file()
+
     session = requests.Session()
-    session.headers.update(_API_HEADERS)
-    
-    print(f"  [API] GET {_SEARCH_PAGE_URL}", flush=True)
-    response = session.get(_SEARCH_PAGE_URL, headers=_HTML_HEADERS, timeout=_TIMEOUT)
-    response.raise_for_status()
-    
-    token_match = re.search(
-        r'<input[^>]*name=["\']__RequestVerificationToken["\'][^>]*value=["\']([^"\']+)["\']',
-        response.text,
-        re.IGNORECASE
-    )
-    
-    if not token_match:
-        raise RuntimeError("Не удалось найти токен __RequestVerificationToken на странице")
-    
-    token = token_match.group(1)
+    session.headers.update({
+        "Accept": "*/*",
+        "Accept-Encoding": "gzip, deflate, br, zstd",
+        "Accept-Language": "ru,en;q=0.9",
+        "Connection": "keep-alive",
+        "Host": "www.e-disclosure.ru",
+        "Referer": "https://www.e-disclosure.ru/poisk-po-kompaniyam",
+        "Sec-Ch-Ua": '"Chromium";v="148", "YaBrowser";v="26.6", "Not/A)Brand";v="99", "Yowser";v="2.5"',
+        "Sec-Ch-Ua-Mobile": "?0",
+        "Sec-Ch-Ua-Platform": '"Windows"',
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-origin",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 YaBrowser/26.6.0.0 Safari/537.36",
+        "X-Requested-With": "XMLHttpRequest",
+    })
+
+    for name, value in cookies.items():
+        session.cookies.set(name, value, domain=".e-disclosure.ru")
+
+    if token and "__RequestVerificationToken" not in session.cookies:
+        session.cookies.set("__RequestVerificationToken", token, domain=".e-disclosure.ru")
+        print("  [DEBUG] Токен добавлен в cookies", flush=True)
+
+    if "ASP.NET_SessionId" not in session.cookies:
+        print("  [DEBUG] Получаю ASP.NET_SessionId через главную страницу...", flush=True)
+        try:
+            resp = session.get(_MAIN_PAGE_URL, timeout=_TIMEOUT)
+            resp.raise_for_status()
+            print("  [DEBUG] ASP.NET_SessionId получен", flush=True)
+        except Exception as e:
+            print(f"  [DEBUG] Ошибка получения сессии: {e}", flush=True)
+
     return session, token
-
-
-def _clear_session_cache() -> None:
-    """Очищает кэш сессии и токена."""
-    global _SESSION_CACHE
-    _SESSION_CACHE["session"] = None
-    _SESSION_CACHE["token"] = None
 
 
 def _get_session() -> Tuple[requests.Session, str]:
@@ -99,39 +148,32 @@ def _get_session() -> Tuple[requests.Session, str]:
     if _SESSION_CACHE["session"] is not None and _SESSION_CACHE["token"] is not None:
         return _SESSION_CACHE["session"], _SESSION_CACHE["token"]
 
+    print("  [DEBUG] _get_session(): создаю новую сессию через _get_session_data()", flush=True)
     session, token = _get_session_data()
+    print(f"  [DEBUG] _get_session(): получены session={session is not None}, token={token is not None}", flush=True)
+
     _SESSION_CACHE["session"] = session
     _SESSION_CACHE["token"] = token
     return session, token
 
 
+
 def _get_plain_session() -> requests.Session:
-    """Возвращает сессию без bootstrap страницы поиска и без токена."""
+
+    """Возвращает сессию с предварительным выполнением фиктивного перехода по адресу https://www.e-disclosure.ru/poisk-po-kompaniyam."""
     global _SESSION_CACHE
 
     if _SESSION_CACHE["session"] is not None:
         return _SESSION_CACHE["session"]
 
-    session = requests.Session()
-    session.headers.update(_API_HEADERS)
-    _SESSION_CACHE["session"] = session
-    print(
-        "  [API] INIT plain session (without poisk-po-kompaniyam bootstrap)",
-        flush=True,
-    )
+    # Если сессии нет в кэше — создаём её через _get_session()
+    session, _ = _get_session()
     return session
 
 
 def search_company_by_inn(inn: str) -> List[Dict[str, Any]]:
-    """Ищет компанию по ИНН на e-disclosure.ru и возвращает id, name.
+    """Ищет компанию по ИНН на e-disclosure.ru."""
 
-    Args:
-        inn: ИНН компании (например, 7712040126).
-
-    Returns:
-        Список словарей с полями: id, name для каждой найденной компании.
-    """
-    _clear_session_cache()
     session, token = _get_session()
 
     data = {
@@ -147,10 +189,11 @@ def search_company_by_inn(inn: str) -> List[Dict[str, Any]]:
     }
 
     print(f"  [API] POST {_URL}", flush=True)
+    time.sleep(random.uniform(1, 2))
     response = session.post(_URL, data=data, timeout=_TIMEOUT)
 
     if response.status_code == 403:
-        _clear_session_cache()
+
         session, token = _get_session()
         data["__RequestVerificationToken"] = token
         response = session.post(_URL, data=data, timeout=_TIMEOUT)
@@ -165,6 +208,9 @@ def search_company_by_inn(inn: str) -> List[Dict[str, Any]]:
         result.append({
             "id": item.get("id"),
             "name": item.get("name"),
+            "district": item.get("district"),
+            "region": item.get("region"),
+            "branch": item.get("branch"),
         })
 
     return result
@@ -331,10 +377,10 @@ def _fetch_emitent_event_text_worker(
 
 
 def fetch_emitent_year_events_unfiltered(
-    *,
-    company_id: int,
-    api_year: int,
-    boundary_date: str,
+        *,
+        company_id: int,
+        api_year: int,
+        boundary_date: str,
 ) -> List[Dict[str, Optional[str]]]:
     """Загружает события компании за календарный год ``api_year`` с полным текстом.
 
@@ -355,14 +401,85 @@ def fetch_emitent_year_events_unfiltered(
     print(f"  [EMITENT EVENTS] Год API={api_year}, граница={boundary_date}, company_id={company_id}", flush=True)
 
     session = _get_plain_session()
+
+    # Заголовки для страницы компании
+    portal_headers = {
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+        "Accept-Encoding": "gzip, deflate, br, zstd",
+        "Accept-Language": "ru,en;q=0.9",
+        "Cache-Control": "max-age=0",
+        "Connection": "keep-alive",
+        "Host": "www.e-disclosure.ru",
+        "Sec-Ch-Ua": '"Chromium";v="148", "YaBrowser";v="26.6", "Not/A)Brand";v="99", "Yowser";v="2.5"',
+        "Sec-Ch-Ua-Mobile": "?0",
+        "Sec-Ch-Ua-Platform": '"Windows"',
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "same-origin",
+        "Sec-Fetch-User": "?1",
+        "Upgrade-Insecure-Requests": "1",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 YaBrowser/26.6.0.0 Safari/537.36",
+        "Referer": "https://www.e-disclosure.ru/poisk-po-kompaniyam",
+    }
+
+    # Посещаем страницу компании
+    company_portal_url = f"{_COMPANY_PORTAL_URL}?id={company_id}"
+    print(f"  [PORTAL] GET {company_portal_url}", flush=True)
+    portal_response = session.get(company_portal_url, headers=portal_headers, timeout=_TIMEOUT)
+
+    print(f"  [PORTAL] Статус ответа: {portal_response.status_code}", flush=True)
+    if portal_response.status_code != 200:
+        print(f"  [PORTAL] Ошибка! Тело ответа (первые 500 символов):\n{portal_response.text[:500]}", flush=True)
+        portal_response.raise_for_status()
+    time.sleep(random.uniform(0.5, 1.0))
+
+    # Заголовки для API
     params = {"companyId": company_id, "year": api_year}
+    token = session.cookies.get("__RequestVerificationToken", "")
+    event_api_headers = {
+        "Accept": "*/*",
+        "Accept-Encoding": "gzip, deflate, br, zstd",
+        "Accept-Language": "ru,en;q=0.9",
+        "Connection": "keep-alive",
+        "Host": "www.e-disclosure.ru",
+        "Referer": company_portal_url,
+        "Sec-Ch-Ua": '"Chromium";v="148", "YaBrowser";v="26.6", "Not/A)Brand";v="99", "Yowser";v="2.5"',
+        "Sec-Ch-Ua-Mobile": "?0",
+        "Sec-Ch-Ua-Platform": '"Windows"',
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-origin",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 YaBrowser/26.6.0.0 Safari/537.36",
+        "X-Requested-With": "XMLHttpRequest",
+    }
+
+    # Добавляем токен в параметры
+    if token:
+        params["__RequestVerificationToken"] = token
+
     url = f"{_EVENTS_URL}?companyId={company_id}&year={api_year}"
     print(f"  [API] GET {url}", flush=True)
-    response = session.get(_EVENTS_URL, params=params, timeout=_TIMEOUT)
+    response = session.get(_EVENTS_URL, params=params, headers=event_api_headers, timeout=_TIMEOUT)
+
     if response.status_code == 403:
+        print(f"  [API] 403, тело ответа:\n{response.text[:500]}", flush=True)
+        # Пробуем обновить сессию
         _clear_session_cache()
         session = _get_plain_session()
-        response = session.get(_EVENTS_URL, params=params, timeout=_TIMEOUT)
+
+        # Повторно посещаем страницу компании
+        company_portal_url = f"{_COMPANY_PORTAL_URL}?id={company_id}"
+        print(f"  [PORTAL] GET {company_portal_url} (повторный)", flush=True)
+        portal_response = session.get(company_portal_url, headers=portal_headers, timeout=_TIMEOUT)
+        portal_response.raise_for_status()
+        time.sleep(random.uniform(0.5, 1.0))
+
+        # Повторяем API запрос
+        token = session.cookies.get("__RequestVerificationToken", "")
+        if token:
+            params["__RequestVerificationToken"] = token
+        response = session.get(_EVENTS_URL, params=params, headers=event_api_headers, timeout=_TIMEOUT)
+
     response.raise_for_status()
     events = response.json()
 
@@ -415,14 +532,41 @@ def fetch_emitent_year_events_unfiltered(
 def fetch_events_page_json_only(company_id: int, api_year: int) -> List[Dict[str, Any]]:
     """Загружает сырой JSON списка событий без загрузки текстов страниц."""
     session = _get_plain_session()
+    company_portal_url = f"{_COMPANY_PORTAL_URL}?id={company_id}"
+    print(f"  [PORTAL] GET {company_portal_url}", flush=True)
+    portal_response = session.get(company_portal_url, headers=_HTML_HEADERS, timeout=_TIMEOUT)
+
+    print(f"  [PORTAL] Статус ответа: {portal_response.status_code}", flush=True)
+    if portal_response.status_code != 200:
+        print(f"  [PORTAL] Ошибка! Тело ответа (первые 500 символов):\n{portal_response.text[:500]}", flush=True)
+        portal_response.raise_for_status()
+    time.sleep(random.uniform(0.5, 1.0))
+
     params = {"companyId": company_id, "year": api_year}
+    company_portal_url = f"{_COMPANY_PORTAL_URL}?id={company_id}"
+    event_api_headers = {
+        "Accept": "application/json, text/javascript, */*; q=0.01",
+        "X-Requested-With": "XMLHttpRequest",
+        "Origin": _MAIN_PAGE_URL,
+        "Referer": company_portal_url,
+    }
     url = f"{_EVENTS_URL}?companyId={company_id}&year={api_year}"
     print(f"  [API] GET (metadata only) {url}", flush=True)
-    response = session.get(_EVENTS_URL, params=params, timeout=_TIMEOUT)
+    response = session.get(_EVENTS_URL, params=params, headers=event_api_headers, timeout=_TIMEOUT)
     if response.status_code == 403:
-        _clear_session_cache()
+
         session = _get_plain_session()
-        response = session.get(_EVENTS_URL, params=params, timeout=_TIMEOUT)
+        company_portal_url = f"{_COMPANY_PORTAL_URL}?id={company_id}"
+        print(f"  [PORTAL] GET {company_portal_url} (повторный)", flush=True)
+        portal_response = session.get(company_portal_url, headers=_HTML_HEADERS, timeout=_TIMEOUT)
+
+        print(f"  [PORTAL] Статус ответа (повторный): {portal_response.status_code}", flush=True)
+        if portal_response.status_code != 200:
+            print(f"  [PORTAL] Ошибка! Тело ответа (первые 500 символов):\n{portal_response.text[:500]}", flush=True)
+            portal_response.raise_for_status()
+        time.sleep(random.uniform(0.5, 1.0))
+
+        response = session.get(_EVENTS_URL, params=params, headers=event_api_headers, timeout=_TIMEOUT)
     response.raise_for_status()
     payload = response.json()
     return payload if isinstance(payload, list) else []
@@ -468,7 +612,7 @@ def list_company_portal_event_years(company_id: int) -> List[int]:
     print(f"  [COMPANY PAGE] GET {page_url}", flush=True)
     response = session.get(page_url, headers=_HTML_HEADERS, timeout=_TIMEOUT)
     if response.status_code == 403:
-        _clear_session_cache()
+
         session = _get_plain_session()
         response = session.get(page_url, headers=_HTML_HEADERS, timeout=_TIMEOUT)
     response.raise_for_status()
@@ -745,4 +889,4 @@ def clean_markdown_after_pdf2md(content: str) -> str:
     if header_match:
         content = content[header_match.start():]
         content = re.sub(r"Утверждено\s+решением.*?(?=Вид,\s*категория\s*\([^)]*\),?\s*ценных\s*бумаг)", "", content, flags=re.DOTALL | re.IGNORECASE)
-    return content
+    return

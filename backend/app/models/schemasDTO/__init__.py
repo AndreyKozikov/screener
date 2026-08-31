@@ -12,7 +12,7 @@ from app.models.schemasDTO.coupons import (
 )
 from app.models.schemasDTO.describe_dto import DescribeDTO
 from app.models.schemasDTO.emitent_dto import EmitentInfo
-from app.models.schemasDTO.filters import BondFilters
+from db_repository.models.bond_filters import BondFilters
 from app.models.schemasDTO.forecast_dto import ForecastDatesResponse
 from app.models.schemasDTO.kbd_dto import KbdDataResponse, KbdDTO
 from app.models.schemasDTO.keyrate_dto import KeyrateDTO
