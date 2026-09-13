@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -14,8 +14,10 @@ import {
   Alert,
   Select,
   MenuItem,
+  Chip,
 } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import UploadFileIcon from '@mui/icons-material/UploadFile';
 
 export interface RefreshTask {
   id: string;
@@ -26,7 +28,13 @@ export interface RefreshTask {
 interface RefreshDataDialogProps {
   open: boolean;
   onClose: () => void;
-  onConfirm: (selectedTasks: string[], forceUpdateRatings?: boolean, forceRefreshCoupons?: boolean, floatersProvider?: string) => Promise<void>;
+  onConfirm: (
+    selectedTasks: string[],
+    forceUpdateRatings?: boolean,
+    forceRefreshCoupons?: boolean,
+    floatersProvider?: string,
+    ipcFile?: File | null,
+  ) => Promise<void>;
   tasks: RefreshTask[];
   isRefreshing: boolean;
   refreshStatus: Record<string, { status: 'idle' | 'loading' | 'success' | 'error'; error?: string }>;
@@ -55,6 +63,9 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
   const [forceUpdateRatings, setForceUpdateRatings] = useState(false);
   const [forceRefreshCoupons, setForceRefreshCoupons] = useState(false);
   const [floatersProvider, setFloatersProvider] = useState<string>('gemini');
+  const [ipcFile, setIpcFile] = useState<File | null>(null);
+  const [ipcFileError, setIpcFileError] = useState<string | null>(null);
+  const ipcFileInputRef = useRef<HTMLInputElement>(null);
 
   // Reset selected tasks when dialog opens or tasks change
   useEffect(() => {
@@ -67,6 +78,11 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
       setForceUpdateRatings(false);
       setForceRefreshCoupons(false);
       setFloatersProvider('gemini');
+      setIpcFile(null);
+      setIpcFileError(null);
+      if (ipcFileInputRef.current) {
+        ipcFileInputRef.current.value = '';
+      }
     }
   }, [open, tasks]);
 
@@ -75,6 +91,22 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
       ...prev,
       [taskId]: !prev[taskId],
     }));
+  };
+
+  const handleIpcFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    setIpcFileError(null);
+    if (!file) {
+      setIpcFile(null);
+      return;
+    }
+    const name = file.name.toLowerCase();
+    if (!name.endsWith('.xlsx')) {
+      setIpcFileError('Допустим только формат .xlsx');
+      setIpcFile(null);
+      return;
+    }
+    setIpcFile(file);
   };
 
   const handleConfirm = async () => {
@@ -89,11 +121,16 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
     // Close dialog immediately without waiting for server response
     onClose();
     // Start refresh in background (fire and forget)
-    void onConfirm(selected, forceUpdateRatings, forceRefreshCoupons, floatersProvider);
+    void onConfirm(selected, forceUpdateRatings, forceRefreshCoupons, floatersProvider, ipcFile);
   };
 
   const handleClose = () => {
     if (!isRefreshing) {
+      setIpcFile(null);
+      setIpcFileError(null);
+      if (ipcFileInputRef.current) {
+        ipcFileInputRef.current.value = '';
+      }
       onClose();
     }
   };
@@ -132,6 +169,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
             const isRatingsTask = task.id === 'ratings';
             const isCouponsTask = task.id === 'coupons';
             const isFloatersTask = task.id === 'floaters';
+            const isIpcTask = task.id === 'ipc';
             
             return (
               <Box key={task.id} sx={{ mb: 2 }}>
@@ -205,6 +243,72 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                       <MenuItem value="openrouter">OpenRouter: Gemini 2.5 Flash Lite</MenuItem>
                       <MenuItem value="local">Локальная модель (Qwen3-4B)</MenuItem>
                     </Select>
+                  </Box>
+                )}
+                {isIpcTask && selectedTasks[task.id] && (
+                  <Box
+                    sx={{
+                      ml: 4,
+                      mt: 1,
+                      p: 1.5,
+                      bgcolor: '#F8FAFC',
+                      borderRadius: '12px',
+                      border: '1px dashed #CBD5E1',
+                    }}
+                  >
+                    <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5, color: '#334155' }}>
+                      Файл данных Росстата (.xlsx):
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                      Выберите файл с индексами ИПЦ или оставьте поле пустым для использования файла по умолчанию на сервере.
+                    </Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                      <input
+                        ref={ipcFileInputRef}
+                        type="file"
+                        accept=".xlsx"
+                        onChange={handleIpcFileChange}
+                        style={{ display: 'none' }}
+                        id="ipc-excel-upload-input"
+                        disabled={isRefreshing}
+                      />
+                      <label htmlFor="ipc-excel-upload-input">
+                        <Button
+                          variant="outlined"
+                          component="span"
+                          size="small"
+                          startIcon={<UploadFileIcon />}
+                          disabled={isRefreshing}
+                          sx={{ borderRadius: '8px', textTransform: 'none' }}
+                        >
+                          {ipcFile ? 'Заменить файл' : 'Выбрать Excel файл'}
+                        </Button>
+                      </label>
+                      {ipcFile ? (
+                        <Chip
+                          label={ipcFile.name}
+                          size="small"
+                          onDelete={() => {
+                            setIpcFile(null);
+                            if (ipcFileInputRef.current) {
+                              ipcFileInputRef.current.value = '';
+                            }
+                          }}
+                          disabled={isRefreshing}
+                          color="primary"
+                          variant="outlined"
+                        />
+                      ) : (
+                        <Typography variant="caption" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+                          (файл не выбран — парсинг серверного файла по умолчанию)
+                        </Typography>
+                      )}
+                    </Box>
+                    {ipcFileError && (
+                      <Typography variant="caption" color="error" sx={{ display: 'block', mt: 0.5 }}>
+                        {ipcFileError}
+                      </Typography>
+                    )}
                   </Box>
                 )}
                 {isTaskLoading && (

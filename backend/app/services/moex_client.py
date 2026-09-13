@@ -37,43 +37,6 @@ class MoexClient:
         self.user_agent = user_agent
         self._logger = get_data_update_logger()
 
-    def fetch_bonds_json(self, url: str) -> Dict[str, Any]:
-        """Загружает JSON данные об облигациях по указанному URL.
-
-        Выполняет HTTP GET запрос, читает тело ответа и парсит JSON.
-        При сетевой ошибке или некорректном JSON возбуждает RuntimeError.
-
-        Args:
-            url: URL для загрузки (например, MOEX bonds API).
-
-        Returns:
-            Словарь с данными в формате MOEX (секции securities, marketdata,
-            marketdata_yields и т.д.).
-
-        Raises:
-            RuntimeError: Если не удалось выполнить запрос (URLError, таймаут)
-                или если ответ не является валидным JSON.
-        """
-        self._logger.info(f"[MOEX] Загрузка данных с {url}")
-        request = Request(url, headers={"User-Agent": self.user_agent})
-
-        try:
-            with urlopen(request, timeout=self.timeout) as response:
-                raw_payload = response.read()
-            self._logger.info(f"[MOEX] Загружено {len(raw_payload)} байт")
-        except URLError as exc:
-            self._logger.error(f"[MOEX] Ошибка загрузки с {url}: {exc}")
-            raise RuntimeError(f"Failed to download bonds data: {exc}") from exc
-
-        try:
-            payload = orjson.loads(raw_payload)
-            self._logger.info("[MOEX] JSON успешно распарсен")
-            return payload
-        except orjson.JSONDecodeError as exc:
-            self._logger.error(f"[MOEX] Некорректный JSON: {exc}")
-            raise RuntimeError(
-                "Received invalid JSON while refreshing bonds data"
-            ) from exc
 
     def fetch_coupons(self, secid: str) -> Dict[str, Any]:
         """Загружает данные о купонах облигации из API MOEX.

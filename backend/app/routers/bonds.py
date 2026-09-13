@@ -25,7 +25,6 @@ from app.services.bond_float_params_service import BondFloatParamsService
 from app.services.bonds_service import (
     get_bond_detail,
     get_bonds_list,
-    refresh_bonds_data,
 )
 from app.services.coupon_service import get_coupon_service
 from app.services.bond_ruonia_chart_service import get_yield_ruonia_chart_data
@@ -51,22 +50,7 @@ def get_bond_float_params_service() -> BondFloatParamsService:
 
 @router.post("/", response_model=BondsListResponse)  # Переведен на внешний сервис
 async def list_bonds(payload: BondsListFiltersDTO):
-    """Получает отфильтрованный список облигаций.
 
-    Принимает параметры фильтрации в теле запроса, валидирует их с помощью
-    схемы BondsListFiltersDTO, запрашивает данные через сервисный слой
-    и возвращает список облигаций, приведенный к формату ответа API.
-
-    Args:
-        payload (BondsListFiltersDTO): Объект DTO с параметрами фильтрации
-            (диапазоны купонов, доходности, даты погашения, типы бумаг,
-            кредитные рейтинги, фильтр по эмитенту и исключение SPOB).
-
-    Returns:
-        BondsListResponse: Объект ответа, содержащий общее количество облигаций,
-            количество отфильтрованных записей и список облигаций с их
-            характеристиками.
-    """
     data = payload.model_dump(exclude_none=True)
 
     filters = BondFilters(**data)
@@ -77,54 +61,6 @@ async def list_bonds(payload: BondsListFiltersDTO):
         exclude_spob=data.get("exclude_spob", False)
     )
     return result
-
-
-@router.post("/refresh")
-async def refresh_bonds_endpoint():
-    """Загружает последний набор данных об облигациях из MOEX и обновляет кэш.
-
-    Выполняет HTTP запрос к API MOEX для получения актуальных данных об облигациях,
-    заполняет кэш в памяти и обновляет таблицу bonds в базе данных (без записи в файл).
-    Также очищает кэш метаданных (колонки и описания полей) для обеспечения
-    актуальности данных.
-
-    Returns:
-        Словарь с результатом обновления, содержащий:
-        - status: Статус операции ("ok")
-        - updated: Словарь с информацией о загруженном наборе данных:
-          - securities: Количество записей в секции securities
-          - marketdata: Количество записей в секции marketdata
-          - marketdata_yields: Количество записей в секции marketdata_yields
-        - source: URL источника данных
-        - metadata_cache_cleared: Флаг очистки кэша метаданных (True)
-
-    Raises:
-        HTTPException: Если не удалось загрузить данные из MOEX (статус 502)
-            или произошла ошибка при обновлении базы данных.
-    """
-    logger = get_data_update_logger()
-    logger.info("[API /bonds/refresh] Received request to refresh bonds data")
-    try:
-        result = await asyncio.to_thread(refresh_bonds_data)
-        logger.info("[API /bonds/refresh] Bonds data refresh completed: %s", result)
-        return result
-    except RuntimeError as exc:
-        logger.error(
-            "[API /bonds/refresh] Failed to refresh bonds data (RuntimeError): %s",
-            exc,
-            exc_info=True,
-        )
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-    except Exception as exc:
-        logger.exception(
-            "[API /bonds/refresh] Unexpected error during bonds refresh: %s: %s",
-            type(exc).__name__,
-            exc,
-        )
-        raise HTTPException(
-            status_code=500,
-            detail=f"{type(exc).__name__}: {str(exc)}",
-        ) from exc
 
 
 @router.get("/float-params/secids", response_model=List[str])

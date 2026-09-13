@@ -48,6 +48,7 @@ import { refreshTradingHistory } from '../api/tradingHistory';
 import { getDashboardRates, type MacroRatesResponse } from '../api/dashboard';
 import { refreshCurrencyRates } from '../api/currency';
 import { loadKeyRateData } from '../api/keyrate';
+import { uploadAndParseIpcFile, parseLocalIpcFile } from '../api/ipc';
 import { useUiStore } from '../stores/uiStore';
 import { useBondsStore } from '../stores/bondsStore';
 import { useComparisonStore } from '../stores/comparisonStore';
@@ -84,6 +85,7 @@ export const HomePage: React.FC = () => {
   const [pendingRefreshTasks, setPendingRefreshTasks] = useState<string[]>([]);
   const [pendingForceUpdateRatings, setPendingForceUpdateRatings] = useState(false);
   const [pendingForceRefreshCoupons, setPendingForceRefreshCoupons] = useState(false);
+  const [pendingIpcFile, setPendingIpcFile] = useState<File | null>(null);
   
   // LLM Analysis state
   const [isAnalysisParamsOpen, setIsAnalysisParamsOpen] = useState(false);
@@ -208,6 +210,7 @@ export const HomePage: React.FC = () => {
     forceRefreshCoupons?: boolean,
     forecastFile?: File | null,
     floatersProvider?: string,
+    ipcFile?: File | null,
   ) => {
     if (selectedTasks.length === 0) {
       return;
@@ -218,6 +221,7 @@ export const HomePage: React.FC = () => {
       setPendingRefreshTasks(selectedTasks);
       setPendingForceUpdateRatings(forceUpdateRatings ?? false);
       setPendingForceRefreshCoupons(forceRefreshCoupons ?? false);
+      setPendingIpcFile(ipcFile ?? null);
       setIsForecastFileDialogOpen(true);
       return;
     }
@@ -233,6 +237,7 @@ export const HomePage: React.FC = () => {
     setRefreshStatus(initialStatus);
 
     const forecastFileRef = forecastFile ?? null;
+    const ipcFileRef = ipcFile ?? null;
 
     // Define task handlers
     const taskHandlers: Record<string, () => Promise<void>> = {
@@ -283,6 +288,13 @@ export const HomePage: React.FC = () => {
       },
       floaters: async () => {
         await refreshFloatersData(floatersProvider ?? 'gemini');
+      },
+      ipc: async () => {
+        if (ipcFileRef) {
+          await uploadAndParseIpcFile(ipcFileRef);
+        } else {
+          await parseLocalIpcFile();
+        }
       },
     };
 
@@ -1137,7 +1149,7 @@ export const HomePage: React.FC = () => {
             setRefreshStatus({});
           }
         }}
-        onConfirm={(tasks, forceRatings, forceCoupons, floatersProvider) => handleRefreshConfirm(tasks, forceRatings, forceCoupons, undefined, floatersProvider)}
+        onConfirm={(tasks, forceRatings, forceCoupons, floatersProvider, ipcFile) => handleRefreshConfirm(tasks, forceRatings, forceCoupons, undefined, floatersProvider, ipcFile)}
         tasks={[
           { id: 'bonds', label: 'Обновить данные облигаций', checked: false },
           { id: 'zerocupon', label: 'Обновить данные кривой бескупонной доходности', checked: false },
@@ -1150,6 +1162,7 @@ export const HomePage: React.FC = () => {
           { id: 'trading-history', label: 'Обновить историю торгов', checked: false },
           { id: 'forecast', label: 'Обновить среднесрочный прогноз Банка России', checked: false },
           { id: 'floaters', label: 'Обновить данные по флоатерам', checked: false },
+          { id: 'ipc', label: 'Обновить индексы потребительских цен (ИПЦ Росстата)', checked: false },
         ]}
         isRefreshing={isRefreshing}
         refreshStatus={refreshStatus}
@@ -1161,12 +1174,15 @@ export const HomePage: React.FC = () => {
         onClose={() => {
           setIsForecastFileDialogOpen(false);
           setPendingRefreshTasks([]);
+          setPendingIpcFile(null);
         }}
         onConfirm={(file) => {
           setIsForecastFileDialogOpen(false);
           const tasks = pendingRefreshTasks;
+          const savedIpcFile = pendingIpcFile;
           setPendingRefreshTasks([]);
-          void handleRefreshConfirm(tasks, pendingForceUpdateRatings, pendingForceRefreshCoupons, file);
+          setPendingIpcFile(null);
+          void handleRefreshConfirm(tasks, pendingForceUpdateRatings, pendingForceRefreshCoupons, file, undefined, savedIpcFile);
         }}
       />
 

@@ -3,7 +3,13 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from conversion_service.app.routers import emission_doc_download, edisclosure_events, bonds_router, emitents_router
+from conversion_service.app.routers import (
+    emission_doc_download,
+    edisclosure_events,
+    bonds_router,
+    emitents_router,
+    ipc_router,
+)
 from config.settings import settings
 
 
@@ -38,6 +44,11 @@ def create_app() -> FastAPI:
 
     app.include_router(
         emitents_router.router,
+        prefix=settings.API_V1_STR,
+    )
+
+    app.include_router(
+        ipc_router.router,
         prefix=settings.API_V1_STR,
     )
 

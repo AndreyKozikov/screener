@@ -30,10 +30,7 @@ from app.models import (
     round_float_for_api,
 )
 from app.repository.db.bonds_repository import BondsRepository
-from app.repository.db_orchestrator import DBOrchestrator
 from app.services.bond_ratings_pipeline_service import BondRatingsPipelineService
-from app.services.coupon_service import get_coupon_service
-from app.services.data_loader import get_data_loader
 from app.services.emitent_service import get_emitent_service
 from app.utils.logger import get_data_update_logger
 from app.utils.rating_utils import get_worst_rating, standardize_rating
@@ -203,6 +200,7 @@ async def get_bonds_list(
     json_filters = filters.model_dump()
 
     emitent_title = emitent_title
+
     async with httpx.AsyncClient() as client:
         try:
             response_bonds = await client.post(
@@ -496,78 +494,6 @@ def fill_ratings_for_bonds_without_rating(db_path: Optional[Path] = None) -> int
     if not updates:
         return 0
     return repo.update_ratings_batch(updates)
-
-
-def refresh_bonds_data(
-        source_url: Optional[str] = None,
-        db_path: Optional[Path] = None,
-        data_dir: Optional[Path] = None,
-) -> Dict[str, Any]:
-    """Запускает процесс синхронизации данных облигаций с Московской Биржей.
-
-    Процесс включает загрузку данных из API MOEX в память, обновление внутренних
-    структур данных и последующую миграцию в базу данных.
-
-    Args:
-        source_url (Optional[str]): Кастомный URL для загрузки (если не указан, берется из настроек).
-        db_path (Optional[Path]): Путь к файлу базы данных.
-        data_dir (Optional[Path]): Путь к директории данных.
-
-    Returns:
-        Dict[str, Any]: Результат операции со статистикой обновленных записей.
-
-    Raises:
-        RuntimeError: При критических ошибках загрузки или обработки данных.
-    """
-    log = get_data_update_logger()
-    url = source_url or settings.MOEX_BONDS_URL
-    loader = get_data_loader()
-
-    try:
-        log.info("[refresh_bonds_data] Step 1: Loading payload from MOEX (%s)", url)
-        payload = loader.fetch_bonds_payload(url)
-        log.info(
-            "[refresh_bonds_data] Step 1 OK: Payload received, securities=%s",
-            len(payload.get("securities", {}).get("data", [])),
-        )
-    except Exception as e:
-        log.exception("[refresh_bonds_data] Step 1 FAILED: Load from MOEX: %s", e)
-        raise
-
-    try:
-        log.info("[refresh_bonds_data] Step 1b: Populating loader cache from payload")
-        summary = loader.refresh_bonds_dataset(payload, source_url=url)
-        log.info("[refresh_bonds_data] Step 1b OK: Loaded %s securities", summary.get("securities", 0))
-    except Exception as e:
-        log.exception("[refresh_bonds_data] Step 1b FAILED: Populate cache: %s", e)
-        raise
-
-    try:
-        log.info("[refresh_bonds_data] Step 2: Migrating to DB (payload in memory)")
-        orchestrator = DBOrchestrator(db_path=db_path, data_dir=data_dir)
-        ok = orchestrator.migrate("bonds", payload=payload)
-        if not ok:
-            log.warning("[refresh_bonds_data] Step 2: DB migrate returned False")
-        else:
-            log.info("[refresh_bonds_data] Step 2 OK: DB migration completed")
-    except Exception as e:
-        log.exception("[refresh_bonds_data] Step 2 FAILED: DB migration: %s", e)
-        raise
-
-    try:
-        log.info("[refresh_bonds_data] Step 3: Clearing metadata cache")
-        loader.clear_metadata_cache()
-        log.info("[refresh_bonds_data] Step 3 OK: Cache cleared")
-    except Exception as e:
-        log.exception("[refresh_bonds_data] Step 3 FAILED: Cache clear: %s", e)
-        raise
-
-    return {
-        "status": "ok",
-        "updated": summary,
-        "source": url,
-        "metadata_cache_cleared": True,
-    }
 
 
 def _build_securities_dict(
