@@ -23,11 +23,15 @@ from db_repository.routers.bond_router import bond_router
 from db_repository.routers.ratings_router import ratings_router
 from db_repository.routers.coupon_router import coupon_router
 from db_repository.routers.emitent_router import emitent_router
+from db_repository.routers.inflations_router import inflation_router
+from db_repository.routers.ipc_router import ipc_router
 
 app.include_router(bond_router)
 app.include_router(ratings_router)
 app.include_router(coupon_router)
 app.include_router(emitent_router)
+app.include_router(inflation_router)
+app.include_router(ipc_router)
 
 
 if __name__ == "__main__":
@@ -43,7 +47,7 @@ if __name__ == "__main__":
     workers = multiprocessing.cpu_count() * 2 + 1
 
     uvicorn.run(
-        "db_repository.main:app",
+        "db_repository.main_db:app",
         host="0.0.0.0",  # Listen on all interfaces for external access
         port=8964,
         reload=True,  # Только для разработки

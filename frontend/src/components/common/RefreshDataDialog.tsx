@@ -34,6 +34,7 @@ interface RefreshDataDialogProps {
     forceRefreshCoupons?: boolean,
     floatersProvider?: string,
     ipcFile?: File | null,
+    inflationExpectationsFile?: File | null,
   ) => Promise<void>;
   tasks: RefreshTask[];
   isRefreshing: boolean;
@@ -66,6 +67,9 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
   const [ipcFile, setIpcFile] = useState<File | null>(null);
   const [ipcFileError, setIpcFileError] = useState<string | null>(null);
   const ipcFileInputRef = useRef<HTMLInputElement>(null);
+  const [inflationExpectationsFile, setInflationExpectationsFile] = useState<File | null>(null);
+  const [inflationExpectationsFileError, setInflationExpectationsFileError] = useState<string | null>(null);
+  const inflationExpectationsFileInputRef = useRef<HTMLInputElement>(null);
 
   // Reset selected tasks when dialog opens or tasks change
   useEffect(() => {
@@ -82,6 +86,11 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
       setIpcFileError(null);
       if (ipcFileInputRef.current) {
         ipcFileInputRef.current.value = '';
+      }
+      setInflationExpectationsFile(null);
+      setInflationExpectationsFileError(null);
+      if (inflationExpectationsFileInputRef.current) {
+        inflationExpectationsFileInputRef.current.value = '';
       }
     }
   }, [open, tasks]);
@@ -109,6 +118,22 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
     setIpcFile(file);
   };
 
+  const handleInflationExpectationsFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    setInflationExpectationsFileError(null);
+    if (!file) {
+      setInflationExpectationsFile(null);
+      return;
+    }
+    const name = file.name.toLowerCase();
+    if (!name.endsWith('.xlsx')) {
+      setInflationExpectationsFileError('Допустим только формат .xlsx');
+      setInflationExpectationsFile(null);
+      return;
+    }
+    setInflationExpectationsFile(file);
+  };
+
   const handleConfirm = async () => {
     const selected = tasks
       .filter(task => selectedTasks[task.id])
@@ -121,7 +146,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
     // Close dialog immediately without waiting for server response
     onClose();
     // Start refresh in background (fire and forget)
-    void onConfirm(selected, forceUpdateRatings, forceRefreshCoupons, floatersProvider, ipcFile);
+    void onConfirm(selected, forceUpdateRatings, forceRefreshCoupons, floatersProvider, ipcFile, inflationExpectationsFile);
   };
 
   const handleClose = () => {
@@ -130,6 +155,11 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
       setIpcFileError(null);
       if (ipcFileInputRef.current) {
         ipcFileInputRef.current.value = '';
+      }
+      setInflationExpectationsFile(null);
+      setInflationExpectationsFileError(null);
+      if (inflationExpectationsFileInputRef.current) {
+        inflationExpectationsFileInputRef.current.value = '';
       }
       onClose();
     }
@@ -170,6 +200,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
             const isCouponsTask = task.id === 'coupons';
             const isFloatersTask = task.id === 'floaters';
             const isIpcTask = task.id === 'ipc';
+            const isInflationExpectationsTask = task.id === 'inflation-expectations';
             
             return (
               <Box key={task.id} sx={{ mb: 2 }}>
@@ -307,6 +338,72 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                     {ipcFileError && (
                       <Typography variant="caption" color="error" sx={{ display: 'block', mt: 0.5 }}>
                         {ipcFileError}
+                      </Typography>
+                    )}
+                  </Box>
+                )}
+                {isInflationExpectationsTask && selectedTasks[task.id] && (
+                  <Box
+                    sx={{
+                      ml: 4,
+                      mt: 1,
+                      p: 1.5,
+                      bgcolor: '#F8FAFC',
+                      borderRadius: '12px',
+                      border: '1px dashed #CBD5E1',
+                    }}
+                  >
+                    <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5, color: '#334155' }}>
+                      Файл данных инфляционных ожиданий (.xlsx):
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                      Выберите Excel-файл с данными инфляционных ожиданий для отправки на сервер.
+                    </Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                      <input
+                        ref={inflationExpectationsFileInputRef}
+                        type="file"
+                        accept=".xlsx"
+                        onChange={handleInflationExpectationsFileChange}
+                        style={{ display: 'none' }}
+                        id="inflation-expectations-excel-upload-input"
+                        disabled={isRefreshing}
+                      />
+                      <label htmlFor="inflation-expectations-excel-upload-input">
+                        <Button
+                          variant="outlined"
+                          component="span"
+                          size="small"
+                          startIcon={<UploadFileIcon />}
+                          disabled={isRefreshing}
+                          sx={{ borderRadius: '8px', textTransform: 'none' }}
+                        >
+                          {inflationExpectationsFile ? 'Заменить файл' : 'Выбрать Excel файл'}
+                        </Button>
+                      </label>
+                      {inflationExpectationsFile ? (
+                        <Chip
+                          label={inflationExpectationsFile.name}
+                          size="small"
+                          onDelete={() => {
+                            setInflationExpectationsFile(null);
+                            if (inflationExpectationsFileInputRef.current) {
+                              inflationExpectationsFileInputRef.current.value = '';
+                            }
+                          }}
+                          disabled={isRefreshing}
+                          color="primary"
+                          variant="outlined"
+                        />
+                      ) : (
+                        <Typography variant="caption" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+                          (файл не выбран)
+                        </Typography>
+                      )}
+                    </Box>
+                    {inflationExpectationsFileError && (
+                      <Typography variant="caption" color="error" sx={{ display: 'block', mt: 0.5 }}>
+                        {inflationExpectationsFileError}
                       </Typography>
                     )}
                   </Box>

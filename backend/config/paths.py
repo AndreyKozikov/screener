@@ -1,13 +1,13 @@
 """Пути к файлам данных, БД и адреса API Мосбиржи.
 
 Все пути и URL вынесены сюда; скрипты и модули импортируют их из этого модуля.
-Корень backend — директория, в которой лежат main.py и папка config.
+Корень backend — директория, в которой лежат main_db.py и папка config.
 """
 
 from pathlib import Path
 
 
-# Корень backend (директория с main.py, app/, config/, db/)
+# Корень backend (директория с main_db.py, app/, config/, db/)
 BACKEND_DIR: Path = Path(__file__).resolve().parent.parent
 
 # Директория с JSON/CSV данными (columns.json, zerocupon.csv и т.д.)

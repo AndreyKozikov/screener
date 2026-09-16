@@ -9,6 +9,7 @@ import httpx
 
 from conversion_service.app.repository.files.file_storage import FileStorage
 from conversion_service.app.utils.ipc_excel_parser import IpcExcelParser
+from conversion_service.app.utils.rosstat_ipc_reports_parser import get_ipc_weekly
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,7 @@ DEFAULT_EXCEL_PATH: Path = _BASE_SERVICE_DIR / "ipc_RF_fo_sub_08-2026.xlsx"
 DEFAULT_OUTPUT_PATH: Path = _BASE_SERVICE_DIR / "ipc_data.json"
 
 class IpcService:
-    """Сервис для загрузки данных ИПЦ из внешнего сервиса, парсинга Excel и сохранения в JSON."""
+
 
     def __init__(
         self,
@@ -55,22 +56,40 @@ class IpcService:
 
         # Сохраняем результат в JSON с форматированием
         logger.info("[IPC SERVICE] Сохранение результата в JSON: %s", target_output)
-        self._file_storage.write_json_durable(target_output, data, indent=True, append_newline=True)
 
-        years_count = len(data)
-        total_months_count = sum(len(months) for months in data.values())
+        #self._file_storage.write_json_durable(target_output, data, indent=True, append_newline=True)
 
-        logger.info(
-            "[IPC SERVICE] Успешно сохранено %d годов и %d месяцев в %s",
-            years_count,
-            total_months_count,
-            target_output,
-        )
+        try:
+            async with httpx.AsyncClient(timeout=600) as client:
+                response = await client.post(
+                    url="http://127.0.0.1:8964/api/ipc_update",
+                    json=data,
+                    headers={"Content-Type": "application/json"},
+                )
+                response.raise_for_status()
+                result = response.json()
+        except Exception as e:
+            raise
 
-        return {
-            "status": "ok",
-            "data": data,
-        }
+        return result
+
+    async def upload_and_parce_ipc_weekly_reports(self):
+        data = get_ipc_weekly()
+        try:
+            async with httpx.AsyncClient(timeout=600) as client:
+                response = await client.post(
+                    url="http://127.0.0.1:8964/api//ipc_weekly_update",
+                    json=data,
+                    headers={"Content-Type": "application/json"},
+                )
+                response.raise_for_status()
+                result = response.json()
+        except Exception as e:
+            raise
+
+        return result
+
+
 
 _ipc_service_instance: Optional[IpcService] = None
 

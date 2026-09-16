@@ -161,7 +161,7 @@ export const exportBondsJson = (bonds: Array<Record<string, unknown>>): void => 
  * Request a dataset refresh from the backend
  */
 export const refreshBondsData = async (): Promise<void> => {
-    await apiClient.post('/bonds/refresh');
+    await apiClient.post('http://localhost:12345/api/update/bonds_data');
 };
 
 /**

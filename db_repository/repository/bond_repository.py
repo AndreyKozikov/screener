@@ -2,14 +2,18 @@ from typing import Optional, List, Any, Dict, Sequence
 from db_repository.core.database_init import get_session
 from db_repository.models.bond_filters import BondFilters
 from sqlmodel import select, Session
-from db_repository.models.bond import Bond
+from db_repository.models.bond import (
+    Bond,
+    BondSecurity,
+    BondMarketData,
+    BondMarketDataYield,
+)
 from db_repository.models.coupon import Coupon
-from sqlalchemy import (delete, func, or_, and_, case, update, text)
+from sqlalchemy import (func, or_, and_, text)
 from sqlalchemy.orm import selectinload, joinedload
 from datetime import date
 from db_repository.config.constants import RATINGS_ORDER
 from sqlalchemy import func
-from db_repository.models.bond import (Bond, BondSecurity, BondMarketData, BondMarketDataYield)
 
 
 class BondRepository:
@@ -278,6 +282,17 @@ class BondRepository:
             raise
             # self.logger.error("Ошибка при count_bonds: %s", e, exc_info=True)
 
+    async def get_all_secids(self):
+        stmt = (
+            select(Bond.secid)
+        )
+        try:
+            with get_session() as session:
+                result = session.exec(stmt).all()
+                return result
+        except Exception as e:
+            raise
+
     async def get_bondid_by_secid(
             self,
             secid: List[str],
@@ -293,20 +308,13 @@ class BondRepository:
         except Exception as e:
             raise
 
-    async def get_all_secids(self):
-        stmt = (
-            select(Bond.secid)
-        )
-        try:
-            with get_session() as session:
-                result = session.exec(stmt).all()
-                return result
-        except Exception as e:
-            raise
-
     def bonds_data_update(self, data: dict[str, list[dict[str, Any]]]):
-        with get_session() as session:
+        """Массовое обновление (upsert) облигаций и связанных таблиц.
 
+        Все операции выполняются в одной транзакции.
+        При ошибке — автоматический rollback.
+        """
+        with get_session() as session:
             self._create_temp_tables(session)
             self._insert_all_temp_data(session, data)
             self._upsert_bonds(session)
@@ -316,36 +324,35 @@ class BondRepository:
                     session,
                     temp_table=cfg["temp_table"],
                     target_table=cfg["target_table"],
-                    model=cfg["model"]
+                    model=cfg["model"],
                 )
+
             session.commit()
 
-    def _create_temp_tables(
-            self,
-            session: Session
-    ):
+    def _create_temp_tables(self, session: Session) -> None:
+        """Создаёт временные таблицы для bonds и всех связанных таблиц."""
         session.exec(text(
-           "CREATE TEMP TABLE tmp_bonds AS "
-           "SELECT * FROM bonds WHERE 0"
+            "CREATE TEMP TABLE tmp_bonds AS "
+            "SELECT * FROM bonds WHERE 0"
         ))
 
         for cfg in self._RELATED_TABLES:
             session.exec(text(
-                f"CREATE TEMP TABLE {cfg["temp_table"]} AS "
-                f"SELECT * FROM {cfg["target_table"]} WHERE 0"
+                f"CREATE TEMP TABLE {cfg['temp_table']} AS "
+                f"SELECT * FROM {cfg['target_table']} WHERE 0"
             ))
-
             session.exec(text(
-                f"ALTER TABLE {cfg["temp_table"]} ADD COLUMN secid TEXT"
+                f"ALTER TABLE {cfg['temp_table']} ADD COLUMN secid TEXT"
             ))
 
-    def _insert_temp_data(
+    def _insert_all_temp_data(
             self,
             session: Session,
             data: dict[str, list[dict[str, Any]]],
     ) -> None:
-
+        """Вставляет данные во все временные таблицы."""
         self._bulk_insert(session, "tmp_bonds", data["bonds"])
+
         for cfg in self._RELATED_TABLES:
             self._bulk_insert(
                 session,
@@ -359,7 +366,7 @@ class BondRepository:
             table_name: str,
             rows: list[dict[str, Any]],
     ) -> None:
-
+        """Массовая вставка строк в таблицу через executemany."""
         if not rows:
             return
 
@@ -381,14 +388,12 @@ class BondRepository:
                     ({column_names})
                     VALUES ({placeholders})
                 """),
-            rows,
+            params=rows,
         )
 
-    def _upsert_bonds(
-        self,
-        session: Session,
-    ) -> None:
-
+    @staticmethod
+    def _upsert_bonds(session: Session) -> None:
+        """INSERT … ON CONFLICT (secid, boardid) DO UPDATE для таблицы bonds."""
         columns = [
             column.name
             for column in Bond.__table__.columns
@@ -408,19 +413,20 @@ class BondRepository:
                 INSERT INTO bonds ({column_names})
                 SELECT {column_names}
                 FROM tmp_bonds
+                WHERE true
                 ON CONFLICT (secid, boardid)
-                DO UPDATE SET{update_values}
+                DO UPDATE SET {update_values}
             """)
         )
 
+    @staticmethod
     def _upsert_related(
-        self,
-        session: Session,
-        temp_table: str,
-        target_table: str,
-        model: Any,
+            session: Session,
+            temp_table: str,
+            target_table: str,
+            model: Any,
     ) -> None:
-
+        """Универсальный INSERT … ON CONFLICT (bond_id) DO UPDATE."""
         columns = [
             column.name
             for column in model.__table__.columns
@@ -428,7 +434,7 @@ class BondRepository:
         ]
 
         target_columns = ", ".join(["bond_id", *columns])
-        select_columns = ", ".join(["b.id",*(f"t.{column}" for column in columns)])
+        select_columns = ", ".join(["b.id", *(f"t.{column}" for column in columns)])
         update_values = ", ".join(f"{column} = excluded.{column}" for column in columns)
 
         session.exec(
@@ -441,10 +447,10 @@ class BondRepository:
                  AND b.boardid = t.boardid
 
                 ON CONFLICT (bond_id)
-                DO UPDATE SET
-                    {update_values}
+                DO UPDATE SET {update_values}
             """)
         )
+
 
 db_repository: Optional[BondRepository] = None
 

@@ -10,9 +10,10 @@
 """
 
 import logging
+from datetime import date
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, Optional, Tuple, Union
 
 import openpyxl
 from openpyxl.worksheet.worksheet import Worksheet
@@ -78,7 +79,7 @@ class IpcExcelParser:
         "дек": "12",
     }
 
-    def parse_file(self, file_path: Union[str, Path]) -> Dict[str, Dict[str, Dict[str, str]]]:
+    def parse_file(self, file_path: Union[str, Path]) -> list[Dict[str, str]]:
         """Парсит Excel-файл и возвращает структурированный словарь данных ИПЦ.
 
         Формат результата:
@@ -110,7 +111,7 @@ class IpcExcelParser:
         logger.info("[IPC PARSER] Открытие книги Excel: %s", path)
         wb = openpyxl.load_workbook(filename=str(path), data_only=True, read_only=False)
 
-        result: Dict[str, Dict[str, Dict[str, str]]] = {}
+        result: list[Dict[str, str]] = []
         total_sheets_processed = 0
 
         try:
@@ -119,36 +120,28 @@ class IpcExcelParser:
                     logger.info("[IPC PARSER] Пропуск вкладки содержания: '%s'", sheet_name)
                     continue
 
-                parsed_sheet_info = self._parse_sheet_name(sheet_name)
-                if not parsed_sheet_info:
+                record_data = self._parse_sheet_name(sheet_name)
+                if not record_data:
                     logger.warning(
                         "[IPC PARSER] Пропуск вкладки с неизвестным форматом имени: '%s'",
                         sheet_name,
                     )
                     continue
 
-                month_name, year_str = parsed_sheet_info
+                #month_name, year_str = parsed_sheet_info
                 ws: Worksheet = wb[sheet_name]
 
-                month_data = self._extract_indicators_for_code_643(ws, sheet_name)
-                if month_data is None:
+                data = self._extract_indicators_for_code_643(ws, sheet_name)
+                if data is None:
                     logger.warning(
                         "[IPC PARSER] Не удалось извлечь данные территории 643 на вкладке '%s'",
                         sheet_name,
                     )
                     continue
 
-                if year_str not in result:
-                    result[year_str] = {}
+                data["record_data"] = record_data.isoformat()
 
-                result[year_str][month_name] = month_data
-                total_sheets_processed += 1
-                logger.info(
-                    "[IPC PARSER] Успешно обработана вкладка '%s' (год: %s, месяц: %s)",
-                    sheet_name,
-                    year_str,
-                    month_name,
-                )
+                result.append(data)
 
         finally:
             wb.close()
@@ -189,7 +182,7 @@ class IpcExcelParser:
 
         return clean.zfill(2)
 
-    def _parse_sheet_name(self, sheet_name: str) -> Optional[Tuple[str, str]]:
+    def _parse_sheet_name(self, sheet_name: str):
         """Извлекает месяц (в виде двузначного числа '01'-'12') и год из названия вкладки.
 
         Returns:
@@ -202,7 +195,7 @@ class IpcExcelParser:
             year = match.group("year").strip()
             if month_raw and year:
                 month = self._normalize_month_two_digits(month_raw)
-                return month, year
+                return date(int(year), int(month), 1)
 
         # Запасной вариант: поиск 4 цифр года в названии вкладки
         year_match = re.search(r"(\d{4})", stripped)
@@ -212,7 +205,7 @@ class IpcExcelParser:
             month_raw = re.sub(r"[\(\)\[\]\d]", "", stripped).strip()
             if month_raw:
                 month = self._normalize_month_two_digits(month_raw)
-                return month, year
+                return date(int(year), int(month), 1)
 
         return None
 
@@ -359,10 +352,10 @@ class IpcExcelParser:
         raw_services = self._get_cell_value(ws, row_643, cols["services"])
 
         return {
-            "ипц": self._format_cell_value(raw_ipc),
-            "продовольстенные товары": self._format_cell_value(raw_food),
-            "непродовольственные товары": self._format_cell_value(raw_non_food),
-            "услуги": self._format_cell_value(raw_services),
+            "ipc": self._format_cell_value(raw_ipc),
+            "food_ipc": self._format_cell_value(raw_food),
+            "non_food_ipc": self._format_cell_value(raw_non_food),
+            "services_ipc": self._format_cell_value(raw_services),
         }
 
     @staticmethod

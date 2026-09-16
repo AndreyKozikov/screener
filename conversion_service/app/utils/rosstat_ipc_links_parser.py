@@ -20,9 +20,6 @@ logger = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-ROSSTAT_BASE_URL: str = "https://rosstat.gov.ru"
-COMPENDIUM_URL: str = f"{ROSSTAT_BASE_URL}/compendium/document/50798"
-
 # Rosstat uses a self-signed / non-standard CA certificate, so we suppress
 # the InsecureRequestWarning when verify=False is used.
 _REQUEST_TIMEOUT_SEC: int = 30
@@ -66,7 +63,7 @@ _SECTION_KEYWORD: str = bytes.fromhex(
 
 
 def fetch_weekly_ipc_links(
-    url: Optional[str] = None,
+    url: str,
     *,
     verify_ssl: bool = False,
     timeout: int = _REQUEST_TIMEOUT_SEC,
@@ -90,10 +87,8 @@ def fetch_weekly_ipc_links(
         requests.HTTPError: If the server returns a non-2xx response.
         ValueError: If the weekly CPI subsection cannot be located on the page.
     """
-    target_url = url or COMPENDIUM_URL
-    logger.info("[ROSSTAT PARSER] Fetching compendium page: %s", target_url)
 
-    html = _fetch_html(target_url, verify_ssl=verify_ssl, timeout=timeout)
+    html = _fetch_html(url, verify_ssl=verify_ssl, timeout=timeout)
     links = _extract_weekly_ipc_links(html)
 
     logger.info("[ROSSTAT PARSER] Extracted %d weekly IPC report links", len(links))

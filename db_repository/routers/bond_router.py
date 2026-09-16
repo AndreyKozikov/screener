@@ -1,8 +1,7 @@
 from fastapi import Query
 
 from fastapi import APIRouter
-import asyncio
-from typing import List, Dict, Any
+from typing import List
 
 from db_repository.models.bonds_data_dto import BondsDataDTO
 from db_repository.services.bond_service import get_bond_service

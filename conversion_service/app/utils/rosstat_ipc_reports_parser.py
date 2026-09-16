@@ -292,12 +292,10 @@ def _fetch_report_html(
 
 
 def download_reports(
-    output_path: Path = _DEFAULT_OUTPUT_PATH,
-    *,
-    compendium_url: Optional[str] = None,
+    compendium_url: str,
     verify_ssl: bool = False,
     timeout: int = _REQUEST_TIMEOUT_SEC,
-) -> Dict[str, List[Dict[str, str]]]:
+) -> List[Dict[str, str]]:
     links = fetch_weekly_ipc_links(
         url=compendium_url,
         verify_ssl=verify_ssl,
@@ -305,12 +303,7 @@ def download_reports(
     )
     reports: List[Dict[str, str]] = []
     for index, link in enumerate(links, start=1):
-        logger.info(
-            "[ROSSTAT REPORT %d/%d] Загрузка: %s",
-            index,
-            len(links),
-            link,
-        )
+
         try:
             html = _fetch_report_html(
                 link,
@@ -330,81 +323,21 @@ def download_reports(
             raise RuntimeError(f"Ошибка обработки отчёта {link}: {exc}") from exc
 
         reports.append(report)
-        logger.info(
-            "[ROSSTAT REPORT %d/%d] Найдено: %s; start_date=%s; end_date=%s; ipc_weekly=%s",
-            index,
-            len(links),
-            link,
-            report["start_date"],
-            report["end_date"],
-            report["ipc_weekly"],
-        )
-
-    payload = {"reports": reports}
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
     logger.info("Сохранено отчётов ИПЦ: %d", len(reports))
-    return payload
+    return reports
 
 
-def _build_argument_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="Загружает еженедельные отчёты ИПЦ Росстата и сохраняет данные в JSON."
-    )
-    parser.add_argument(
-        "--output",
-        type=Path,
-        default=_DEFAULT_OUTPUT_PATH,
-        help="Путь к JSON-файлу",
-    )
-    parser.add_argument(
-        "--compendium-url",
-        help="URL страницы со списком отчётов",
-    )
-    parser.add_argument(
-        "--timeout",
-        type=int,
-        default=_REQUEST_TIMEOUT_SEC,
-        help="Таймаут запроса в секундах",
-    )
-    parser.add_argument(
-        "--verify-ssl",
-        action="store_true",
-        help="Проверять SSL-сертификат Росстата",
-    )
-    parser.add_argument(
-        "--log-level",
-        choices=("DEBUG", "INFO", "WARNING", "ERROR"),
-        default="INFO",
-    )
-    return parser
-
-
-def main(argv: Optional[List[str]] = None) -> int:
-    args = _build_argument_parser().parse_args(argv)
-    logging.basicConfig(
-        level=getattr(logging, args.log_level),
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        stream=sys.stdout,
-    )
+def get_ipc_weekly(argv: Optional[List[str]] = None):
 
     try:
         payload = download_reports(
-            args.output,
-            compendium_url=args.compendium_url,
-            verify_ssl=args.verify_ssl,
-            timeout=args.timeout,
+            compendium_url="https://rosstat.gov.ru/compendium/document/50798",
+            verify_ssl=False,
+            timeout=60,
         )
     except (OSError, ValueError, ET.ParseError, requests.RequestException, RuntimeError) as exc:
         logger.error("Не удалось загрузить отчёты ИПЦ: %s", exc)
-        return 1
+        raise
 
-    print(f"Сохранено {len(payload['reports'])} отчётов в {args.output}")
-    return 0
+    return payload
 
-
-if __name__ == "__main__":
-    raise SystemExit(main())

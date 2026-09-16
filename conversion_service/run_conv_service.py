@@ -9,6 +9,7 @@ from conversion_service.app.routers import (
     bonds_router,
     emitents_router,
     ipc_router,
+    inflation_expectations_router,
 )
 from config.settings import settings
 
@@ -49,6 +50,11 @@ def create_app() -> FastAPI:
 
     app.include_router(
         ipc_router.router,
+        prefix=settings.API_V1_STR,
+    )
+
+    app.include_router(
+        inflation_expectations_router.router,
         prefix=settings.API_V1_STR,
     )
 

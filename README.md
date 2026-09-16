@@ -56,7 +56,7 @@ pip install -r requirements.txt
 
 3. Start the server:
 ```bash
-python main.py
+python main_db.py
 ```
 
 The API will be available at:
@@ -200,7 +200,7 @@ npm run preview
 ```bash
 cd backend
 pip install -r requirements.txt
-python main.py
+python main_db.py
 ```
 
 ### Frontend

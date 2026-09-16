@@ -1,6 +1,6 @@
 from pathlib import Path
 
-# Корень backend (директория с main.py, app/, config/, db/)
+# Корень backend (директория с main_db.py, app/, config/, db/)
 BACKEND_DIR: Path = Path(__file__).resolve().parent.parent.parent / "backend"
 
 # Директория с JSON/CSV данными (columns.json, zerocupon.csv и т.д.)

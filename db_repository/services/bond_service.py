@@ -1,4 +1,4 @@
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Any
 
 from db_repository.models.bond import BondSecurity, BondMarketData, BondMarketDataYield, Bond
 from db_repository.models.bonds_data_dto import BondsDataDTO
@@ -119,12 +119,15 @@ class BondService:
                 )
             )
 
-        return {
+        payload = {
             "bonds": bonds,
             "securities": securities,
             "marketdata": marketdata,
             "marketdata_yields": marketdata_yields,
         }
+
+        self.db_repository.bonds_data_update(data=payload)
+        return payload
 
     async def get_all_secids(self)-> List[str]:
         secids = []

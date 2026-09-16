@@ -16,7 +16,6 @@ router = APIRouter(prefix="/ipc", tags=["ipc_inflation"])
 
 @router.post(
     "/upload",
-    response_model=IpcLoadResponse,
     summary="Загрузка Excel-файла с клиента, парсинг и сохранение в JSON",
 )
 async def upload_and_parse_ipc(
@@ -44,3 +43,10 @@ async def upload_and_parse_ipc(
             status_code=500,
             detail=f"Ошибка обработки загруженного файла: {exc}",
         ) from exc
+
+
+@router.post("/upload_ipc_weekly")
+async def load_and_parce_ipc__weekly():
+    service = get_ipc_service()
+    result = service.upload_and_parce_ipc_weekly_reports()
+    return result
