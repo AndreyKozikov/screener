@@ -48,8 +48,9 @@ import { refreshTradingHistory } from '../api/tradingHistory';
 import { getDashboardRates, type MacroRatesResponse } from '../api/dashboard';
 import { refreshCurrencyRates } from '../api/currency';
 import { loadKeyRateData } from '../api/keyrate';
-import { uploadAndParseIpcFile, parseLocalIpcFile } from '../api/ipc';
+import { uploadAndParseIpcFile, parseLocalIpcFile, uploadIpcWeekly } from '../api/ipc';
 import { uploadAndParseInflationExpectationsFile } from '../api/inflationExpectations';
+import { uploadAndParseInflationFile } from '../api/inflation';
 import { useUiStore } from '../stores/uiStore';
 import { useBondsStore } from '../stores/bondsStore';
 import { useComparisonStore } from '../stores/comparisonStore';
@@ -88,6 +89,7 @@ export const HomePage: React.FC = () => {
   const [pendingForceRefreshCoupons, setPendingForceRefreshCoupons] = useState(false);
   const [pendingIpcFile, setPendingIpcFile] = useState<File | null>(null);
   const [pendingInflationExpectationsFile, setPendingInflationExpectationsFile] = useState<File | null>(null);
+  const [pendingInflationFile, setPendingInflationFile] = useState<File | null>(null);
   
   // LLM Analysis state
   const [isAnalysisParamsOpen, setIsAnalysisParamsOpen] = useState(false);
@@ -214,6 +216,7 @@ export const HomePage: React.FC = () => {
     floatersProvider?: string,
     ipcFile?: File | null,
     inflationExpectationsFile?: File | null,
+    inflationFile?: File | null,
   ) => {
     if (selectedTasks.length === 0) {
       return;
@@ -226,6 +229,7 @@ export const HomePage: React.FC = () => {
       setPendingForceRefreshCoupons(forceRefreshCoupons ?? false);
       setPendingIpcFile(ipcFile ?? null);
       setPendingInflationExpectationsFile(inflationExpectationsFile ?? null);
+      setPendingInflationFile(inflationFile ?? null);
       setIsForecastFileDialogOpen(true);
       return;
     }
@@ -243,6 +247,7 @@ export const HomePage: React.FC = () => {
     const forecastFileRef = forecastFile ?? null;
     const ipcFileRef = ipcFile ?? null;
     const inflationExpectationsFileRef = inflationExpectationsFile ?? null;
+    const inflationFileRef = inflationFile ?? null;
 
     // Define task handlers
     const taskHandlers: Record<string, () => Promise<void>> = {
@@ -301,11 +306,20 @@ export const HomePage: React.FC = () => {
           await parseLocalIpcFile();
         }
       },
+      'ipc-weekly': async () => {
+        await uploadIpcWeekly();
+      },
       'inflation-expectations': async () => {
         if (!inflationExpectationsFileRef) {
           throw new Error('Не выбран файл для обновления инфляционных ожиданий');
         }
         await uploadAndParseInflationExpectationsFile(inflationExpectationsFileRef);
+      },
+      inflation: async () => {
+        if (!inflationFileRef) {
+          throw new Error('Не выбран файл для обновления данных по инфляции');
+        }
+        await uploadAndParseInflationFile(inflationFileRef);
       },
     };
 
@@ -1160,7 +1174,7 @@ export const HomePage: React.FC = () => {
             setRefreshStatus({});
           }
         }}
-        onConfirm={(tasks, forceRatings, forceCoupons, floatersProvider, ipcFile, inflationExpectationsFile) => handleRefreshConfirm(tasks, forceRatings, forceCoupons, undefined, floatersProvider, ipcFile, inflationExpectationsFile)}
+        onConfirm={(tasks, forceRatings, forceCoupons, floatersProvider, ipcFile, inflationExpectationsFile, inflationFile) => handleRefreshConfirm(tasks, forceRatings, forceCoupons, undefined, floatersProvider, ipcFile, inflationExpectationsFile, inflationFile)}
         tasks={[
           { id: 'bonds', label: 'Обновить данные облигаций', checked: false },
           { id: 'zerocupon', label: 'Обновить данные кривой бескупонной доходности', checked: false },
@@ -1174,7 +1188,9 @@ export const HomePage: React.FC = () => {
           { id: 'forecast', label: 'Обновить среднесрочный прогноз Банка России', checked: false },
           { id: 'floaters', label: 'Обновить данные по флоатерам', checked: false },
           { id: 'ipc', label: 'Обновить индексы потребительских цен (ИПЦ Росстата)', checked: false },
+          { id: 'ipc-weekly', label: 'Обновить еженедельный ИПЦ', checked: false },
           { id: 'inflation-expectations', label: 'Обновить инфляционные ожидания', checked: false },
+          { id: 'inflation', label: 'Обновление данных по инфляции', checked: false },
         ]}
         isRefreshing={isRefreshing}
         refreshStatus={refreshStatus}
@@ -1188,16 +1204,19 @@ export const HomePage: React.FC = () => {
           setPendingRefreshTasks([]);
           setPendingIpcFile(null);
           setPendingInflationExpectationsFile(null);
+          setPendingInflationFile(null);
         }}
         onConfirm={(file) => {
           setIsForecastFileDialogOpen(false);
           const tasks = pendingRefreshTasks;
           const savedIpcFile = pendingIpcFile;
           const savedInflationExpectationsFile = pendingInflationExpectationsFile;
+          const savedInflationFile = pendingInflationFile;
           setPendingRefreshTasks([]);
           setPendingIpcFile(null);
           setPendingInflationExpectationsFile(null);
-          void handleRefreshConfirm(tasks, pendingForceUpdateRatings, pendingForceRefreshCoupons, file, undefined, savedIpcFile, savedInflationExpectationsFile);
+          setPendingInflationFile(null);
+          void handleRefreshConfirm(tasks, pendingForceUpdateRatings, pendingForceRefreshCoupons, file, undefined, savedIpcFile, savedInflationExpectationsFile, savedInflationFile);
         }}
       />
 

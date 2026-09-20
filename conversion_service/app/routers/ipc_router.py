@@ -48,5 +48,5 @@ async def upload_and_parse_ipc(
 @router.post("/upload_ipc_weekly")
 async def load_and_parce_ipc__weekly():
     service = get_ipc_service()
-    result = service.upload_and_parce_ipc_weekly_reports()
+    result = await service.upload_and_parce_ipc_weekly_reports()
     return result

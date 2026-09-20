@@ -1,4 +1,6 @@
-"""Parser for est_infl.xlsx — extracts inflation indicators and saves as JSON."""
+"""Parser for est_infl.xlsx — extracts inflation indicators and saves as JSON.
+Парсер отчета оценки трендовой инфляции и модифицированных показателей базовой инфляции.
+"""
 
 from __future__ import annotations
 
@@ -24,10 +26,11 @@ TARGET_INDICATORS: list[str] = [
     "Модифицированный показатель базовой инфляции, рассчитанный на основе метода усечения",
 ]
 
+
 INDICATOR_KEYS: list[str] = [
-    "Оценка трендовой инфляции (5-летнее скользящее окно)",
-    "Оценка трендовой инфляции (3-летнее скользящее окно)",
-    "Модифицированный показатель базовой инфляции, рассчитанный на основе метода усечения",
+    "trend_inflation_5y", # Оценка трендовой инфляции (5-летнее скользящее окно)
+    "trend_inflation_3y", # Оценка трендовой инфляции (3-летнее скользящее окно)
+    "modified_core_inflation", # Модифицированный показатель базовой инфляции, рассчитанный на основе метода усечения
 ]
 
 
@@ -91,24 +94,20 @@ def extract_indicator_data(
 def build_json_structure(
     dates: list[datetime],
     indicator_data: dict[str, list[float | None]],
-) -> dict[str, dict[str, dict[str, float]]]:
-    """Build nested dict: year -> month -> indicator_key -> value."""
-    result: dict[str, dict[str, dict[str, float]]] = {}
+):
+    result = []
     for i, dt in enumerate(dates):
-        year_key = str(dt.year)
-        month_key = f"{dt.month:02d}"
-        if year_key not in result:
-            result[year_key] = {}
-        if month_key not in result[year_key]:
-            result[year_key][month_key] = {}
+        record_date = dt.date().isoformat()
+        record = {"record_date": record_date}
         for ind_key, values in indicator_data.items():
             val = values[i] if i < len(values) else None
             if val is not None:
-                result[year_key][month_key][ind_key] = val
+                record[ind_key] = val
+        result.append(record)
     return result
 
 
-def parse_est_infl(input_path: Path, output_path: Path) -> None:
+def parse_est_infl(input_path: Path) -> list[dict[str, Any]]:
     """Main parsing function."""
     logger.info("Opening workbook: %s", input_path)
     wb = openpyxl.load_workbook(input_path, read_only=True, data_only=True)
@@ -136,25 +135,7 @@ def parse_est_infl(input_path: Path, output_path: Path) -> None:
         if not indicator_data:
             raise ValueError("No indicators were successfully extracted")
 
-        json_data = build_json_structure(dates, indicator_data)
-
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        with output_path.open("w", encoding="utf-8") as f:
-            json.dump(json_data, f, ensure_ascii=False, indent=2)
-
-        logger.info("Successfully saved JSON to: %s", output_path)
-        logger.info("Years: %d, Total months: %d", len(json_data), sum(len(m) for m in json_data.values()))
+        return build_json_structure(dates, indicator_data)
 
     finally:
         wb.close()
-
-
-if __name__ == "__main__":
-    # Use the actual file path that exists
-    INPUT_XLSX = Path("est_infl.xlsx")
-    OUTPUT_JSON = Path("est_infl_parsed.json")
-
-    if not INPUT_XLSX.exists():
-        logger.error("Input file does not exist: %s", INPUT_XLSX)
-    else:
-        parse_est_infl(INPUT_XLSX, OUTPUT_JSON)

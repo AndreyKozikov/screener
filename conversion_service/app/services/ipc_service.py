@@ -75,10 +75,11 @@ class IpcService:
 
     async def upload_and_parce_ipc_weekly_reports(self):
         data = get_ipc_weekly()
+        print(data)
         try:
             async with httpx.AsyncClient(timeout=600) as client:
                 response = await client.post(
-                    url="http://127.0.0.1:8964/api//ipc_weekly_update",
+                    url="http://127.0.0.1:8964/api/ipc_weekly_update",
                     json=data,
                     headers={"Content-Type": "application/json"},
                 )

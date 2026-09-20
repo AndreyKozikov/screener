@@ -1,5 +1,5 @@
 from typing import Optional
-from db_repository.models.inflations import InflationExpectationsBase
+from db_repository.models.inflations import InflationExpectationsBase, InflationDataBase
 from db_repository.repository.inflation_repository import get_inflation_repository
 
 class InflationService:
@@ -9,6 +9,11 @@ class InflationService:
     async def inflation_expectations_update(self, data: list[InflationExpectationsBase]):
         values = [record.model_dump() for record in data]
         result = self._repository.inflation_expectations_update(values)
+        return result
+
+    async def update_inflation_data(self, data: list[InflationDataBase]):
+        values = [record.model_dump() for record in data]
+        result = self._repository.inflation_data_update(values)
         return result
 
 

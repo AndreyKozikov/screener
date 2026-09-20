@@ -7,7 +7,14 @@ URL базы данных задаётся относительно env.py (db/b
 """
 
 import logging.config
+import sys
 from pathlib import Path
+
+backend_dir = Path(__file__).resolve().parent.parent
+workspace_dir = backend_dir.parent
+for p in (str(backend_dir), str(workspace_dir)):
+    if p not in sys.path:
+        sys.path.insert(0, p)
 
 from alembic import context
 from sqlalchemy import engine_from_config

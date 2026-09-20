@@ -75,3 +75,22 @@ export const fetchSavedIpcData = async (): Promise<IpcData> => {
     return fallbackResponse.data;
   }
 };
+
+/**
+ * Запуск загрузки и парсинга еженедельного ИПЦ.
+ */
+export const uploadIpcWeekly = async (): Promise<unknown> => {
+  try {
+    const response = await conversionClient.post('/ipc/upload_ipc_weekly');
+    return response.data;
+  } catch (err) {
+    // Резервный вызов напрямую к conversion_service на порт 12345
+    const fallbackResponse = await axios.post(
+      'http://127.0.0.1:12345/api/ipc/upload_ipc_weekly',
+      null,
+      { timeout: 120000 }
+    );
+    return fallbackResponse.data;
+  }
+};
+

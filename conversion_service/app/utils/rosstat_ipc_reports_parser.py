@@ -8,7 +8,7 @@ import sys
 import warnings
 from datetime import date
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 import xml.etree.ElementTree as ET
 
 import requests
@@ -236,8 +236,8 @@ def _extract_date_range(root: ET.Element) -> tuple:
         raise ValueError("В заголовке отчёта указана некорректная дата") from exc
 
     return (
-        f"{start.day:02d}.{start.month:02d}.{start.year}",
-        f"{end.day:02d}.{end.month:02d}.{end.year}",
+        f"{start.year}-{start.month:02d}-{start.day:02d}",
+        f"{end.year}-{end.month:02d}-{end.day:02d}",
     )
 
 
@@ -260,14 +260,15 @@ def _extract_ipc_weekly(root: ET.Element) -> str:
 
 
 
-def parse_report(html: str, source_url: Optional[str] = None) -> Dict[str, str]:
+def parse_report(html: str, source_url: Optional[str] = None) -> Dict[str, Any]:
     root = _parse_xml(html)
     start_date, end_date = _extract_date_range(root)
+    ipc_weekly = float(_extract_ipc_weekly(root).replace(",", "."))
     return {
         "source_url": source_url or "",
         "start_date": start_date,
         "end_date": end_date,
-        "ipc_weekly": _extract_ipc_weekly(root),
+        "ipc_weekly": ipc_weekly
     }
 
 

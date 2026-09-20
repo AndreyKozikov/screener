@@ -35,6 +35,7 @@ interface RefreshDataDialogProps {
     floatersProvider?: string,
     ipcFile?: File | null,
     inflationExpectationsFile?: File | null,
+    inflationFile?: File | null,
   ) => Promise<void>;
   tasks: RefreshTask[];
   isRefreshing: boolean;
@@ -70,6 +71,9 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
   const [inflationExpectationsFile, setInflationExpectationsFile] = useState<File | null>(null);
   const [inflationExpectationsFileError, setInflationExpectationsFileError] = useState<string | null>(null);
   const inflationExpectationsFileInputRef = useRef<HTMLInputElement>(null);
+  const [inflationFile, setInflationFile] = useState<File | null>(null);
+  const [inflationFileError, setInflationFileError] = useState<string | null>(null);
+  const inflationFileInputRef = useRef<HTMLInputElement>(null);
 
   // Reset selected tasks when dialog opens or tasks change
   useEffect(() => {
@@ -91,6 +95,11 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
       setInflationExpectationsFileError(null);
       if (inflationExpectationsFileInputRef.current) {
         inflationExpectationsFileInputRef.current.value = '';
+      }
+      setInflationFile(null);
+      setInflationFileError(null);
+      if (inflationFileInputRef.current) {
+        inflationFileInputRef.current.value = '';
       }
     }
   }, [open, tasks]);
@@ -134,11 +143,27 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
     setInflationExpectationsFile(file);
   };
 
+  const handleInflationFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    setInflationFileError(null);
+    if (!file) {
+      setInflationFile(null);
+      return;
+    }
+    const name = file.name.toLowerCase();
+    if (!name.endsWith('.xlsx')) {
+      setInflationFileError('Допустим только формат .xlsx');
+      setInflationFile(null);
+      return;
+    }
+    setInflationFile(file);
+  };
+
   const handleConfirm = async () => {
     const selected = tasks
       .filter(task => selectedTasks[task.id])
       .map(task => task.id);
-    
+
     if (selected.length === 0) {
       return;
     }
@@ -146,7 +171,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
     // Close dialog immediately without waiting for server response
     onClose();
     // Start refresh in background (fire and forget)
-    void onConfirm(selected, forceUpdateRatings, forceRefreshCoupons, floatersProvider, ipcFile, inflationExpectationsFile);
+    void onConfirm(selected, forceUpdateRatings, forceRefreshCoupons, floatersProvider, ipcFile, inflationExpectationsFile, inflationFile);
   };
 
   const handleClose = () => {
@@ -160,6 +185,11 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
       setInflationExpectationsFileError(null);
       if (inflationExpectationsFileInputRef.current) {
         inflationExpectationsFileInputRef.current.value = '';
+      }
+      setInflationFile(null);
+      setInflationFileError(null);
+      if (inflationFileInputRef.current) {
+        inflationFileInputRef.current.value = '';
       }
       onClose();
     }
@@ -189,7 +219,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           Выберите задачи для обновления. Выбранные задачи будут выполнены параллельно.
         </Typography>
-        
+
         <FormGroup>
           {tasks.map((task) => {
             const taskStatus = refreshStatus[task.id] || { status: 'idle' as const };
@@ -201,7 +231,8 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
             const isFloatersTask = task.id === 'floaters';
             const isIpcTask = task.id === 'ipc';
             const isInflationExpectationsTask = task.id === 'inflation-expectations';
-            
+            const isInflationTask = task.id === 'inflation';
+
             return (
               <Box key={task.id} sx={{ mb: 2 }}>
                 <FormControlLabel
@@ -404,6 +435,72 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                     {inflationExpectationsFileError && (
                       <Typography variant="caption" color="error" sx={{ display: 'block', mt: 0.5 }}>
                         {inflationExpectationsFileError}
+                      </Typography>
+                    )}
+                  </Box>
+                )}
+                {isInflationTask && selectedTasks[task.id] && (
+                  <Box
+                    sx={{
+                      ml: 4,
+                      mt: 1,
+                      p: 1.5,
+                      bgcolor: '#F8FAFC',
+                      borderRadius: '12px',
+                      border: '1px dashed #CBD5E1',
+                    }}
+                  >
+                    <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5, color: '#334155' }}>
+                      Файл данных по инфляции (.xlsx):
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                      Выберите Excel-файл с данными по инфляции для отправки на сервер.
+                    </Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                      <input
+                        ref={inflationFileInputRef}
+                        type="file"
+                        accept=".xlsx"
+                        onChange={handleInflationFileChange}
+                        style={{ display: 'none' }}
+                        id="inflation-excel-upload-input"
+                        disabled={isRefreshing}
+                      />
+                      <label htmlFor="inflation-excel-upload-input">
+                        <Button
+                          variant="outlined"
+                          component="span"
+                          size="small"
+                          startIcon={<UploadFileIcon />}
+                          disabled={isRefreshing}
+                          sx={{ borderRadius: '8px', textTransform: 'none' }}
+                        >
+                          {inflationFile ? 'Заменить файл' : 'Выбрать Excel файл'}
+                        </Button>
+                      </label>
+                      {inflationFile ? (
+                        <Chip
+                          label={inflationFile.name}
+                          size="small"
+                          onDelete={() => {
+                            setInflationFile(null);
+                            if (inflationFileInputRef.current) {
+                              inflationFileInputRef.current.value = '';
+                            }
+                          }}
+                          disabled={isRefreshing}
+                          color="primary"
+                          variant="outlined"
+                        />
+                      ) : (
+                        <Typography variant="caption" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+                          (файл не выбран)
+                        </Typography>
+                      )}
+                    </Box>
+                    {inflationFileError && (
+                      <Typography variant="caption" color="error" sx={{ display: 'block', mt: 0.5 }}>
+                        {inflationFileError}
                       </Typography>
                     )}
                   </Box>

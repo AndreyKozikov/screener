@@ -42,12 +42,12 @@ class Ipc(IpcBase, table=True):
 class IpcWeeklyBase(SQLModel):
     start_date: date = SQLField(
         primary_key=True,
-        validation_alias="start_data",
+        validation_alias="start_date",
         description="Начальная дача отчетного периода"
     )
 
     end_date: date = SQLField(
-        validation_alias="end_data",
+        validation_alias="end_date",
         description="Конечная дата отчетного периода"
     )
 
