@@ -8,3 +8,7 @@ requests==2.32.3
 rarfile==4.2
 py7zr==0.22.0
 openpyxl==3.1.2
+
+# ---- Cloudflare bypass (e-disclosure) ----
+DrissionPage>=4.1.0.18
+selenium>=4.25.0

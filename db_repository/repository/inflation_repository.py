@@ -1,7 +1,9 @@
 from typing import Optional, Any
 from db_repository.models.inflations import InflationExpectations, InflationData
 from sqlalchemy.dialects.sqlite import insert
+from sqlalchemy import select
 from db_repository.core.database_init import get_session
+from datetime import date
 
 
 class InflationRepository:
@@ -52,6 +54,28 @@ class InflationRepository:
             print(f"Ошибка при обновлении эмитентов: {e}")
             raise
 
+    def inflation_data_select(
+            self, data: Optional[dict[str, date]] = None
+    ) -> list[InflationExpectations]:
+
+        stmt = select(InflationExpectations)
+        if data is not None:
+            if data.get("from_date") is not None:
+                stmt = stmt.where(InflationExpectations.recorddata >= data["from_date"])
+
+            if data.get("till_date") is not None:
+                stmt = stmt.where(InflationExpectations.recorddata <= data["till_date"])
+
+        stmt = stmt.order_by(InflationExpectations.recorddata)
+        try:
+            with get_session() as session:
+                result = session.exec(stmt).scalars().all()
+                print(type(result))
+                print(type(result[0]) if result else "Пустой результат")
+                return result
+        except Exception as e:
+            print(f"Ошибка при обновлении эмитентов: {e}")
+            raise
 
 inflation_repository: Optional[InflationRepository] = None
 

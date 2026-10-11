@@ -136,6 +136,7 @@ temp/
 *.bak
 *.swp
 *~
+*.xlsx
 .cache/
 
 # Data files (uncomment if you don't want to commit data files)

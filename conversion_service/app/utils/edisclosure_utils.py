@@ -7,10 +7,8 @@
 import hashlib
 import html
 import io
-import json
 import random
 import re
-import os
 import time
 import zipfile
 import rarfile
@@ -19,34 +17,18 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 from urllib.parse import urljoin, unquote
-import requests
+from curl_cffi import requests as cf_requests
 
-PROJECT_ROOT = Path(__file__).parent.absolute()
-COOKIES_FILE = PROJECT_ROOT / "cookies_data.json"
+from app.utils.edisclosure.cookie_manager import get_cookie_manager
 
 
 def _load_cookies_from_file() -> Tuple[Dict[str, str], str]:
-    """Загружает cookies и токен из файла."""
-    print(COOKIES_FILE)
-    if not os.path.exists(COOKIES_FILE):
-        raise FileNotFoundError(
-            f"❌ Файл {COOKIES_FILE} не найден.\n"
-            f"Запустите get_cookies_selenium.py для его создания."
-        )
-
-    with open(COOKIES_FILE, "r", encoding="utf-8") as f:
-        data = json.load(f)
-
-    cookies = data.get("cookies", {})
-    token = data.get("token", "")
-
-    if not cookies or not token:
-        raise ValueError("❌ В файле отсутствуют cookies или токен. Обновите данные через get_cookies_selenium.py")
-
-    return cookies, token
+    """Загружает cookies и токен через CookieManager."""
+    manager = get_cookie_manager()
+    return manager.get_cookies_and_token()
 
 _SESSION_CACHE: Dict[str, Optional[Any]] = {
-    "session": None,  # type: Optional[requests.Session]
+    "session": None,  # type: Optional[cf_requests.Session]
     "token": None,    # type: Optional[str]
 }
 
@@ -101,10 +83,12 @@ _AMENDMENTS_PHRASE_PATTERN: re.Pattern[str] = re.compile(
 )
 
 
-def _get_session_data() -> Tuple[requests.Session, str]:
+def _get_session_data() -> Tuple[cf_requests.Session, str]:
     cookies, token = _load_cookies_from_file()
 
-    session = requests.Session()
+    # Use curl_cffi with Chrome TLS fingerprint impersonation to bypass
+    # anti-bot protection that detects Python's standard TLS stack.
+    session = cf_requests.Session(impersonate="chrome130")
     session.headers.update({
         "Accept": "*/*",
         "Accept-Encoding": "gzip, deflate, br, zstd",
@@ -112,13 +96,13 @@ def _get_session_data() -> Tuple[requests.Session, str]:
         "Connection": "keep-alive",
         "Host": "www.e-disclosure.ru",
         "Referer": "https://www.e-disclosure.ru/poisk-po-kompaniyam",
-        "Sec-Ch-Ua": '"Chromium";v="148", "YaBrowser";v="26.6", "Not/A)Brand";v="99", "Yowser";v="2.5"',
+        "Sec-Ch-Ua": '"Chromium";v="130", "Not?A_Brand";v="99"',
         "Sec-Ch-Ua-Mobile": "?0",
         "Sec-Ch-Ua-Platform": '"Windows"',
         "Sec-Fetch-Dest": "empty",
         "Sec-Fetch-Mode": "cors",
         "Sec-Fetch-Site": "same-origin",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 YaBrowser/26.6.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
         "X-Requested-With": "XMLHttpRequest",
     })
 
@@ -141,7 +125,15 @@ def _get_session_data() -> Tuple[requests.Session, str]:
     return session, token
 
 
-def _get_session() -> Tuple[requests.Session, str]:
+def _clear_session_cache() -> None:
+    """Invalidate session cache and cookies — triggers refresh on next use."""
+    global _SESSION_CACHE
+    _SESSION_CACHE["session"] = None
+    _SESSION_CACHE["token"] = None
+    get_cookie_manager().invalidate()
+
+
+def _get_session() -> Tuple[cf_requests.Session, str]:
     """Инициализирует сессию и получает токен антифоргери."""
     global _SESSION_CACHE
 
@@ -158,7 +150,7 @@ def _get_session() -> Tuple[requests.Session, str]:
 
 
 
-def _get_plain_session() -> requests.Session:
+def _get_plain_session() -> cf_requests.Session:
 
     """Возвращает сессию с предварительным выполнением фиктивного перехода по адресу https://www.e-disclosure.ru/poisk-po-kompaniyam."""
     global _SESSION_CACHE
@@ -193,7 +185,7 @@ def search_company_by_inn(inn: str) -> List[Dict[str, Any]]:
     response = session.post(_URL, data=data, timeout=_TIMEOUT)
 
     if response.status_code == 403:
-
+        _clear_session_cache()
         session, token = _get_session()
         data["__RequestVerificationToken"] = token
         response = session.post(_URL, data=data, timeout=_TIMEOUT)
@@ -216,7 +208,7 @@ def search_company_by_inn(inn: str) -> List[Dict[str, Any]]:
     return result
 
 
-def _extract_event_text(pseudo_guid: str, session: requests.Session) -> Optional[str]:
+def _extract_event_text(pseudo_guid: str, session: cf_requests.Session) -> Optional[str]:
     """Извлекает текст события из HTML страницы по pseudoGUID.
     
     Args:
@@ -463,7 +455,7 @@ def fetch_emitent_year_events_unfiltered(
 
     if response.status_code == 403:
         print(f"  [API] 403, тело ответа:\n{response.text[:500]}", flush=True)
-        # Пробуем обновить сессию
+        # Invalidate cookies and rebuild session
         _clear_session_cache()
         session = _get_plain_session()
 
@@ -554,7 +546,7 @@ def fetch_events_page_json_only(company_id: int, api_year: int) -> List[Dict[str
     print(f"  [API] GET (metadata only) {url}", flush=True)
     response = session.get(_EVENTS_URL, params=params, headers=event_api_headers, timeout=_TIMEOUT)
     if response.status_code == 403:
-
+        _clear_session_cache()
         session = _get_plain_session()
         company_portal_url = f"{_COMPANY_PORTAL_URL}?id={company_id}"
         print(f"  [PORTAL] GET {company_portal_url} (повторный)", flush=True)
@@ -612,7 +604,7 @@ def list_company_portal_event_years(company_id: int) -> List[int]:
     print(f"  [COMPANY PAGE] GET {page_url}", flush=True)
     response = session.get(page_url, headers=_HTML_HEADERS, timeout=_TIMEOUT)
     if response.status_code == 403:
-
+        _clear_session_cache()
         session = _get_plain_session()
         response = session.get(page_url, headers=_HTML_HEADERS, timeout=_TIMEOUT)
     response.raise_for_status()

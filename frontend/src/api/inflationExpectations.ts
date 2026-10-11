@@ -21,25 +21,12 @@ export const uploadAndParseInflationExpectationsFile = async (file: File): Promi
   const formData = new FormData();
   formData.append('file', file);
 
-  try {
-    const response = await conversionClient.post<InflationExpectationsLoadResponse>(
-      '/inflation-expectations/upload',
-      formData,
-      {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      }
-    );
-    return response.data;
-  } catch {
-    // Резервный вызов напрямую к conversion_service на порт 12345
-    const fallbackResponse = await axios.post<InflationExpectationsLoadResponse>(
-      'http://127.0.0.1:12345/api/inflation-expectations/upload',
-      formData,
-      {
-        headers: { 'Content-Type': 'multipart/form-data' },
-        timeout: 120000,
-      }
-    );
-    return fallbackResponse.data;
-  }
+  const response = await conversionClient.post<InflationExpectationsLoadResponse>(
+    '/inflations/upload',
+    formData,
+    {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }
+  );
+  return response.data;
 };

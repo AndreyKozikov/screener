@@ -28,6 +28,7 @@ import { HubCard } from '../components/portfolio/HubCard';
 import { ComparisonTable } from '../components/bonds/ComparisonTable';
 import { SpreadAnalysis } from '../components/bonds/SpreadAnalysis';
 import { AnalysisParamsDialog } from '../components/llm/AnalysisParamsDialog';
+import { InflationExpectationsChart } from '../components/inflationExpectations/InflationExpectationsChart';
 import { AnalysisResultDialog } from '../components/llm/AnalysisResultDialog';
 import { LLMAnalysisModelDialog, type LLMModel } from '../components/llm/LLMAnalysisModelDialog';
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
@@ -1006,6 +1007,14 @@ export const HomePage: React.FC = () => {
                         color="#e91e63"
                         onClick={() => setForecastSubView('keyrate')}
                       />
+                      <HubCard
+                        title="Инфляционные ожидания"
+                        value="—"
+                        subtitle="Анализ инфляционных ожиданий населения"
+                        icon={<AnalyticsIcon />}
+                        color="#3f51b5"
+                        onClick={() => setForecastSubView('inflation-expectations')}
+                      />
                     </Box>
                   </Box>
                 ) : (
@@ -1059,6 +1068,12 @@ export const HomePage: React.FC = () => {
                     {forecastSubView === 'keyrate' && (
                       <Box sx={{ flexGrow: 1, minHeight: 0 }}>
                         <KeyRateTable />
+                      </Box>
+                    )}
+                    
+                    {forecastSubView === 'inflation-expectations' && (
+                      <Box sx={{ flexGrow: 1, minHeight: 0 }}>
+                        <InflationExpectationsChart />
                       </Box>
                     )}
                   </Box>

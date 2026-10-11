@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 
-from app.core.exceptions import PdfConversionConnectionError
+from conversion_service.app.core.exceptions import PdfConversionConnectionError
 from app.repository.files.file_storage import FileStorage
 from app.utils.edisclosure_utils import clean_markdown_after_pdf2md
 from config.paths import DATA_DIR

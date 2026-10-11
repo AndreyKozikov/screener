@@ -18,7 +18,7 @@ aiofiles==24.1.0
 python-multipart==0.0.19
 cachetools==5.5.0
 
-# Archives (e-disclosure ZIP with correct encoding handling)
+# Archives (e.g-disclosure ZIP with correct encoding handling)
 patool==4.0.4  # распаковка архивов, корректное определение кодировок
 py7zr==0.22.0
 
@@ -33,3 +33,4 @@ python-dotenv==1.0.0  # для загрузки переменных окруж�
 # openrouter==0.1.0  # больше не используется, заменен на OpenAI клиент
 google-genai  # Google Gemini API (новый SDK, заменяет google-generativeai)
 tqdm==4.66.2  # для отображения прогресса обработки событий
+plotly==5.24.1  # для визуализации графиков

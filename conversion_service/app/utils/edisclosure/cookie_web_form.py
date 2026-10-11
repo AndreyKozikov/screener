@@ -1,23 +1,33 @@
-"""
-Веб-форма для парсинга заголовков из браузера на FastAPI.
-Поддерживает:
-1. Формат с табуляциями (копирование из вкладки Cookies)
-2. Формат с заголовками (Copy as cURL)
-Запустите: uvicorn cookie_parser_fastapi:app --host 127.0.0.1 --port 5000 --reload
+"""FastAPI web-form for manual cookie entry from browser DevTools.
+
+Provides a browser-based UI where the user can paste cookies copied from
+Chrome DevTools (Application → Cookies tab or Network → Copy as cURL)
+and have them parsed and saved to ``cookies_data.json``.
+
+This module is a fallback mechanism for when the automated DrissionPage
+Cloudflare bypass fails.
+
+Usage as a standalone server::
+
+    uvicorn app.utils.edisclosure.cookie_web_form:app --host 127.0.0.1 --port 5000
+
+Or include the router in the main FastAPI app for integrated access.
 """
 
 import json
 import re
 import time
 from pathlib import Path
-from fastapi import FastAPI, Request
+from typing import Optional
+
+from fastapi import FastAPI, APIRouter
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
-app = FastAPI()
-
-# HTML шаблон
-HTML_TEMPLATE = """
+# ---------------------------------------------------------------------------
+# HTML template for the cookie parser UI
+# ---------------------------------------------------------------------------
+HTML_TEMPLATE: str = """
 <!DOCTYPE html>
 <html>
 <head>
@@ -71,7 +81,7 @@ HTML_TEMPLATE = """
             <button class="tab" onclick="switchTab('tab-headers')">📨 Заголовки (cURL)</button>
         </div>
         
-        <!-- Вкладка: Таблица Cookies -->
+        <!-- Tab: Cookie table -->
         <div id="tab-cookies" class="tab-content active">
             <div class="instructions">
                 <strong>📋 Инструкция:</strong>
@@ -90,11 +100,10 @@ HTML_TEMPLATE = """
             <div class="buttons">
                 <button class="btn-parse" onclick="parseCookies()">🔍 Парсить</button>
                 <button class="btn-clear" onclick="clearText('cookiesInput')">🗑️ Очистить</button>
-                <button class="btn-clear" onclick="loadExampleCookies()">📋 Пример</button>
             </div>
         </div>
         
-        <!-- Вкладка: Заголовки -->
+        <!-- Tab: Headers (cURL) -->
         <div id="tab-headers" class="tab-content">
             <div class="instructions">
                 <strong>📋 Инструкция:</strong>
@@ -109,7 +118,6 @@ HTML_TEMPLATE = """
             <div class="buttons">
                 <button class="btn-parse" onclick="parseHeaders()">🔍 Парсить</button>
                 <button class="btn-clear" onclick="clearText('headersInput')">🗑️ Очистить</button>
-                <button class="btn-clear" onclick="loadExampleHeaders()">📋 Пример</button>
             </div>
         </div>
         
@@ -146,7 +154,7 @@ HTML_TEMPLATE = """
             }
             
             try {
-                const response = await fetch('/parse-cookies', {
+                const response = await fetch('/edisclosure-cookies/parse-cookies', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ text: text, token: token })
@@ -171,7 +179,7 @@ HTML_TEMPLATE = """
             }
             
             try {
-                const response = await fetch('/parse-headers', {
+                const response = await fetch('/edisclosure-cookies/parse-headers', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ text: text })
@@ -218,82 +226,64 @@ HTML_TEMPLATE = """
             resultDiv.className = 'result success';
             resultDiv.innerHTML = html;
         }
-        
-        function loadExampleCookies() {
-            document.getElementById('cookiesInput').value = `AspNetCore.Antiforgery.tl_-DOxheG0	CfDJ8OfQNSGQ5XNPn6y_jRQ8QLClr1v1fp6mZkO90RiqIzaL2xD9oWzphko5yF6y0NS8Y-OW5Gol4n6HSi__ansjiu-jzpu1iLFr-vrKnmrcxcWX_MjFs1ShdW70QqC2htwKlIScIS6ZeqrTaMWH0D2GS6I	www.e-disclosure.ru	/	Session	190	✓		Strict
-adtech_uid	47e832a6-3e62-493c-b478-c9211ee29e77%3Ae-disclosure.ru	.e-disclosure.ru	/	2027-05-25T16:44:17.000Z	64		✓
-spid	1747121721492_2d1cc4e4dc62884b610d62e73a9a0bab_cpd3auh7gj88use7	www.e-disclosure.ru	/	2027-04-14T16:23:50.914Z	67		✓	None
-spsc	1785663497792_4d77a032f7f6b169a07f189b917be7f3_4ZGvBWVDGbQwhHaCBNwVUV.VjRU70gO.zxQmVAJqajgZ	.e-disclosure.ru	/	2027-09-06T09:38:29.027Z	95		✓	None
-top100_id	t1.2928424.1620947990.1779727204321	.e-disclosure.ru	/	2027-05-25T16:44:17.895Z	44`;
-            document.getElementById('tokenInput').value = '';
-        }
-        
-        function loadExampleHeaders() {
-            document.getElementById('headersInput').value = `accept: */*
-accept-encoding: gzip, deflate, br, zstd
-accept-language: ru,en;q=0.9
-connection: keep-alive
-cookie: spid=1747121721492_2d1cc4e4dc62884b610d62e73a9a0bab_cpd3auh7gj88use7; adtech_uid=47e832a6-3e62-493c-b478-c9211ee29e77%3Ae-disclosure.ru; top100_id=t1.2928424.1620947990.1779727204321; .AspNetCore.Antiforgery.tl_-DOxheG0=CfDJ8OfQNSGQ5XNPn6y_jRQ8QLClr1v1fp6mZkO90RiqIzaL2xD9oWzphko5yF6y0NS8Y-OW5Gol4n6HSi__ansjiu-jzpu1iLFr-vrKnmrcxcWX_MjFs1ShdW70QqC2htwKlIScIS6ZeqrTaMWH0D2GS6I
-host: www.e-disclosure.ru
-referer: https://www.e-disclosure.ru/portal/company.aspx?id=3043
-user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 YaBrowser/26.6.0.0 Safari/537.36
-x-requested-with: XMLHttpRequest`;
-        }
     </script>
 </body>
 </html>
 """
 
 
+# ---------------------------------------------------------------------------
+# Pydantic models
+# ---------------------------------------------------------------------------
+
 class ParseRequest(BaseModel):
+    """Request body for cookie/header parsing endpoints."""
+
     text: str
     token: str = ""
 
 
-def parse_cookie_tab_line(line: str) -> dict:
-    """Парсит строку с табуляциями."""
-    parts = line.split('\t')
+# ---------------------------------------------------------------------------
+# Parsing helpers
+# ---------------------------------------------------------------------------
+
+def _parse_cookie_tab_line(line: str) -> Optional[dict]:
+    """Parse a single tab-separated cookie row."""
+    parts = line.split("\t")
     if len(parts) < 2:
         return None
-
     name = parts[0].strip()
     value = parts[1].strip()
-
     if not name or not value:
         return None
-    if name.startswith('_'):
+    if name.startswith("_"):
         return None
-
     return {name: value}
 
 
 def parse_cookies_from_tab(text: str) -> dict:
-    """Парсит таблицу cookies с табуляциями."""
-    cookies = {}
-
-    for line in text.split('\n'):
+    """Parse a cookies table copied with tab-separated values."""
+    cookies: dict = {}
+    for line in text.split("\n"):
         line = line.strip()
         if not line:
             continue
-
-        # Пропускаем заголовки
-        if 'Название' in line or 'Значение' in line or 'Домен' in line:
+        # Skip header rows
+        if "Название" in line or "Значение" in line or "Домен" in line:
             continue
-
-        parsed = parse_cookie_tab_line(line)
+        parsed = _parse_cookie_tab_line(line)
         if parsed:
             cookies.update(parsed)
-
     return cookies
 
 
 def parse_cookie_string(cookie_str: str) -> dict:
-    """Парсит строку cookie (из заголовков)."""
-    cookies = {}
-    for item in cookie_str.split(';'):
+    """Parse a ``Cookie:`` header value into a dict."""
+    cookies: dict = {}
+    for item in cookie_str.split(";"):
         item = item.strip()
-        if '=' in item:
-            name, value = item.split('=', 1)
+        if "=" in item:
+            name, value = item.split("=", 1)
             name = name.strip()
             value = value.strip()
             if name:
@@ -302,35 +292,33 @@ def parse_cookie_string(cookie_str: str) -> dict:
 
 
 def parse_headers_from_text(text: str) -> dict:
-    """Парсит заголовки из текста."""
-    cookies = {}
-    referer = ""
-    company_id = None
+    """Parse headers text (e.g. from Copy as cURL) to extract cookies."""
+    cookies: dict = {}
+    referer: str = ""
+    company_id: Optional[str] = None
+    cookie_str: Optional[str] = None
 
-    lines = text.split('\n')
-    cookie_str = None
-
-    for line in lines:
+    for line in text.split("\n"):
         line = line.strip()
         if not line:
             continue
 
-        if line.lower().startswith('cookie:'):
+        if line.lower().startswith("cookie:"):
             cookie_str = line[7:].strip()
-        elif line.lower().startswith('cookie '):
+        elif line.lower().startswith("cookie "):
             cookie_str = line[6:].strip()
-        elif 'cookie' in line.lower() and '=' in line and ';' in line:
+        elif "cookie" in line.lower() and "=" in line and ";" in line:
             if not cookie_str:
                 cookie_str = line
 
-        if line.lower().startswith('referer:'):
+        if line.lower().startswith("referer:"):
             referer = line[8:].strip()
-            match = re.search(r'id=(\d+)', referer)
+            match = re.search(r"id=(\d+)", referer)
             if match:
                 company_id = match.group(1)
-        elif line.lower().startswith('referer '):
+        elif line.lower().startswith("referer "):
             referer = line[7:].strip()
-            match = re.search(r'id=(\d+)', referer)
+            match = re.search(r"id=(\d+)", referer)
             if match:
                 company_id = match.group(1)
 
@@ -340,13 +328,67 @@ def parse_headers_from_text(text: str) -> dict:
     return {"cookies": cookies, "referer": referer, "company_id": company_id}
 
 
-@app.get("/", response_class=HTMLResponse)
-async def index():
-    return HTML_TEMPLATE
+# ---------------------------------------------------------------------------
+# Save cookies to file (uses CookieManager)
+# ---------------------------------------------------------------------------
+
+def _save_parsed_cookies(
+    cookies: dict,
+    token: str,
+    referer: str = "",
+    company_id: Optional[str] = None,
+) -> dict:
+    """Save parsed cookies via the CookieManager and return output."""
+    from app.utils.edisclosure.cookie_manager import get_cookie_manager
+
+    manager = get_cookie_manager()
+    manager.save_cookies(
+        cookies,
+        token,
+        extra={
+            "referer": referer,
+            "user_agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/148.0.0.0 YaBrowser/26.6.0.0 Safari/537.36"
+            ),
+            "company_id": company_id,
+        },
+    )
+    # Also invalidate the cache to force re-read
+    manager.invalidate()
+
+    return {
+        "cookies": cookies,
+        "token": token,
+        "timestamp": time.time(),
+        "datetime": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "referer": referer,
+        "user_agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/148.0.0.0 YaBrowser/26.6.0.0 Safari/537.36"
+        ),
+        "company_id": company_id,
+    }
 
 
-@app.post("/parse-cookies")
-async def parse_cookies(request: ParseRequest):
+# ---------------------------------------------------------------------------
+# FastAPI router (can be included into the main app)
+# ---------------------------------------------------------------------------
+
+cookie_router = APIRouter(prefix="/edisclosure-cookies", tags=["edisclosure-cookies"])
+
+
+@cookie_router.get("/", response_class=HTMLResponse)
+async def cookie_form_page() -> HTMLResponse:
+    """Serve the cookie parser web form."""
+    return HTMLResponse(content=HTML_TEMPLATE)
+
+
+@cookie_router.post("/parse-cookies")
+async def parse_cookies_endpoint(request: ParseRequest) -> JSONResponse:
+    """Parse cookies from a tab-separated table."""
     text = request.text
     manual_token = request.token.strip()
 
@@ -354,114 +396,93 @@ async def parse_cookies(request: ParseRequest):
         return JSONResponse({"error": "Пустой ввод"})
 
     cookies = parse_cookies_from_tab(text)
-
     if not cookies:
-        return JSONResponse({
-            "error": "Не найдены cookies. Проверьте формат данных."
-        })
+        return JSONResponse(
+            {"error": "Не найдены cookies. Проверьте формат данных."}
+        )
 
-    # Ищем токен в куках
+    # Look for token in cookies
     token = cookies.get("__RequestVerificationToken", "")
-
-    # Если токен передан вручную
     if manual_token and not token:
         token = manual_token
 
-    # Ищем referer
+    # Try to find referer/company_id
     referer = ""
-    company_id = None
-
-    # Если есть кука с referer, пробуем извлечь
-    for line in text.split('\n'):
-        if 'referer' in line.lower():
-            match = re.search(r'id=(\d+)', line)
+    company_id: Optional[str] = None
+    for line in text.split("\n"):
+        if "referer" in line.lower():
+            match = re.search(r"id=(\d+)", line)
             if match:
                 company_id = match.group(1)
-                referer = f"https://www.e-disclosure.ru/portal/company.aspx?id={company_id}"
+                referer = (
+                    f"https://www.e-disclosure.ru/portal/company.aspx?id={company_id}"
+                )
                 break
 
-    output = {
-        "cookies": cookies,
-        "token": token,
-        "timestamp": time.time(),
-        "datetime": time.strftime("%Y-%m-%d %H:%M:%S"),
-        "referer": referer,
-        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 YaBrowser/26.6.0.0 Safari/537.36",
-        "company_id": company_id
-    }
+    output = _save_parsed_cookies(cookies, token, referer, company_id)
 
-    # Сохраняем файл
-    script_dir = Path(__file__).parent.absolute()
-    cookies_file = script_dir / "cookies_data.json"
-
-    with open(cookies_file, "w", encoding="utf-8") as f:
-        json.dump(output, f, indent=2, ensure_ascii=False)
-
-    return JSONResponse({
-        "success": True,
-        "cookie_count": len(cookies),
-        "token": token,
-        "company_id": company_id,
-        "cookies": cookies,
-        "output": output,
-        "file_path": str(cookies_file)
-    })
+    return JSONResponse(
+        {
+            "success": True,
+            "cookie_count": len(cookies),
+            "token": token,
+            "company_id": company_id,
+            "cookies": cookies,
+            "output": output,
+        }
+    )
 
 
-@app.post("/parse-headers")
-async def parse_headers(request: ParseRequest):
+@cookie_router.post("/parse-headers")
+async def parse_headers_endpoint(request: ParseRequest) -> JSONResponse:
+    """Parse cookies from cURL-style headers."""
     text = request.text
-
     if not text.strip():
         return JSONResponse({"error": "Пустой ввод"})
 
     parsed = parse_headers_from_text(text)
     cookies = parsed["cookies"]
-
     if not cookies:
-        return JSONResponse({
-            "error": "Не найдены cookies. Проверьте, что вставили данные с cookie строкой."
-        })
+        return JSONResponse(
+            {
+                "error": "Не найдены cookies. Проверьте, что вставили "
+                "данные с cookie строкой."
+            }
+        )
 
     token = cookies.get("__RequestVerificationToken", "")
     referer = parsed.get("referer", "")
     company_id = parsed.get("company_id")
 
-    output = {
-        "cookies": cookies,
-        "token": token,
-        "timestamp": time.time(),
-        "datetime": time.strftime("%Y-%m-%d %H:%M:%S"),
-        "referer": referer,
-        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 YaBrowser/26.6.0.0 Safari/537.36",
-        "company_id": company_id
-    }
+    output = _save_parsed_cookies(cookies, token, referer, company_id)
 
-    # Сохраняем файл
-    script_dir = Path(__file__).parent.absolute()
-    cookies_file = script_dir / "cookies_data.json"
+    return JSONResponse(
+        {
+            "success": True,
+            "cookie_count": len(cookies),
+            "token": token,
+            "company_id": company_id,
+            "cookies": cookies,
+            "output": output,
+        }
+    )
 
-    with open(cookies_file, "w", encoding="utf-8") as f:
-        json.dump(output, f, indent=2, ensure_ascii=False)
 
-    return JSONResponse({
-        "success": True,
-        "cookie_count": len(cookies),
-        "token": token,
-        "company_id": company_id,
-        "cookies": cookies,
-        "output": output,
-        "file_path": str(cookies_file)
-    })
+# ---------------------------------------------------------------------------
+# Standalone app (for running independently)
+# ---------------------------------------------------------------------------
 
+app = FastAPI(title="E-Disclosure Cookie Parser")
+app.include_router(cookie_router)
 
 if __name__ == "__main__":
     import uvicorn
+
     print("=" * 60)
     print("🍪 Парсер cookies e-disclosure - FastAPI")
     print("=" * 60)
     print("\n🌐 Запуск сервера...")
-    print("📋 Откройте в браузере: http://localhost:5000")
+    print("📋 Откройте в браузере: http://localhost:5000/edisclosure-cookies/")
     print("\n📌 Поддерживаются два формата:")
     print("   1. Таблица cookies (копировать из Application → Cookies)")
     print("   2. Заголовки (Copy as cURL из Network)")
