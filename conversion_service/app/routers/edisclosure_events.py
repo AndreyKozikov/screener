@@ -1,6 +1,7 @@
 from typing import Any, Dict, Optional
 from fastapi import APIRouter, HTTPException, Query
 from app.services.edisclosure_events_service import get_edisclosure_events_service
+from app.utils.edisclosure.browser_event_fetcher import EdisclosureAccessBlockedError
 
 router = APIRouter(prefix="/edisclosure", tags=["edisclosure"])
 
@@ -14,8 +15,11 @@ async def fetch_emitent_events_by_inn(
 ) -> Dict[str, Any]:
     """Все события эмитента с e-disclosure.ru по годам (без фильтра по заголовку) в JSON.
 
-    Определяет начальный год по вкладкам на странице компании, затем для каждого года
-    до текущего загружает события и полный текст, сохраняет в ``app/data/events/{inn}.json``.
+    Открывает видимое окно Chrome, определяет годы по странице компании, затем
+    загружает события и их полный текст в ``app/data/events/{inn}.json``.
+    Если сайт покажет проверку, её можно пройти в окне браузера; загрузка продолжится сама.
+    При ложном Forbidden сервис очищает состояние авторизации и пробует продолжить с checkpoint.
+    Если повторы не помогут, ответ содержит checkpoint и данные отчёта для поддержки.
 
     Если параметр ``inn`` отсутствует или пустой — для каждого уникального ИНН из БД
     (таблица emitents) выполняется тот же пайплайн; ответ — сводка пакета (results/errors).
@@ -25,6 +29,15 @@ async def fetch_emitent_events_by_inn(
         if inn is None or inn.strip() == "":
             return service.fetch_and_save_emitent_events_for_all_emitents()
         return service.fetch_and_save_emitent_events_by_inn(inn.strip())
+    except EdisclosureAccessBlockedError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": str(exc),
+                "support_report": exc.support_report,
+                "checkpoint_path": exc.checkpoint_path,
+            },
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:

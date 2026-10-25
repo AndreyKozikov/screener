@@ -6,11 +6,15 @@ import {
   CardContent,
   Button,
   Collapse,
-  Paper,
+  Chip,
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import CalculateRoundedIcon from '@mui/icons-material/CalculateRounded';
+import TipsAndUpdatesRoundedIcon from '@mui/icons-material/TipsAndUpdatesRounded';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
+import PlaylistAddCheckRoundedIcon from '@mui/icons-material/PlaylistAddCheckRounded';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
@@ -24,6 +28,7 @@ import { QuasiModal } from './QuasiModal';
 
 interface StepContentProps {
   stepNumber: number;
+  stepCount: number;
   title: string;
   description: string;
   instruction: string;
@@ -48,6 +53,7 @@ interface StepContentProps {
 
 export const StepContent: React.FC<StepContentProps> = ({
   stepNumber,
+  stepCount,
   title,
   description,
   instruction,
@@ -119,7 +125,7 @@ export const StepContent: React.FC<StepContentProps> = ({
   
   const markdownComponents = (variant: 'body1' | 'body2' = 'body1') => ({
     p: ({ children }: any) => (
-      <Typography variant={variant} color="text.secondary" component="p" sx={{ mb: 1 }}>
+      <Typography variant={variant} component="p" sx={{ mb: 0.8, color: '#435b7f', lineHeight: 1.5, fontSize: { xs: '0.68rem', sm: '0.875rem' } }}>
         {children}
       </Typography>
     ),
@@ -128,22 +134,22 @@ export const StepContent: React.FC<StepContentProps> = ({
     ul: ({ children }: any) => <Box component="ul" sx={{ pl: 3, mb: 1 }}>{children}</Box>,
     ol: ({ children }: any) => <Box component="ol" sx={{ pl: 3, mb: 1 }}>{children}</Box>,
     li: ({ children }: any) => (
-      <Typography variant={variant} color="text.secondary" component="li" sx={{ mb: 0.5 }}>
+      <Typography variant={variant} component="li" sx={{ mb: 0.45, color: '#435b7f', lineHeight: 1.5, fontSize: { xs: '0.68rem', sm: '0.875rem' } }}>
         {children}
       </Typography>
     ),
     h1: ({ children }: any) => (
-      <Typography variant="h4" component="h1" sx={{ mb: 1, mt: 2 }}>
+      <Typography variant="h4" component="h1" sx={{ mb: 0.8, mt: 1.5, color: '#102653', fontSize: { xs: '1rem', sm: '1.35rem' }, lineHeight: 1.3 }}>
         {children}
       </Typography>
     ),
     h2: ({ children }: any) => (
-      <Typography variant="h5" component="h2" sx={{ mb: 1, mt: 2 }}>
+      <Typography variant="h5" component="h2" sx={{ mb: 0.75, mt: 1.5, color: '#102653', fontSize: { xs: '0.9rem', sm: '1.2rem' }, lineHeight: 1.3 }}>
         {children}
       </Typography>
     ),
     h3: ({ children }: any) => (
-      <Typography variant="h6" component="h3" sx={{ mb: 1, mt: 1.5 }}>
+      <Typography variant="h6" component="h3" sx={{ mb: 0.6, mt: 1.1, color: '#24436c', fontSize: { xs: '0.8rem', sm: '1rem' }, lineHeight: 1.35 }}>
         {children}
       </Typography>
     ),
@@ -259,11 +265,17 @@ export const StepContent: React.FC<StepContentProps> = ({
   return (
     <Box sx={{ animation: 'fadeIn 0.3s ease-in' }}>
       {/* Step Header */}
-      <Box sx={{ mb: 3 }}>
-        <Typography variant="h4" component="h2" gutterBottom fontWeight={700}>
-          Шаг {stepNumber}: {title}
+      <Box sx={{ mb: 2.25 }}>
+        <Chip
+          label={`Шаг ${stepNumber} из ${stepCount}`}
+          size="small"
+          variant="outlined"
+          sx={{ mb: 1.2, color: '#1769d2', borderColor: 'rgba(23,105,210,0.34)', bgcolor: 'rgba(255,255,255,0.56)', fontWeight: 700 }}
+        />
+        <Typography variant="h4" component="h2" gutterBottom fontWeight={750} sx={{ color: '#0c1d4a', fontSize: { xs: '1rem', sm: '1.5rem', md: '1.85rem' }, lineHeight: 1.2, letterSpacing: '-0.025em' }}>
+          {title}
         </Typography>
-        <Box sx={{ mb: 2 }}>
+        <Box sx={{ mb: 1.5 }}>
           <ReactMarkdown 
             remarkPlugins={[remarkGfm]} 
             rehypePlugins={[rehypeRaw]}
@@ -278,88 +290,109 @@ export const StepContent: React.FC<StepContentProps> = ({
       <InstructorPanel instruction={instruction} warning={warning} tip={tip} />
 
       {/* What to Do Now */}
-      <Card variant="outlined" sx={{ mb: 3, bgcolor: 'action.selected' }}>
-        <CardContent>
-          <Typography variant="h6" gutterBottom fontWeight={600} color="primary">
-            Что нужно сделать сейчас:
-          </Typography>
-          <Box>
-            <ReactMarkdown 
-              remarkPlugins={[remarkGfm]} 
-              rehypePlugins={[rehypeRaw]}
-              components={markdownComponents('body1')}
-            >
-              {processMarkdownForModals(whatToDo)}
-            </ReactMarkdown>
+      <Card
+        variant="outlined"
+        sx={{
+          mb: 1.25,
+          borderRadius: { xs: 2, sm: 2.5 },
+          borderColor: 'rgba(93, 142, 211, 0.23)',
+          bgcolor: 'rgba(238, 246, 255, 0.62)',
+          backdropFilter: 'blur(12px)',
+          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.88)',
+        }}
+      >
+        <CardContent sx={{ p: { xs: 1, sm: 1.75 }, '&:last-child': { pb: { xs: 1, sm: 1.75 } } }}>
+          <Box sx={{ display: 'flex', gap: { xs: 0.8, sm: 1.25 }, alignItems: 'flex-start' }}>
+            <Box sx={{ width: { xs: 28, sm: 34 }, height: { xs: 28, sm: 34 }, flexShrink: 0, display: 'grid', placeItems: 'center', borderRadius: { xs: '8px', sm: '10px' }, color: '#fff', bgcolor: '#1769d2', boxShadow: '0 4px 10px rgba(23,105,210,0.2)' }}>
+              <PlaylistAddCheckRoundedIcon sx={{ fontSize: { xs: 17, sm: 20 } }} />
+            </Box>
+            <Box sx={{ minWidth: 0, flex: 1 }}>
+              <Typography variant="subtitle2" gutterBottom fontWeight={750} sx={{ color: '#11234c', fontSize: { xs: '0.72rem', sm: '0.875rem' } }}>
+                Что нужно сделать сейчас
+              </Typography>
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                rehypePlugins={[rehypeRaw]}
+                components={markdownComponents('body2')}
+              >
+                {processMarkdownForModals(whatToDo)}
+              </ReactMarkdown>
+            </Box>
           </Box>
         </CardContent>
       </Card>
 
       {/* Step Complete Button */}
-      <Paper
-        elevation={3}
-        sx={{
-          p: 3,
-          mb: 3,
-          bgcolor: 'rgba(25, 118, 210, 0.1)',
-          border: 2,
-          borderColor: 'primary.main',
-          borderRadius: 2,
-        }}
-      >
-        <Typography variant="h6" gutterBottom color="primary.dark">
-          Готовы перейти к следующему шагу?
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Изучите материал этого шага и переходите к следующему, когда будете готовы.
-        </Typography>
-        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-          {stepNumber > 1 && onStepBack && (
-            <Button
-              variant="outlined"
-              color="primary"
-              size="large"
-              startIcon={<ArrowBackIcon />}
-              onClick={onStepBack}
-              sx={{ mt: 1 }}
-            >
-              Вернуться к предыдущему шагу
-            </Button>
-          )}
+      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center', mb: 1.1 }}>
+        {stepNumber > 1 && onStepBack && (
           <Button
-            variant="contained"
-            color="primary"
-            size="large"
-            onClick={onStepComplete}
-            sx={{ mt: 1 }}
+            variant="outlined"
+            startIcon={<ArrowBackIcon />}
+            onClick={onStepBack}
+            sx={{ borderRadius: 2, textTransform: 'none', borderColor: 'rgba(47,102,182,0.28)', color: '#31547f' }}
           >
-            Завершить шаг {stepNumber} и перейти дальше
+            Назад
           </Button>
-        </Box>
-      </Paper>
+        )}
+        <Button
+          variant="contained"
+          onClick={onStepComplete}
+          endIcon={<ArrowForwardIcon />}
+          sx={{
+            borderRadius: 2,
+            px: 2.25,
+            py: 1,
+            textTransform: 'none',
+            fontWeight: 700,
+            background: 'linear-gradient(100deg, #126ce0 0%, #0875f4 100%)',
+            boxShadow: '0 7px 16px rgba(14,103,220,0.22)',
+            '&:hover': { background: 'linear-gradient(100deg, #0b5fc8 0%, #0666da 100%)' },
+          }}
+        >
+          Завершить шаг {stepNumber} и перейти дальше
+        </Button>
+      </Box>
 
       {/* Expandable Details */}
       {(methodology || practicalApplication) && (
-        <Box sx={{ mt: 3 }}>
+        <Box sx={{ mt: { xs: 0.8, sm: 1.2 } }}>
           <Button
-            fullWidth
-            variant="outlined"
+            variant="text"
             onClick={() => setShowDetails(!showDetails)}
             endIcon={showDetails ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-            sx={{ mb: 2 }}
+            sx={{
+              display: 'flex',
+              ml: 'auto',
+              mb: 1,
+              px: { xs: 1, sm: 1.25 },
+              py: { xs: 0.65, sm: 0.8 },
+              border: '1px solid rgba(93,142,211,0.2)',
+              borderRadius: 2,
+              textTransform: 'none',
+              fontWeight: 700,
+              fontSize: { xs: '0.68rem', sm: '0.8rem' },
+              color: '#1769d2',
+              bgcolor: 'rgba(237,246,255,0.58)',
+              '&:hover': { bgcolor: 'rgba(226,239,255,0.8)', borderColor: 'rgba(93,142,211,0.34)' },
+            }}
           >
-            {showDetails ? 'Скрыть детали' : 'Развернуть детали методологии'}
+            {showDetails ? 'Скрыть детали методологии' : 'Развернуть детали методологии'}
           </Button>
 
           <Collapse in={showDetails} sx={{ overflowAnchor: 'none' }}>
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, overflowAnchor: 'none' }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: { xs: 0.9, sm: 1.25 }, overflowAnchor: 'none' }}>
               {methodology && (
-                <Card variant="outlined" sx={{ bgcolor: 'rgba(46, 125, 50, 0.08)' }}>
-                  <CardContent>
-                    <Typography variant="subtitle1" fontWeight={600} gutterBottom color="success.dark">
-                      Методология оценки
-                    </Typography>
-                    <Box>
+                <Card variant="outlined" sx={{ borderRadius: { xs: 2, sm: 2.5 }, bgcolor: 'rgba(232,244,255,0.72)', borderColor: 'rgba(73,139,224,0.22)', backdropFilter: 'blur(14px)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.85)' }}>
+                  <CardContent sx={{ p: { xs: 1.1, sm: 1.8 }, '&:last-child': { pb: { xs: 1.1, sm: 1.8 } } }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.8 }}>
+                      <Box sx={{ width: 28, height: 28, flexShrink: 0, display: 'grid', placeItems: 'center', borderRadius: '8px', color: '#fff', bgcolor: '#2879df' }}>
+                        <CalculateRoundedIcon sx={{ fontSize: 17 }} />
+                      </Box>
+                      <Typography variant="subtitle1" fontWeight={750} sx={{ color: '#1559ad', fontSize: { xs: '0.78rem', sm: '0.95rem' } }}>
+                        Методология оценки
+                      </Typography>
+                    </Box>
+                    <Box sx={{ minWidth: 0, overflowX: 'auto' }}>
                       <ReactMarkdown 
                         remarkPlugins={[remarkGfm]} 
                         rehypePlugins={[rehypeRaw]}
@@ -373,12 +406,17 @@ export const StepContent: React.FC<StepContentProps> = ({
               )}
 
               {practicalApplication && (
-                <Card variant="outlined" sx={{ bgcolor: 'rgba(237, 108, 2, 0.08)' }}>
-                  <CardContent>
-                    <Typography variant="subtitle1" fontWeight={600} gutterBottom color="warning.dark">
-                      Практическое применение
-                    </Typography>
-                    <Box>
+                <Card variant="outlined" sx={{ borderRadius: { xs: 2, sm: 2.5 }, bgcolor: 'rgba(243,238,255,0.76)', borderColor: 'rgba(133,103,224,0.22)', backdropFilter: 'blur(14px)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.85)' }}>
+                  <CardContent sx={{ p: { xs: 1.1, sm: 1.8 }, '&:last-child': { pb: { xs: 1.1, sm: 1.8 } } }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.8 }}>
+                      <Box sx={{ width: 28, height: 28, flexShrink: 0, display: 'grid', placeItems: 'center', borderRadius: '8px', color: '#fff', bgcolor: '#8065ed' }}>
+                        <TipsAndUpdatesRoundedIcon sx={{ fontSize: 17 }} />
+                      </Box>
+                      <Typography variant="subtitle1" fontWeight={750} sx={{ color: '#6049bf', fontSize: { xs: '0.78rem', sm: '0.95rem' } }}>
+                        Практическое применение
+                      </Typography>
+                    </Box>
+                    <Box sx={{ minWidth: 0, overflowX: 'auto' }}>
                       <ReactMarkdown 
                         remarkPlugins={[remarkGfm]} 
                         rehypePlugins={[rehypeRaw]}

@@ -21,6 +21,7 @@ import { BondsTable } from '../components/bonds/BondsTable';
 import { BondDetails } from '../components/bonds/BondDetails';
 import { ZerocuponTable } from '../components/zerocupon/ZerocuponTable';
 import { ForecastTable } from '../components/forecast/ForecastTable';
+import { ForecastHubCard } from '../components/forecast/ForecastHubCard';
 import { RuoniaTable } from '../components/ruonia/RuoniaTable';
 import { KeyRateTable } from '../components/keyrate/KeyRateTable';
 import { Workbench } from '../components/portfolio/Workbench';
@@ -38,7 +39,8 @@ import { ForecastFileDialog } from '../components/common/ForecastFileDialog';
 import { FeedbackDialog } from '../components/common/FeedbackDialog';
 import { HelpDialog, type HelpSection } from '../components/common/HelpDialog';
 import { SettingsDialog } from '../components/common/SettingsDialog';
-import { BlogPage } from './BlogPage';
+import { HubCardIllustration, type HubCardIllustrationVariant } from '../components/common/HubCardIllustration';
+import { BlogPage, type BlogMode } from './BlogPage';
 import { refreshBondsData, refreshCouponsData } from '../api/bonds';
 import { refreshFloatersData } from '../api/edisclosure';
 import { refreshZerocuponData, fetchZerocuponData } from '../api/zerocupon';
@@ -77,6 +79,7 @@ export const HomePage: React.FC = () => {
   const settings = useSettingsStore((state) => state.settings);
   const [viewMode, setViewMode] = useState<ViewMode>('HUB');
   const [currentTab, setCurrentTab] = useState(0);
+  const [blogMode, setBlogMode] = useState<BlogMode>('list');
   const [forecastSubView, setForecastSubView] = useState<'zerocupon' | 'forecast' | 'ruonia' | 'keyrate' | 'inflation-expectations' | 'ipc' | null>(null);
   const [comparisonSubView, setComparisonSubView] = useState<'comparison' | 'spread-analysis' | null>(null);
   
@@ -529,6 +532,9 @@ export const HomePage: React.FC = () => {
   const handleHubCardClick = (tabIndex: number) => {
     setCurrentTab(tabIndex);
     setViewMode('TABLE');
+    if (tabIndex !== 5) {
+      setBlogMode('list');
+    }
     // Если выбрана карточка "Прогнозы", сбросить подраздел
     if (tabIndex === 2) {
       setForecastSubView(null);
@@ -541,6 +547,7 @@ export const HomePage: React.FC = () => {
 
   const handleBackToHub = () => {
     setViewMode('HUB');
+    setBlogMode('list');
   };
 
   // Determine current help section based on view state
@@ -586,12 +593,20 @@ export const HomePage: React.FC = () => {
   };
 
   // Hub Cards Configuration
-  const hubCards = [
+  const hubCards: Array<{
+    title: string;
+    description: string;
+    icon: React.ReactNode;
+    color: string;
+    illustration: HubCardIllustrationVariant;
+    onClick: () => void;
+  }> = [
     {
       title: 'Рынок облигаций',
       description: 'Поиск и фильтрация активов',
       icon: <ShowChartIcon sx={{ fontSize: 32 }} />,
       color: '#1976d2',
+      illustration: 'market',
       onClick: () => handleHubCardClick(0),
     },
     {
@@ -599,6 +614,7 @@ export const HomePage: React.FC = () => {
       description: 'Управление инвестициями',
       icon: <AccountBalanceWalletIcon sx={{ fontSize: 32 }} />,
       color: '#4caf50',
+      illustration: 'portfolio',
       onClick: () => handleHubCardClick(3),
     },
     {
@@ -606,6 +622,7 @@ export const HomePage: React.FC = () => {
       description: 'Анализ и прогнозирование',
       icon: <TrendingUpIcon sx={{ fontSize: 32 }} />,
       color: '#ff9800',
+      illustration: 'forecast',
       onClick: () => handleHubCardClick(2),
     },
     {
@@ -613,6 +630,7 @@ export const HomePage: React.FC = () => {
       description: 'Сопоставление облигаций',
       icon: <CompareArrowsIcon sx={{ fontSize: 32 }} />,
       color: '#9c27b0',
+      illustration: 'comparison',
       onClick: () => handleHubCardClick(4),
     },
     {
@@ -620,6 +638,7 @@ export const HomePage: React.FC = () => {
       description: 'Статьи и интерактивный гид по облигациям',
       icon: <ArticleIcon sx={{ fontSize: 32 }} />,
       color: '#00acc1',
+      illustration: 'blog',
       onClick: () => handleHubCardClick(5),
     },
   ];
@@ -632,31 +651,47 @@ export const HomePage: React.FC = () => {
     { key: 'KEYRATE', label: 'Ключевая ставка', flag: '%', value: dashboardRates?.key_rate, percent: true },
   ];
 
+  const isForecastOverview = viewMode === 'TABLE' && currentTab === 2 && forecastSubView === null;
+  const isBlogSection = viewMode === 'TABLE' && currentTab === 5;
+  const isBlogDetail = isBlogSection && blogMode !== 'list';
+  const usesGlassSurface = viewMode === 'HUB' || isForecastOverview || isBlogSection;
+
   return (
     <Box sx={{
       display: 'flex',
       flexDirection: 'column',
       minHeight: '100vh',
-      bgcolor: viewMode === 'HUB' ? '#EAF3FF' : '#F4F7FD',
-      backgroundImage: viewMode === 'HUB' ? 'linear-gradient(180deg, rgba(236,244,255,0.08), rgba(236,244,255,0.18)), url("/images/bond-glass-background.png")' : 'none',
+      bgcolor: usesGlassSurface ? '#EAF3FF' : '#F4F7FD',
+      backgroundImage: usesGlassSurface ? 'linear-gradient(180deg, rgba(236,244,255,0.08), rgba(236,244,255,0.18)), url("/images/bond-glass-background.png")' : 'none',
       backgroundSize: 'cover',
       backgroundPosition: 'center',
       backgroundAttachment: 'fixed',
     }}>
       {/* Compact App Bar */}
       <AppBar 
-        position="static" 
+        position="sticky"
         elevation={0}
         sx={{
-          bgcolor: viewMode === 'HUB' ? 'rgba(255,255,255,0.48)' : '#FFFFFF',
+          top: 0,
+          zIndex: (theme) => theme.zIndex.appBar,
+          bgcolor: usesGlassSurface ? 'rgba(255,255,255,0.48)' : '#FFFFFF',
           color: '#10264A',
           borderBottom: '1px solid rgba(255,255,255,0.72)',
           backdropFilter: 'blur(20px)',
         }}
       >
-        <Toolbar sx={{ minHeight: { xs: '52px !important', md: '62px !important' }, px: { xs: 1, md: 3.5 } }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', width: '100%', maxWidth: 1660, mx: 'auto', justifyContent: 'space-between' }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 0.75, sm: 1.5 } }}>
+        <Toolbar sx={{ minHeight: { xs: '52px !important', md: '62px !important' }, px: { xs: 1, md: 3.5 }, py: { xs: viewMode === 'TABLE' ? 0.5 : 0, md: 0 } }}>
+          <Box sx={{
+            display: 'grid',
+            gridTemplateColumns: { xs: 'minmax(0, 1fr) auto', md: 'auto minmax(0, 1fr) auto' },
+            alignItems: 'center',
+            columnGap: { xs: 0.5, md: 1.5 },
+            rowGap: { xs: 0.4, md: 0 },
+            width: '100%',
+            maxWidth: 1660,
+            mx: 'auto',
+          }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 0.75, sm: 1.5 }, gridColumn: '1 / 2', gridRow: '1 / 2', minWidth: 0 }}>
               <AccountBalanceIcon sx={{ fontSize: { xs: 22, sm: 27 }, color: '#17345B' }} />
               <Typography 
                 variant="body1" 
@@ -671,7 +706,56 @@ export const HomePage: React.FC = () => {
                 Центр управления
               </Typography>
             </Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 0.25, sm: 0.75 } }}>
+            {viewMode === 'TABLE' && (
+              <Box sx={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: { xs: 'flex-start', md: 'center' },
+                gap: { xs: 0.5, sm: 1, md: 1.5 },
+                gridColumn: { xs: '1 / -1', md: '2 / 3' },
+                gridRow: { xs: '2 / 3', md: '1 / 2' },
+                minWidth: 0,
+                flexWrap: 'wrap',
+              }}>
+                <Button
+                  startIcon={<ArrowBackIcon />}
+                  onClick={handleBackToHub}
+                  size="small"
+                  sx={{
+                    minWidth: 0,
+                    px: { xs: 0.75, sm: 1 },
+                    color: '#3d5d88',
+                    textTransform: 'none',
+                    whiteSpace: 'nowrap',
+                    fontSize: { xs: '0.67rem', sm: '0.76rem' },
+                    '& .MuiButton-startIcon': { mr: 0.5 },
+                    '&:hover': { bgcolor: 'rgba(255,255,255,0.58)' },
+                  }}
+                >
+                  Назад в центр управления
+                </Button>
+                {isBlogDetail && (
+                  <Button
+                    startIcon={<ArrowBackIcon />}
+                    onClick={() => setBlogMode('list')}
+                    size="small"
+                    sx={{
+                      minWidth: 0,
+                      px: { xs: 0.75, sm: 1 },
+                      color: '#3d5d88',
+                      textTransform: 'none',
+                      whiteSpace: 'nowrap',
+                      fontSize: { xs: '0.67rem', sm: '0.76rem' },
+                      '& .MuiButton-startIcon': { mr: 0.5 },
+                      '&:hover': { bgcolor: 'rgba(255,255,255,0.58)' },
+                    }}
+                  >
+                    Назад к блогу
+                  </Button>
+                )}
+              </Box>
+            )}
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: { xs: 0.25, sm: 0.75 }, gridColumn: { xs: '2 / 3', md: '3 / 4' }, gridRow: '1 / 2' }}>
               <IconButton
                 size="small"
                 aria-label="Настройки"
@@ -745,11 +829,15 @@ export const HomePage: React.FC = () => {
       {/* Main Content */}
       <Box sx={{ 
         flexGrow: 1, 
-        bgcolor: viewMode === 'HUB' ? 'transparent' : '#F4F7FD', 
+        bgcolor: usesGlassSurface ? 'transparent' : '#F4F7FD',
         display: 'flex', 
         flexDirection: 'column', 
         width: '100%', 
-        ...(viewMode === 'TABLE' ? { height: 'calc(100vh - 62px)' } : {}) 
+        ...(viewMode === 'TABLE'
+          ? isBlogSection
+            ? { minHeight: 'calc(100dvh - 62px)' }
+            : { height: 'calc(100vh - 62px)' }
+          : {})
       }}>
         {viewMode === 'HUB' ? (
           <>
@@ -892,7 +980,7 @@ export const HomePage: React.FC = () => {
                       position: 'relative',
                       display: 'block',
                       minWidth: 0,
-                      height: { xs: 'clamp(170px, 36vh, 250px)', md: 'clamp(260px, 37vh, 350px)' },
+                      height: { xs: 'clamp(210px, 36vh, 250px)', md: 'clamp(260px, 37vh, 350px)' },
                       overflow: 'hidden',
                       borderRadius: { xs: '16px', md: '22px' },
                       border: '1px solid rgba(255,255,255,0.82)',
@@ -946,6 +1034,23 @@ export const HomePage: React.FC = () => {
                       </Typography>
                     </CardContent>
                     <Box
+                      className="hub-card-illustration"
+                      aria-hidden="true"
+                      sx={{
+                        position: 'absolute',
+                        zIndex: 0,
+                        left: { xs: 8, md: 12 },
+                        right: { xs: 8, md: 12 },
+                        bottom: { xs: 8, md: 10 },
+                        height: { xs: 62, md: 145 },
+                        opacity: 0.92,
+                        pointerEvents: 'none',
+                        '& svg': { display: 'block', width: '100%', height: '100%' },
+                      }}
+                    >
+                      <HubCardIllustration variant={card.illustration} color={card.color} />
+                    </Box>
+                    <Box
                       className="hub-card-arrow"
                       sx={{
                         position: 'absolute',
@@ -977,40 +1082,15 @@ export const HomePage: React.FC = () => {
           <Container 
             maxWidth={false} 
             sx={{ 
-              px: 2, 
-              py: 3, 
+              px: isForecastOverview || isBlogSection ? 0 : 2,
+              py: isForecastOverview ? { xs: 3, md: 6 } : isBlogSection ? { xs: 2, md: 3 } : 3,
               flexGrow: 1, 
               display: 'flex', 
               flexDirection: 'column', 
               width: '100%',
-              bgcolor: 'grey.50',
+              bgcolor: isForecastOverview || isBlogSection ? 'transparent' : 'grey.50',
             }}
           >
-            {/* Back Button */}
-            <Box sx={{ 
-              display: 'flex',
-              alignItems: 'center',
-              mb: 2,
-            }}>
-              <Button
-                startIcon={<ArrowBackIcon />}
-                onClick={handleBackToHub}
-                variant="text"
-                size="small"
-                sx={{
-                  textTransform: 'none',
-                  fontFamily: '"Inter", "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                  fontSize: '0.875rem',
-                  color: 'text.secondary',
-                  '&:hover': {
-                    bgcolor: 'action.hover',
-                  },
-                }}
-              >
-                Назад в центр управления
-              </Button>
-            </Box>
-
             {/* Tab Content */}
             {currentTab === 0 && (
               <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', gap: 2, minHeight: 0, width: '100%' }}>
@@ -1037,11 +1117,14 @@ export const HomePage: React.FC = () => {
                   <Box
                     sx={{
                       width: '100%',
-                      p: 3,
+                      maxWidth: 1532,
+                      mx: 'auto',
+                      px: { xs: 2, sm: 3, xl: 1.5 },
+                      py: { xs: 2, sm: 3 },
                     }}
                   >
-                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', lg: 'repeat(4, 1fr)' }, gap: 3 }}>
-                      <HubCard
+                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(3, minmax(0, 1fr))' }, gap: { xs: 2, md: 2.25 } }}>
+                      <ForecastHubCard
                         title="Кривая бескупонной доходности"
                         value={zerocuponLastDate || "—"}
                         subtitle="Анализ временной структуры процентных ставок на основе данных Мосбиржи"
@@ -1049,7 +1132,7 @@ export const HomePage: React.FC = () => {
                         color="#1976d2"
                         onClick={() => setForecastSubView('zerocupon')}
                       />
-                      <HubCard
+                      <ForecastHubCard
                         title="Среднесрочный прогноз Банка России"
                         value={forecastLastDate || "—"}
                         subtitle="Основные показатели денежно-кредитной политики и макроэкономические ожидания регулятора"
@@ -1057,7 +1140,7 @@ export const HomePage: React.FC = () => {
                         color="#ff9800"
                         onClick={() => setForecastSubView('forecast')}
                       />
-                      <HubCard
+                      <ForecastHubCard
                         title="Ставка RUONIA"
                         value={dashboardRates?.ruonia_rate != null ? `${dashboardRates.ruonia_rate.toFixed(2)}%` : "—"}
                         subtitle="Информация о ставке RUONIA"
@@ -1065,7 +1148,7 @@ export const HomePage: React.FC = () => {
                         color="#9c27b0"
                         onClick={() => setForecastSubView('ruonia')}
                       />
-                      <HubCard
+                      <ForecastHubCard
                         title="Ключевая ставка ЦБ"
                         value={dashboardRates?.key_rate != null ? `${dashboardRates.key_rate.toFixed(2)}%` : "—"}
                         subtitle="Информация о ключевой ставке Центрального Банка"
@@ -1073,7 +1156,7 @@ export const HomePage: React.FC = () => {
                         color="#e91e63"
                         onClick={() => setForecastSubView('keyrate')}
                       />
-                      <HubCard
+                      <ForecastHubCard
                         title="Инфляционные ожидания"
                         value="—"
                         subtitle="Анализ инфляционных ожиданий населения"
@@ -1081,7 +1164,7 @@ export const HomePage: React.FC = () => {
                         color="#3f51b5"
                         onClick={() => setForecastSubView('inflation-expectations')}
                       />
-                      <HubCard
+                      <ForecastHubCard
                         title="Индекс потребительских цен"
                         value="—"
                         subtitle="Историческая динамика месячной и недельной инфляции"
@@ -1244,7 +1327,7 @@ export const HomePage: React.FC = () => {
 
             {currentTab === 5 && (
               <Box sx={{ flexGrow: 1, minHeight: 0 }}>
-                <BlogPage />
+                <BlogPage mode={blogMode} onModeChange={setBlogMode} />
               </Box>
             )}
           </Container>

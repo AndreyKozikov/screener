@@ -133,6 +133,26 @@ def _clear_session_cache() -> None:
     get_cookie_manager().invalidate()
 
 
+def clear_edisclosure_auth_state() -> List[str]:
+    """Clear in-memory HTTP state and saved e-disclosure cookies/token data."""
+    global _SESSION_CACHE
+    errors: List[str] = []
+    session = _SESSION_CACHE.get("session")
+    if session is not None:
+        try:
+            session.close()
+        except Exception as exc:
+            errors.append(f"HTTP session: {exc}")
+    _SESSION_CACHE["session"] = None
+    _SESSION_CACHE["token"] = None
+
+    try:
+        get_cookie_manager().clear_saved_credentials()
+    except Exception as exc:
+        errors.append(f"cookies file: {exc}")
+    return errors
+
+
 def _get_session() -> Tuple[cf_requests.Session, str]:
     """Инициализирует сессию и получает токен антифоргери."""
     global _SESSION_CACHE

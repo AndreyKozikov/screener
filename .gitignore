@@ -154,6 +154,7 @@ DEPLOYMENT_GUIDE.md
 backend/app/data/
 backend/db/history_db.db
 tmp_files/
+conversion_service/.edisclosure_browser_profile/
 .kilo/
 
 # IDE and Editor

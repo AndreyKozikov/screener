@@ -40,13 +40,13 @@ class BondService:
             coupons_map[coupon.bond_id].append(coupon)
 
         result = [
-            BondResponseDTO(
-                **bond.__dict__,
-                coupons=[
-                    CouponResponseDTO(**coupon.__dict__)
+            BondResponseDTO.model_validate({
+                **bond.model_dump(),
+                "coupons": [
+                    CouponResponseDTO.model_validate(coupon, from_attributes=True)
                     for coupon in coupons_map.get(bond.id, [])
-                ]
-            )
+                ],
+            })
             for bond in bond_rows
         ]
 

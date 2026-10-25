@@ -11,4 +11,7 @@ class BondResponseDTO(BondBase):
     market_data: Optional[BondMarketDataBase] = None
     market_data_yields: Optional[BondMarketDataYieldBase] = None
 
-    model_config = {"from_attributes": True}
+    # ORM attributes and model_dump() use Python field names (for example,
+    # ``secid``), while BondBase also defines MOEX validation aliases (``SECID``).
+    # Accept both forms so DTOs can be built from ORM objects as well as MOEX data.
+    model_config = {"from_attributes": True, "populate_by_name": True}

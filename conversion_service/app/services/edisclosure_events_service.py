@@ -1,26 +1,22 @@
 import logging
 import re
-import json
 from datetime import date, timedelta
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional
 
 from app.repository.db.emitents_repository import EmitentsRepository
 from app.repository.db.emitent_edisclosure_repository import EmitentEdisclosureRepository
 from app.repository.files.file_storage import FileStorage
-from app.utils.edisclosure_utils import (
-    #ensure_search_page_bootstrap,
-    fetch_emitent_year_events_unfiltered,
-    find_latest_event_metadata_across_years,
-    list_company_portal_event_years,
-    merge_emitent_event_lists,
-    search_company_by_inn,
+from app.utils.edisclosure.browser_event_fetcher import (
+    EdisclosureAccessBlockedError,
+    EdisclosureBrowserSession,
 )
+from app.utils.edisclosure_utils import merge_emitent_event_lists
 from config.paths import EMITENT_EVENTS_JSON_DIR
 
 logger = logging.getLogger(__name__)
 
 _PROCESSING_STATE_KEY: str = "__processing_state"
+_MAX_FORBIDDEN_RESTARTS: int = 3
 
 class EdisclosureEventsService:
     """Сервис для загрузки и сохранения событий эмитентов."""
@@ -30,10 +26,14 @@ class EdisclosureEventsService:
         self._emitents_repo = EmitentsRepository()
         self._emitent_edisclosure_repo = EmitentEdisclosureRepository()
 
-    def _resolve_company_id_by_inn(self, inn: str) -> int:
+    def _resolve_company_id_by_inn(
+        self,
+        inn: str,
+        browser: EdisclosureBrowserSession,
+    ) -> int:
         """Определяет ID компании на e-disclosure.
         
-        Сначала проверяет локальный маппинг в БД. Если не найден, ищет через API.
+        Сначала проверяет локальный маппинг в БД. Если его нет, ищет в браузере.
         """
         print(f"[E-DISCLOSURE RESOLVE] Старт резолва company_id по ИНН={inn}", flush=True)
         emitent_id = self._emitents_repo.get_emitent_id_by_inn(inn)
@@ -43,16 +43,8 @@ class EdisclosureEventsService:
                 print(f"[E-DISCLOSURE RESOLVE] edisclosure_id найден в таблице маппинга: {edisclosure_id}", flush=True)
                 return int(edisclosure_id)
 
-        print("[E-DISCLOSURE RESOLVE] Переход к fallback: поиск компании через API e-disclosure", flush=True)
-        companies = search_company_by_inn(inn)
-        if not companies:
-            print(f"[E-DISCLOSURE RESOLVE] Ошибка: компания с ИНН={inn} не найдена", flush=True)
-            raise ValueError(f"Компания с ИНН {inn} не найдена на e-disclosure.ru")
-        
-        company_id = companies[0].get("id")
-        if company_id is None:
-            print("[E-DISCLOSURE RESOLVE] Ошибка: у первой компании отсутствует id", flush=True)
-            raise ValueError("Не удалось получить ID компании из ответа e-disclosure")
+        print("[E-DISCLOSURE RESOLVE] Ищу компанию в окне браузера", flush=True)
+        company_id = browser.resolve_company_id_by_inn(inn)
         
         # Сохраняем маппинг, если нашли emitent_id
         if emitent_id is not None:
@@ -71,9 +63,33 @@ class EdisclosureEventsService:
         if not re.fullmatch(r"\d{10}(?:\d{2})?", inn_clean):
             raise ValueError("Некорректный ИНН: ожидается 10 или 12 цифр.")
 
-        #ensure_search_page_bootstrap()
+        with EdisclosureBrowserSession() as browser:
+            restarts = 0
+            while True:
+                try:
+                    return self._fetch_and_save_emitent_events(inn_clean, browser)
+                except EdisclosureAccessBlockedError as exc:
+                    if exc.status == 429:
+                        raise
+                    if restarts >= _MAX_FORBIDDEN_RESTARTS:
+                        raise
+                    restarts += 1
+                    print(
+                        f"  [ИНН {inn_clean}] Forbidden: очищаю данные сессии "
+                        f"и повторяю с checkpoint ({restarts}/{_MAX_FORBIDDEN_RESTARTS}).",
+                        flush=True,
+                    )
+                    if not browser.restart_after_block(exc):
+                        raise
 
-        company_id = self._resolve_company_id_by_inn(inn_clean)
+    def _fetch_and_save_emitent_events(
+        self,
+        inn_clean: str,
+        browser: EdisclosureBrowserSession,
+    ) -> Dict[str, Any]:
+        """Run the event pipeline using an already-open browser session."""
+
+        company_id = self._resolve_company_id_by_inn(inn_clean, browser)
         today = date.today()
         calendar_year_today = today.year
         out_path = EMITENT_EVENTS_JSON_DIR / f"{inn_clean}.json"
@@ -100,6 +116,7 @@ class EdisclosureEventsService:
             print(f"  [ИНН {inn_clean}] Обнаружен маркер незавершённой загрузки.", flush=True)
             years_payload = {str(yk): evs for yk, evs in raw_file.items() if isinstance(evs, list)}
             years_processed = sorted(processing_state.get("pending_years", []))
+            resume_mode = True
         elif file_exists and raw_file is not None:
             resume_mode = True
             print(f"  [ИНН {inn_clean}] Файл найден — догрузка только за {calendar_year_today}", flush=True)
@@ -107,7 +124,7 @@ class EdisclosureEventsService:
             years_processed = [calendar_year_today]
         else:
             print(f"  [ИНН {inn_clean}] Полная выгрузка (список годов с портала)", flush=True)
-            years_from_portal = list_company_portal_event_years(company_id)
+            years_from_portal = browser.list_company_event_years(company_id)
             years_processed = sorted(set(years_from_portal + [calendar_year_today]))
             years_payload = {}
 
@@ -115,9 +132,43 @@ class EdisclosureEventsService:
         for y in years_processed:
             boundary = (today + timedelta(days=1)).isoformat() if y >= calendar_year_today else f"{y + 1}-01-01"
             print(f"  [ИНН {inn_clean}] Загружается год={y}, boundary_date={boundary}", flush=True)
-            year_events = fetch_emitent_year_events_unfiltered(company_id=company_id, api_year=y, boundary_date=boundary)
-            
             key = str(y)
+            existing_events = years_payload.get(key, [])
+            skip_pseudo_guids = {
+                str(event.get("pseudoGUID"))
+                for event in existing_events
+                if isinstance(event, dict) and event.get("pseudoGUID")
+            }
+            try:
+                year_events = browser.fetch_emitent_year_events(
+                    company_id=company_id,
+                    api_year=y,
+                    boundary_date=boundary,
+                    skip_pseudo_guids=skip_pseudo_guids,
+                )
+            except EdisclosureAccessBlockedError as exc:
+                partial_events = exc.partial_events
+                years_payload[key] = merge_emitent_event_lists(
+                    existing_events if isinstance(existing_events, list) else [],
+                    partial_events,
+                )
+                pending_years = sorted(
+                    set([y] + [yr for yr in years_processed if yr > y])
+                )
+                save_payload = dict(years_payload)
+                save_payload[_PROCESSING_STATE_KEY] = {
+                    "pending_years": pending_years,
+                    "company_id": company_id,
+                }
+                self._file_storage.write_json_durable(out_path, save_payload)
+                exc.checkpoint_path = str(out_path)
+                print(
+                    f"  [ИНН {inn_clean}] Доступ заблокирован; сохранён checkpoint "
+                    f"({len(years_payload[key])} событий за {y}).",
+                    flush=True,
+                )
+                raise
+
             if resume_mode:
                 prev = years_payload.get(key, [])
                 years_payload[key] = merge_emitent_event_lists(prev, year_events)
@@ -126,18 +177,17 @@ class EdisclosureEventsService:
             
             counts_by_year[key] = len(years_payload[key])
 
-            # Инкрементальное сохранение
-            if not resume_mode:
-                remaining_years = [yr for yr in years_processed if yr > y]
-                save_payload = dict(years_payload)
-                if remaining_years:
-                    save_payload[_PROCESSING_STATE_KEY] = {"pending_years": remaining_years, "company_id": company_id}
-                self._file_storage.write_json_durable(out_path, save_payload)
-                print(f"  [ИНН {inn_clean}] Год {y} сохранён в файл", flush=True)
-
-        if resume_mode:
-            self._file_storage.write_json_durable(out_path, years_payload)
-            print(f"  [ИНН {inn_clean}] Файл обновлён (resume_mode)", flush=True)
+            remaining_years = [yr for yr in years_processed if yr > y]
+            save_payload = dict(years_payload)
+            if remaining_years:
+                save_payload[_PROCESSING_STATE_KEY] = {
+                    "pending_years": remaining_years,
+                    "company_id": company_id,
+                }
+            else:
+                save_payload.pop(_PROCESSING_STATE_KEY, None)
+            self._file_storage.write_json_durable(out_path, save_payload)
+            print(f"  [ИНН {inn_clean}] Год {y} сохранён в файл", flush=True)
 
         return {
             "status": "ok",
@@ -154,21 +204,69 @@ class EdisclosureEventsService:
         unique_inns = sorted(set(str(e["inn"]).strip() for e in emitents if e.get("inn")))
         
         print(f"[EMITENT EVENTS BATCH] Старт пакета: уникальных эмитентов (ИНН) к обработке: {len(unique_inns)}", flush=True)
-        #ensure_search_page_bootstrap()
-        
         results = []
         errors = []
-        for num, inn in enumerate(unique_inns, start=1):
-            print(f"\n{'='*75}", flush=True)
-            print(f"[EMITENT EVENTS BATCH {num}/{len(unique_inns)}] Старт обработки ИНН: {inn}", flush=True)
-            print(f"{'='*75}", flush=True)
-            try:
-                res = self.fetch_and_save_emitent_events_by_inn(inn)
-                results.append(res)
-                print(f"[EMITENT EVENTS BATCH {num}/{len(unique_inns)}] ИНН {inn} -> УСПЕХ", flush=True)
-            except Exception as e:
-                print(f"[EMITENT EVENTS BATCH {num}/{len(unique_inns)}] ИНН {inn} -> ОШИБКА: {e}", flush=True)
-                errors.append({"inn": inn, "detail": str(e)})
+        if unique_inns:
+            with EdisclosureBrowserSession() as browser:
+                for num, inn in enumerate(unique_inns, start=1):
+                    print(f"\n{'='*75}", flush=True)
+                    print(f"[EMITENT EVENTS BATCH {num}/{len(unique_inns)}] Старт обработки ИНН: {inn}", flush=True)
+                    print(f"{'='*75}", flush=True)
+                    restarts = 0
+                    while True:
+                        try:
+                            res = self._fetch_and_save_emitent_events(inn, browser)
+                            results.append(res)
+                            print(f"[EMITENT EVENTS BATCH {num}/{len(unique_inns)}] ИНН {inn} -> УСПЕХ", flush=True)
+                            break
+                        except EdisclosureAccessBlockedError as exc:
+                            if exc.status == 429:
+                                errors.append(
+                                    {
+                                        "inn": inn,
+                                        "detail": str(exc),
+                                        "support_report": exc.support_report,
+                                        "checkpoint_path": exc.checkpoint_path,
+                                    }
+                                )
+                                print(
+                                    "[EMITENT EVENTS BATCH] Получено HTTP 429; "
+                                    "останавливаю пакет без сброса сессии.",
+                                    flush=True,
+                                )
+                                break
+                            if restarts < _MAX_FORBIDDEN_RESTARTS:
+                                restarts += 1
+                                print(
+                                    f"[EMITENT EVENTS BATCH] Очищаю данные сессии и "
+                                    f"возобновляю ИНН {inn} ({restarts}/{_MAX_FORBIDDEN_RESTARTS}).",
+                                    flush=True,
+                                )
+                                if browser.restart_after_block(exc):
+                                    continue
+
+                            browser.clear_authorization_data(exc)
+                            errors.append(
+                                {
+                                    "inn": inn,
+                                    "detail": str(exc),
+                                    "support_report": exc.support_report,
+                                    "checkpoint_path": exc.checkpoint_path,
+                                }
+                            )
+                            print(
+                                "[EMITENT EVENTS BATCH] Останавливаю пакет после исчерпания "
+                                "повторных запусков.",
+                                flush=True,
+                            )
+                            break
+                        except Exception as exc:
+                            print(f"[EMITENT EVENTS BATCH {num}/{len(unique_inns)}] ИНН {inn} -> ОШИБКА: {exc}", flush=True)
+                            errors.append({"inn": inn, "detail": str(exc)})
+                            break
+
+                    if errors and errors[-1].get("inn") == inn and "support_report" in errors[-1]:
+                        break
 
         return {
             "status": "ok" if not errors else "partial_error",

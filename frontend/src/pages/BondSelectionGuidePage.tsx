@@ -7,11 +7,7 @@ import {
   StepLabel,
   Paper,
   Fade,
-  Button,
-  Drawer,
-  IconButton,
 } from '@mui/material';
-import CloseIcon from '@mui/icons-material/Close';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import SchoolIcon from '@mui/icons-material/School';
 import { StepContent } from '../components/course/StepContent';
@@ -390,7 +386,6 @@ const courseStepsData: CourseStepData[] = [
 export const BondSelectionGuidePage: React.FC = () => {
   const [currentStep, setCurrentStep] = useState(1);
   const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
-  const [isContentDrawerOpen, setIsContentDrawerOpen] = useState(false);
 
   const handleStepComplete = () => {
     setCompletedSteps((prev) => new Set([...prev, currentStep]));
@@ -406,163 +401,182 @@ export const BondSelectionGuidePage: React.FC = () => {
   };
 
   const handleStepClick = (stepId: number) => {
-    // Разрешаем переход к любому шагу
     setCurrentStep(stepId);
-    // Закрываем Drawer после выбора шага
-    setIsContentDrawerOpen(false);
   };
 
-  const handleContentButtonClick = () => {
-    setIsContentDrawerOpen(true);
+  const navigationTitles: Record<number, string> = {
+    1: 'Цель и риск',
+    2: 'Макро режим и ставка',
+    3: 'Эталон и спред',
+    4: 'Тип облигации',
+    5: 'Кредитное качество',
+    6: 'Финансовый анализ',
+    7: 'Сектор и отрасль',
+    8: 'Чистая доходность',
+    9: 'Дюрация портфеля',
+    10: 'Ликвидность',
+    11: 'Условия выпуска',
+    12: 'Финальный выбор',
+    13: 'Контроль риска',
   };
+
+  const renderStepNavigation = () => (
+    <Stepper
+      activeStep={currentStep - 1}
+      orientation="vertical"
+      sx={{
+        '& .MuiStepConnector-line': {
+          minHeight: { xs: 12, sm: 16, md: 20 },
+          borderColor: 'rgba(40, 113, 220, 0.23)',
+          borderLeftWidth: 2,
+        },
+        '& .MuiStepConnector-root.Mui-active .MuiStepConnector-line': {
+          borderColor: 'rgba(40, 113, 220, 0.55)',
+        },
+        '& .MuiStepLabel-iconContainer': { pr: { xs: 0.75, sm: 1, md: 1.2 } },
+        '& .MuiStepLabel-labelContainer': { minWidth: 0 },
+      }}
+    >
+      {courseStepsData.map((step) => {
+        const isCompleted = completedSteps.has(step.id);
+        const isCurrent = currentStep === step.id;
+
+        return (
+          <Step
+            key={step.id}
+            completed={isCompleted}
+            onClick={() => handleStepClick(step.id)}
+            sx={{
+              cursor: 'pointer',
+              py: { xs: 0, sm: 0.1, md: 0.2 },
+              '& .MuiStepLabel-label': {
+                fontSize: { xs: '0.62rem', sm: '0.7rem', md: '0.76rem' },
+                lineHeight: { xs: 1.2, sm: 1.28, md: 1.35 },
+                fontWeight: isCurrent ? 700 : 500,
+                color: isCurrent ? '#1769d2' : '#435a7c',
+              },
+              '& .MuiStepIcon-root': {
+                color: isCurrent ? '#1769d2' : isCompleted ? '#20a77a' : 'rgba(255,255,255,0.94)',
+                filter: 'drop-shadow(0 2px 4px rgba(46,91,152,0.12))',
+              },
+              '& .MuiStepIcon-text': { fill: isCurrent || isCompleted ? '#ffffff' : '#38547a', fontWeight: 700 },
+            }}
+          >
+            <StepLabel
+              StepIconComponent={isCompleted ? () => <CheckCircleIcon sx={{ color: '#20a77a' }} /> : undefined}
+              sx={{ '& .MuiStepLabel-label': { overflowWrap: 'anywhere' } }}
+            >
+              {navigationTitles[step.id] || step.title}
+            </StepLabel>
+          </Step>
+        );
+      })}
+    </Stepper>
+  );
 
   const currentStepData = courseStepsData.find((s) => s.id === currentStep);
 
   return (
     <Box sx={{ width: '100%' }}>
-      <Box sx={{ px: 3, py: 3, maxWidth: 1400, mx: 'auto' }}>
-        {/* Header Card */}
-        <Paper elevation={2} sx={{ p: 3, mb: 4 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <SchoolIcon sx={{ fontSize: 40, color: 'primary.main' }} />
-              <Box>
-                <Typography variant="h4" component="h1" fontWeight={700}>
-                  Советы по выбору облигаций
-                </Typography>
-                <Typography variant="body1" color="text.secondary" sx={{ mt: 0.5 }}>
-                  Пошаговые советы по отбору облигаций для портфеля
-                </Typography>
-              </Box>
-            </Box>
-            <Button variant="outlined" color="primary" onClick={handleContentButtonClick}>
-              СОДЕРЖАНИЕ
-            </Button>
-          </Box>
-        </Paper>
+      <Box sx={{ px: { xs: 0.75, sm: 2, xl: 3 }, py: { xs: 1, md: 2 }, maxWidth: 1640, mx: 'auto' }}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '96px minmax(0, 1fr)', sm: '176px minmax(0, 1fr)', md: '242px minmax(0, 1fr)' }, gap: { xs: 0.75, sm: 1.5, md: 2 }, alignItems: 'start' }}>
+          <Paper
+            component="aside"
+            elevation={0}
+            sx={{
+              display: 'block',
+              position: { xs: 'static', md: 'sticky' },
+              top: 12,
+              '@media (max-height: 820px)': { position: 'static', top: 'auto' },
+              p: { xs: 0.75, sm: 1, md: 1.5 },
+              border: '1px solid rgba(255,255,255,0.72)',
+              borderRadius: 3,
+              bgcolor: 'rgba(255,255,255,0.34)',
+              backdropFilter: 'blur(20px) saturate(140%)',
+              boxShadow: '0 10px 24px rgba(64,104,165,0.09), inset 0 1px 0 rgba(255,255,255,0.82)',
+            }}
+          >
+            <Typography variant="overline" sx={{ display: 'block', px: { xs: 0.25, md: 1 }, color: '#6580a3', fontWeight: 800, letterSpacing: { xs: '0.04em', md: '0.09em' }, fontSize: { xs: '0.48rem', sm: '0.58rem', md: '0.7rem' }, lineHeight: 1.3 }}>
+              ЭТАПЫ КУРСА
+            </Typography>
+            <Box sx={{ mt: 1 }}>{renderStepNavigation()}</Box>
+          </Paper>
 
-      {/* Content Drawer */}
-      <Drawer
-        anchor="left"
-        open={isContentDrawerOpen}
-        onClose={() => setIsContentDrawerOpen(false)}
-        PaperProps={{
-          sx: {
-            width: { xs: '100%', sm: 400 },
-            maxWidth: '90vw',
-          },
-        }}
-      >
-        <Box sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: 1, borderColor: 'divider' }}>
-          <Typography variant="h6" fontWeight={600}>
-            Содержание
-          </Typography>
-          <IconButton onClick={() => setIsContentDrawerOpen(false)} size="small">
-            <CloseIcon />
-          </IconButton>
-        </Box>
-        <Box sx={{ p: 2, overflowY: 'auto', height: '100%' }}>
-          <Stepper activeStep={-1} orientation="vertical" sx={{ mt: 2 }}>
-            {courseStepsData.map((step) => {
-              const isCompleted = completedSteps.has(step.id);
-              const isCurrent = currentStep === step.id;
-
-              return (
-                <Step
-                  key={step.id}
-                  completed={isCompleted}
-                  sx={{
-                    cursor: 'pointer',
-                    '&:hover': {
-                      opacity: 0.8,
-                    },
-                  }}
-                  onClick={() => handleStepClick(step.id)}
-                >
-                  <StepLabel
-                    StepIconComponent={
-                      isCompleted
-                        ? () => <CheckCircleIcon sx={{ color: 'success.main' }} />
-                        : undefined
-                    }
-                    sx={{
-                      '& .MuiStepLabel-label': {
-                        fontWeight: isCurrent ? 600 : 400,
-                        color: isCurrent ? 'primary.main' : 'inherit',
-                      },
-                    }}
-                  >
-                    <Typography 
-                      variant="body1" 
-                      sx={{ 
-                        whiteSpace: 'normal',
-                        lineHeight: 1.5,
-                      }}
-                    >
-                      Шаг {step.id}: {step.title}
+          <Box sx={{ minWidth: 0 }}>
+            <Paper
+              elevation={0}
+              sx={{
+                p: { xs: 1.5, sm: 1.8 },
+                mb: 1.5,
+                border: '1px solid rgba(255,255,255,0.8)',
+                borderRadius: 3,
+                bgcolor: 'rgba(255,255,255,0.48)',
+                backdropFilter: 'blur(22px) saturate(145%)',
+                boxShadow: '0 10px 26px rgba(64,104,165,0.11), inset 0 1px 0 rgba(255,255,255,0.88)',
+              }}
+            >
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 0.8, sm: 1.5 }, minWidth: 0 }}>
+                  <Box sx={{ width: { xs: 32, sm: 42 }, height: { xs: 32, sm: 42 }, flexShrink: 0, display: 'grid', placeItems: 'center', borderRadius: { xs: '10px', sm: '13px' }, color: '#fff', bgcolor: '#1474e8', boxShadow: '0 5px 14px rgba(20,116,232,0.2)' }}>
+                    <SchoolIcon sx={{ fontSize: { xs: 18, sm: 23 } }} />
+                  </Box>
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography variant="subtitle1" component="h1" fontWeight={750} sx={{ color: '#0c1d4a', lineHeight: 1.2, fontSize: { xs: '0.8rem', sm: '0.95rem', md: '1rem' } }}>
+                      Советы по выбору облигаций
                     </Typography>
-                  </StepLabel>
-                </Step>
-              );
-            })}
-          </Stepper>
-        </Box>
-      </Drawer>
+                    <Typography variant="caption" sx={{ color: '#516a8d', fontSize: { xs: '0.58rem', sm: '0.68rem' }, lineHeight: 1.25 }}>
+                      Пошаговый гид для сбалансированного портфеля
+                    </Typography>
+                  </Box>
+                </Box>
+            </Paper>
 
-        {/* Main Content */}
-        <Fade in timeout={300}>
-          <Paper elevation={2} sx={{ p: 4, overflowAnchor: 'none' }}>
-            {currentStepData ? (
-              <StepContent
-                stepNumber={currentStepData.id}
-                title={currentStepData.title}
-                description={currentStepData.description}
-                instruction={currentStepData.instruction}
-                warning={currentStepData.warning}
-                tip={currentStepData.tip}
-                whatToDo={currentStepData.whatToDo}
-                methodology={currentStepData.methodology}
-                practicalApplication={currentStepData.practicalApplication}
-                onStepComplete={handleStepComplete}
-                onStepBack={handleStepBack}
-              />
-            ) : (
-              <Box sx={{ textAlign: 'center', py: 4 }}>
-                <Typography variant="h6" color="error">
-                  Ошибка: шаг {currentStep} не найден
-                </Typography>
-              </Box>
-            )}
-
-            {/* Course Completion */}
-            {completedSteps.size === courseStepsData.length && (
+            <Fade in timeout={300}>
               <Paper
-                elevation={3}
+                elevation={0}
                 sx={{
-                  p: 4,
-                  mt: 4,
-                  textAlign: 'center',
-                  bgcolor: 'rgba(46, 125, 50, 0.1)',
-                  border: 2,
-                  borderColor: 'success.main',
-                  borderRadius: 2,
+                  p: { xs: 1.6, sm: 2.25, md: 2.75 },
+                  overflowAnchor: 'none',
+                  border: '1px solid rgba(255,255,255,0.82)',
+                  borderRadius: 3,
+                  bgcolor: 'rgba(255,255,255,0.43)',
+                  backdropFilter: 'blur(22px) saturate(145%)',
+                  boxShadow: '0 12px 30px rgba(64,104,165,0.12), inset 0 1px 0 rgba(255,255,255,0.86)',
                 }}
               >
-                <CheckCircleIcon sx={{ fontSize: 64, color: 'success.main', mb: 2 }} />
-                <Typography variant="h4" gutterBottom fontWeight={700} color="success.dark">
-                  Поздравляем!
-                </Typography>
-                <Typography variant="h6" color="text.secondary" gutterBottom>
-                  Вы успешно изучили советы по выбору облигаций
-                </Typography>
-                <Typography variant="body1" color="text.secondary" sx={{ mt: 2 }}>
-                  Теперь вы знаете, как профессионально подходить к отбору облигаций для
-                  портфеля. Применяйте эти знания на практике и продолжайте развивать свои навыки.
-                </Typography>
+                {currentStepData ? (
+                  <StepContent
+                    stepNumber={currentStepData.id}
+                    stepCount={courseStepsData.length}
+                    title={currentStepData.title}
+                    description={currentStepData.description}
+                    instruction={currentStepData.instruction}
+                    warning={currentStepData.warning}
+                    tip={currentStepData.tip}
+                    whatToDo={currentStepData.whatToDo}
+                    methodology={currentStepData.methodology}
+                    practicalApplication={currentStepData.practicalApplication}
+                    onStepComplete={handleStepComplete}
+                    onStepBack={handleStepBack}
+                  />
+                ) : (
+                  <Box sx={{ textAlign: 'center', py: 4 }}>
+                    <Typography variant="h6" color="error">Ошибка: шаг {currentStep} не найден</Typography>
+                  </Box>
+                )}
+
+                {completedSteps.size === courseStepsData.length && (
+                  <Paper elevation={0} sx={{ p: 3, mt: 2, textAlign: 'center', bgcolor: 'rgba(224,248,238,0.68)', border: '1px solid rgba(34,166,117,0.22)', borderRadius: 2.5 }}>
+                    <CheckCircleIcon sx={{ fontSize: 48, color: '#1a9d72', mb: 1 }} />
+                    <Typography variant="h5" gutterBottom fontWeight={750} sx={{ color: '#176849' }}>Поздравляем!</Typography>
+                    <Typography variant="body2" sx={{ color: '#4b6d61' }}>
+                      Вы успешно изучили советы по выбору облигаций. Применяйте эти знания при формировании портфеля.
+                    </Typography>
+                  </Paper>
+                )}
               </Paper>
-            )}
-          </Paper>
-        </Fade>
+            </Fade>
+          </Box>
+        </Box>
       </Box>
     </Box>
   );

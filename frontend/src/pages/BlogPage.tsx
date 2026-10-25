@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Box,
-  Button,
   Card,
   CardContent,
   CardMedia,
@@ -11,7 +10,6 @@ import {
   Paper,
   Typography,
 } from '@mui/material';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import SchoolIcon from '@mui/icons-material/School';
 import ArticleIcon from '@mui/icons-material/Article';
 import ReactMarkdown from 'react-markdown';
@@ -21,10 +19,20 @@ import rehypeRaw from 'rehype-raw';
 import { fetchPublishedArticle, fetchPublishedArticles, type BlogArticle } from '../api/blog';
 import { BondSelectionGuidePage } from './BondSelectionGuidePage';
 
-type BlogMode = 'list' | 'article' | 'guide';
+export type BlogMode = 'list' | 'article' | 'guide';
 
-export const BlogPage: React.FC = () => {
-  const [mode, setMode] = useState<BlogMode>('list');
+interface BlogPageProps {
+  mode?: BlogMode;
+  onModeChange?: (mode: BlogMode) => void;
+}
+
+export const BlogPage: React.FC<BlogPageProps> = ({ mode: controlledMode, onModeChange }) => {
+  const [internalMode, setInternalMode] = useState<BlogMode>('list');
+  const mode = controlledMode ?? internalMode;
+  const setMode = (nextMode: BlogMode) => {
+    setInternalMode(nextMode);
+    onModeChange?.(nextMode);
+  };
   const [articles, setArticles] = useState<BlogArticle[]>([]);
   const [selectedArticle, setSelectedArticle] = useState<BlogArticle | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -66,13 +74,6 @@ export const BlogPage: React.FC = () => {
   if (mode === 'guide') {
     return (
       <Box>
-        <Button
-          startIcon={<ArrowBackIcon />}
-          onClick={() => setMode('list')}
-          sx={{ mb: 2, textTransform: 'none' }}
-        >
-          Назад к блогу
-        </Button>
         <BondSelectionGuidePage />
       </Box>
     );
@@ -81,13 +82,6 @@ export const BlogPage: React.FC = () => {
   if (mode === 'article' && selectedArticle) {
     return (
       <Box sx={{ width: '100%', maxWidth: 1040, mx: 'auto', px: 2, pb: 4 }}>
-        <Button
-          startIcon={<ArrowBackIcon />}
-          onClick={() => setMode('list')}
-          sx={{ mb: 2, textTransform: 'none' }}
-        >
-          Назад к блогу
-        </Button>
         <Paper elevation={2} sx={{ overflow: 'hidden', borderRadius: 2 }}>
           {selectedArticle.cover_image_url && (
             <CardMedia

@@ -118,6 +118,15 @@ class CookieManager:
         self._cached_token = None
         self._loaded_at = 0.0
 
+    def clear_saved_credentials(self) -> None:
+        """Invalidate memory and remove the persisted e-disclosure cookies file."""
+        self.invalidate()
+        try:
+            self._cookies_file.unlink()
+            logger.info("Saved e-disclosure credentials removed from %s", self._cookies_file)
+        except FileNotFoundError:
+            pass
+
     def save_cookies(
         self,
         cookies: Dict[str, str],
