@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Container, Box, Typography, AppBar, Toolbar, Button, CircularProgress, Dialog, DialogTitle, DialogContent, DialogActions, Alert, IconButton, Card, CardContent, alpha } from '@mui/material';
+import { Container, Box, Typography, AppBar, Toolbar, Button, CircularProgress, Dialog, DialogTitle, DialogContent, DialogActions, Alert, IconButton, Card, CardContent } from '@mui/material';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import SettingsIcon from '@mui/icons-material/Settings';
@@ -69,6 +69,67 @@ import { submitFeedback } from '../api/feedback';
  * Main page of the application displaying bonds screener
  */
 type ViewMode = 'HUB' | 'TABLE';
+
+const HubVisual: React.FC<{ index: number; color: string }> = ({ index, color }) => {
+  const bars = [38, 58, 48, 76, 64, 94, 82, 118, 104, 142];
+
+  return (
+    <svg
+      viewBox="0 0 360 190"
+      preserveAspectRatio="xMidYMax meet"
+      aria-hidden="true"
+      focusable="false"
+      style={{ display: 'block', width: '100%', height: '100%' }}
+    >
+      <defs>
+        <linearGradient id={`hub-fill-${index}`} x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.24" />
+          <stop offset="100%" stopColor={color} stopOpacity="0.01" />
+        </linearGradient>
+      </defs>
+      {index === 0 && (
+        <>
+          {bars.map((height, bar) => <rect key={bar} x={22 + bar * 31} y={178 - height} width="18" height={height} rx="7" fill={color} opacity={0.12 + bar * 0.015} />)}
+          <path d="M12 151 C46 148 49 123 82 133 S126 106 155 116 S201 81 230 95 S278 57 348 18 L348 185 L12 185Z" fill={`url(#hub-fill-${index})`} />
+          <path d="M12 151 C46 148 49 123 82 133 S126 106 155 116 S201 81 230 95 S278 57 348 18" fill="none" stroke={color} strokeWidth="4" strokeLinecap="round" />
+        </>
+      )}
+      {index === 1 && (
+        <>
+          <circle cx="105" cy="108" r="66" fill="none" stroke={color} strokeOpacity="0.15" strokeWidth="28" />
+          <circle cx="105" cy="108" r="66" fill="none" stroke={color} strokeWidth="28" strokeDasharray="255 160" transform="rotate(-90 105 108)" />
+          {[0, 1, 2, 3].map((row) => (
+            <g key={row} opacity={1 - row * 0.1}>
+              <circle cx="226" cy={54 + row * 37} r="7" fill={color} />
+              <rect x="246" y={47 + row * 37} width={96 - (row % 2) * 25} height="13" rx="7" fill={color} opacity="0.24" />
+            </g>
+          ))}
+        </>
+      )}
+      {index === 2 && (
+        <>
+          {bars.slice(0, 9).map((height, bar) => <rect key={bar} x={26 + bar * 37} y={180 - height} width="23" height={height} rx="8" fill={color} opacity="0.12" />)}
+          <path d="M14 154 C58 143 63 112 100 116 S150 121 181 88 S236 91 266 61 S314 40 349 10" fill="none" stroke={color} strokeWidth="4" strokeLinecap="round" />
+          <circle cx="349" cy="10" r="6" fill={color} />
+        </>
+      )}
+      {index === 3 && (
+        <>
+          <path d="M5 120 C45 120 55 72 96 81 S151 128 194 78 S248 50 279 68 S325 67 357 18 L357 185 L5 185Z" fill={`url(#hub-fill-${index})`} />
+          <path d="M5 120 C45 120 55 72 96 81 S151 128 194 78 S248 50 279 68 S325 67 357 18" fill="none" stroke={color} strokeWidth="4" strokeLinecap="round" />
+          <path d="M5 148 C47 148 65 121 106 133 S152 159 197 122 S249 106 286 119 S331 100 357 86" fill="none" stroke={color} strokeWidth="3" strokeOpacity="0.32" strokeDasharray="8 7" />
+        </>
+      )}
+      {index === 4 && (
+        <>
+          <rect x="24" y="34" width="142" height="96" rx="12" fill={color} opacity="0.16" />
+          <path d="M43 112 76 72 99 94 122 61 153 112Z" fill={color} opacity="0.45" />
+          {[0, 1, 2].map((row) => <g key={row}><rect x="194" y={42 + row * 35} width={140 - row * 16} height="12" rx="6" fill={color} opacity="0.22" /><rect x="24" y={147 + row * 16} width={142 + row * 15} height="9" rx="5" fill={color} opacity="0.16" /></g>)}
+        </>
+      )}
+    </svg>
+  );
+};
 
 export const HomePage: React.FC = () => {
   const triggerDataRefresh = useUiStore((state) => state.triggerDataRefresh);
@@ -588,58 +649,54 @@ export const HomePage: React.FC = () => {
   // Hub Cards Configuration
   const hubCards = [
     {
-      title: 'Рынок Облигаций',
+      title: 'Рынок облигаций',
       description: 'Поиск и фильтрация активов',
-      icon: <ShowChartIcon sx={{ fontSize: 48 }} />,
+      icon: <ShowChartIcon sx={{ fontSize: 32 }} />,
       color: '#1976d2',
       onClick: () => handleHubCardClick(0),
     },
     {
       title: 'Мой Портфель',
       description: 'Управление инвестициями',
-      icon: <AccountBalanceWalletIcon sx={{ fontSize: 48 }} />,
+      icon: <AccountBalanceWalletIcon sx={{ fontSize: 32 }} />,
       color: '#4caf50',
       onClick: () => handleHubCardClick(3),
     },
     {
       title: 'Прогнозы',
       description: 'Анализ и прогнозирование',
-      icon: <TrendingUpIcon sx={{ fontSize: 48 }} />,
+      icon: <TrendingUpIcon sx={{ fontSize: 32 }} />,
       color: '#ff9800',
       onClick: () => handleHubCardClick(2),
     },
     {
       title: 'Сравнение',
       description: 'Сопоставление облигаций',
-      icon: <CompareArrowsIcon sx={{ fontSize: 48 }} />,
+      icon: <CompareArrowsIcon sx={{ fontSize: 32 }} />,
       color: '#9c27b0',
       onClick: () => handleHubCardClick(4),
     },
     {
       title: 'Блог',
       description: 'Статьи и интерактивный гид по облигациям',
-      icon: <ArticleIcon sx={{ fontSize: 48 }} />,
+      icon: <ArticleIcon sx={{ fontSize: 32 }} />,
       color: '#00acc1',
       onClick: () => handleHubCardClick(5),
     },
   ];
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', bgcolor: '#F8FAFC' }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', bgcolor: '#F4F7FD' }}>
       {/* Compact App Bar */}
       <AppBar 
         position="static" 
         elevation={0}
-        sx={{
-          bgcolor: 'transparent',
-          borderBottom: '1px solid',
-          borderColor: 'divider',
-        }}
+        sx={{ bgcolor: '#FFFFFF', color: '#17345B', borderBottom: '1px solid #E7EDF7' }}
       >
-        <Toolbar sx={{ minHeight: '32px !important', py: 1 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', width: '100%', justifyContent: 'space-between' }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-              <AccountBalanceIcon sx={{ fontSize: 20, color: 'text.primary' }} />
+        <Toolbar sx={{ minHeight: '68px !important', px: { xs: 1, md: 3.5 } }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', width: '100%', maxWidth: 1660, mx: 'auto', justifyContent: 'space-between' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 0.75, sm: 1.5 } }}>
+              <AccountBalanceIcon sx={{ fontSize: { xs: 22, sm: 27 }, color: '#17345B' }} />
               <Typography 
                 variant="body1" 
                 component="h1" 
@@ -647,34 +704,32 @@ export const HomePage: React.FC = () => {
                 sx={{
                   fontFamily: '"Inter", "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
                   letterSpacing: '-0.01em',
-                  fontSize: '0.875rem',
+                  fontSize: { xs: '0.75rem', sm: '1rem' },
                 }}
               >
-                Центр Управления
+                Центр управления
               </Typography>
             </Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 0.25, sm: 0.75 } }}>
               <IconButton
                 size="small"
+                aria-label="Настройки"
                 onClick={() => setIsSettingsOpen(true)}
                 sx={{ 
-                  color: 'text.primary',
-                  '&:hover': {
-                    bgcolor: 'action.hover',
-                  },
+                  color: '#29476F', bgcolor: '#F2F5FA', width: { xs: 30, sm: 38 }, height: { xs: 30, sm: 38 },
+                  '&:hover': { bgcolor: '#E7EEF8' },
                 }}
               >
                 <SettingsIcon sx={{ fontSize: 18 }} />
               </IconButton>
               <IconButton
                 size="small"
+                aria-label="Обновить данные"
                 onClick={handleRefreshDataClick}
                 disabled={isRefreshing}
                 sx={{ 
-                  color: 'text.primary',
-                  '&:hover': {
-                    bgcolor: 'action.hover',
-                  },
+                  color: '#29476F', bgcolor: '#F2F5FA', width: { xs: 30, sm: 38 }, height: { xs: 30, sm: 38 },
+                  '&:hover': { bgcolor: '#E7EEF8' },
                 }}
               >
                 {isRefreshing ? (
@@ -685,13 +740,12 @@ export const HomePage: React.FC = () => {
               </IconButton>
               <IconButton
                 size="small"
+                aria-label="Анализ с помощью языковой модели"
                 onClick={handleLLMAnalysisClick}
                 disabled={isAnalyzing}
                 sx={{ 
-                  color: 'text.primary',
-                  '&:hover': {
-                    bgcolor: 'action.hover',
-                  },
+                  color: '#29476F', bgcolor: '#F2F5FA', width: { xs: 30, sm: 38 }, height: { xs: 30, sm: 38 },
+                  '&:hover': { bgcolor: '#E7EEF8' },
                 }}
               >
                 {isAnalyzing ? (
@@ -702,24 +756,22 @@ export const HomePage: React.FC = () => {
               </IconButton>
               <IconButton
                 size="small"
+                aria-label="Обратная связь"
                 onClick={handleFeedbackClick}
                 sx={{ 
-                  color: 'text.primary',
-                  '&:hover': {
-                    bgcolor: 'action.hover',
-                  },
+                  color: '#29476F', bgcolor: '#F2F5FA', width: { xs: 30, sm: 38 }, height: { xs: 30, sm: 38 },
+                  '&:hover': { bgcolor: '#E7EEF8' },
                 }}
               >
                 <FeedbackIcon sx={{ fontSize: 18 }} />
               </IconButton>
               <IconButton
                 size="small"
+                aria-label="Помощь"
                 onClick={handleHelpClick}
                 sx={{ 
-                  color: 'text.primary',
-                  '&:hover': {
-                    bgcolor: 'action.hover',
-                  },
+                  color: '#29476F', bgcolor: '#F2F5FA', width: { xs: 30, sm: 38 }, height: { xs: 30, sm: 38 },
+                  '&:hover': { bgcolor: '#E7EEF8' },
                 }}
               >
                 <HelpOutlineIcon sx={{ fontSize: 18 }} />
@@ -732,177 +784,228 @@ export const HomePage: React.FC = () => {
       {/* Main Content */}
       <Box sx={{ 
         flexGrow: 1, 
-        bgcolor: '#F8FAFC', 
+        bgcolor: '#F4F7FD', 
         display: 'flex', 
         flexDirection: 'column', 
         width: '100%', 
-        ...(viewMode === 'TABLE' ? { height: 'calc(100vh - 32px)' } : {}) 
+        ...(viewMode === 'TABLE' ? { height: 'calc(100vh - 68px)' } : {}) 
       }}>
         {viewMode === 'HUB' ? (
           <>
-            {/* Плашка: курсы валют, RUONIA, ключевая ставка — данные с одного эндпоинта, отображаем как есть */}
             <Box
+              component="section"
+              aria-label="Добро пожаловать в BondsScreener"
               sx={{
-                bgcolor: 'background.paper',
-                border: '1px solid #E2E8F0',
-                borderRadius: '16px',
-                px: 3,
-                py: 1.5,
-                mx: 'auto',
-                mt: 4,
-                mb: 3,
-                width: 'fit-content',
+                minHeight: { xs: 320, md: 286 },
                 display: 'flex',
-                gap: 4,
                 alignItems: 'center',
-                boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.05)',
+                color: '#FFFFFF',
+                backgroundColor: '#123967',
+                backgroundImage: 'linear-gradient(90deg, rgba(12, 43, 82, 0.94) 0%, rgba(16, 55, 102, 0.77) 35%, rgba(18, 55, 99, 0.12) 100%), url("/images/bond-market-hero.png")',
+                backgroundSize: 'cover',
+                backgroundPosition: 'center 48%',
               }}
             >
-              {isLoadingDashboardRates ? (
-                <CircularProgress size={16} />
-              ) : (
-                (() => {
-                  const dr = dashboardRates;
-                  const currencies = dr?.rates
-                    ? [
-                        dr.rates.EUR && { label: 'EUR', value: dr.rates.EUR.rate, key: 'EUR', isPercent: false },
-                        dr.rates.USD && { label: 'USD', value: dr.rates.USD.rate, key: 'USD', isPercent: false },
-                        dr.rates.CNY && { label: 'CNY', value: dr.rates.CNY.rate, key: 'CNY', isPercent: false },
-                      ].filter(Boolean) as Array<{ label: string; value: number; key: string; isPercent: boolean }>
-                    : [];
-                  const items: Array<{ label: string; value: number; key: string; isPercent: boolean }> = [
-                    ...currencies,
-                    ...(dr?.ruonia_rate != null ? [{ label: 'RUONIA', value: dr.ruonia_rate, key: 'RUONIA', isPercent: true }] : []),
-                    ...(dr?.key_rate != null ? [{ label: 'Ключевая ставка', value: dr.key_rate, key: 'KEYRATE', isPercent: true }] : []),
-                  ];
-                  if (items.length === 0) {
-                    return (
-                      <Typography
-                        variant="caption"
-                        sx={{
-                          fontFamily: '"Inter", "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                          fontSize: '0.75rem',
-                          fontWeight: 500,
-                          color: 'text.secondary',
-                        }}
-                      >
-                        Данные не загружены
-                      </Typography>
-                    );
-                  }
-                  return items.map((item, index) => (
-                    <React.Fragment key={item.key}>
-                      <Typography
-                        variant="caption"
-                        sx={{
-                          fontFamily: '"Inter", "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                          fontSize: '0.75rem',
-                          fontWeight: 500,
-                          color: 'text.primary',
-                        }}
-                      >
-                        {item.label}: <strong>{item.isPercent ? `${item.value.toFixed(2)}%` : item.value.toFixed(2)}</strong>
-                      </Typography>
-                      {index < items.length - 1 && (
-                        <Box sx={{ width: '1px', height: '16px', bgcolor: 'divider' }} />
-                      )}
-                    </React.Fragment>
-                  ));
-                })()
-              )}
+              <Box sx={{ width: '100%', maxWidth: 1660, mx: 'auto', px: { xs: 2.5, md: 5, xl: 6 }, py: { xs: 4, md: 4.5 } }}>
+                <Typography
+                  component="h2"
+                  sx={{ fontSize: { xs: '2.2rem', md: '2.65rem' }, lineHeight: 1.08, letterSpacing: '-0.035em', fontWeight: 750, maxWidth: 620, textShadow: '0 2px 12px rgba(7, 24, 47, 0.18)' }}
+                >
+                  Добро пожаловать<br />в BondsScreener
+                </Typography>
+                <Typography sx={{ mt: 1.5, fontSize: { xs: '1rem', md: '1.15rem' }, lineHeight: 1.5, color: 'rgba(255,255,255,0.92)', maxWidth: 620 }}>
+                  Анализируйте рынок облигаций, управляйте портфелем и принимайте взвешенные инвестиционные решения.
+                </Typography>
+              </Box>
             </Box>
 
-            {/* Hub Cards Grid */}
             <Box
+              component="section"
+              aria-label="Основные разделы BondsScreener"
               sx={{
-                width: '100%',
-                px: 3,
-                mb: 4,
+                flexGrow: 1,
+                px: { xs: 2, md: 3.5, xl: 4.5 },
+                pb: { xs: 3, md: 4 },
+                mt: '-1px',
+                borderRadius: '30px 30px 0 0',
+                bgcolor: '#F4F7FD',
+                position: 'relative',
               }}
             >
+              {(() => {
+                const metrics = [
+                  { key: 'EUR', label: 'EUR', flag: '🇪🇺', value: dashboardRates?.rates.EUR?.rate, percent: false },
+                  { key: 'USD', label: 'USD', flag: '🇺🇸', value: dashboardRates?.rates.USD?.rate, percent: false },
+                  { key: 'CNY', label: 'CNY', flag: '🇨🇳', value: dashboardRates?.rates.CNY?.rate, percent: false },
+                  { key: 'RUONIA', label: 'RUONIA', flag: '↗', value: dashboardRates?.ruonia_rate, percent: true },
+                  { key: 'KEYRATE', label: 'Ключевая ставка', flag: '%', value: dashboardRates?.key_rate, percent: true },
+                ];
+
+                return (
+                  <Box
+                    sx={{
+                      position: 'relative',
+                      zIndex: 1,
+                      maxWidth: 1070,
+                      minHeight: 100,
+                      mx: 'auto',
+                      mt: { xs: -4, md: -6 },
+                      mb: { xs: 3, md: 3.5 },
+                      px: { xs: 1.5, sm: 2.5 },
+                      py: 1.5,
+                      display: 'grid',
+                      gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', sm: 'repeat(3, minmax(0, 1fr))', md: 'repeat(5, minmax(0, 1fr))' },
+                      alignItems: 'center',
+                      border: '1px solid rgba(208, 221, 243, 0.9)',
+                      borderRadius: '26px',
+                      background: 'rgba(255,255,255,0.94)',
+                      boxShadow: '0 14px 36px rgba(30, 69, 127, 0.12)',
+                      backdropFilter: 'blur(16px)',
+                    }}
+                  >
+                    {metrics.map((metric, index) => (
+                      <Box
+                        key={metric.key}
+                        sx={{
+                          minWidth: 0,
+                          minHeight: 62,
+                          px: { xs: 1, sm: 1.5 },
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 1.25,
+                          borderRight: { xs: 'none', md: index < metrics.length - 1 ? '1px solid #E7EDF7' : 'none' },
+                          borderBottom: { xs: index < 4 ? '1px solid #EDF1F8' : 'none', sm: 'none' },
+                        }}
+                      >
+                        <Box
+                          sx={{
+                            flexShrink: 0,
+                            display: 'grid',
+                            placeItems: 'center',
+                            width: 40,
+                            height: 40,
+                            borderRadius: '50%',
+                            bgcolor: metric.percent ? '#E8F1FF' : '#F2F6FD',
+                            color: '#1769E8',
+                            fontSize: metric.percent ? '1.05rem' : '1.45rem',
+                            fontWeight: 700,
+                          }}
+                        >
+                          {metric.flag}
+                        </Box>
+                        <Box sx={{ minWidth: 0 }}>
+                          <Typography sx={{ fontSize: '0.73rem', lineHeight: 1.3, fontWeight: 700, color: '#243650', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{metric.label}</Typography>
+                          <Typography sx={{ mt: 0.15, fontSize: '1.08rem', lineHeight: 1.25, fontWeight: 750, color: '#111D32', fontVariantNumeric: 'tabular-nums' }}>
+                            {metric.value == null ? '—' : `${metric.value.toFixed(2)}${metric.percent ? '%' : ''}`}
+                          </Typography>
+                          <Typography sx={{ mt: 0.15, fontSize: '0.66rem', lineHeight: 1.2, color: '#71809A' }}>
+                            {isLoadingDashboardRates ? 'обновляем…' : formatDateForDisplay(dashboardRates?.source_date ?? null) ?? 'по данным рынка'}
+                          </Typography>
+                        </Box>
+                      </Box>
+                    ))}
+                    {isLoadingDashboardRates && (
+                      <CircularProgress size={15} sx={{ position: 'absolute', right: 12, top: 8, color: '#1769E8' }} />
+                    )}
+                  </Box>
+                );
+              })()}
+
               <Box
                 sx={{
-                  display: 'flex',
-                  flexDirection: { xs: 'column', sm: 'row' },
-                  gap: 3,
+                  display: 'grid',
+                  gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(3, minmax(0, 1fr))', xl: 'repeat(5, minmax(0, 1fr))' },
+                  gap: { xs: 2, md: 2.25 },
                   width: '100%',
+                  maxWidth: 1660,
+                  mx: 'auto',
                 }}
               >
                 {hubCards.map((card, index) => (
                   <Card
-                    key={index}
+                    key={card.title}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`${card.title}. ${card.description}`}
                     onClick={card.onClick}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        card.onClick();
+                      }
+                    }}
                     sx={{
-                      flex: 1,
+                      position: 'relative',
+                      display: 'block',
                       minWidth: 0,
-                      height: 220,
-                      borderRadius: '16px',
-                      border: '1px solid #E2E8F0',
-                      bgcolor: 'background.paper',
+                      height: { xs: 340, md: 375, xl: 'min(414px, calc(100vh - 470px))' },
+                      minHeight: { xl: 380 },
+                      overflow: 'hidden',
+                      borderRadius: '23px',
+                      border: '1px solid',
+                      borderColor: `${card.color}26`,
+                      background: `linear-gradient(150deg, #FFFFFF 0%, ${card.color}0D 100%)`,
                       cursor: 'pointer',
-                      transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                      boxShadow: 'none',
-                      '&:hover': {
-                        transform: 'translateY(-4px)',
-                        boxShadow: '0px 8px 24px rgba(0, 0, 0, 0.08)',
-                        '& .hub-card-icon': {
-                          transform: 'scale(1.1)',
-                        },
+                      textAlign: 'left',
+                      boxShadow: '0 5px 20px rgba(37, 67, 112, 0.035)',
+                      transition: 'transform 220ms ease, box-shadow 220ms ease, border-color 220ms ease',
+                      '&:hover, &:focus-visible': {
+                        transform: 'translateY(-5px)',
+                        borderColor: `${card.color}65`,
+                        boxShadow: '0 16px 34px rgba(37, 67, 112, 0.12)',
+                        outline: 'none',
                       },
+                      '&:hover .hub-card-arrow, &:focus-visible .hub-card-arrow': { transform: 'translateX(3px)' },
                     }}
                   >
-                    <CardContent
-                      sx={{
-                        height: '100%',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'space-between',
-                        p: 3,
-                      }}
-                    >
+                    <CardContent sx={{ position: 'relative', zIndex: 1, height: '100%', p: { xs: 2.5, md: 3 }, '&:last-child': { pb: 3 } }}>
                       <Box
                         className="hub-card-icon"
                         sx={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          width: 64,
-                          height: 64,
-                          borderRadius: '16px',
-                          bgcolor: alpha(card.color, 0.1),
-                          color: card.color,
-                          mb: 2,
-                          transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                          display: 'grid',
+                          placeItems: 'center',
+                          width: 58,
+                          height: 58,
+                          borderRadius: '15px',
+                          bgcolor: card.color,
+                          color: '#FFFFFF',
+                          boxShadow: `0 7px 16px ${card.color}35`,
                         }}
                       >
                         {card.icon}
                       </Box>
-                      <Box>
-                        <Typography
-                          variant="h6"
-                          sx={{
-                            fontFamily: '"Inter", "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                            fontWeight: 600,
-                            fontSize: '1.25rem',
-                            mb: 1,
-                            letterSpacing: '-0.01em',
-                            color: 'text.primary',
-                          }}
-                        >
-                          {card.title}
-                        </Typography>
-                        <Typography
-                          variant="body2"
-                          sx={{
-                            fontFamily: '"Inter", "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                            color: 'text.secondary',
-                            fontSize: '0.875rem',
-                          }}
-                        >
-                          {card.description}
-                        </Typography>
-                      </Box>
+                      <Typography component="h3" sx={{ mt: 2.35, fontSize: { xs: '1.25rem', md: '1.42rem' }, lineHeight: 1.2, fontWeight: 750, letterSpacing: '-0.025em', color: '#101D35' }}>
+                        {card.title}
+                      </Typography>
+                      <Typography sx={{ mt: 1, maxWidth: 220, fontSize: '0.98rem', lineHeight: 1.45, color: '#526684' }}>
+                        {card.description}
+                      </Typography>
                     </CardContent>
+                    <Box sx={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '48%', opacity: 0.94, pointerEvents: 'none' }}>
+                      <HubVisual index={index} color={card.color} />
+                    </Box>
+                    <Box
+                      className="hub-card-arrow"
+                      sx={{
+                        position: 'absolute',
+                        zIndex: 2,
+                        right: 22,
+                        bottom: 22,
+                        width: 54,
+                        height: 54,
+                        display: 'grid',
+                        placeItems: 'center',
+                        borderRadius: '50%',
+                        color: '#FFFFFF',
+                        bgcolor: card.color,
+                        boxShadow: `0 7px 16px ${card.color}35`,
+                        transition: 'transform 180ms ease',
+                        fontSize: '1.9rem',
+                        lineHeight: 1,
+                      }}
+                    >
+                      →
+                    </Box>
                   </Card>
                 ))}
               </Box>
