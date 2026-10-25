@@ -70,67 +70,6 @@ import { submitFeedback } from '../api/feedback';
  */
 type ViewMode = 'HUB' | 'TABLE';
 
-const HubVisual: React.FC<{ index: number; color: string }> = ({ index, color }) => {
-  const bars = [38, 58, 48, 76, 64, 94, 82, 118, 104, 142];
-
-  return (
-    <svg
-      viewBox="0 0 360 190"
-      preserveAspectRatio="xMidYMax meet"
-      aria-hidden="true"
-      focusable="false"
-      style={{ display: 'block', width: '100%', height: '100%' }}
-    >
-      <defs>
-        <linearGradient id={`hub-fill-${index}`} x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.24" />
-          <stop offset="100%" stopColor={color} stopOpacity="0.01" />
-        </linearGradient>
-      </defs>
-      {index === 0 && (
-        <>
-          {bars.map((height, bar) => <rect key={bar} x={22 + bar * 31} y={178 - height} width="18" height={height} rx="7" fill={color} opacity={0.12 + bar * 0.015} />)}
-          <path d="M12 151 C46 148 49 123 82 133 S126 106 155 116 S201 81 230 95 S278 57 348 18 L348 185 L12 185Z" fill={`url(#hub-fill-${index})`} />
-          <path d="M12 151 C46 148 49 123 82 133 S126 106 155 116 S201 81 230 95 S278 57 348 18" fill="none" stroke={color} strokeWidth="4" strokeLinecap="round" />
-        </>
-      )}
-      {index === 1 && (
-        <>
-          <circle cx="105" cy="108" r="66" fill="none" stroke={color} strokeOpacity="0.15" strokeWidth="28" />
-          <circle cx="105" cy="108" r="66" fill="none" stroke={color} strokeWidth="28" strokeDasharray="255 160" transform="rotate(-90 105 108)" />
-          {[0, 1, 2, 3].map((row) => (
-            <g key={row} opacity={1 - row * 0.1}>
-              <circle cx="226" cy={54 + row * 37} r="7" fill={color} />
-              <rect x="246" y={47 + row * 37} width={96 - (row % 2) * 25} height="13" rx="7" fill={color} opacity="0.24" />
-            </g>
-          ))}
-        </>
-      )}
-      {index === 2 && (
-        <>
-          {bars.slice(0, 9).map((height, bar) => <rect key={bar} x={26 + bar * 37} y={180 - height} width="23" height={height} rx="8" fill={color} opacity="0.12" />)}
-          <path d="M14 154 C58 143 63 112 100 116 S150 121 181 88 S236 91 266 61 S314 40 349 10" fill="none" stroke={color} strokeWidth="4" strokeLinecap="round" />
-          <circle cx="349" cy="10" r="6" fill={color} />
-        </>
-      )}
-      {index === 3 && (
-        <>
-          <path d="M5 120 C45 120 55 72 96 81 S151 128 194 78 S248 50 279 68 S325 67 357 18 L357 185 L5 185Z" fill={`url(#hub-fill-${index})`} />
-          <path d="M5 120 C45 120 55 72 96 81 S151 128 194 78 S248 50 279 68 S325 67 357 18" fill="none" stroke={color} strokeWidth="4" strokeLinecap="round" />
-          <path d="M5 148 C47 148 65 121 106 133 S152 159 197 122 S249 106 286 119 S331 100 357 86" fill="none" stroke={color} strokeWidth="3" strokeOpacity="0.32" strokeDasharray="8 7" />
-        </>
-      )}
-      {index === 4 && (
-        <>
-          <rect x="24" y="34" width="142" height="96" rx="12" fill={color} opacity="0.16" />
-          <path d="M43 112 76 72 99 94 122 61 153 112Z" fill={color} opacity="0.45" />
-          {[0, 1, 2].map((row) => <g key={row}><rect x="194" y={42 + row * 35} width={140 - row * 16} height="12" rx="6" fill={color} opacity="0.22" /><rect x="24" y={147 + row * 16} width={142 + row * 15} height="9" rx="5" fill={color} opacity="0.16" /></g>)}
-        </>
-      )}
-    </svg>
-  );
-};
-
 export const HomePage: React.FC = () => {
   const triggerDataRefresh = useUiStore((state) => state.triggerDataRefresh);
   const setError = useBondsStore((state) => state.setError);
@@ -656,7 +595,7 @@ export const HomePage: React.FC = () => {
       onClick: () => handleHubCardClick(0),
     },
     {
-      title: 'Мой Портфель',
+      title: 'Мой портфель',
       description: 'Управление инвестициями',
       icon: <AccountBalanceWalletIcon sx={{ fontSize: 32 }} />,
       color: '#4caf50',
@@ -685,15 +624,37 @@ export const HomePage: React.FC = () => {
     },
   ];
 
+  const marketMetrics = [
+    { key: 'EUR', label: 'EUR', flag: '🇪🇺', value: dashboardRates?.rates.EUR?.rate, percent: false },
+    { key: 'USD', label: 'USD', flag: '🇺🇸', value: dashboardRates?.rates.USD?.rate, percent: false },
+    { key: 'CNY', label: 'CNY', flag: '🇨🇳', value: dashboardRates?.rates.CNY?.rate, percent: false },
+    { key: 'RUONIA', label: 'RUONIA', flag: '%', value: dashboardRates?.ruonia_rate, percent: true },
+    { key: 'KEYRATE', label: 'Ключевая ставка', flag: '%', value: dashboardRates?.key_rate, percent: true },
+  ];
+
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', bgcolor: '#F4F7FD' }}>
+    <Box sx={{
+      display: 'flex',
+      flexDirection: 'column',
+      minHeight: '100vh',
+      bgcolor: viewMode === 'HUB' ? '#EAF3FF' : '#F4F7FD',
+      backgroundImage: viewMode === 'HUB' ? 'linear-gradient(180deg, rgba(236,244,255,0.08), rgba(236,244,255,0.18)), url("/images/bond-glass-background.png")' : 'none',
+      backgroundSize: 'cover',
+      backgroundPosition: 'center',
+      backgroundAttachment: 'fixed',
+    }}>
       {/* Compact App Bar */}
       <AppBar 
         position="static" 
         elevation={0}
-        sx={{ bgcolor: '#FFFFFF', color: '#17345B', borderBottom: '1px solid #E7EDF7' }}
+        sx={{
+          bgcolor: viewMode === 'HUB' ? 'rgba(255,255,255,0.48)' : '#FFFFFF',
+          color: '#10264A',
+          borderBottom: '1px solid rgba(255,255,255,0.72)',
+          backdropFilter: 'blur(20px)',
+        }}
       >
-        <Toolbar sx={{ minHeight: '68px !important', px: { xs: 1, md: 3.5 } }}>
+        <Toolbar sx={{ minHeight: { xs: '52px !important', md: '62px !important' }, px: { xs: 1, md: 3.5 } }}>
           <Box sx={{ display: 'flex', alignItems: 'center', width: '100%', maxWidth: 1660, mx: 'auto', justifyContent: 'space-between' }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 0.75, sm: 1.5 } }}>
               <AccountBalanceIcon sx={{ fontSize: { xs: 22, sm: 27 }, color: '#17345B' }} />
@@ -716,8 +677,8 @@ export const HomePage: React.FC = () => {
                 aria-label="Настройки"
                 onClick={() => setIsSettingsOpen(true)}
                 sx={{ 
-                  color: '#29476F', bgcolor: '#F2F5FA', width: { xs: 30, sm: 38 }, height: { xs: 30, sm: 38 },
-                  '&:hover': { bgcolor: '#E7EEF8' },
+                  color: '#29476F', bgcolor: 'rgba(255,255,255,0.42)', border: '1px solid rgba(255,255,255,0.72)', width: { xs: 30, sm: 38 }, height: { xs: 30, sm: 38 },
+                  '&:hover': { bgcolor: 'rgba(255,255,255,0.72)' },
                 }}
               >
                 <SettingsIcon sx={{ fontSize: 18 }} />
@@ -728,8 +689,8 @@ export const HomePage: React.FC = () => {
                 onClick={handleRefreshDataClick}
                 disabled={isRefreshing}
                 sx={{ 
-                  color: '#29476F', bgcolor: '#F2F5FA', width: { xs: 30, sm: 38 }, height: { xs: 30, sm: 38 },
-                  '&:hover': { bgcolor: '#E7EEF8' },
+                  color: '#29476F', bgcolor: 'rgba(255,255,255,0.42)', border: '1px solid rgba(255,255,255,0.72)', width: { xs: 30, sm: 38 }, height: { xs: 30, sm: 38 },
+                  '&:hover': { bgcolor: 'rgba(255,255,255,0.72)' },
                 }}
               >
                 {isRefreshing ? (
@@ -744,8 +705,8 @@ export const HomePage: React.FC = () => {
                 onClick={handleLLMAnalysisClick}
                 disabled={isAnalyzing}
                 sx={{ 
-                  color: '#29476F', bgcolor: '#F2F5FA', width: { xs: 30, sm: 38 }, height: { xs: 30, sm: 38 },
-                  '&:hover': { bgcolor: '#E7EEF8' },
+                  color: '#29476F', bgcolor: 'rgba(255,255,255,0.42)', border: '1px solid rgba(255,255,255,0.72)', width: { xs: 30, sm: 38 }, height: { xs: 30, sm: 38 },
+                  '&:hover': { bgcolor: 'rgba(255,255,255,0.72)' },
                 }}
               >
                 {isAnalyzing ? (
@@ -759,8 +720,8 @@ export const HomePage: React.FC = () => {
                 aria-label="Обратная связь"
                 onClick={handleFeedbackClick}
                 sx={{ 
-                  color: '#29476F', bgcolor: '#F2F5FA', width: { xs: 30, sm: 38 }, height: { xs: 30, sm: 38 },
-                  '&:hover': { bgcolor: '#E7EEF8' },
+                  color: '#29476F', bgcolor: 'rgba(255,255,255,0.42)', border: '1px solid rgba(255,255,255,0.72)', width: { xs: 30, sm: 38 }, height: { xs: 30, sm: 38 },
+                  '&:hover': { bgcolor: 'rgba(255,255,255,0.72)' },
                 }}
               >
                 <FeedbackIcon sx={{ fontSize: 18 }} />
@@ -770,8 +731,8 @@ export const HomePage: React.FC = () => {
                 aria-label="Помощь"
                 onClick={handleHelpClick}
                 sx={{ 
-                  color: '#29476F', bgcolor: '#F2F5FA', width: { xs: 30, sm: 38 }, height: { xs: 30, sm: 38 },
-                  '&:hover': { bgcolor: '#E7EEF8' },
+                  color: '#29476F', bgcolor: 'rgba(255,255,255,0.42)', border: '1px solid rgba(255,255,255,0.72)', width: { xs: 30, sm: 38 }, height: { xs: 30, sm: 38 },
+                  '&:hover': { bgcolor: 'rgba(255,255,255,0.72)' },
                 }}
               >
                 <HelpOutlineIcon sx={{ fontSize: 18 }} />
@@ -784,11 +745,11 @@ export const HomePage: React.FC = () => {
       {/* Main Content */}
       <Box sx={{ 
         flexGrow: 1, 
-        bgcolor: '#F4F7FD', 
+        bgcolor: viewMode === 'HUB' ? 'transparent' : '#F4F7FD', 
         display: 'flex', 
         flexDirection: 'column', 
         width: '100%', 
-        ...(viewMode === 'TABLE' ? { height: 'calc(100vh - 68px)' } : {}) 
+        ...(viewMode === 'TABLE' ? { height: 'calc(100vh - 62px)' } : {}) 
       }}>
         {viewMode === 'HUB' ? (
           <>
@@ -796,26 +757,101 @@ export const HomePage: React.FC = () => {
               component="section"
               aria-label="Добро пожаловать в BondsScreener"
               sx={{
-                minHeight: { xs: 320, md: 286 },
+                minHeight: { xs: 0, sm: 'clamp(150px, 30vh, 285px)' },
                 display: 'flex',
                 alignItems: 'center',
-                color: '#FFFFFF',
-                backgroundColor: '#123967',
-                backgroundImage: 'linear-gradient(90deg, rgba(12, 43, 82, 0.94) 0%, rgba(16, 55, 102, 0.77) 35%, rgba(18, 55, 99, 0.12) 100%), url("/images/bond-market-hero.png")',
-                backgroundSize: 'cover',
-                backgroundPosition: 'center 48%',
+                color: '#10264A',
               }}
             >
-              <Box sx={{ width: '100%', maxWidth: 1660, mx: 'auto', px: { xs: 2.5, md: 5, xl: 6 }, py: { xs: 4, md: 4.5 } }}>
-                <Typography
-                  component="h2"
-                  sx={{ fontSize: { xs: '2.2rem', md: '2.65rem' }, lineHeight: 1.08, letterSpacing: '-0.035em', fontWeight: 750, maxWidth: 620, textShadow: '0 2px 12px rgba(7, 24, 47, 0.18)' }}
+              <Box sx={{
+                width: '100%',
+                maxWidth: 1660,
+                mx: 'auto',
+                px: { xs: 2, md: 3.5, xl: 4.5 },
+                py: { xs: 2.5, sm: 1.5, md: 2.5 },
+                display: 'grid',
+                gridTemplateColumns: { xs: '1fr', sm: 'minmax(0, 1fr) minmax(310px, 0.95fr)' },
+                alignItems: 'center',
+                gap: { xs: 2, sm: 2, md: 4 },
+              }}>
+                <Box>
+                  <Typography
+                    component="h2"
+                    sx={{ fontSize: { xs: '1.9rem', md: '2.55rem' }, lineHeight: 1.06, letterSpacing: '-0.04em', fontWeight: 760, maxWidth: 620, color: '#10264A' }}
+                  >
+                    Добро пожаловать<br />в BondsScreener
+                  </Typography>
+                  <Typography sx={{ mt: 1.35, fontSize: { xs: '0.95rem', md: '1.05rem' }, lineHeight: 1.5, color: '#263F66', maxWidth: 650 }}>
+                    Анализируйте рынок облигаций, управляйте портфелем и принимайте взвешенные инвестиционные решения.
+                  </Typography>
+                </Box>
+
+                <Box
+                  aria-label="Курсы валют и процентные ставки"
+                  sx={{
+                    position: 'relative',
+                    width: '100%',
+                    maxWidth: 700,
+                    justifySelf: 'end',
+                    px: { xs: 1, sm: 1.5 },
+                    py: { xs: 1, sm: 1.25 },
+                    display: 'grid',
+                    gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', sm: 'repeat(6, minmax(0, 1fr))' },
+                    alignItems: 'center',
+                    border: '1px solid rgba(255,255,255,0.76)',
+                    borderRadius: '22px',
+                    background: 'rgba(255,255,255,0.46)',
+                    boxShadow: '0 14px 34px rgba(68, 104, 171, 0.12), inset 0 1px 0 rgba(255,255,255,0.8)',
+                    backdropFilter: 'blur(22px) saturate(145%)',
+                  }}
                 >
-                  Добро пожаловать<br />в BondsScreener
-                </Typography>
-                <Typography sx={{ mt: 1.5, fontSize: { xs: '1rem', md: '1.15rem' }, lineHeight: 1.5, color: 'rgba(255,255,255,0.92)', maxWidth: 620 }}>
-                  Анализируйте рынок облигаций, управляйте портфелем и принимайте взвешенные инвестиционные решения.
-                </Typography>
+                  {marketMetrics.map((metric, index) => (
+                    <Box
+                      key={metric.key}
+                      sx={{
+                        gridColumn: { xs: 'span 1', sm: index < 3 ? 'span 2' : 'span 3' },
+                        minWidth: 0,
+                        minHeight: 58,
+                        px: { xs: 0.75, sm: 1.5 },
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: { xs: 0.75, sm: 1 },
+                        borderBottom: index < 3 ? '1px solid rgba(255,255,255,0.6)' : 'none',
+                      }}
+                    >
+                      <Box
+                        sx={{
+                          flexShrink: 0,
+                          display: 'grid',
+                          placeItems: 'center',
+                          width: { xs: 32, sm: 38 },
+                          height: { xs: 32, sm: 38 },
+                          border: '1px solid rgba(255,255,255,0.86)',
+                          borderRadius: '50%',
+                          bgcolor: 'rgba(255,255,255,0.55)',
+                          boxShadow: '0 3px 10px rgba(63, 104, 174, 0.1)',
+                          color: '#1769E8',
+                          fontSize: metric.percent ? '1rem' : '1.35rem',
+                          fontWeight: 700,
+                        }}
+                      >
+                        {metric.flag}
+                      </Box>
+                      <Box sx={{ minWidth: 0 }}>
+                        <Typography sx={{ fontSize: '0.69rem', lineHeight: 1.25, fontWeight: 750, color: '#1D355B', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{metric.label}</Typography>
+                        <Typography sx={{ mt: 0.1, fontSize: '0.94rem', lineHeight: 1.2, fontWeight: 760, color: '#10264A', fontVariantNumeric: 'tabular-nums' }}>
+                          {metric.value == null ? '—' : `${metric.value.toFixed(2)}${metric.percent ? '%' : ''}`}
+                        </Typography>
+                        <Typography sx={{ mt: 0.1, fontSize: '0.64rem', lineHeight: 1.2, color: '#587092' }}>
+                          {isLoadingDashboardRates ? 'обновляем…' : metric.percent ? 'годовых' : 'руб. за 1 ед.'}
+                        </Typography>
+                      </Box>
+                    </Box>
+                  ))}
+                  {isLoadingDashboardRates && (
+                    <CircularProgress size={14} sx={{ position: 'absolute', right: 8, top: 6, color: '#1769E8' }} />
+                  )}
+                </Box>
               </Box>
             </Box>
 
@@ -824,104 +860,22 @@ export const HomePage: React.FC = () => {
               aria-label="Основные разделы BondsScreener"
               sx={{
                 flexGrow: 1,
-                px: { xs: 2, md: 3.5, xl: 4.5 },
-                pb: { xs: 3, md: 4 },
-                mt: '-1px',
-                borderRadius: '30px 30px 0 0',
-                bgcolor: '#F4F7FD',
+                px: { xs: 1.5, md: 3.5, xl: 4.5 },
+                pb: { xs: 2, md: 4 },
                 position: 'relative',
               }}
             >
-              {(() => {
-                const metrics = [
-                  { key: 'EUR', label: 'EUR', flag: '🇪🇺', value: dashboardRates?.rates.EUR?.rate, percent: false },
-                  { key: 'USD', label: 'USD', flag: '🇺🇸', value: dashboardRates?.rates.USD?.rate, percent: false },
-                  { key: 'CNY', label: 'CNY', flag: '🇨🇳', value: dashboardRates?.rates.CNY?.rate, percent: false },
-                  { key: 'RUONIA', label: 'RUONIA', flag: '↗', value: dashboardRates?.ruonia_rate, percent: true },
-                  { key: 'KEYRATE', label: 'Ключевая ставка', flag: '%', value: dashboardRates?.key_rate, percent: true },
-                ];
-
-                return (
-                  <Box
-                    sx={{
-                      position: 'relative',
-                      zIndex: 1,
-                      maxWidth: 1070,
-                      minHeight: 100,
-                      mx: 'auto',
-                      mt: { xs: -4, md: -6 },
-                      mb: { xs: 3, md: 3.5 },
-                      px: { xs: 1.5, sm: 2.5 },
-                      py: 1.5,
-                      display: 'grid',
-                      gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', sm: 'repeat(3, minmax(0, 1fr))', md: 'repeat(5, minmax(0, 1fr))' },
-                      alignItems: 'center',
-                      border: '1px solid rgba(208, 221, 243, 0.9)',
-                      borderRadius: '26px',
-                      background: 'rgba(255,255,255,0.94)',
-                      boxShadow: '0 14px 36px rgba(30, 69, 127, 0.12)',
-                      backdropFilter: 'blur(16px)',
-                    }}
-                  >
-                    {metrics.map((metric, index) => (
-                      <Box
-                        key={metric.key}
-                        sx={{
-                          minWidth: 0,
-                          minHeight: 62,
-                          px: { xs: 1, sm: 1.5 },
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 1.25,
-                          borderRight: { xs: 'none', md: index < metrics.length - 1 ? '1px solid #E7EDF7' : 'none' },
-                          borderBottom: { xs: index < 4 ? '1px solid #EDF1F8' : 'none', sm: 'none' },
-                        }}
-                      >
-                        <Box
-                          sx={{
-                            flexShrink: 0,
-                            display: 'grid',
-                            placeItems: 'center',
-                            width: 40,
-                            height: 40,
-                            borderRadius: '50%',
-                            bgcolor: metric.percent ? '#E8F1FF' : '#F2F6FD',
-                            color: '#1769E8',
-                            fontSize: metric.percent ? '1.05rem' : '1.45rem',
-                            fontWeight: 700,
-                          }}
-                        >
-                          {metric.flag}
-                        </Box>
-                        <Box sx={{ minWidth: 0 }}>
-                          <Typography sx={{ fontSize: '0.73rem', lineHeight: 1.3, fontWeight: 700, color: '#243650', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{metric.label}</Typography>
-                          <Typography sx={{ mt: 0.15, fontSize: '1.08rem', lineHeight: 1.25, fontWeight: 750, color: '#111D32', fontVariantNumeric: 'tabular-nums' }}>
-                            {metric.value == null ? '—' : `${metric.value.toFixed(2)}${metric.percent ? '%' : ''}`}
-                          </Typography>
-                          <Typography sx={{ mt: 0.15, fontSize: '0.66rem', lineHeight: 1.2, color: '#71809A' }}>
-                            {isLoadingDashboardRates ? 'обновляем…' : formatDateForDisplay(dashboardRates?.source_date ?? null) ?? 'по данным рынка'}
-                          </Typography>
-                        </Box>
-                      </Box>
-                    ))}
-                    {isLoadingDashboardRates && (
-                      <CircularProgress size={15} sx={{ position: 'absolute', right: 12, top: 8, color: '#1769E8' }} />
-                    )}
-                  </Box>
-                );
-              })()}
-
               <Box
                 sx={{
                   display: 'grid',
-                  gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(3, minmax(0, 1fr))', xl: 'repeat(5, minmax(0, 1fr))' },
-                  gap: { xs: 2, md: 2.25 },
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 132px), 1fr))',
+                  gap: { xs: 1.25, md: 1.75 },
                   width: '100%',
                   maxWidth: 1660,
                   mx: 'auto',
                 }}
               >
-                {hubCards.map((card, index) => (
+                {hubCards.map((card) => (
                   <Card
                     key={card.title}
                     role="button"
@@ -938,69 +892,77 @@ export const HomePage: React.FC = () => {
                       position: 'relative',
                       display: 'block',
                       minWidth: 0,
-                      height: { xs: 340, md: 375, xl: 'min(414px, calc(100vh - 470px))' },
-                      minHeight: { xl: 380 },
+                      height: { xs: 'clamp(170px, 36vh, 250px)', md: 'clamp(260px, 37vh, 350px)' },
                       overflow: 'hidden',
-                      borderRadius: '23px',
-                      border: '1px solid',
-                      borderColor: `${card.color}26`,
-                      background: `linear-gradient(150deg, #FFFFFF 0%, ${card.color}0D 100%)`,
+                      borderRadius: { xs: '16px', md: '22px' },
+                      border: '1px solid rgba(255,255,255,0.82)',
+                      background: `linear-gradient(145deg, rgba(255,255,255,0.58), ${card.color}12)`,
+                      backdropFilter: 'blur(18px) saturate(145%)',
                       cursor: 'pointer',
                       textAlign: 'left',
-                      boxShadow: '0 5px 20px rgba(37, 67, 112, 0.035)',
-                      transition: 'transform 220ms ease, box-shadow 220ms ease, border-color 220ms ease',
-                      '&:hover, &:focus-visible': {
-                        transform: 'translateY(-5px)',
-                        borderColor: `${card.color}65`,
-                        boxShadow: '0 16px 34px rgba(37, 67, 112, 0.12)',
-                        outline: 'none',
+                      boxShadow: '0 8px 24px rgba(73, 105, 160, 0.1), inset 0 1px 0 rgba(255,255,255,0.8)',
+                      transition: 'transform 220ms ease, box-shadow 220ms ease, background 220ms ease',
+                      '&::before': {
+                        content: '""',
+                        position: 'absolute',
+                        width: 130,
+                        height: 130,
+                        right: -52,
+                        bottom: -60,
+                        borderRadius: '50%',
+                        background: `radial-gradient(circle, ${card.color}22 0%, ${card.color}00 72%)`,
+                        pointerEvents: 'none',
                       },
+                      '&:hover, &:focus-visible': {
+                        transform: 'translateY(-3px)',
+                        background: `linear-gradient(145deg, rgba(255,255,255,0.72), ${card.color}18)`,
+                        boxShadow: '0 14px 34px rgba(73, 105, 160, 0.17), inset 0 1px 0 rgba(255,255,255,0.95)',
+                      },
+                      '&:focus-visible': { outline: `3px solid ${card.color}55`, outlineOffset: 2 },
                       '&:hover .hub-card-arrow, &:focus-visible .hub-card-arrow': { transform: 'translateX(3px)' },
                     }}
                   >
-                    <CardContent sx={{ position: 'relative', zIndex: 1, height: '100%', p: { xs: 2.5, md: 3 }, '&:last-child': { pb: 3 } }}>
+                    <CardContent sx={{ position: 'relative', zIndex: 1, height: '100%', p: { xs: 1.5, md: 2.5 }, '&:last-child': { pb: { xs: 1.5, md: 2.5 } } }}>
                       <Box
                         className="hub-card-icon"
                         sx={{
                           display: 'grid',
                           placeItems: 'center',
-                          width: 58,
-                          height: 58,
-                          borderRadius: '15px',
-                          bgcolor: card.color,
+                          width: { xs: 38, md: 52 },
+                          height: { xs: 38, md: 52 },
+                          borderRadius: { xs: '10px', md: '13px' },
+                          background: `linear-gradient(145deg, ${card.color}, ${card.color}D9)`,
                           color: '#FFFFFF',
-                          boxShadow: `0 7px 16px ${card.color}35`,
+                          boxShadow: `0 6px 14px ${card.color}32`,
                         }}
                       >
                         {card.icon}
                       </Box>
-                      <Typography component="h3" sx={{ mt: 2.35, fontSize: { xs: '1.25rem', md: '1.42rem' }, lineHeight: 1.2, fontWeight: 750, letterSpacing: '-0.025em', color: '#101D35' }}>
+                      <Typography component="h3" sx={{ mt: { xs: 1.2, md: 1.8 }, fontSize: { xs: '0.84rem', md: '1.15rem' }, lineHeight: 1.22, fontWeight: 750, letterSpacing: '-0.025em', color: '#10264A' }}>
                         {card.title}
                       </Typography>
-                      <Typography sx={{ mt: 1, maxWidth: 220, fontSize: '0.98rem', lineHeight: 1.45, color: '#526684' }}>
+                      <Typography sx={{ mt: 0.7, maxWidth: { xs: 'calc(100% - 20px)', md: 220 }, fontSize: { xs: '0.69rem', md: '0.91rem' }, lineHeight: 1.4, color: '#3E5577' }}>
                         {card.description}
                       </Typography>
                     </CardContent>
-                    <Box sx={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '48%', opacity: 0.94, pointerEvents: 'none' }}>
-                      <HubVisual index={index} color={card.color} />
-                    </Box>
                     <Box
                       className="hub-card-arrow"
                       sx={{
                         position: 'absolute',
                         zIndex: 2,
-                        right: 22,
-                        bottom: 22,
-                        width: 54,
-                        height: 54,
+                        right: { xs: 10, md: 16 },
+                        bottom: { xs: 10, md: 16 },
+                        width: { xs: 30, md: 40 },
+                        height: { xs: 30, md: 40 },
                         display: 'grid',
                         placeItems: 'center',
                         borderRadius: '50%',
-                        color: '#FFFFFF',
-                        bgcolor: card.color,
-                        boxShadow: `0 7px 16px ${card.color}35`,
+                        border: '1px solid rgba(255,255,255,0.88)',
+                        color: card.color,
+                        bgcolor: 'rgba(255,255,255,0.52)',
+                        boxShadow: '0 3px 10px rgba(66, 99, 155, 0.12)',
                         transition: 'transform 180ms ease',
-                        fontSize: '1.9rem',
+                        fontSize: { xs: '1.2rem', md: '1.5rem' },
                         lineHeight: 1,
                       }}
                     >
