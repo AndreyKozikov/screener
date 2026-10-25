@@ -70,8 +70,6 @@ class InflationRepository:
         try:
             with get_session() as session:
                 result = session.exec(stmt).scalars().all()
-                print(type(result))
-                print(type(result[0]) if result else "Пустой результат")
                 return result
         except Exception as e:
             print(f"Ошибка при обновлении эмитентов: {e}")

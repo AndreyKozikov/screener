@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from conversion_service.app.routers import (
     emission_doc_download,
-    #edisclosure_events,
+    edisclosure_events,
     bonds_router,
     emitents_router,
     ipc_router,
@@ -33,10 +33,10 @@ def create_app() -> FastAPI:
         emission_doc_download.router,
         prefix=settings.API_V1_STR,
     )
-    # app.include_router(
-    #     edisclosure_events.router,
-    #     prefix=settings.API_V1_STR,
-    # )
+    app.include_router(
+        edisclosure_events.router,
+        prefix=settings.API_V1_STR,
+    )
 
     app.include_router(
         bonds_router.router,

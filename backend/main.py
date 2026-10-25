@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.routers import (
     bonds, metadata, zerocupon, forecast, emitent, rating,
     feedback, currency, ruonia, keyrate, dashboard, trading_history,
-    edisclosure, pipeline, llm_router, blog, inflations
+    edisclosure, pipeline, llm_router, blog, inflations, ipc
 )
 
 from app.services.data_loader import init_data_loader
@@ -130,6 +130,7 @@ app.include_router(pipeline.router)
 app.include_router(blog.public_router)
 app.include_router(blog.admin_router)
 app.include_router(inflations.inflation_router)
+app.include_router(ipc.ipc_router)
 
 # Root endpoint
 @app.get("/")

@@ -706,7 +706,7 @@ def download_emission_file(file_url: str, referer: Optional[str] = None) -> Tupl
                         filename = m_unquoted.group(1).strip(" \"'")
         
         return response.content, filename
-    except requests.RequestException as e:
+    except Exception as e:
         print(f"  [E-DISCLOSURE FILE] Ошибка загрузки: {e}", flush=True)
         return None, None
 

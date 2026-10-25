@@ -29,6 +29,7 @@ import { ComparisonTable } from '../components/bonds/ComparisonTable';
 import { SpreadAnalysis } from '../components/bonds/SpreadAnalysis';
 import { AnalysisParamsDialog } from '../components/llm/AnalysisParamsDialog';
 import { InflationExpectationsChart } from '../components/inflationExpectations/InflationExpectationsChart';
+import { IpcPage } from '../components/ipc/IpcPage';
 import { AnalysisResultDialog } from '../components/llm/AnalysisResultDialog';
 import { LLMAnalysisModelDialog, type LLMModel } from '../components/llm/LLMAnalysisModelDialog';
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
@@ -76,7 +77,7 @@ export const HomePage: React.FC = () => {
   const settings = useSettingsStore((state) => state.settings);
   const [viewMode, setViewMode] = useState<ViewMode>('HUB');
   const [currentTab, setCurrentTab] = useState(0);
-  const [forecastSubView, setForecastSubView] = useState<'zerocupon' | 'forecast' | 'ruonia' | 'keyrate' | null>(null);
+  const [forecastSubView, setForecastSubView] = useState<'zerocupon' | 'forecast' | 'ruonia' | 'keyrate' | 'inflation-expectations' | 'ipc' | null>(null);
   const [comparisonSubView, setComparisonSubView] = useState<'comparison' | 'spread-analysis' | null>(null);
   
   // Refresh data dialog state
@@ -1015,6 +1016,14 @@ export const HomePage: React.FC = () => {
                         color="#3f51b5"
                         onClick={() => setForecastSubView('inflation-expectations')}
                       />
+                      <HubCard
+                        title="Индекс потребительских цен"
+                        value="—"
+                        subtitle="Историческая динамика месячной и недельной инфляции"
+                        icon={<AnalyticsIcon />}
+                        color="#00897b"
+                        onClick={() => setForecastSubView('ipc')}
+                      />
                     </Box>
                   </Box>
                 ) : (
@@ -1074,6 +1083,12 @@ export const HomePage: React.FC = () => {
                     {forecastSubView === 'inflation-expectations' && (
                       <Box sx={{ flexGrow: 1, minHeight: 0 }}>
                         <InflationExpectationsChart />
+                      </Box>
+                    )}
+
+                    {forecastSubView === 'ipc' && (
+                      <Box sx={{ flexGrow: 1, minHeight: 0 }}>
+                        <IpcPage />
                       </Box>
                     )}
                   </Box>

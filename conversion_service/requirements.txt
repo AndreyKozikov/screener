@@ -12,3 +12,4 @@ openpyxl==3.1.2
 # ---- Cloudflare bypass (e-disclosure) ----
 DrissionPage>=4.1.0.18
 selenium>=4.25.0
+curl_cffi>=0.7.0

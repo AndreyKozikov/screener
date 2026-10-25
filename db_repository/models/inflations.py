@@ -35,7 +35,9 @@ class InflationExpectationsBase(SQLModel):
     )
 
 class InflationExpectations(InflationExpectationsBase, table=True):
+    # Ожидаемая инфляция
     __tablename__ = "inflation_expectations"
+
 
 
 class InflationDataBase(SQLModel):
