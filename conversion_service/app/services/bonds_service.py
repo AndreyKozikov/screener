@@ -1,9 +1,12 @@
 import sqlite3
+import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 import httpx
 
 from conversion_service.app.models.bonds_data_dto import BondsDataDTO
+
+logger = logging.getLogger(__name__)
 from conversion_service.app.utils.rating_utils import get_rating_index, standardize_rating
 from conversion_service.config.paths import DB_PATH
 
@@ -179,23 +182,47 @@ class BondsUpdateService:
             coupon_period = bond_data["securities"]["COUPONPERIOD"]
             current_price = bond_data["marketdata"]["LCURRENTPRICE"]
             coupon_value = current_coupon.get(secid)
+            if coupon_value is not None:
+                try:
+                    coupon_value = float(coupon_value)
+                except (TypeError, ValueError):
+                    coupon_value = None
             face_value = bond_data["securities"]["FACEVALUE"]
+            coupon_yield_to_price = 0
 
-            if (
-                    coupon_value is not None
-                    and current_price is not None
-                    and face_value is not None
-                    and coupon_period
-                    and coupon_period > 0
-            ):
+            reasons = []
+            if coupon_value is None:
+                reasons.append("coupon_value отсутствует (текущий купон не найден в БД)")
+            if current_price is None:
+                reasons.append("current_price (LCURRENTPRICE) отсутствует")
+            if face_value is None:
+                reasons.append("face_value (FACEVALUE) отсутствует")
+            if not coupon_period:
+                reasons.append("coupon_period (COUPONPERIOD) отсутствует")
+            elif coupon_period <= 0:
+                reasons.append(f"coupon_period (COUPONPERIOD) <= 0: {coupon_period}")
+            if current_price is not None and current_price <= 0:
+                reasons.append(f"current_price <= 0: {current_price}")
+            if face_value is not None and face_value <= 0:
+                reasons.append(f"face_value <= 0: {face_value}")
+
+            if not reasons:
                 try:
                     payments_per_year = 365 / coupon_period
-                    if current_price > 0 and face_value > 0:
-                        coupon_yield_to_price = (
-                                (coupon_value * 10000 / (current_price * face_value)) * payments_per_year
-                        )
-                except (ZeroDivisionError, TypeError):
-                    coupon_yield_to_price = 0
+                    coupon_yield_to_price = (
+                            (coupon_value * 10000 / (current_price * face_value)) * payments_per_year
+                    )
+                except (ZeroDivisionError, TypeError) as exc:
+                    logger.warning(
+                        "Не вычислена доходность купона к текущей цене для %s: ошибка расчёта %s "
+                        "(coupon_value=%s, current_price=%s, face_value=%s, coupon_period=%s)",
+                        secid, exc, coupon_value, current_price, face_value, coupon_period,
+                    )
+            else:
+                logger.warning(
+                    "Не вычислена доходность купона к текущей цене для %s: %s",
+                    secid, "; ".join(reasons),
+                )
             bond_data["securities"]["COUPONYIELDTOPRICE"] = coupon_yield_to_price
 
         bonds_data_dto = BondsDataDTO.model_validate(raw_bonds_data)

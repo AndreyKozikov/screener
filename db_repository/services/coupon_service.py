@@ -23,7 +23,10 @@ class CouponService:
 
     async def get_current_coupons(self, secids: List[str]):
         result = await self.db_coupon_repository.get_current_coupon(secids)
-        return {secid: coupon_value for secid, coupon_value in result}
+        return {
+            secid: float(coupon_value) if coupon_value is not None else None
+            for secid, coupon_value in result
+        }
 
 
 coupon_service: Optional[CouponService] = None

@@ -1,5 +1,4 @@
-from decimal import Decimal
-from typing import List, Dict
+from typing import List, Dict, Optional
 from fastapi import Body
 from db_repository.models.coupon import CouponBase
 from fastapi import APIRouter
@@ -15,7 +14,7 @@ async def get_coupons(secids: List[str] = Body(...)):
 
 
 @coupon_router.post("/current_coupon", tags=["coupons"])
-async def get_current_coupon(bond_ids: List[str] = Body(...)) -> Dict[str, Decimal]:
+async def get_current_coupon(bond_ids: List[str] = Body(...)) -> Dict[str, Optional[float]]:
     service = get_coupon_service()
     current_coupon = await service.get_current_coupons(bond_ids)
     return current_coupon
