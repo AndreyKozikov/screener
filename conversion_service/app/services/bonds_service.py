@@ -5,8 +5,8 @@ import httpx
 
 from conversion_service.app.models.bonds_data_dto import BondsDataDTO
 from conversion_service.app.utils.rating_utils import get_rating_index, standardize_rating
-from config.paths import DB_PATH
-from db_repository.models.bond import Bond
+from conversion_service.config.paths import DB_PATH
+
 
 
 def get_emitent_inn_by_secid(secid: str, db_path: Optional[Path] = None) -> Optional[str]:
@@ -61,7 +61,7 @@ def get_floater_secids(db_path: Optional[Path] = None, rating: Optional[str] = N
     query = """
         SELECT secid 
         FROM bonds 
-        WHERE bond_kind = 8 
+        WHERE bond_kind = 6 
           AND bond_type IS NOT NULL 
           AND bond_type NOT IN (2, 4, 5)
           AND (boardid IS NULL OR UPPER(TRIM(boardid)) != 'PACT')

@@ -4,8 +4,8 @@ from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
-from app.core.exceptions import PdfConversionConnectionError
-from app.services.emission_doc_download_service import get_emission_doc_download_service
+from conversion_service.app.core.exceptions import PdfConversionConnectionError
+from conversion_service.app.services.emission_doc_download_service import get_emission_doc_download_service
 
 router = APIRouter(prefix="/emission-doc-download", tags=["emission-doc-download"])
 

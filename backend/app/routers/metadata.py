@@ -12,7 +12,6 @@ from app.models import DescribeDTO
 from app.repository.db.describe_repository import DescribeRepository
 from app.services.data_loader import get_data_loader
 from app.utils.logger import get_data_update_logger
-from config.paths import DB_PATH
 
 router = APIRouter(prefix="/api", tags=["metadata"])
 """Роутер FastAPI для обработки запросов к API метаданных."""
@@ -45,7 +44,7 @@ async def get_descriptions() -> DescribeDTO:
     Returns:
         DescribeDTO с полями securities и marketdata (словари поле -> описание).
     """
-    repo = DescribeRepository(db_path=DB_PATH)
+    repo = DescribeRepository()
     data = repo.get_descriptions_formatted()
     return DescribeDTO(
         securities=data.get("securities") or {},

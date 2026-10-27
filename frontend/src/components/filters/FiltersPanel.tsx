@@ -10,6 +10,7 @@ import {
   YieldRangeFilter,
   CouponYieldRangeFilter,
   MaturityDateFilter,
+  CouponMonthsFilter,
   ListLevelFilter,
   CurrencyFilter,
   BondTypeFilter,
@@ -129,6 +130,14 @@ export const FiltersPanel: React.FC = () => {
             <Box sx={{ width: '400px', flexShrink: 0 }}>
               <MaturityDateFilter />
             </Box>
+            <Box sx={{ width: '400px', flexShrink: 0 }}>
+              <Box sx={{ mb: 0.5 }}>
+                <Typography variant="subtitle2" color="text.secondary" sx={{ fontSize: '0.875rem' }}>
+                  Месяцы выплаты купона
+                </Typography>
+              </Box>
+              <CouponMonthsFilter />
+            </Box>
             <Box sx={{ width: '180px', flexShrink: 0 }}>
               <ListLevelFilter />
             </Box>
@@ -157,3 +166,6 @@ export const FiltersPanel: React.FC = () => {
 };
 
 export default FiltersPanel;
+
+
+

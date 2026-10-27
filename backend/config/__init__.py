@@ -1,7 +1,7 @@
 """Конфигурация проекта BondsScreener.
 
-Пакет содержит настройки приложения (settings) и пути к данным/БД/API (paths).
-Импорт: from config import settings; from config.paths import DATA_DIR, DB_PATH, ...
+Пакет содержит настройки приложения и пути к локальным данным/API.
+Доступ к базам данных принадлежит микросервису db_repository.
 """
 
 from config.settings import settings

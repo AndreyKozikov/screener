@@ -8,8 +8,6 @@
 from typing import Dict, List, Optional, Any
 import logging
 
-from pathlib import Path
-
 from app.repository.db.db_kbd import KbdRepository
 from app.models import KbdDTO
 
@@ -26,16 +24,11 @@ class KbdService:
         logger (Logger): Объект для ведения журналов событий.
     """
     
-    def __init__(self, db_path: Optional[str] = None):
+    def __init__(self):
         """Инициализирует сервис для работы с кривой бескупонной доходности.
         
-        Args:
-            db_path: Путь к файлу базы данных SQLite. Если не указан,
-                используется путь из config.paths.DB_PATH.
         """
-        from config.paths import DB_PATH
-        path = Path(db_path) if db_path is not None else DB_PATH
-        self._repo = KbdRepository(db_path=path)
+        self._repo = KbdRepository()
         self.logger = logging.getLogger(__name__)
         
         # Маппинг колонок БД (только те, что отдаём на фронт) на русские заголовки
@@ -98,18 +91,15 @@ class KbdService:
 _kbd_service: Optional[KbdService] = None
 
 
-def init_kbd_service(db_path: Optional[str] = None) -> None:
+def init_kbd_service() -> None:
     """Инициализирует singleton экземпляр сервиса кривой бескупонной доходности.
     
-    Создает глобальный экземпляр KbdService с указанным путем к базе данных.
+    Создает глобальный экземпляр KbdService.
     Должен быть вызван перед использованием get_kbd_service().
     
-    Args:
-        db_path: Опциональный путь к файлу базы данных SQLite.
-            Если не указан, используется путь по умолчанию.
     """
     global _kbd_service
-    _kbd_service = KbdService(db_path=db_path)
+    _kbd_service = KbdService()
 
 
 def get_kbd_service() -> Optional[KbdService]:

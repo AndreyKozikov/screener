@@ -20,3 +20,6 @@ export interface ApiError {
   detail: string;
   error_code?: string;
 }
+
+
+

@@ -42,14 +42,15 @@ const RATINGS = [
 
 // Маппинг русских названий видов облигаций в ID (из bond_type43_mapping.json)
 const BOND_TYPE43_OPTIONS: Array<{ label: string; id: number }> = [
-  { label: 'Амортизируемые облигации', id: 1 },
-  { label: 'Валютные облигации', id: 2 },
-  { label: 'Конвертируемые облигации', id: 3 },
-  { label: 'Линкер/облигации с индексируемым', id: 4 },
-  { label: 'Структурная облигация', id: 5 },
-  { label: 'Фикс с известным купоном', id: 6 },
-  { label: 'Фикс с неизвестным купоном', id: 7 },
-  { label: 'Флоатер', id: 8 },
+  { label: 'Амортизируемая облигация', id: 1 },
+  { label: 'Валютная облигация', id: 2 },
+  { label: 'Дисконтная облигация', id: 3 },
+  { label: 'Конвертируемая облигация', id: 4 },
+  { label: 'Линкер/облигация с индексируемым номиналом', id: 5 },
+  { label: 'Облигация с плавающим купоном', id: 6 },
+  { label: 'Облигация с фиксированным (известным) купоном', id: 7 },
+  { label: 'Облигация с фиксированным (неизвестным) купоном', id: 8 },
+  { label: 'Структурная облигация', id: 9 },
 ];
 
 // Маппинг английских ключей типов облигаций в ID (из bond_type_mapping.json)
@@ -74,6 +75,11 @@ const LIST_LEVEL_OPTIONS: number[] = [1, 2, 3];
 
 /** Фиксированный список валют для фильтра (не зависит от бэкенда). На бэкенд уходят только выбранные значения. */
 const CURRENCY_OPTIONS: string[] = ['SUR', 'USD', 'EUR', 'GBP', 'CHF'];
+
+const COUPON_MONTH_OPTIONS = [
+  'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+  'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь',
+].map((label, index) => ({ label, value: index + 1 }));
 
 /** Ключи типов облигаций для фильтра (порядок отображения). */
 const BOND_TYPE_KEYS = Object.keys(BOND_TYPE_LABELS) as Array<keyof typeof BOND_TYPE_LABELS>;
@@ -485,7 +491,43 @@ export const MaturityDateFilter: React.FC = () => {
 };
 
 // ============================================================================
-// 6. Уровень листинга (ListLevelFilter) - фиксированные опции 1, 2, 3
+// 6. Месяцы выплаты купона
+// ============================================================================
+
+export const CouponMonthsFilter: React.FC = () => {
+  const { draftFilters, setDraftFilter } = useFiltersStore();
+  const selectedValues = draftFilters.couponMonths || [];
+
+  const handleToggle = (month: number) => {
+    const newValues = selectedValues.includes(month)
+      ? selectedValues.filter(value => value !== month)
+      : [...selectedValues, month].sort((a, b) => a - b);
+    setDraftFilter('couponMonths', newValues);
+  };
+
+  return (
+    <Stack spacing={1} sx={{ width: '100%' }}>
+      <Typography variant="caption" color="text.secondary">
+        Выплата хотя бы в одном выбранном месяце
+      </Typography>
+      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ width: '100%' }}>
+        {COUPON_MONTH_OPTIONS.map(({ label, value }) => (
+          <Chip
+            key={value}
+            label={label}
+            onClick={() => handleToggle(value)}
+            color={selectedValues.includes(value) ? 'primary' : 'default'}
+            variant={selectedValues.includes(value) ? 'filled' : 'outlined'}
+            sx={{ fontWeight: selectedValues.includes(value) ? 600 : 400, cursor: 'pointer' }}
+          />
+        ))}
+      </Stack>
+    </Stack>
+  );
+};
+
+// ============================================================================
+// 7. Уровень листинга (ListLevelFilter) - фиксированные опции 1, 2, 3
 // ============================================================================
 
 export const ListLevelFilter: React.FC = () => {
@@ -736,3 +778,6 @@ export const RatingRangeFilter: React.FC = () => {
     </Stack>
   );
 };
+
+
+

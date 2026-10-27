@@ -113,3 +113,6 @@ export const HubCardIllustration: React.FC<HubCardIllustrationProps> = ({ varian
     </svg>
   );
 };
+
+
+

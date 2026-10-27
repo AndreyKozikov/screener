@@ -23,9 +23,10 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def _history_db_path() -> Path:
-    """Путь к history_db.db относительно корня backend."""
-    backend_dir = Path(__file__).resolve().parent.parent.parent
-    return backend_dir / "db" / "history_db.db"
+    """Return the history database path configured by the service."""
+    from db_repository.config.paths import HISTORY_DB_PATH
+
+    return HISTORY_DB_PATH
 
 
 def upgrade() -> None:

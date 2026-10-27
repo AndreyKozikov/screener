@@ -194,6 +194,7 @@ const loadBondsBySecids = async (secids: string[]): Promise<BondListItem[]> => {
     couponYieldMax: null,
     matdateFrom: null,
     matdateTo: null,
+    couponMonths: [],
     listlevel: [],
     faceunit: [],
     bondtype: [],
@@ -296,4 +297,7 @@ export const importComparisonFromFile = async (file: File): Promise<ComparisonIm
     errors,
   };
 };
+
+
+
 

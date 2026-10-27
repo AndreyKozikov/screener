@@ -2,13 +2,20 @@
 
 import logging.config
 from pathlib import Path
+import sys
 
 from alembic import context
 from sqlalchemy import engine_from_config
 from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel
 
-from app.models.entities.blog import BlogArticle  # noqa: F401
+service_dir = Path(__file__).resolve().parent.parent
+project_root = service_dir.parent
+for path in (service_dir, project_root):
+    if str(path) not in sys.path:
+        sys.path.insert(0, str(path))
+
+from db_repository.models.orm.blog import BlogArticle  # noqa: F401
 
 config = context.config
 if config.config_file_name is not None:
@@ -24,11 +31,12 @@ def get_url() -> str:
     """Возвращает URL отдельной SQLite базы блога."""
     url = config.get_main_option("sqlalchemy.url")
     if url and url.startswith("sqlite"):
-        backend_dir = Path(__file__).resolve().parent.parent
-        db_path = backend_dir / "db" / "blog.db"
+        from db_repository.config.paths import BLOG_DB_PATH
+
+        db_path = BLOG_DB_PATH
         db_path.parent.mkdir(parents=True, exist_ok=True)
         return f"sqlite:///{db_path}"
-    return url or "sqlite:///db/blog.db"
+    return url
 
 
 def run_migrations_offline() -> None:

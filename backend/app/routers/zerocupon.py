@@ -19,13 +19,12 @@ from fastapi.responses import Response
 from app.utils.logger import get_data_update_logger
 from app.repository.db.db_kbd import KbdRepository
 from app.services.kbd_service import get_kbd_service
-from app.models import DBkbd, KbdDataResponse
-from config.paths import DB_PATH
+from app.models import KbdDataResponse
 
 router = APIRouter(prefix="/api/zerocupon", tags=["zerocupon"])
 """Роутер FastAPI для обработки запросов к API кривой бескупонной доходности."""
 
-# Маппинг period из API (годы) в поля модели DBkbd
+# Маппинг period из API (годы) в поля записи repository service.
 _API_PERIOD_TO_TERM = {
     0.25: "term_0_25", 0.5: "term_0_5", 0.75: "term_0_75", 1.0: "term_1_0",
     2.0: "term_2_0", 3.0: "term_3_0", 5.0: "term_5_0", 7.0: "term_7_0",
@@ -37,8 +36,8 @@ def _api_yields_to_dbkbd(
     date_obj: datetime,
     time_str: str,
     yields_data: List[Dict[str, Any]],
-) -> Optional[DBkbd]:
-    """Преобразует ответ API Мосбиржи (yearyields) в одну запись DBkbd."""
+) -> Optional[Dict[str, Any]]:
+    """Преобразует ответ API Мосбиржи в запись для сервиса репозитория."""
     date_sql = date_obj.strftime("%Y-%m-%d")
     # Время в формате HH:MM:SS
     if " " in time_str:
@@ -56,7 +55,7 @@ def _api_yields_to_dbkbd(
                 kwargs[_API_PERIOD_TO_TERM[period]] = float(value)
             except (TypeError, ValueError):
                 pass
-    return DBkbd(**kwargs)
+    return kwargs
 
 
 @router.get("/data", response_model=KbdDataResponse)
@@ -295,13 +294,13 @@ def refresh_zerocupon_data() -> Dict[str, Any]:
     """Пайплайн: скачивание данных из API Мосбиржи → преобразование в формат БД → сохранение в БД.
     
     Определяет диапазон дат по последней записи в таблице kbd, загружает данные из API
-    по каждой дате (только будни), преобразует в DBkbd и сохраняет через KbdRepository.
+    по каждой дате (только будни) и сохраняет записи через KbdRepository.
     """
     logger = get_data_update_logger()
     api_base_url = "https://iss.moex.com/iss/engines/stock/zcyc.jsonp"
     logger.info(f"[REFRESH ZEROCOUPON] Starting zerocupon data refresh (API → DB)")
     logger.info(f"[REFRESH ZEROCOUPON] API endpoint: {api_base_url}")
-    repo = KbdRepository(db_path=DB_PATH)
+    repo = KbdRepository()
     last_date = repo.get_last_kbd_date()
     logger.info(f"[REFRESH ZEROCOUPON] Last date in DB: {last_date.strftime('%Y-%m-%d') if last_date else 'None'}")
     if last_date:
@@ -318,7 +317,7 @@ def refresh_zerocupon_data() -> Dict[str, Any]:
             "last_date": last_date.strftime("%d.%m.%Y") if last_date else None,
             "dates_fetched": 0,
         }
-    records: List[DBkbd] = []
+    records: List[Dict[str, Any]] = []
     dates_fetched = 0
     dates_failed = 0
     current_date = start_date

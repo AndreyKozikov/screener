@@ -16,11 +16,10 @@ from urllib.request import Request, urlopen
 
 import orjson
 
-from app.models import TradingHistoryRecord
 from app.repository.db.bonds_repository import BondsRepository
 from app.repository.db.trading_history_repository import TradingHistoryRepository
 from app.utils.logger import get_data_update_logger
-from config.paths import DB_PATH, HISTORY_DB_PATH, MOEX_HISTORY_URL
+from config.paths import MOEX_HISTORY_URL
 
 
 DEFAULT_FROM_DATE: date = date(2000, 1, 1)
@@ -58,15 +57,15 @@ def _safe_float(val: Any) -> Optional[float]:
         return None
 
 
-def _row_to_record(columns: List[str], row: List[Any]) -> Optional[TradingHistoryRecord]:
-    """Преобразует строку ответа API (columns + row) в TradingHistoryRecord.
+def _row_to_record(columns: List[str], row: List[Any]) -> Optional[Dict[str, Any]]:
+    """Преобразует строку ответа API в payload для Pydantic-репозитория.
 
     Args:
         columns: Список названий колонок (как в ответе MOEX).
         row: Список значений строки.
 
     Returns:
-        TradingHistoryRecord или None, если нет обязательных полей (secid, tradedate, boardid).
+        Словарь или None, если нет обязательных полей (secid, tradedate, boardid).
     """
     col_index: Dict[str, int] = {str(c).upper(): i for i, c in enumerate(columns)}
     n = len(row)
@@ -94,34 +93,34 @@ def _row_to_record(columns: List[str], row: List[Any]) -> Optional[TradingHistor
     def _date(name: str) -> Optional[date]:
         return _parse_date(str(_get(name)) if _get(name) is not None else None)
 
-    return TradingHistoryRecord(
-        secid=secid,
-        tradedate=tradedate,
-        boardid=boardid,
-        numtrades=_float("NUMTRADES"),
-        value=_float("VALUE"),
-        legalcloseprice=_float("LEGALCLOSEPRICE"),
-        accint=_float("ACCINT"),
-        yieldclose=_float("YIELDCLOSE"),
-        open=_float("OPEN"),
-        volume=_float("VOLUME"),
-        duration=_float("DURATION"),
-        yieldatwap=_float("YIELDATWAP"),
-        iricpiclose=_float("IRICPICLOSE"),
-        couponpercent=_float("COUPONPERCENT"),
-        couponvalue=_float("COUPONVALUE"),
-        facevalue=_float("FACEVALUE"),
-        yieldtooffer=_float("YIELDTOOFFER"),
-        yieldlastcoupon=_float("YIELDLASTCOUPON"),
-        calloptionyield=_float("CALLOPTIONYIELD"),
-        calloptionduration=_float("CALLOPTIONDURATION"),
-        zspread=_float("ZSPREAD"),
-        buybackdate=_date("BUYBACKDATE"),
-        lasttradedate=_date("LASTTRADEDATE"),
-        putoptiondate=_date("PUTOPTIONDATE"),
-        dateyieldfromissuer=_date("DATEYIELDFROMISSUER"),
-        trade_session_date=_date("TRADE_SESSION_DATE"),
-    )
+    return {
+        "secid": secid,
+        "tradedate": tradedate,
+        "boardid": boardid,
+        "numtrades": _float("NUMTRADES"),
+        "value": _float("VALUE"),
+        "legalcloseprice": _float("LEGALCLOSEPRICE"),
+        "accint": _float("ACCINT"),
+        "yieldclose": _float("YIELDCLOSE"),
+        "open": _float("OPEN"),
+        "volume": _float("VOLUME"),
+        "duration": _float("DURATION"),
+        "yieldatwap": _float("YIELDATWAP"),
+        "iricpiclose": _float("IRICPICLOSE"),
+        "couponpercent": _float("COUPONPERCENT"),
+        "couponvalue": _float("COUPONVALUE"),
+        "facevalue": _float("FACEVALUE"),
+        "yieldtooffer": _float("YIELDTOOFFER"),
+        "yieldlastcoupon": _float("YIELDLASTCOUPON"),
+        "calloptionyield": _float("CALLOPTIONYIELD"),
+        "calloptionduration": _float("CALLOPTIONDURATION"),
+        "zspread": _float("ZSPREAD"),
+        "buybackdate": _date("BUYBACKDATE"),
+        "lasttradedate": _date("LASTTRADEDATE"),
+        "putoptiondate": _date("PUTOPTIONDATE"),
+        "dateyieldfromissuer": _date("DATEYIELDFROMISSUER"),
+        "trade_session_date": _date("TRADE_SESSION_DATE"),
+    }
 
 
 class TradingHistoryService:
@@ -135,29 +134,21 @@ class TradingHistoryService:
     def __init__(
         self,
         data_dir: Path,
-        db_path: Optional[Path] = None,
-        history_db_path: Optional[Path] = None,
         history_repository: Optional[TradingHistoryRepository] = None,
     ) -> None:
         """Инициализирует сервис истории торгов.
 
         Args:
             data_dir: Путь к директории данных (для совместимости, не используется для истории).
-            db_path: Путь к bonds.db для получения списка SECID.
-            history_db_path: Путь к history_db.db. Используется, если history_repository не передан.
-            history_repository: Репозиторий для history_db. Если не передан, создаётся по history_db_path.
+            history_repository: Remote repository for historical trading records.
         """
         self.data_dir = Path(data_dir)
-        self.db_path = Path(db_path) if db_path is not None else Path(DB_PATH)
-        self._history_repo = history_repository or TradingHistoryRepository(
-            db_path=history_db_path or HISTORY_DB_PATH
-        )
-        self._history_repo.ensure_table_exists()
+        self._history_repo = history_repository or TradingHistoryRepository()
         self.logger = get_data_update_logger()
 
     def _load_all_secids(self) -> List[str]:
         """Загружает из таблицы bonds все уникальные SECID облигаций."""
-        repo = BondsRepository(db_path=self.db_path)
+        repo = BondsRepository()
         return repo.get_all_secids()
 
     def get_first_tradedate(self, secid: str) -> Optional[date]:
@@ -368,7 +359,7 @@ class TradingHistoryService:
             if n >= total:
                 break
 
-        records: List[TradingHistoryRecord] = []
+        records: List[Dict[str, Any]] = []
         for row in all_new_rows:
             rec = _row_to_record(columns, row)
             if rec is not None:
@@ -451,21 +442,15 @@ _trading_history_service: Optional[TradingHistoryService] = None
 
 def init_trading_history_service(
     data_dir: Path,
-    db_path: Optional[Path] = None,
-    history_db_path: Optional[Path] = None,
 ) -> None:
     """Инициализирует singleton сервиса истории торгов.
 
     Args:
         data_dir: Директория данных (для совместимости).
-        db_path: Путь к bonds.db. По умолчанию config.paths.DB_PATH.
-        history_db_path: Путь к history_db.db. По умолчанию config.paths.HISTORY_DB_PATH.
     """
     global _trading_history_service
     _trading_history_service = TradingHistoryService(
         Path(data_dir),
-        db_path=db_path or DB_PATH,
-        history_db_path=history_db_path or HISTORY_DB_PATH,
     )
 
 

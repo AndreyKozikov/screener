@@ -51,7 +51,7 @@ const getWorkingDaysAgo = (n: number): Dayjs => {
     date = date.subtract(1, 'day');
     const dayOfWeek = date.day(); // 0 = Sunday, 6 = Saturday
     // Skip weekends (Saturday = 6, Sunday = 0)
-    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+    if (dayOfWeek !== 0 && dayOfWeek !== 7) {
       workingDaysCount++;
     }
   }
@@ -247,4 +247,7 @@ export const AnalysisParamsDialog: React.FC<AnalysisParamsDialogProps> = ({
     </Dialog>
   );
 };
+
+
+
 

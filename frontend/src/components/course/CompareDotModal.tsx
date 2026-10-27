@@ -336,3 +336,6 @@ export const CompareDotModal: React.FC<CompareDotModalProps> = ({
     </Dialog>
   );
 };
+
+
+

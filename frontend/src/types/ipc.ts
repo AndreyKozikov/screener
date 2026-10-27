@@ -20,3 +20,6 @@ export interface IpcLoadResponse {
   total_months_count: number;
   data: IpcData;
 }
+
+
+

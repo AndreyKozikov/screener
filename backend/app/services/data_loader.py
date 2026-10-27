@@ -9,8 +9,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from app.models import BondListItem
-from app.repository.db.bond_ratings_repository import BondRatingsRepository
-from app.repository.db.emitents_repository import EmitentsRepository
 from app.repository.files.file_storage import FileStorage
 
 from app.utils.rating_utils import get_rating_index
@@ -29,7 +27,6 @@ class DataLoader:
         data_dir (Path): Путь к директории с локальными файлами данных.
         _moex_client (MoexClient): Клиент для взаимодействия с API MOEX.
         _file_storage (FileStorage): Компонент для работы с файловой системой.
-        _bond_ratings_repo (BondRatingsRepository): Репозиторий кредитных рейтингов.
         _bonds_cache (Optional[List[BondListItem]]): Кэш основного списка облигаций.
         _details_cache (Optional[Dict[str, Dict]]): Кэш детальной информации.
         _columns_cache (Optional[Dict[str, str]]): Кэш маппинга имен колонок.
@@ -51,7 +48,6 @@ class DataLoader:
         self.data_dir = Path(data_dir)
         self._moex_client = moex_client if moex_client is not None else MoexClient()
         self._file_storage = file_storage if file_storage is not None else FileStorage()
-        self._bond_ratings_repo = BondRatingsRepository()
         self._bonds_cache: Optional[List[BondListItem]] = None
         self._details_cache: Optional[Dict[str, Dict]] = None
         self._columns_cache: Optional[Dict[str, str]] = None

@@ -1,7 +1,5 @@
 import sys
 from pathlib import Path
-from db_repository.core.database_init import init_database
-from db_repository.config.paths import DB_PATH
 from contextlib import asynccontextmanager
 
 # Add the project root to sys.path to allow imports like 'db_repository.routers'
@@ -11,9 +9,15 @@ if str(project_root) not in sys.path:
 
 from fastapi import FastAPI
 
+from db_repository.config.paths import DB_PATH
+from db_repository.core.database_init import init_database
+from db_repository.core.migrations import run_blog_migrations, run_migrations
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    run_migrations()
+    run_blog_migrations()
     init_database(DB_PATH)
     yield
 
@@ -25,6 +29,7 @@ from db_repository.routers.coupon_router import coupon_router
 from db_repository.routers.emitent_router import emitent_router
 from db_repository.routers.inflations_router import inflation_router
 from db_repository.routers.ipc_router import ipc_router
+from db_repository.routers.repository_rpc_router import repository_rpc_router
 
 app.include_router(bond_router)
 app.include_router(ratings_router)
@@ -32,6 +37,7 @@ app.include_router(coupon_router)
 app.include_router(emitent_router)
 app.include_router(inflation_router)
 app.include_router(ipc_router)
+app.include_router(repository_rpc_router)
 
 
 if __name__ == "__main__":

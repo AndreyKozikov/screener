@@ -25,9 +25,9 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def _describe_json_path() -> Path:
     """Путь к describe.json относительно корня backend."""
-    # migrations/versions/013_...py -> alembic -> backend
-    backend_dir = Path(__file__).resolve().parent.parent.parent
-    return backend_dir / "app" / "data" / "describe.json"
+    from db_repository.config.paths import DATA_DIR
+
+    return DATA_DIR / "describe.json"
 
 
 def upgrade() -> None:

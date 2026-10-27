@@ -11,10 +11,9 @@ import pandas as pd
 import requests
 from urllib.parse import urlencode
 
-from app.models import DBkeyrate, KeyrateDTO
+from app.models import KeyrateDTO
 from app.repository.db.keyrate_repository import KeyrateRepository
 from app.utils.logger import get_data_update_logger
-from config.paths import DB_PATH
 
 
 class KeyRateService:
@@ -39,9 +38,9 @@ class KeyRateService:
     def __init__(self) -> None:
         """Инициализирует сервис для работы с ключевой ставкой ЦБ РФ.
 
-        Данные хранятся в БД через KeyrateRepository (путь к БД — config.paths.DB_PATH).
+        Данные хранятся через удалённый KeyrateRepository.
         """
-        self._repo = KeyrateRepository(db_path=DB_PATH)
+        self._repo = KeyrateRepository()
         self.logger = get_data_update_logger()
 
     def _build_url(self, date_from: date, date_to: date) -> str:
@@ -201,8 +200,8 @@ class KeyRateService:
 
         Запрашивает через репозиторий максимальную дату в таблице keyrate. Если
         таблица пуста — использует DEFAULT_START_DATE. Загружает данные из API за
-        период (max_date + 1 день) до текущей даты, преобразует в DBkeyrate и
-        сохраняет через репозиторий. Возвращает все данные из БД в формате словаря.
+        период (max_date + 1 день) до текущей даты, формирует записи и сохраняет
+        через удалённый репозиторий. Возвращает все данные в формате словаря.
 
         Returns:
             Словарь со всеми данными ключевой ставки из БД: ключ — дата YYYY-MM-DD,
@@ -234,14 +233,11 @@ class KeyRateService:
 
         if date_from > date_to:
             self.logger.info("[KEYRATE SERVICE] No new data to download")
-            return self._repo.get_all_as_dict()
+            return self.get_keyrate_data()
 
         new_data = self._fetch_and_parse_keyrate(date_from, date_to)
         records = [
-            DBkeyrate(
-                dt=datetime.strptime(d, "%Y-%m-%d").date(),
-                rate=r,
-            )
+            {"dt": datetime.strptime(d, "%Y-%m-%d").date(), "rate": r}
             for d, r in new_data.items()
         ]
         if records:

@@ -18,9 +18,8 @@ from app.services.keyrate_service import init_keyrate_service
 from app.services.trading_history_service import init_trading_history_service
 from app.services.kbd_service import init_kbd_service
 from config.settings import settings
-from app.core.database_init import run_blog_migrations, run_migrations
 from app.repository.db.emitents_repository import EmitentsRepository
-from config.paths import DATA_DIR, DB_PATH, HISTORY_DB_PATH, EMITENT_EVENTS_JSON_DIR
+from config.paths import DATA_DIR, EMITENT_EVENTS_JSON_DIR
 from app.core.exception_handlers import register_pipeline_exception_handlers
 from app.repository.db import init_bonds_repository, init_history_repository, init_bond_float_repository
 from app.repository.files import init_markdownfile_repository, init_file_storage
@@ -39,19 +38,12 @@ logger = logging.getLogger(__name__)
 # Lifespan context manager for startup/shutdown events
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Apply Alembic migrations (bonds table structure)
-    print("[STARTUP] run_migrations start", flush=True)
-    run_migrations()
-    print("[STARTUP] run_migrations done", flush=True)
-    print("[STARTUP] run_blog_migrations start", flush=True)
-    run_blog_migrations()
-    print("[STARTUP] run_blog_migrations done", flush=True)
     # Startup: Initialize data loaders
     print("[STARTUP] init_data_loader start", flush=True)
     init_data_loader(DATA_DIR)
     print("[STARTUP] init_data_loader done", flush=True)
     print("[STARTUP] init_emitent_service start", flush=True)
-    emitents_repo = EmitentsRepository(db_path=DB_PATH, data_dir=DATA_DIR)
+    emitents_repo = EmitentsRepository()
     init_emitent_service(DATA_DIR, emitents_repository=emitents_repo)
     print("[STARTUP] init_emitent_service done", flush=True)
     print("[STARTUP] init_currency_service start", flush=True)
@@ -70,13 +62,13 @@ async def lifespan(app: FastAPI):
     print("[STARTUP] init_kbd_service start", flush=True)
     init_kbd_service()
     print("[STARTUP] init_kbd_service done", flush=True)
-    init_bonds_repository(DB_PATH)
-    init_bond_float_repository(DB_PATH)
+    init_bonds_repository()
+    init_bond_float_repository()
     print("[STARTUP] init_bonds_repository done", flush=True)
-    init_history_repository(HISTORY_DB_PATH)
+    init_history_repository()
     print("[STARTUP] init_history_repository done", flush=True)
     init_markdownfile_repository(DATA_DIR)
-    init_events_processor(DB_PATH, EMITENT_EVENTS_JSON_DIR)
+    init_events_processor(EMITENT_EVENTS_JSON_DIR)
     init_bond_llm_processor(DATA_DIR)
     init_file_storage()
     init_retrieval_pipeline()

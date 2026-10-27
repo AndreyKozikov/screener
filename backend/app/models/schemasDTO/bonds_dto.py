@@ -98,8 +98,8 @@ class BondScreenerDTO(BaseModel):
     RATING_AGENCY: Optional[str] = None
     RATING_LEVEL: Optional[str] = None
     RATINGS: Optional[List[Dict[str, Any]]] = None
-    BONDTYPE: Optional[str] = None
-    BONDTYPE43: Optional[str] = None
+    BONDTYPE: Optional[int] = None
+    BONDTYPE43: Optional[int] = None
     COUPON_YIELD_TO_PRICE: Optional[float] = None
     COUPON_FREQUENCY: Optional[int] = None
     DURATION_YEARS: Optional[float] = None
@@ -127,7 +127,7 @@ class BondDetailDTO(BaseModel):
             None при отсутствии рыночных данных.
         marketdata_yields: Список словарей с расчётами доходности или None.
             Каждый элемент — Record с полями EFFECTIVEYIELD, DURATION и т.д.
-        emitent_inn: ИНН эмитента из таблицы emitents (связь через bond.emitent_id).
+        emitent_inn: ИНН эмитента из emitents через связь SECID в bond_emitents.
             None или пустая строка при отсутствии данных об эмитенте.
     """
 

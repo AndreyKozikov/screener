@@ -230,6 +230,7 @@ const loadBondsBySecids = async (
     couponYieldMax: null,
     matdateFrom: null,
     matdateTo: null,
+    couponMonths: [],
     listlevel: [],
     faceunit: [],
     bondtype: [],
@@ -356,3 +357,6 @@ export const importPortfolioFromFile = async (file: File): Promise<PortfolioImpo
     errors,
   };
 };
+
+
+

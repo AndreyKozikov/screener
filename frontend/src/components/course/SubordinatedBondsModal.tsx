@@ -344,3 +344,6 @@ export const SubordinatedBondsModal: React.FC<SubordinatedBondsModalProps> = ({
     </Dialog>
   );
 };
+
+
+

@@ -1052,7 +1052,7 @@ class BondsRepository:
         """
         _EXCLUDED_BOND_TYPES: tuple[int, ...] = (2, 4, 5)
         conditions: List[Any] = [
-            Bond.bond_kind == 8,
+            Bond.bond_kind == 6,
             Bond.bond_type.isnot(None),
             Bond.bond_type.notin_(_EXCLUDED_BOND_TYPES),
             or_(

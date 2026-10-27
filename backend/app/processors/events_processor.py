@@ -11,14 +11,13 @@ class EventsProcessor:
 
     def __init__(
             self,
-            db_evens_path: Path,
             base_dir: Path,
     ) -> None:
         from app.repository.db.event_detail_repository import get_events_detail_repository
         from app.repository.files import get_file_storage
 
         self._file_storage = get_file_storage()
-        self._event_detail_repo = get_events_detail_repository(db_evens_path)
+        self._event_detail_repo = get_events_detail_repository()
         self._base_dir = base_dir
         self._allowed_event_types: Set[str] = {
             "размещение",

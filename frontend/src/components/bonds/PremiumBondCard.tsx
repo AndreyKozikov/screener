@@ -141,7 +141,7 @@ export const PremiumBondCard: React.FC<PremiumBondCardProps> = ({ bondDetail }) 
   const offerDate = typeof securities?.OFFERDATE === 'string' ? securities.OFFERDATE : null;
   const callOptionDate = typeof securities?.CALLOPTIONDATE === 'string' ? securities.CALLOPTIONDATE : null;
   const putOptionDate = typeof securities?.PUTOPTIONDATE === 'string' ? securities.PUTOPTIONDATE : null;
-  const hasAmort = typeof securities?.BONDTYPE43 === 'string' && securities.BONDTYPE43 === 'Амортизируемые облигации';
+  const hasAmort = typeof securities?.BONDTYPE43 === 'string' && securities.BONDTYPE43 === 1;
 
   // Rating - get from bond ratings or emitent ratings
   const bondRatings = useMemo(() => {
@@ -673,4 +673,7 @@ export const PremiumBondCard: React.FC<PremiumBondCardProps> = ({ bondDetail }) 
     </Paper>
   );
 };
+
+
+
 

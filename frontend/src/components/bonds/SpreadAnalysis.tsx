@@ -232,7 +232,7 @@ export const SpreadAnalysis: React.FC = () => {
   // Create stable list of fixed coupon bond SECIDs using useMemo
   const fixedCouponBondSecIds = useMemo(() => {
     return bonds
-      .filter(bond => bond.BONDTYPE43 === 'Фикс с известным купоном')
+      .filter(bond => bond.BONDTYPE43 === 7)
       .map(bond => bond.SECID)
       .sort()
       .join(',');
@@ -303,7 +303,7 @@ export const SpreadAnalysis: React.FC = () => {
 
         // Get fixed coupon bonds
         const fixedCouponBonds = bonds.filter(
-          bond => bond.BONDTYPE43 === 'Фикс с известным купоном'
+          bond => bond.BONDTYPE43 === 7
         );
 
         // Check if we already have all coupons loaded for these bonds (using only ref, not state)
@@ -479,7 +479,7 @@ export const SpreadAnalysis: React.FC = () => {
   // AND without call or put options
   const isFixedCouponBond = (bond: BondListItem): boolean => {
     // Check if bond type is "Фикс с известным купоном" and has no options
-    return bond.BONDTYPE43 === 'Фикс с известным купоном' && !hasOptions(bond);
+    return bond.BONDTYPE43 === 7 && !hasOptions(bond);
   };
 
   // Calculate regular duration in years
@@ -725,7 +725,7 @@ export const SpreadAnalysis: React.FC = () => {
     // Don't calculate comparison data if coupons are still loading
     // This prevents race conditions where data is calculated before coupons are loaded
     const fixedCouponBonds = bonds.filter(
-      bond => bond.BONDTYPE43 === 'Фикс с известным купоном'
+      bond => bond.BONDTYPE43 === 7
     );
     
     // Strict check: if we're loading coupons OR if we have fixed coupon bonds but not all coupons are loaded
@@ -1967,3 +1967,6 @@ export const SpreadAnalysis: React.FC = () => {
     </Card>
   );
 };
+
+
+

@@ -1,4 +1,5 @@
 import { apiClient } from './client';
+import { clearEmitentInfoCache } from './emitent';
 
 export interface Rating {
   agency_id: number;
@@ -28,5 +29,9 @@ export const refreshRatingsData = async (forceUpdate: boolean = false): Promise<
   await apiClient.post('/rating/refresh', null, {
     params: { force_update: forceUpdate }
   });
+  clearEmitentInfoCache();
 };
+
+
+
 

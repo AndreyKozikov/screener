@@ -5,14 +5,12 @@
 """
 
 import logging
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import requests
 
 from app.repository.db.bond_ratings_repository import BondRatingsRepository
 from app.repository.db.bonds_repository import BondsRepository
-from config.paths import DB_PATH
 
 MOEX_SECURITIES_URL = "https://iss.moex.com/iss/securities/{secid}.json?iss.json=extended&iss.meta=off"
 MOEX_RATINGS_URL = (
@@ -36,22 +34,17 @@ class BondRatingsPipelineService:
     и последующего извлечения детальных данных о присвоенных кредитных рейтингах.
 
     Attributes:
-        db_path (Path): Путь к файлу базы данных SQLite.
         _bonds_repo (BondsRepository): Репозиторий для доступа к облигациям.
         _ratings_repo (BondRatingsRepository): Репозиторий для хранения рейтингов.
         logger (Logger): Объект для ведения журналов обновлений.
     """
 
-    def __init__(self, db_path: Optional[Path] = None) -> None:
+    def __init__(self) -> None:
         """Инициализирует сервис пайплайна рейтингов.
 
-        Args:
-            db_path (Optional[Path]): Абсолютный или относительный путь к файлу SQLite базы данных.
-                Если не указан, используется значение по умолчанию DB_PATH.
         """
-        self.db_path = db_path or DB_PATH
-        self._bonds_repo = BondsRepository(db_path=self.db_path)
-        self._ratings_repo = BondRatingsRepository(db_path=self.db_path)
+        self._bonds_repo = BondsRepository()
+        self._ratings_repo = BondRatingsRepository()
         self.logger = logging.getLogger(__name__)
 
     def run_pipeline(self) -> Dict[str, int]:

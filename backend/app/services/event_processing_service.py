@@ -1,6 +1,6 @@
 
-from app.models.entities.event_detail import EventDetail
 from app.repository.db.event_detail_repository import EventDetailRepository
+from app.models.schemasDTO.event_detail_dto import EventDetailRecordDTO
 from app.repository.db.bonds_repository import BondsRepository
 from typing import Dict, Any, Optional
 import httpx
@@ -379,7 +379,7 @@ class EventProcessingService:
                         extracted_data["isin"] = secids[0]
                         self.logger.info("[%s] ISIN доопределен по registration_number (%s): %s", emitent_inn, reg_number, secids[0])
 
-                new_event = EventDetail(
+                new_event = EventDetailRecordDTO(
                     emitent_inn=emitent_inn,
                     pseudo_guid=pseudo_guid,
                     event_date=date_obj,

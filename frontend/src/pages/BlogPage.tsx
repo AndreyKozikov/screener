@@ -222,3 +222,6 @@ export const BlogPage: React.FC<BlogPageProps> = ({ mode: controlledMode, onMode
 };
 
 export default BlogPage;
+
+
+

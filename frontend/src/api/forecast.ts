@@ -106,3 +106,6 @@ export const downloadForecastJson = async (dates?: string[] | null): Promise<voi
   URL.revokeObjectURL(url);
 };
 
+
+
+

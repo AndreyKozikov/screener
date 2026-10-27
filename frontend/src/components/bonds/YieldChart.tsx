@@ -110,3 +110,6 @@ export const YieldChart: React.FC = () => {
 };
 
 export default YieldChart;
+
+
+

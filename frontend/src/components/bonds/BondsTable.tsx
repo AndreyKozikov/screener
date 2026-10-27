@@ -699,7 +699,7 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
 
       const hasCall = bond.CALLOPTIONDATE != null && bond.CALLOPTIONDATE !== '';
       const hasPut = bond.PUTOPTIONDATE != null && bond.PUTOPTIONDATE !== '';
-      const hasAmort = bond.BONDTYPE43 === 'Амортизируемые облигации';
+      const hasAmort = bond.BONDTYPE43 === 1;
       const isFloater = floaterSecids.has(bond.SECID);
 
       const nameNode = isFloater ? (
@@ -1715,3 +1715,6 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
 BondsTable.displayName = 'BondsTable';
 
 export default BondsTable;
+
+
+

@@ -1,53 +1,63 @@
-"""Репозитории для работы только с базой данных (SQLite).
+"""Client-side proxies for database operations owned by ``db_repository``."""
 
-Содержит классы для таблиц bonds, coupons, kbd, ruonia, keyrate, currencyrate,
-describe_fields и константы для репозиториев.
-"""
-
-from pathlib import Path
 from typing import Optional
 
-from app.repository.db.bond_ratings_repository import BondRatingsRepository
-from app.repository.db.bonds_repository import BondsRepository
-from app.repository.db.constants import RATINGS_ORDER
-from app.repository.db.currencyrate_repository import CurrencyrateRepository
-from app.repository.db.db_coupon import DBCoupon
-from app.repository.db.db_kbd import KbdRepository
-from app.repository.db.describe_repository import DescribeRepository
-from app.repository.db.emitents_repository import EmitentsRepository
-from app.repository.db.forecast_repository import ForecastRepository
-from app.repository.db.keyrate_repository import KeyrateRepository
-from app.repository.db.ruonia_repository import RuoniaRepository
-from app.repository.db.trading_history_repository import TradingHistoryRepository
-from app.repository.db.bond_float_params_repository import BondFloatParamsRepository
+from app.repository.db.remote_repository import (
+    BlogRepository,
+    BondFloatParamsRepository,
+    BondRatingsRepository,
+    BondsRepository,
+    CurrencyrateRepository,
+    DBCoupon,
+    DescribeRepository,
+    EmissionDocumentRepository,
+    EmitentEdisclosureRepository,
+    EmitentsRepository,
+    EventDetailRepository,
+    ForecastRepository,
+    KbdRepository,
+    KeyrateRepository,
+    RuoniaRepository,
+    TradingHistoryRepository,
+)
 
 bonds_repo: Optional[BondsRepository] = None
 history_repo: Optional[TradingHistoryRepository] = None
+bond_float_repository: Optional[BondFloatParamsRepository] = None
 
-def init_bonds_repository(db_path: Path) -> None:
+def init_bonds_repository() -> None:
     global bonds_repo
-    bonds_repo = BondsRepository(db_path=db_path)
+    bonds_repo = BondsRepository()
 
 def get_bonds_repository() -> BondsRepository:
     if bonds_repo is None:
         raise RuntimeError("BondsRepository not initialized. Call init_bonds_repository first.")
     return bonds_repo
 
-def init_history_repository(db_path: Path) -> None:
+def init_history_repository() -> None:
     global history_repo
-    history_repo = TradingHistoryRepository(db_path=db_path)
+    history_repo = TradingHistoryRepository()
 
 def get_history_repository() -> TradingHistoryRepository:
     if history_repo is None:
         raise RuntimeError("HistoryRepository not initialized. Call init_history_repository first.")
     return history_repo
 
-def init_bond_float_repository(db_path: Path) -> None:
+def init_bond_float_repository() -> None:
     global bond_float_repository
-    bond_float_repository = BondFloatParamsRepository(db_path=db_path)
+    bond_float_repository = BondFloatParamsRepository()
 
 def get_bond_float_repository() -> BondFloatParamsRepository:
     if bond_float_repository is None:
         raise RuntimeError("BondFloatRepository not initialized. Call init_bond_float_repository first.")
     return bond_float_repository
 
+__all__ = [
+    "BlogRepository", "BondFloatParamsRepository", "BondRatingsRepository", "BondsRepository",
+    "CurrencyrateRepository", "DBCoupon", "DescribeRepository", "EmissionDocumentRepository",
+    "EmitentEdisclosureRepository", "EmitentsRepository", "EventDetailRepository",
+    "ForecastRepository", "KbdRepository", "KeyrateRepository", "RuoniaRepository",
+    "TradingHistoryRepository", "get_bond_float_repository", "get_bonds_repository",
+    "get_history_repository", "init_bond_float_repository", "init_bonds_repository",
+    "init_history_repository",
+]

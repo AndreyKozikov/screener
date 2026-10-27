@@ -350,3 +350,6 @@ export const getForecastDataForLLM = async (date: string): Promise<string> => {
   return jsonString;
 };
 
+
+
+

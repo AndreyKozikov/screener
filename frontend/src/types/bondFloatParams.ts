@@ -39,3 +39,6 @@ export interface BondFloatParamsDTO {
   observation_type: string | null;
   reference_period_desc: string | null;
 }
+
+
+

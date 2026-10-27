@@ -9,7 +9,7 @@ from db_repository.models.bond import (
     BondMarketDataYield,
 )
 from db_repository.models.coupon import Coupon
-from sqlalchemy import (func, or_, and_, text)
+from sqlalchemy import (func, or_, and_, text, extract, exists)
 from sqlalchemy.orm import selectinload, joinedload
 from datetime import date
 from db_repository.config.constants import RATINGS_ORDER
@@ -129,6 +129,14 @@ class BondRepository:
             conditions.append(Bond.maturity_date >= filters.matdate_from.isoformat())
         if filters.matdate_to is not None:
             conditions.append(Bond.maturity_date <= filters.matdate_to.isoformat())
+        if filters.coupon_months:
+            matching_coupon = exists().where(
+                Coupon.bond_id == Bond.id,
+                Coupon.coupondate.is_not(None),
+                Coupon.coupondate >= date.today(),
+                extract("month", Coupon.coupondate).in_(filters.coupon_months),
+            )
+            conditions.append(matching_coupon)
         if filters.listlevel:
             conditions.append(Bond.listing_level.in_(filters.listlevel))
         if filters.faceunit:
@@ -331,12 +339,14 @@ class BondRepository:
 
     def _create_temp_tables(self, session: Session) -> None:
         """Создаёт временные таблицы для bonds и всех связанных таблиц."""
+        session.exec(text("DROP TABLE IF EXISTS tmp_bonds"))
         session.exec(text(
             "CREATE TEMP TABLE tmp_bonds AS "
             "SELECT * FROM bonds WHERE 0"
         ))
 
         for cfg in self._RELATED_TABLES:
+            session.exec(text(f"DROP TABLE IF EXISTS {cfg['temp_table']}"))
             session.exec(text(
                 f"CREATE TEMP TABLE {cfg['temp_table']} AS "
                 f"SELECT * FROM {cfg['target_table']} WHERE 0"

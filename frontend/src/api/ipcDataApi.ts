@@ -5,3 +5,6 @@ export const fetchIpcDashboardData = async (): Promise<IpcDashboardData> => {
   const response = await apiClient.get<IpcDashboardData>('/ipc/data');
   return response.data;
 };
+
+
+

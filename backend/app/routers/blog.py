@@ -9,10 +9,9 @@ from typing import List, Optional
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy.exc import IntegrityError
 
-from app.models.entities.blog import BlogArticle
 from app.repository.db.blog_repository import BlogRepository
+from app.repository.db.remote_repository import RepositoryConflictError
 from config.paths import BLOG_UPLOADS_DIR
 
 public_router = APIRouter(prefix="/api/blog", tags=["blog"])
@@ -78,20 +77,8 @@ class UploadResponse(BaseModel):
     filename: str
 
 
-def _to_response(article: BlogArticle) -> BlogArticleResponse:
-    return BlogArticleResponse(
-        id=article.id or 0,
-        slug=article.slug,
-        title=article.title,
-        summary=article.summary,
-        content_markdown=article.content_markdown,
-        category=article.category,
-        cover_image_url=article.cover_image_url,
-        status=article.status,
-        created_at=article.created_at,
-        updated_at=article.updated_at,
-        published_at=article.published_at,
-    )
+def _to_response(article: dict) -> BlogArticleResponse:
+    return BlogArticleResponse.model_validate(article)
 
 
 @public_router.get("/articles", response_model=List[BlogArticleResponse])
@@ -133,10 +120,9 @@ async def list_admin_articles() -> List[BlogArticleResponse]:
 @admin_router.post("/articles", response_model=BlogArticleResponse)
 async def create_article(payload: BlogArticlePayload) -> BlogArticleResponse:
     """Создает статью."""
-    article = BlogArticle(**payload.model_dump())
     try:
-        return _to_response(_repository.create(article))
-    except IntegrityError as exc:
+        return _to_response(_repository.create(payload))
+    except RepositoryConflictError as exc:
         raise HTTPException(status_code=409, detail="Article slug already exists") from exc
 
 
@@ -145,7 +131,7 @@ async def update_article(article_id: int, payload: BlogArticlePayload) -> BlogAr
     """Обновляет статью."""
     try:
         article = _repository.update(article_id, payload.model_dump())
-    except IntegrityError as exc:
+    except RepositoryConflictError as exc:
         raise HTTPException(status_code=409, detail="Article slug already exists") from exc
     if article is None:
         raise HTTPException(status_code=404, detail="Article not found")

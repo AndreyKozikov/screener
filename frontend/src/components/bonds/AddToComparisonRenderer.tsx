@@ -94,3 +94,6 @@ export const AddToComparisonRenderer: React.FC<ICellRendererParams<BondListItem>
 // Export as stable reference
 export default React.memo(AddToComparisonRenderer);
 
+
+
+

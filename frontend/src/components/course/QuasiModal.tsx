@@ -290,3 +290,6 @@ export const QuasiModal: React.FC<QuasiModalProps> = ({
     </Dialog>
   );
 };
+
+
+

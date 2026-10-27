@@ -22,6 +22,7 @@ export const fetchBonds = async (filters: BondFilters, emitentTitle?: string, ex
         coupon_yield_max: filters.couponYieldMax,
         matdate_from: filters.matdateFrom || null,
         matdate_to: filters.matdateTo || null,
+        coupon_months: filters.couponMonths.length > 0 ? filters.couponMonths : null,
         listlevel: filters.listlevel && filters.listlevel.length > 0 ? filters.listlevel : null,
         faceunit: filters.faceunit && filters.faceunit.length > 0 ? filters.faceunit : null,
         bondtype: filters.bondtype && filters.bondtype.length > 0 ? filters.bondtype : null,
@@ -325,3 +326,6 @@ export const askBondQuestion = async (
         });
     return response.data;
 };
+
+
+

@@ -12,7 +12,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, create_engine
 
-from config.paths import DB_PATH
+from conversion_service.config.paths import DB_PATH
 
 
 class EmissionDocumentRepository:

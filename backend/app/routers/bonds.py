@@ -34,7 +34,6 @@ from app.services.trading_history_service import get_trading_history_service
 from app.repository.db.bonds_repository import BondsRepository
 from app.repository.db.bond_float_params_repository import BondFloatParamsRepository
 from app.repository.db.db_coupon import DBCoupon
-from config.paths import DB_PATH
 from app.utils.logger import get_data_update_logger
 
 router = APIRouter(prefix="/api/bonds", tags=["bonds"])
@@ -43,8 +42,8 @@ router = APIRouter(prefix="/api/bonds", tags=["bonds"])
 
 def get_bond_float_params_service() -> BondFloatParamsService:
     """Фабрика зависимости для BondFloatParamsService."""
-    bonds_repo = BondsRepository(db_path=DB_PATH)
-    float_repo = BondFloatParamsRepository(db_path=DB_PATH)
+    bonds_repo = BondsRepository()
+    float_repo = BondFloatParamsRepository()
     return BondFloatParamsService(bonds_repo=bonds_repo, float_repo=float_repo)
 
 
@@ -217,8 +216,8 @@ async def refresh_coupons_data(force_refresh: bool = Query(False,
 
     try:
         coupon_service = get_coupon_service()
-        bonds_repo = BondsRepository(db_path=DB_PATH)
-        db_coupon = DBCoupon(db_path=str(DB_PATH))
+        bonds_repo = BondsRepository()
+        db_coupon = DBCoupon()
         moex_client = MoexClient()
 
         # Одна выборка облигаций: id и secid для всего процесса
@@ -246,9 +245,7 @@ async def refresh_coupons_data(force_refresh: bool = Query(False,
                 fresh_data = await asyncio.to_thread(moex_client.fetch_coupons, secid)
                 for c in fresh_data.get("coupons", []):
                     raw = {"bond_id": bond_id, **c}
-                    rec = db_coupon._transform_coupon_data(raw)
-                    if rec:
-                        all_records.append(rec)
+                    all_records.append(raw)
                 updated_count += 1
             except Exception as exc:
                 error_type = type(exc).__name__
@@ -261,7 +258,7 @@ async def refresh_coupons_data(force_refresh: bool = Query(False,
                 continue
         # Запись в БД напрямую с уже известным bond_id, без дополнительных SELECT
         logger.info("[API /bonds/refresh-coupons] Saving coupons to DB (bulk)...")
-        await asyncio.to_thread(db_coupon.save_coupons_bulk, all_records)
+        await asyncio.to_thread(db_coupon.save_moex_coupons, all_records)
         logger.info("[API /bonds/refresh-coupons] Database table coupons updated: %s records", len(all_records))
 
         try:

@@ -7,9 +7,9 @@ from typing import Optional
 events_processor: Optional[EventsProcessor] = None
 bond_llm_processor: Optional[BondLLMProcessor] = None
 
-def init_events_processor(db_path: Path, path: Path) -> None:
+def init_events_processor(path: Path) -> None:
     global events_processor
-    events_processor = EventsProcessor(db_path, path)
+    events_processor = EventsProcessor(path)
 
 def get_events_processor() -> EventsProcessor:
     if events_processor is None:

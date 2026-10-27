@@ -12,28 +12,19 @@ import httpx
 
 import orjson
 
-from db_repository.config.paths import DATA_DIR, DB_PATH
-
-URL="http://127.0.0.1:8964"
-
 from config.settings import settings
+from config.paths import DATA_DIR
 
 from app.models import (
-    Bond,
     BondDetailDTO,
     BondFilters,
-    BondMarketData,
-    BondMarketDataYield,
     BondScreenerDTO,
-    BondSecurity,
     BondsListResponse,
     round_float_for_api,
 )
+from app.models.schemasDTO.bond_repository_dto import BondRepositoryRowDTO
 from app.repository.db.bonds_repository import BondsRepository
-from app.services.bond_ratings_pipeline_service import BondRatingsPipelineService
 from app.services.emitent_service import get_emitent_service
-from app.utils.logger import get_data_update_logger
-from app.utils.rating_utils import get_worst_rating, standardize_rating
 
 
 def _load_mappings(data_dir: Path) -> Tuple[Dict[int, str], Dict[int, str]]:
@@ -98,17 +89,17 @@ def _parse_date(s: Optional[str]) -> Optional[date]:
 
 
 def _bond_to_screener_dto(
-        bond: Bond,
-        type_rev: Dict[int, str],
-        kind_rev: Dict[int, str],
+        bond: BondRepositoryRowDTO,
+        #type_rev: Dict[int, str],
+        #kind_rev: Dict[int, str],
 ) -> BondScreenerDTO:
-    """Преобразует внутреннюю модель Bond в формат BondScreenerDTO для внешнего API.
+    """Преобразует строку repository в формат BondScreenerDTO для внешнего API.
 
     Выполняет расчет производных полей (длительность в днях, период купона),
     форматирует даты и подставляет текстовые значения типов/видов облигаций.
 
     Args:
-        bond (Bond): Сущность облигации из базы данных.
+        bond: Валидированная строка списка облигаций.
         type_rev (Dict[int, str]): Словарь для расшифровки типа облигации.
         kind_rev (Dict[int, str]): Словарь для расшифровки вида облигации.
 
@@ -139,9 +130,6 @@ def _bond_to_screener_dto(
     if rating:
         ratings = [
             {"rating_level_name_short_ru": rating, "agency_name_short_ru": getattr(bond, "rating_agency", None) or ""}]
-
-    bond_type_str = type_rev.get(bond.bond_type) if isinstance(bond.bond_type, int) else None
-    bond_kind_str = kind_rev.get(bond.bond_kind) if isinstance(bond.bond_kind, int) else None
 
     next_coupon_date = _parse_date(bond.next_coupon) if getattr(bond, "next_coupon", None) else None
     call_option_date = _parse_date(bond.call_option_date) if getattr(bond, "call_option_date", None) else None
@@ -178,8 +166,8 @@ def _bond_to_screener_dto(
         RATING_AGENCY=getattr(bond, "rating_agency", None),
         RATING_LEVEL=rating,
         RATINGS=ratings,
-        BONDTYPE=bond_type_str,
-        BONDTYPE43=bond_kind_str,
+        BONDTYPE=bond.bond_type,
+        BONDTYPE43=bond.bond_kind,
         COUPON_YIELD_TO_PRICE=round_float_for_api(bond.coupon_yield_to_price),
         COUPON_FREQUENCY=int(bond.coupon_frequency) if bond.coupon_frequency is not None else None,
         DURATION_YEARS=round_float_for_api(bond.duration_years),
@@ -192,43 +180,35 @@ async def get_bonds_list(
         exclude_spob: bool = False
 ) -> BondsListResponse:
 
-    type_rev, kind_rev = _load_mappings(DATA_DIR)
-
-    url = URL + "/api/bonds"
-    url_bond_count = URL + "/api/bond_counts"
+    base_url = settings.DB_REPOSITORY_URL.rstrip("/")
+    url = f"{base_url}/api/bonds"
+    url_bond_count = f"{base_url}/api/bond_counts"
 
     json_filters = filters.model_dump()
 
     emitent_title = emitent_title
 
     async with httpx.AsyncClient() as client:
-        try:
-            response_bonds = await client.post(
-                url=url,
-                json=json_filters,
-                headers={"Content-Type": "application/json"}
-            )
-
-            response_bonds.raise_for_status()
-
-            response_count = await client.get(
-                url=url_bond_count,
-                params={"exclude_spob": exclude_spob},
-            )
-
-            response_count.raise_for_status()
-
-        except httpx.RequestError as e:
-            raise
-        except httpx.HTTPStatusError as e:
-            raise
+        response_bonds = await client.post(
+            url=url,
+            json=json_filters,
+            headers={"Content-Type": "application/json"}
+        )
+        response_bonds.raise_for_status()
+        response_count = await client.get(
+            url=url_bond_count,
+            params={"exclude_spob": exclude_spob},
+        )
+        response_count.raise_for_status()
 
     bonds_data = response_bonds.json()
 
     bond_rows = [
-        Bond.model_validate(item)
+        BondRepositoryRowDTO.model_validate(item)
         for item in bonds_data
     ]
+
+    print(len(bond_rows))
 
     total = response_count.json().get("total", 0)
 
@@ -240,23 +220,23 @@ async def get_bonds_list(
                 (
                     coupon
                     for coupon in bond.coupons
-                    if coupon.coupondate >= today
+                    if coupon.coupondate is not None and coupon.coupondate >= today
                 ),
                 key=lambda x: x.coupondate,
                 default=None
             )
 
-            dto = _bond_to_screener_dto(bond, type_rev, kind_rev)
+            dto = _bond_to_screener_dto(bond)
 
             if next_coupon:
-                dto.coupon_value = next_coupon.value
+                dto.COUPONVALUE = next_coupon.value
 
             bonds.append(dto)
-        except Exception:
+        except Exception as e:
             continue
 
 
-    # Фильтр по эмитенту
+    #Фильтр по эмитенту
     if emitent_title and str(emitent_title).strip():
         emitent_svc = get_emitent_service()
         secid_to_title = emitent_svc.get_secid_to_emitent_title_index()
@@ -272,13 +252,11 @@ async def get_bonds_list(
     )
 
 
-def get_emitent_inn_by_secid(secid: str, db_path: Optional[Path] = None) -> Optional[str]:
+def get_emitent_inn_by_secid(secid: str) -> Optional[str]:
     """Возвращает ИНН эмитента, привязанного к указанной облигации.
 
     Args:
         secid (str): Идентификатор ценной бумаги (SECID).
-        db_path (Optional[Path]): Путь к БД (для обратной совместимости).
-
     Returns:
         Optional[str]: Строка с ИНН или None, если данные не найдены.
     """
@@ -290,215 +268,21 @@ def get_emitent_inn_by_secid(secid: str, db_path: Optional[Path] = None) -> Opti
     return str(inn).strip() if inn else None
 
 
-def get_emitent_moex_id_by_secid(secid: str) -> Optional[int]:
-    """Возвращает внутренний идентификатор эмитента на Московской Бирже по SECID.
-
-    Args:
-        secid (str): Идентификатор ценной бумаги (SECID).
-
-    Returns:
-        Optional[int]: Числовой ID эмитента или None.
-    """
-    emitent_service = get_emitent_service()
-    emitent_data = emitent_service.get_emitent_by_secid(secid)
-    if emitent_data is None:
-        return None
-    moex_id = emitent_data.get("emitent_id")
-    return int(moex_id) if moex_id is not None else None
-
-
-def get_reg_number_by_secid(secid: str, db_path: Optional[Path] = None) -> Optional[str]:
+def get_reg_number_by_secid(secid: str) -> Optional[str]:
     """Получает государственный регистрационный номер выпуска облигации.
 
     Args:
         secid (str): Идентификатор ценной бумаги (SECID).
-        db_path (Optional[Path]): Путь к файлу базы данных.
-
     Returns:
         Optional[str]: Регистрационный номер или None.
     """
-    from config.paths import DB_PATH
-    path = db_path or DB_PATH
-    repo = BondsRepository(db_path=path)
+    repo = BondsRepository()
     return repo.get_reg_number_by_secid(secid)
 
 
-def get_bond_id_by_secid(secid: str, db_path: Optional[Path] = None) -> Optional[int]:
-    """Возвращает внутренний первичный ключ (ID) облигации в таблице `bonds`.
-
-    Args:
-        secid (str): Идентификатор ценной бумаги (SECID).
-        db_path (Optional[Path]): Путь к файлу базы данных.
-
-    Returns:
-        Optional[int]: Числовой ID записи или None.
-    """
-    from config.paths import DB_PATH
-    path = db_path or DB_PATH
-    repo = BondsRepository(db_path=path)
-    return repo.get_bond_id_by_secid(secid)
-
-
-def get_floater_secids(db_path: Optional[Path] = None, rating: Optional[str] = None) -> List[str]:
-    """Возвращает список SECID всех облигаций с плавающей ставкой (флоатеров).
-
-    Args:
-        db_path (Optional[Path]): Путь к файлу базы данных.
-        rating (Optional[str]): Фильтр по кредитному рейтингу.
-
-    Returns:
-        List[str]: Список идентификаторов SECID.
-    """
-    from config.paths import DB_PATH
-    path = db_path or DB_PATH
-    repo = BondsRepository(db_path=path)
-    normalized_rating: Optional[str] = None
-    if rating is not None and rating.strip():
-        normalized_rating = standardize_rating(rating.strip()) or rating.strip()
-    return repo.get_floater_secids(rating=normalized_rating)
-
-
-def get_all_bond_secids(db_path: Optional[Path] = None, rating: Optional[str] = None) -> List[str]:
-    """Возвращает список SECID всех облигаций, имеющих регистрационный номер.
-
-    Args:
-        db_path (Optional[Path]): Путь к файлу базы данных.
-        rating (Optional[str]): Фильтр по кредитному рейтингу.
-
-    Returns:
-        List[str]: Список идентификаторов SECID.
-    """
-    from config.paths import DB_PATH
-    path = db_path or DB_PATH
-    repo = BondsRepository(db_path=path)
-    normalized_rating: Optional[str] = None
-    if rating is not None and rating.strip():
-        normalized_rating = standardize_rating(rating.strip()) or rating.strip()
-    return repo.get_all_bond_secids(rating=normalized_rating)
-
-
-def get_secids_without_emitent(db_path: Optional[Path] = None) -> List[str]:
-    """Находит все SECID облигаций, у которых не заполнена информация об эмитенте.
-
-    Args:
-        db_path (Optional[Path]): Путь к файлу базы данных.
-
-    Returns:
-        List[str]: Список идентификаторов SECID.
-    """
-    from config.paths import DB_PATH
-    path = db_path or DB_PATH
-    repo = BondsRepository(db_path=path)
-    return repo.get_secids_without_emitent()
-
-
-def get_secids_without_rating(db_path: Optional[Path] = None) -> List[str]:
-    """Находит все SECID облигаций, у которых не заполнен кредитный рейтинг.
-
-    Args:
-        db_path (Optional[Path]): Путь к файлу базы данных.
-
-    Returns:
-        List[str]: Список идентификаторов SECID.
-    """
-    from config.paths import DB_PATH
-    path = db_path or DB_PATH
-    repo = BondsRepository(db_path=path)
-    return repo.get_secids_without_rating()
-
-
-def fill_ratings_for_bonds_without_rating(db_path: Optional[Path] = None) -> int:
-    """Выполняет обогащение таблицы облигаций данными о рейтингах из связанных таблиц.
-
-    Пытается найти рейтинг сначала в данных конкретной бумаги, затем в данных эмитента.
-    Выбирает наихудший из доступных рейтингов для консервативной оценки риска.
-
-    Args:
-        db_path (Optional[Path]): Путь к файлу базы данных.
-
-    Returns:
-        int: Количество успешно обновленных записей.
-    """
-    from config.paths import DB_PATH
-    path = db_path or DB_PATH
-    repo = BondsRepository(db_path=path)
-    pipeline = BondRatingsPipelineService(db_path=path)
-    emitent_svc = get_emitent_service()
-
-    secids = repo.get_secids_without_rating()
-    if not secids:
-        return 0
-
-    data_log = get_data_update_logger()
-    from_bond_ratings = 0
-    emitent_data_found = 0
-    ratings_from_emitent = 0
-    got_worst = 0
-
-    updates: Dict[str, Tuple[Optional[str], Optional[str]]] = {}
-    for secid in secids:
-        ratings_raw = pipeline.get_ratings_by_secid(secid)
-        ratings_list: List[Dict[str, Any]] = []
-        if ratings_raw:
-            from_bond_ratings += 1
-            for r in ratings_raw:
-                level = (r.get("rating_level_name") or "").strip()
-                agency = (r.get("agency_name_short_ru") or "").strip()
-                # Добавляем только записи с непустым уровнем — иначе get_worst_rating их пропустит
-                if level:
-                    ratings_list.append({
-                        "rating_level_name_short_ru": level,
-                        "agency_name_short_ru": agency,
-                    })
-        if not ratings_list:
-            emitent_data = emitent_svc.get_emitent_by_secid(secid)
-            if emitent_data:
-                emitent_data_found += 1
-                ratings_list = (
-                    list(emitent_data.get("cci_rating_companies") or [])
-                    if isinstance(emitent_data.get("cci_rating_companies"), list)
-                    else []
-                )
-                if ratings_list:
-                    ratings_from_emitent += 1
-        worst = get_worst_rating(ratings_list) if ratings_list else None
-        if worst:
-            got_worst += 1
-            level_raw = (worst.get("rating_level_name_short_ru") or "").strip()
-            agency = (worst.get("agency_name_short_ru") or "").strip()
-            if not agency:
-                aid = worst.get("agency_id")
-                if aid is not None:
-                    try:
-                        agency_val = pipeline.get_agency_name_short_ru(int(aid))
-                        if agency_val:
-                            agency = agency_val.strip()
-                    except (TypeError, ValueError):
-                        pass
-            if level_raw:
-                rating_std = standardize_rating(level_raw) or level_raw
-                updates[secid] = (rating_std, agency or None)
-
-    data_log.info(
-        "[API /bonds/refresh] Дозаполнение рейтингов (диагностика): всего без рейтинга=%s, "
-        "рейтинг из bond_ratings=%s, данные эмитента найдены (emitent_id есть)=%s, "
-        "рейтинги эмитента непустые=%s, наихудший выбран=%s, записей к обновлению=%s",
-        len(secids),
-        from_bond_ratings,
-        emitent_data_found,
-        ratings_from_emitent,
-        got_worst,
-        len(updates),
-    )
-
-    if not updates:
-        return 0
-    return repo.update_ratings_batch(updates)
-
-
 def _build_securities_dict(
-        bond: Bond,
-        security: Optional[BondSecurity],
+        bond: Any,
+        security: Optional[Any],
         type_rev: Dict[int, str],
         kind_rev: Dict[int, str],
 ) -> Dict[str, Any]:
@@ -587,7 +371,7 @@ def _build_securities_dict(
 
 
 def _build_marketdata_dict(
-        bond: Bond, market_data: Optional[BondMarketData]
+        bond: Any, market_data: Optional[Any]
 ) -> Dict[str, Any]:
     """Формирует словарь рыночных данных в формате ответа MOEX API.
 
@@ -642,13 +426,13 @@ def _build_marketdata_dict(
 
 
 def _build_marketdata_yields_list_from_db(
-        market_data_yield: BondMarketDataYield,
+        market_data_yield: Any,
         secid: str,
 ) -> List[Dict[str, Any]]:
     """Формирует список данных о доходности в формате ответа MOEX API.
 
     Args:
-        market_data_yield (BondMarketDataYield): Параметры доходности из БД.
+        market_data_yield: Параметры доходности из repository.
         secid (str): Идентификатор бумаги.
 
     Returns:
@@ -683,7 +467,6 @@ def _build_marketdata_yields_list_from_db(
 
 def get_bond_detail(
         secid: str,
-        db_path: Optional[Path] = None,
         data_dir: Optional[Path] = None
 ) -> Optional[BondDetailDTO]:
     """Возвращает максимально полную информацию об облигации.
@@ -693,16 +476,15 @@ def get_bond_detail(
 
     Args:
         secid (str): Идентификатор ценной бумаги (SECID).
-        db_path (Optional[Path]): Путь к файлу базы данных.
         data_dir (Optional[Path]): Путь к директории маппингов.
 
     Returns:
         Optional[BondDetailDTO]: Детальная информация об облигации или None.
     """
 
-    type_rev, kind_rev = _load_mappings(DATA_DIR)
+    type_rev, kind_rev = _load_mappings(data_dir or DATA_DIR)
 
-    repo = BondsRepository(db_path=db_path)
+    repo = BondsRepository()
 
     result = repo.get_bond_detail_by_secid(secid)
 
@@ -721,7 +503,7 @@ def get_bond_detail(
         else []
     )
 
-    emitent_inn: Optional[str] = get_emitent_inn_by_secid(secid, db_path)
+    emitent_inn: Optional[str] = get_emitent_inn_by_secid(secid)
 
     return BondDetailDTO(
         securities=securities,

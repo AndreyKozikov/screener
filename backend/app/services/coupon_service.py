@@ -12,7 +12,6 @@ from app.repository.db.bonds_repository import BondsRepository
 from app.repository.db.db_coupon import DBCoupon
 from app.services.moex_client import MoexClient
 from app.utils.coupon_utils import to_frontend_coupon
-from config.paths import DB_PATH
 
 
 class CouponService:
@@ -39,8 +38,8 @@ class CouponService:
                 Если не указан, создается новый экземпляр MoexClient.
         """
         self._moex_client = moex_client or MoexClient()
-        self._db_coupon = DBCoupon(db_path=str(DB_PATH))
-        self._bonds_repo = BondsRepository(db_path=DB_PATH)
+        self._db_coupon = DBCoupon()
+        self._bonds_repo = BondsRepository()
 
     def _fetch_bond_coupons_from_db(self, secid: str) -> Dict:
         """Извлекает историю купонных выплат для бумаги из базы данных.
@@ -91,14 +90,9 @@ class CouponService:
                 return self._fetch_bond_coupons_from_db(secid)
             raise RuntimeError(f"Облигация {secid} не найдена в таблице bonds")
 
-        records: List[Dict] = []
-        for c in fresh_data.get("coupons", []):
-            raw = {"bond_id": bond_id, **c}
-            rec = self._db_coupon._transform_coupon_data(raw)
-            if rec:
-                records.append(rec)
+        records = [{"bond_id": bond_id, **coupon} for coupon in fresh_data.get("coupons", [])]
         if records:
-            self._db_coupon.save_coupons_bulk(records)
+            self._db_coupon.save_moex_coupons(records)
 
         try:
             from app.services.data_loader import get_data_loader

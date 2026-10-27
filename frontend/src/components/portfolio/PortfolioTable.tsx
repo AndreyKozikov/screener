@@ -217,7 +217,7 @@ export const PortfolioTable: React.FC = () => {
 
       const hasCall = bond.CALLOPTIONDATE != null && bond.CALLOPTIONDATE !== '';
       const hasPut = bond.PUTOPTIONDATE != null && bond.PUTOPTIONDATE !== '';
-      const hasAmort = bond.BONDTYPE43 === 'Амортизируемые облигации';
+      const hasAmort = bond.BONDTYPE43 === 1;
 
       return (
         <Box
@@ -1285,3 +1285,6 @@ export const PortfolioTable: React.FC = () => {
     </Box>
   );
 };
+
+
+

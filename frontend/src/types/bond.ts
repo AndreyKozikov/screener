@@ -33,8 +33,8 @@ export interface BondListItem {
   RATING_AGENCY: string | null;  // Название рейтингового агентства (worst rating)
   RATING_LEVEL: string | null;  // Уровень рейтинга (worst rating)
   RATINGS?: Rating[] | null;  // All ratings for the bond
-  BONDTYPE: string | null;  // Тип облигации
-  BONDTYPE43: string | null;  // Вид облигации
+  BONDTYPE: number | null;  // Тип облигации
+  BONDTYPE43: number | null;  // Вид облигации
   /** Вычисляемые на бэкенде поля; фронт только отображает */
   COUPON_YIELD_TO_PRICE?: number | null;  // Доходность купона к текущей цене, %
   COUPON_FREQUENCY?: number | null;      // Число выплат купона в год
@@ -97,3 +97,6 @@ export interface PortfolioBond extends BondListItem {
   quantity: number; // Количество облигаций (целое число > 0)
   averagePurchasePrice?: number | null; // Средняя цена покупки в процентах от номинала (float)
 }
+
+
+

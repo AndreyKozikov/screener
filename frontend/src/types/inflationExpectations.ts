@@ -16,3 +16,5 @@ export interface InflationExpectationsLoadResponse {
   status: string;
   data: InflationExpectationsData;
 }
+
+

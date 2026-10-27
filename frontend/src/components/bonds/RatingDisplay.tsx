@@ -17,8 +17,10 @@ interface RatingDisplayProps {
  * Excludes "Отозван" ratings if other ratings exist.
  */
 export const RatingDisplay: React.FC<RatingDisplayProps> = ({ bond, size = 'medium' }) => {
-  const [emitentRatings, setEmitentRatings] = useState<Rating[] | null>(null);
-  const [isLoadingEmitent, setIsLoadingEmitent] = useState(false);
+  const [emitentRatingResult, setEmitentRatingResult] = useState<{
+    secid: string;
+    ratings: Rating[];
+  } | null>(null);
 
   // Get bond ratings
   const bondRatings = useMemo(() => {
@@ -41,24 +43,29 @@ export const RatingDisplay: React.FC<RatingDisplayProps> = ({ bond, size = 'medi
     return getWorstRating(bondRatings);
   }, [bondRatings]);
 
+  const emitentRatings = emitentRatingResult?.secid === bond.SECID
+    ? emitentRatingResult.ratings
+    : null;
+
   // Fetch emitent ratings if bond rating is not available
   useEffect(() => {
-    if (!worstBondRating && !isLoadingEmitent && !emitentRatings) {
-      setIsLoadingEmitent(true);
-      getEmitentBySecid(bond.SECID)
-        .then((emitentInfo) => {
-          if (emitentInfo.cci_rating_companies && Array.isArray(emitentInfo.cci_rating_companies)) {
-            setEmitentRatings(emitentInfo.cci_rating_companies);
-          }
-        })
-        .catch(() => {
-          // Silently fail - emitent rating is optional
-        })
-        .finally(() => {
-          setIsLoadingEmitent(false);
-        });
-    }
-  }, [bond.SECID, worstBondRating, isLoadingEmitent, emitentRatings]);
+    const secid = bond.SECID;
+    if (worstBondRating) return;
+
+    // The API module deduplicates requests across effect replays and virtualized
+    // row remounts, including SECIDs whose issuer record is missing (404).
+    void getEmitentBySecid(secid)
+      .then((emitentInfo) => {
+        const ratings = Array.isArray(emitentInfo.cci_rating_companies)
+          ? emitentInfo.cci_rating_companies
+          : [];
+        setEmitentRatingResult({ secid, ratings });
+      })
+      .catch(() => {
+        // Emitent ratings are optional; a missing record is not retried.
+        setEmitentRatingResult({ secid, ratings: [] });
+      });
+  }, [bond.SECID, worstBondRating]);
 
   // Get worst rating from emitent ratings
   const worstEmitentRating = useMemo(() => {
@@ -100,4 +107,7 @@ export const RatingDisplay: React.FC<RatingDisplayProps> = ({ bond, size = 'medi
     </Box>
   );
 };
+
+
+
 

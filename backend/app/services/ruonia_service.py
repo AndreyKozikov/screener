@@ -13,16 +13,14 @@ import pandas as pd
 import requests
 from urllib.parse import urlencode
 
-from app.models import DBruonia, RuoniaDataResponse, RuoniaDTO
+from app.models import RuoniaDataResponse, RuoniaDTO
 from app.repository.db.ruonia_repository import RuoniaRepository
 from app.utils.logger import get_data_update_logger
-from config.paths import DB_PATH
 
 
 def _db_to_dto(row: Any) -> RuoniaDTO:
-    """Преобразует запись БД (DBruonia или Row) в DTO для фронтенда (RuoniaDTO)."""
-    # SQLAlchemy может вернуть Row с одной колонкой — сущностью; извлекаем её
-    obj = row[0] if hasattr(row, "__getitem__") and hasattr(row, "__len__") and len(row) == 1 else row
+    """Преобразует ответ repository в DTO для фронтенда (RuoniaDTO)."""
+    obj = row
     dt_val = getattr(obj, "dt", None)
     return RuoniaDTO(
         date_stavki=dt_val.isoformat() if dt_val else "",
@@ -36,8 +34,8 @@ def _db_to_dto(row: Any) -> RuoniaDTO:
     )
 
 
-def _row_dict_to_db_ruonia(date_str: str, row_data: Dict[str, Any]) -> Optional[DBruonia]:
-    """Преобразует одну запись из парсера Excel в модель DBruonia.
+def _row_dict_to_db_ruonia(date_str: str, row_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Преобразует одну запись из парсера Excel в payload repository.
 
     Args:
         date_str: Дата в формате YYYY-MM-DD (ключ из словаря парсера).
@@ -45,7 +43,7 @@ def _row_dict_to_db_ruonia(date_str: str, row_data: Dict[str, Any]) -> Optional[
             Percentile75, MaxRate, StatusXML, DateUpdate).
 
     Returns:
-        Объект DBruonia или None, если дату не удалось распарсить.
+        Словарь или None, если дату не удалось распарсить.
     """
     try:
         if "T" in date_str:
@@ -54,19 +52,19 @@ def _row_dict_to_db_ruonia(date_str: str, row_data: Dict[str, Any]) -> Optional[
             dt_val = datetime.strptime(date_str, "%Y-%m-%d").date()
     except (ValueError, TypeError):
         return None
-    return DBruonia(
-        dt=dt_val,
-        ruo=row_data.get("ruo") if isinstance(row_data.get("ruo"), (int, float)) else None,
-        vol=row_data.get("vol") if isinstance(row_data.get("vol"), (int, float)) else None,
-        T=row_data.get("T") if isinstance(row_data.get("T"), (int, float)) else None,
-        C=row_data.get("C") if isinstance(row_data.get("C"), (int, float)) else None,
-        MinRate=row_data.get("MinRate") if isinstance(row_data.get("MinRate"), (int, float)) else None,
-        Percentile25=row_data.get("Percentile25") if isinstance(row_data.get("Percentile25"), (int, float)) else None,
-        Percentile75=row_data.get("Percentile75") if isinstance(row_data.get("Percentile75"), (int, float)) else None,
-        MaxRate=row_data.get("MaxRate") if isinstance(row_data.get("MaxRate"), (int, float)) else None,
-        StatusXML=row_data.get("StatusXML") if isinstance(row_data.get("StatusXML"), (int, float)) else None,
-        DateUpdate=str(row_data["DateUpdate"]) if row_data.get("DateUpdate") is not None else None,
-    )
+    return {
+        "dt": dt_val,
+        "ruo": row_data.get("ruo") if isinstance(row_data.get("ruo"), (int, float)) else None,
+        "vol": row_data.get("vol") if isinstance(row_data.get("vol"), (int, float)) else None,
+        "T": row_data.get("T") if isinstance(row_data.get("T"), (int, float)) else None,
+        "C": row_data.get("C") if isinstance(row_data.get("C"), (int, float)) else None,
+        "MinRate": row_data.get("MinRate") if isinstance(row_data.get("MinRate"), (int, float)) else None,
+        "Percentile25": row_data.get("Percentile25") if isinstance(row_data.get("Percentile25"), (int, float)) else None,
+        "Percentile75": row_data.get("Percentile75") if isinstance(row_data.get("Percentile75"), (int, float)) else None,
+        "MaxRate": row_data.get("MaxRate") if isinstance(row_data.get("MaxRate"), (int, float)) else None,
+        "StatusXML": row_data.get("StatusXML") if isinstance(row_data.get("StatusXML"), (int, float)) else None,
+        "DateUpdate": str(row_data["DateUpdate"]) if row_data.get("DateUpdate") is not None else None,
+    }
 
 
 class RuoniaService:
@@ -96,7 +94,7 @@ class RuoniaService:
                 с init_ruonia_service; хранение данных — в БД).
         """
         self.data_dir = data_dir
-        self._repo = RuoniaRepository(db_path=DB_PATH)
+        self._repo = RuoniaRepository()
         self.logger = get_data_update_logger()
 
     def _format_date_for_url(self, date_obj: date, format_type: str = "ddmmyyyy") -> str:
@@ -243,7 +241,7 @@ class RuoniaService:
 
         Берёт максимальную дату из таблицы ruonia через репозиторий; если таблица пуста —
         использует DEFAULT_START_DATE. Запрашивает данные за период (max_date + 1 день)
-        до текущей даты, парсит Excel, преобразует в DBruonia и сохраняет через репозиторий.
+        до текущей даты, парсит Excel, формирует записи и сохраняет через удалённый репозиторий.
 
         Returns:
             Словарь с полями: status ("ok" | "error"), message, from_date, to_date,
@@ -271,7 +269,7 @@ class RuoniaService:
             download_url = self._build_download_url(from_date, to_date)
             excel_path = self._download_excel_file(download_url)
             new_data = self._parse_excel_file(excel_path)
-            records: List[DBruonia] = []
+            records: List[Dict[str, Any]] = []
             for date_str, row_data in new_data.items():
                 model = _row_dict_to_db_ruonia(date_str, row_data)
                 if model is not None:

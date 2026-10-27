@@ -11,12 +11,11 @@ from typing import Dict, List
 from fastapi import APIRouter, HTTPException
 
 from app.models import EmitentInfo
-from app.repository.db.bonds_repository import BondsRepository
 from app.repository.db.emitents_repository import EmitentsRepository
 from app.services.data_loader import get_data_loader
 from app.services.emitent_service import get_emitent_service
 from app.utils.logger import get_data_update_logger
-from config.paths import DATA_DIR, DB_PATH
+from config.paths import DATA_DIR
 
 router = APIRouter(prefix="/api/emitent", tags=["emitent"])
 
@@ -55,7 +54,7 @@ async def list_emitents() -> Dict[str, List[str]]:
 
         # Fallback: если кэш облигаций пуст (например после деплоя), список строится из БД
         if not emitent_titles:
-            emitents_repo = EmitentsRepository(db_path=DB_PATH, data_dir=DATA_DIR)
+            emitents_repo = EmitentsRepository()
             emitent_titles = emitents_repo.get_all_emitent_titles()
 
         return {"emitents": emitent_titles}
@@ -73,8 +72,8 @@ async def list_emitents() -> Dict[str, List[str]]:
 async def get_emitent_by_secid(secid: str):
     """Получает информацию об эмитенте по SECID облигации.
 
-    Сначала пытается получить данные из БД. Если не найдены — загружает из API MOEX
-    по SECID, сохраняет в БД и возвращает результат.
+    Возвращает только данные, уже сохранённые в БД. Отсутствующие данные
+    не загружаются автоматически из MOEX и не сохраняются при чтении.
 
     Args:
         secid: Идентификатор облигации (SECID) для получения данных эмитента.
@@ -90,19 +89,10 @@ async def get_emitent_by_secid(secid: str):
 
         emitent_data = await asyncio.to_thread(emitent_service.get_emitent_by_secid, secid)
         if emitent_data is None:
-            emitent_data = await asyncio.to_thread(
-                emitent_service.fetch_emitent_from_moex, secid
+            raise HTTPException(
+                status_code=404,
+                detail=f"Emitent data not found for SECID: {secid}",
             )
-            if emitent_data is None:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Emitent data not found for SECID: {secid}",
-                )
-            emitents_repo = EmitentsRepository(db_path=DB_PATH, data_dir=DATA_DIR)
-            secid_to_emitent_id = emitents_repo.refresh({secid: emitent_data})
-            if secid_to_emitent_id:
-                bonds_repo = BondsRepository(db_path=DB_PATH)
-                bonds_repo.update_emitent_ids(secid_to_emitent_id)
 
         required_fields = emitent_service.extract_required_fields(emitent_data)
         return EmitentInfo(**required_fields)

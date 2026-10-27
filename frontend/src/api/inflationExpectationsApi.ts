@@ -36,3 +36,5 @@ export const fetchInflationExpectationsData = async (params: {
     throw error;
   }
 };
+
+

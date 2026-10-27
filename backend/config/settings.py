@@ -4,7 +4,7 @@
 """
 
 import tomllib
-from pydantic import BaseModel
+from pydantic import BaseModel, SecretStr
 from pathlib import Path
 from typing import Any, List
 
@@ -60,6 +60,8 @@ class Settings(BaseSettings):
     )
 
     PDF2MD_BASE_URL: str = "http://localhost:9000"
+    DB_REPOSITORY_URL: str = "http://127.0.0.1:8964"
+    DB_REPOSITORY_API_KEY: SecretStr = SecretStr("")
 
     OPENAI_API_KEY: str = ""
     GEMINI_API_KEY: str = ""

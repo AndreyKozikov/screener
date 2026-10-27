@@ -166,3 +166,6 @@ export const ForecastHubCard: React.FC<ForecastHubCardProps> = ({
     </Box>
   </Card>
 );
+
+
+

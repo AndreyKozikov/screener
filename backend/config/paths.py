@@ -16,15 +16,6 @@ DATA_DIR: Path = BACKEND_DIR / "app" / "data"
 # JSON со всеми событиями эмитента с e-disclosure (по ИНН, без фильтрации по заголовку)
 EMITENT_EVENTS_JSON_DIR: Path = DATA_DIR / "events"
 
-# Файл базы данных SQLite (облигации, эмитенты, купоны и т.д.)
-DB_PATH: Path = BACKEND_DIR / "db" / "bonds.db"
-
-# Файл базы данных SQLite для блога.
-BLOG_DB_PATH: Path = BACKEND_DIR / "db" / "blog.db"
-
-# Файл базы данных для истории торгов (отдельная БД)
-HISTORY_DB_PATH: Path = BACKEND_DIR / "db" / "history_db.db"
-
 # Файл .env (переменные окружения)
 ENV_FILE: Path = BACKEND_DIR / ".env"
 

@@ -11,10 +11,8 @@ from typing import Dict, List, Optional, Any
 
 import requests
 
-from app.models import DBcurrencyrate
 from app.repository.db.currencyrate_repository import CurrencyrateRepository
 from app.utils.logger import get_data_update_logger
-from config.paths import DB_PATH
 
 
 class CurrencyService:
@@ -40,9 +38,9 @@ class CurrencyService:
     def __init__(self) -> None:
         """Инициализирует сервис для работы с курсами валют.
 
-        Данные хранятся в БД через CurrencyrateRepository (путь к БД — config.paths.DB_PATH).
+        Данные хранятся через удалённый CurrencyrateRepository.
         """
-        self._repo = CurrencyrateRepository(db_path=DB_PATH)
+        self._repo = CurrencyrateRepository()
         self.logger = get_data_update_logger()
 
     def _fetch_rates_from_cbr(self, target_date: date) -> Dict[str, Any]:
@@ -133,14 +131,14 @@ class CurrencyService:
                 f"Failed to parse XML response from CBR API: {exc}"
             ) from exc
 
-    def _api_dict_to_db(self, api_dict: Dict[str, Any]) -> DBcurrencyrate:
-        """Преобразует ответ API ЦБ РФ (одна дата) в модель DBcurrencyrate.
+    def _api_dict_to_db(self, api_dict: Dict[str, Any]) -> Dict[str, Any]:
+        """Преобразует ответ API ЦБ РФ в валидируемый payload репозитория.
 
         Args:
             api_dict: Словарь с полями date (YYYY-MM-DD), source_date, rates.
 
         Returns:
-            Объект DBcurrencyrate для сохранения в БД.
+            Словарь, который Pydantic-репозиторий преобразует в ORM-модель.
         """
         target_date = date.fromisoformat(api_dict["date"])
         rates = api_dict.get("rates") or {}
@@ -148,22 +146,22 @@ class CurrencyService:
         eur = rates.get("EUR", {})
         cny = rates.get("CNY", {})
 
-        return DBcurrencyrate(
-            dt=target_date,
-            source_date=api_dict.get("source_date", ""),
-            usd_rate=usd.get("rate"),
-            usd_nominal=usd.get("nominal"),
-            usd_original_value=usd.get("original_value"),
-            eur_rate=eur.get("rate"),
-            eur_nominal=eur.get("nominal"),
-            eur_original_value=eur.get("original_value"),
-            cny_rate=cny.get("rate"),
-            cny_nominal=cny.get("nominal"),
-            cny_original_value=cny.get("original_value"),
-        )
+        return {
+            "dt": target_date,
+            "source_date": api_dict.get("source_date", ""),
+            "usd_rate": usd.get("rate"),
+            "usd_nominal": usd.get("nominal"),
+            "usd_original_value": usd.get("original_value"),
+            "eur_rate": eur.get("rate"),
+            "eur_nominal": eur.get("nominal"),
+            "eur_original_value": eur.get("original_value"),
+            "cny_rate": cny.get("rate"),
+            "cny_nominal": cny.get("nominal"),
+            "cny_original_value": cny.get("original_value"),
+        }
 
-    def _db_to_api_dict(self, row: DBcurrencyrate) -> Dict[str, Any]:
-        """Преобразует запись DBcurrencyrate в формат ответа API (date, source_date, rates).
+    def _db_to_api_dict(self, row: Any) -> Dict[str, Any]:
+        """Преобразует repository response в формат API (date, source_date, rates).
 
         Args:
             row: Запись из таблицы currencyrate.
@@ -204,8 +202,8 @@ class CurrencyService:
 
         Получает максимальную дату из таблицы currencyrate. Если таблица пуста —
         использует DEFAULT_START_DATE. Запрашивает данные из API за период
-        (max_date + 1 день) до текущей даты, преобразует в DBcurrencyrate и
-        сохраняет через репозиторий.
+        (max_date + 1 день) до текущей даты, формирует валидируемые записи и
+        сохраняет через удалённый репозиторий.
         """
         max_date = self._repo.get_max_date()
         if max_date is None:
@@ -224,7 +222,7 @@ class CurrencyService:
             date_to.isoformat(),
         )
 
-        records: List[DBcurrencyrate] = []
+        records: List[Dict[str, Any]] = []
         skipped = 0
         current = date_from
         while current <= date_to:

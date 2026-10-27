@@ -10,18 +10,12 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
-from app.models.entities.forecast import (
-    Forecast,
-    ForecastBalance,
-    ForecastIndicatorName,
-    ForecastMainIndicators,
-)
 from app.models.schemasDTO.forecast_dto import ForecastDatesResponse
 from app.parsers.forecast_md_parser import ParsedForecast, parse_forecast_content
 from app.repository.db.forecast_repository import ForecastRepository
 from app.repository.files.file_storage import FileStorage
 from app.utils.logger import get_data_update_logger
-from config.paths import DATA_DIR, DB_PATH
+from config.paths import DATA_DIR
 from config.settings import settings
 
 # Маппинг ключей парсера (основные показатели) -> (min_колонка, max_колонка) в ForecastMainIndicators
@@ -75,27 +69,27 @@ def _parse_date(s: str) -> date:
     return date(int(s[0:4]), int(s[5:7]), int(s[8:10]))
 
 
-def _parsed_to_meta(parsed: ParsedForecast) -> Forecast:
-    """Преобразует даты из ParsedForecast в сущность Forecast."""
+def _parsed_to_meta(parsed: ParsedForecast) -> Dict[str, date]:
+    """Преобразует даты ParsedForecast в validated repository payload."""
     d = _parse_date(parsed.forecast_date)
     m = _parse_date(parsed.meeting_date)
     p = _parse_date(parsed.publication_date)
-    return Forecast(date=d, meeting_date=m, publication_date=p)
+    return {"date": d, "meeting_date": m, "publication_date": p}
 
 
-def _parsed_to_indicator_names(parsed: ParsedForecast) -> List[ForecastIndicatorName]:
-    """Собирает список ForecastIndicatorName из names_main и names_balance."""
-    out: List[ForecastIndicatorName] = []
+def _parsed_to_indicator_names(parsed: ParsedForecast) -> List[Dict[str, str]]:
+    """Собирает словари названий для последующей Pydantic-валидации репозиторием."""
+    out: List[Dict[str, str]] = []
     for key, title in parsed.names_main.items():
-        out.append(ForecastIndicatorName(section=SECTION_MAIN, key=key, title=title))
+        out.append({"section": SECTION_MAIN, "key": key, "title": title})
     for key, title in parsed.names_balance.items():
-        out.append(ForecastIndicatorName(section=SECTION_BALANCE, key=key, title=title))
+        out.append({"section": SECTION_BALANCE, "key": key, "title": title})
     return out
 
 
-def _parsed_to_main_indicators(parsed: ParsedForecast, forecast_date: date) -> List[ForecastMainIndicators]:
+def _parsed_to_main_indicators(parsed: ParsedForecast, forecast_date: date) -> List[Dict[str, Any]]:
     """Преобразует main_indicators из парсера в список ForecastMainIndicators."""
-    rows: List[ForecastMainIndicators] = []
+    rows: List[Dict[str, Any]] = []
     for row in parsed.main_indicators:
         year = row["год"]
         kwargs: Dict[str, Any] = {"forecast_date": forecast_date, "year": year}
@@ -104,20 +98,20 @@ def _parsed_to_main_indicators(parsed: ParsedForecast, forecast_date: date) -> L
             if isinstance(val, dict):
                 kwargs[col_min] = val.get("мин")
                 kwargs[col_max] = val.get("макс")
-        rows.append(ForecastMainIndicators(**kwargs))
+        rows.append(kwargs)
     return rows
 
 
-def _parsed_to_balance(parsed: ParsedForecast, forecast_date: date) -> List[ForecastBalance]:
+def _parsed_to_balance(parsed: ParsedForecast, forecast_date: date) -> List[Dict[str, Any]]:
     """Преобразует balance из парсера в список ForecastBalance."""
-    rows: List[ForecastBalance] = []
+    rows: List[Dict[str, Any]] = []
     for row in parsed.balance:
         year = row["год"]
         kwargs: Dict[str, Any] = {"forecast_date": forecast_date, "year": year}
         for key, col in _BALANCE_KEY_TO_COLUMN.items():
             if key in row and row[key] is not None:
                 kwargs[col] = row[key]
-        rows.append(ForecastBalance(**kwargs))
+        rows.append(kwargs)
     return rows
 
 
@@ -134,7 +128,7 @@ class ForecastService:
         repository: Optional[ForecastRepository] = None,
     ) -> None:
         self._data_dir = Path(data_dir) if data_dir else DATA_DIR
-        self._repo = repository or ForecastRepository(db_path=DB_PATH)
+        self._repo = repository or ForecastRepository()
         self._log = get_data_update_logger()
         self._file_storage = FileStorage()
 
@@ -272,7 +266,7 @@ class ForecastService:
             else:
                 names_balance[n.key] = n.title
 
-        def _main_row_to_api(row: ForecastMainIndicators) -> Dict[str, Any]:
+        def _main_row_to_api(row: Any) -> Dict[str, Any]:
             out: Dict[str, Any] = {"год": row.year}
             for col_min, col_max in _MAIN_KEY_TO_COLUMNS.values():
                 key = _MAIN_COLUMN_TO_KEY.get(col_min)
@@ -288,7 +282,7 @@ class ForecastService:
                     out[key] = {"мин": v_min, "макс": v_max}
             return out
 
-        def _balance_row_to_api(row: ForecastBalance) -> Dict[str, Any]:
+        def _balance_row_to_api(row: Any) -> Dict[str, Any]:
             out: Dict[str, Any] = {"год": row.year}
             for api_key, col in _BALANCE_KEY_TO_COLUMN.items():
                 v = getattr(row, col, None)

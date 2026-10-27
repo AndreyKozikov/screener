@@ -45,6 +45,7 @@ const initialFilters: BondFilters = {
   couponYieldMax: null,
   matdateFrom: null,
   matdateTo: null,
+  couponMonths: [],
   listlevel: [],
   faceunit: [],
   bondtype: [],
@@ -141,3 +142,6 @@ export const useFiltersStore = create<FiltersState>((set, get) => ({
     },
   })),
 }));
+
+
+

@@ -421,3 +421,6 @@ export const RuoniaTable: React.FC = () => {
     </Box>
   );
 };
+
+
+

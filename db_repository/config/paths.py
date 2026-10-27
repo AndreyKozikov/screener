@@ -1,6 +1,6 @@
 from pathlib import Path
 
-# Корень backend (директория с main_db.py, app/, config/, db/)
+# Данные и базы данных остаются в backend, но обслуживаются только этим сервисом.
 BACKEND_DIR: Path = Path(__file__).resolve().parent.parent.parent / "backend"
 
 # Директория с JSON/CSV данными (columns.json, zerocupon.csv и т.д.)
@@ -10,7 +10,6 @@ DATA_DIR: Path = BACKEND_DIR / "app" / "data"
 EMITENT_EVENTS_JSON_DIR: Path = DATA_DIR / "events"
 
 # Файл базы данных SQLite (облигации, эмитенты, купоны и т.д.)
-print(BACKEND_DIR)
 DB_PATH: Path = BACKEND_DIR / "db" / "bonds.db"
-
-print(DB_PATH)
+BLOG_DB_PATH: Path = BACKEND_DIR / "db" / "blog.db"
+HISTORY_DB_PATH: Path = BACKEND_DIR / "db" / "history_db.db"

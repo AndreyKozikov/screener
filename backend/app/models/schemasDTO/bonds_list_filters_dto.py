@@ -56,6 +56,11 @@ class BondsListFiltersDTO(BaseModel):
         description="Конечная дата погашения (включительно)"
     )
 
+    coupon_months: Optional[List[int]] = Field(
+        None,
+        description="Месяцы выплаты купона (1–12); достаточно выплаты хотя бы в одном выбранном месяце"
+    )
+
     listlevel: Optional[List[int]] = Field(
         None,
         description="Список уровней листинга для фильтрации"

@@ -39,3 +39,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   floatPipelineProvider: 'gemini-3-flash',
   floatPipelineEmbeddingModel: 'local',
 };
+
+
+

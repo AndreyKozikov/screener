@@ -11,6 +11,7 @@ export interface BondFilters {
   couponYieldMax: number | null;
   matdateFrom: string | null;
   matdateTo: string | null;
+  couponMonths: number[];
   listlevel: number[];
   faceunit: string[];
   bondtype: number[];  // ID типов облигаций из bond_type_mapping
@@ -27,3 +28,6 @@ export interface FilterOptions {
   faceunits: string[];
   bondtypes: string[];
 }
+
+
+

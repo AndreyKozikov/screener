@@ -276,3 +276,5 @@ export const calculateCouponYieldToAveragePurchasePrice = (
   // This gives annual yield in percent
   return (couponValue * couponFrequency * 100) / (averagePurchasePrice * faceValue / 100);
 };
+
+

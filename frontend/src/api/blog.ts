@@ -75,3 +75,6 @@ export const uploadBlogImage = async (file: File): Promise<{ url: string; filena
   );
   return response.data;
 };
+
+
+

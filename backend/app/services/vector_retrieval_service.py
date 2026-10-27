@@ -12,7 +12,6 @@ from typing import List, Dict, Any, Optional
 from app.services.bonds_service import (
     get_emitent_inn_by_secid,
     get_reg_number_by_secid,
-    get_bond_id_by_secid
 )
 from app.services.edisclosure_service import EdisclosureService
 from app.repository.files.file_storage import FileStorage

@@ -40,3 +40,6 @@ export interface IpcDashboardData {
     last_observation_date: string | null;
   };
 }
+
+
+

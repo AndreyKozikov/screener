@@ -19,17 +19,17 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 import rarfile
-from app.core.exceptions import PdfConversionConnectionError
-from app.repository.db.emission_document_repository import EmissionDocumentRepository
-from app.repository.files.file_storage import FileStorage
-from app.services.bonds_service import (
+from conversion_service.app.core.exceptions import PdfConversionConnectionError
+from conversion_service.app.repository.db.emission_document_repository import EmissionDocumentRepository
+from conversion_service.app.repository.files.file_storage import FileStorage
+from conversion_service.app.services.bonds_service import (
     get_emitent_inn_by_secid,
     get_all_bond_secids,
     get_reg_number_by_secid,
     get_all_bonds_metadata,
 )
-from app.services.pdf_conversion_service import PdfConversionService
-from app.utils.edisclosure_utils import (
+from conversion_service.app.services.pdf_conversion_service import PdfConversionService
+from conversion_service.app.utils.edisclosure_utils import (
     clean_markdown_after_pdf2md,
     download_emission_file,
     extract_archive_to_dir,

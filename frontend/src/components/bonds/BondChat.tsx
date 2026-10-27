@@ -286,3 +286,6 @@ export const BondChat: React.FC<BondChatProps> = ({ isOpen, onClose, secid, shor
     </Drawer>
   );
 };
+
+
+

@@ -826,7 +826,7 @@ export const BondDetails: React.FC = () => {
                 )}
 
                 {/* Вкладка 6: Расширенные метрики */}
-                {activeTab === 6 && (
+                {activeTab === 7 && (
                   <Box>
                     {renderSection('Дюрация', [
                       { field: 'DURATION', value: market?.DURATION ?? yields?.DURATION ?? null },
@@ -882,3 +882,6 @@ export const BondDetails: React.FC = () => {
 };
 
 export default BondDetails;
+
+
+

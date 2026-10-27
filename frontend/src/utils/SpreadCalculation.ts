@@ -241,7 +241,7 @@ export const calculateGSpread = (
   currentDate: Date = new Date()
 ): number | null => {
   // Only calculate for fixed coupon bonds
-  if (bond.BONDTYPE43 !== 'Фикс с известным купоном') {
+  if (bond.BONDTYPE43 !== 7) {
     return null;
   }
 
@@ -499,7 +499,7 @@ export const calculateZSpread = (
   currentDate: Date = new Date()
 ): number | null => {
   // Only calculate for fixed coupon bonds
-  if (bond.BONDTYPE43 !== 'Фикс с известным купоном') {
+  if (bond.BONDTYPE43 !== 7) {
     return null;
   }
 
@@ -623,3 +623,6 @@ export const calculateZSpreadLegacy = calculateGSpread;
  * @deprecated Use formatGSpread instead. This function is kept for backward compatibility.
  */
 export const formatZSpread = formatGSpread;
+
+
+

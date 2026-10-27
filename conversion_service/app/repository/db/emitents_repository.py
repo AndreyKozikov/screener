@@ -2,7 +2,7 @@ import sqlite3
 import logging
 from pathlib import Path
 from typing import List, Dict, Any, Optional
-from config.paths import DB_PATH
+from conversion_service.config.paths import DB_PATH
 
 logger = logging.getLogger(__name__)
 

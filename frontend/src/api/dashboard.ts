@@ -25,3 +25,6 @@ export const getDashboardRates = async (): Promise<MacroRatesResponse> => {
   const response = await apiClient.get<MacroRatesResponse>('/dashboard/rates');
   return response.data;
 };
+
+
+

@@ -6,10 +6,8 @@
 
 import logging
 from datetime import date
-from typing import List, Optional
+from typing import Any, List, Optional
 
-from db_repository.models.bond import Bond
-from app.models.entities.bond_float_params import BondFloatParams
 from app.models.schemasDTO.bond_float_params_dto import BondFloatParamsDTO
 from app.repository.db.bond_float_params_repository import BondFloatParamsRepository
 from app.repository.db.bonds_repository import BondsRepository
@@ -60,15 +58,15 @@ class BondFloatParamsService:
 
     @staticmethod
     def _build_dto(
-        float_params: BondFloatParams,
-        bond: Bond,
+        float_params: Any,
+        bond: Any,
         days_to_maturity: Optional[int],
     ) -> BondFloatParamsDTO:
         """Собирает объект BondFloatParamsDTO на основе сущностей Bond и BondFloatParams.
 
         Args:
-            float_params (BondFloatParams): Сущность с параметрами плавающей ставки.
-            bond (Bond): Сущность облигации с базовыми данными.
+            float_params: Repository response containing floater fields.
+            bond: Repository response containing bond fields.
             days_to_maturity (Optional[int]): Предварительно вычисленное число дней до погашения.
 
         Returns:

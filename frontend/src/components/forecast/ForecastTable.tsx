@@ -405,3 +405,6 @@ export const ForecastTable: React.FC<ForecastTableProps> = ({ initialDates }) =>
   );
 };
 
+
+
+

@@ -165,3 +165,6 @@ export const PriceHistoryDialog: React.FC<PriceHistoryDialogProps> = ({
     </Dialog>
   );
 };
+
+
+

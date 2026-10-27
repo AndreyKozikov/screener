@@ -249,7 +249,7 @@ export const ComparisonTable: React.FC = () => {
   // Create stable list of fixed coupon bond SECIDs using useMemo
   const fixedCouponBondSecIds = useMemo(() => {
     return comparisonBonds
-      .filter(bond => bond.BONDTYPE43 === 'Фикс с известным купоном')
+      .filter(bond => bond.BONDTYPE43 === 7)
       .map(bond => bond.SECID)
       .sort()
       .join(',');
@@ -284,7 +284,7 @@ export const ComparisonTable: React.FC = () => {
 
         // Get fixed coupon bonds
         const fixedCouponBonds = comparisonBonds.filter(
-          bond => bond.BONDTYPE43 === 'Фикс с известным купоном'
+          bond => bond.BONDTYPE43 === 7
         );
 
         // Check if we already have all coupons loaded for these bonds (using only ref, not state)
@@ -645,7 +645,7 @@ export const ComparisonTable: React.FC = () => {
   // 2. Bonds without embedded options (no call or put options)
   const isModifiedDurationApplicable = (bond: BondListItem): boolean => {
     // Check if bond type is "Фикс с известным купоном"
-    if (bond.BONDTYPE43 !== 'Фикс с известным купоном') {
+    if (bond.BONDTYPE43 !== 7) {
       return false;
     }
     
@@ -906,7 +906,7 @@ export const ComparisonTable: React.FC = () => {
     // Don't calculate comparison data if coupons are still loading
     // This prevents race conditions where data is calculated before coupons are loaded
     const fixedCouponBonds = comparisonBonds.filter(
-      bond => bond.BONDTYPE43 === 'Фикс с известным купоном'
+      bond => bond.BONDTYPE43 === 7
     );
     
     // Strict check: if we're loading coupons OR if we have fixed coupon bonds but not all coupons are loaded
@@ -1026,7 +1026,7 @@ export const ComparisonTable: React.FC = () => {
       // Используем дюрацию Маколея вместо срока до погашения для более точного сравнения
       // с доходностью КБД, так как "вес" денежных потоков распределен по всему периоду
       let spreadStr = '—';
-      if (bond.BONDTYPE43 === 'Фикс с известным купоном') {
+      if (bond.BONDTYPE43 === 7) {
         const horizon = calculateRegularDuration(bond); // Используем дюрацию Маколея вместо срока до погашения
         
         if (horizon !== null && horizon > 0) {
@@ -1041,7 +1041,7 @@ export const ComparisonTable: React.FC = () => {
       // Calculate G-spread for fixed coupon bonds
       // G-spread = Actual YTM - Theoretical YTM (where Theoretical YTM is derived from KBD)
       let gSpreadStr = '—';
-      if (bond.BONDTYPE43 === 'Фикс с известным купоном') {
+      if (bond.BONDTYPE43 === 7) {
         const coupons = couponsData.get(bond.SECID);
         if (coupons && coupons.length > 0) {
           // Use current date as analysis date (only future coupons will be included)
@@ -3673,3 +3673,6 @@ export const ComparisonTable: React.FC = () => {
     </Card>
   );
 };
+
+
+

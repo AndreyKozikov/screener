@@ -9,7 +9,6 @@ from typing import Any, Dict, List
 
 from app.services.bond_ratings_pipeline_service import BondRatingsPipelineService
 from app.utils.logger import get_data_update_logger
-from config.paths import DB_PATH
 
 router = APIRouter(prefix="/api/rating", tags=["rating"])
 
@@ -20,7 +19,7 @@ def get_pipeline_service() -> BondRatingsPipelineService:
     """Возвращает экземпляр BondRatingsPipelineService."""
     global _pipeline_service
     if _pipeline_service is None:
-        _pipeline_service = BondRatingsPipelineService(db_path=DB_PATH)
+        _pipeline_service = BondRatingsPipelineService()
     return _pipeline_service
 
 

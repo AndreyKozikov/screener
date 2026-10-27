@@ -22,6 +22,7 @@ import {
   YieldRangeFilter,
   CouponYieldRangeFilter,
   MaturityDateFilter,
+  CouponMonthsFilter,
   ListLevelFilter,
   CurrencyFilter,
   BondTypeFilter,
@@ -394,6 +395,13 @@ export const FiltersModal: React.FC<FiltersModalProps> = ({ open, onClose }) => 
                   </Typography>
                   <MaturityDateFilter />
                 </Box>
+                <Divider />
+                <Box sx={{ width: '100%' }}>
+                  <Typography variant="subtitle1" fontWeight={600} gutterBottom>
+                    Месяцы выплаты купона
+                  </Typography>
+                  <CouponMonthsFilter />
+                </Box>
               </Stack>
               </Box>
             </TabPanel>
@@ -514,3 +522,6 @@ export const FiltersModal: React.FC<FiltersModalProps> = ({ open, onClose }) => 
 };
 
 export default FiltersModal;
+
+
+
