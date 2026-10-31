@@ -40,6 +40,7 @@ import { HelpDialog, type HelpSection } from '../components/common/HelpDialog';
 import { SiteNavigationDrawer, type SiteNavigationItem } from '../components/common/SiteNavigationDrawer';
 import { SettingsDialog } from '../components/common/SettingsDialog';
 import { HubCardIllustration, type HubCardIllustrationVariant } from '../components/common/HubCardIllustration';
+import { HubQueryBar } from '../components/common/HubQueryBar';
 import { BlogPage, type BlogMode } from './BlogPage';
 import { refreshBondsData, refreshCouponsData } from '../api/bonds';
 import { refreshFloatersData } from '../api/edisclosure';
@@ -850,9 +851,10 @@ export const HomePage: React.FC = () => {
   ];
 
   const isForecastOverview = viewMode === 'TABLE' && currentTab === 2 && forecastSubView === null;
+  const isCbrForecastSection = viewMode === 'TABLE' && currentTab === 2 && forecastSubView === 'forecast';
   const isBondMarketSection = viewMode === 'TABLE' && currentTab === 0;
   const isBlogSection = viewMode === 'TABLE' && currentTab === 5;
-  const usesGlassSurface = viewMode === 'HUB' || isBondMarketSection || isForecastOverview || isBlogSection;
+  const usesGlassSurface = viewMode === 'HUB' || isBondMarketSection || isForecastOverview || isCbrForecastSection || isBlogSection;
   const activeNavigationId = (() => {
     if (viewMode === 'HUB') return 'home';
     if (currentTab === 0) return 'market';
@@ -1129,9 +1131,8 @@ export const HomePage: React.FC = () => {
               component="section"
               aria-label="Основные разделы BondsScreener"
               sx={{
-                flexGrow: 1,
                 px: { xs: 1.5, md: 3.5, xl: 4.5 },
-                pb: { xs: 2, md: 4 },
+                pb: { xs: 1.5, md: 2.5 },
                 position: 'relative',
               }}
             >
@@ -1162,7 +1163,7 @@ export const HomePage: React.FC = () => {
                       position: 'relative',
                       display: 'block',
                       minWidth: 0,
-                      height: { xs: 'clamp(210px, 36vh, 250px)', md: 'clamp(260px, 37vh, 350px)' },
+                      height: { xs: 'clamp(190px, 30vh, 225px)', md: 'clamp(220px, 32vh, 300px)' },
                       overflow: 'hidden',
                       borderRadius: { xs: '16px', md: '22px' },
                       border: '1px solid rgba(255,255,255,0.82)',
@@ -1259,18 +1260,22 @@ export const HomePage: React.FC = () => {
                 ))}
               </Box>
             </Box>
+
+            <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', pt: { xs: 0.5, md: 1 } }}>
+              <HubQueryBar />
+            </Box>
           </>
         ) : (
           <Container 
             maxWidth={false} 
             sx={{ 
-              px: isForecastOverview || isBlogSection ? 0 : 2,
-              py: isForecastOverview ? { xs: 3, md: 6 } : isBlogSection ? { xs: 2, md: 3 } : isBondMarketSection ? { xs: 1.5, md: 2 } : 3,
+              px: isForecastOverview || isBlogSection ? 0 : isCbrForecastSection ? { xs: 2, md: 3.5, xl: 4.5 } : 2,
+              py: isForecastOverview ? { xs: 3, md: 6 } : isBlogSection ? { xs: 2, md: 3 } : isBondMarketSection || isCbrForecastSection ? { xs: 1.5, md: 2 } : 3,
               flexGrow: 1, 
               display: 'flex', 
               flexDirection: 'column', 
               width: '100%',
-              bgcolor: isForecastOverview || isBlogSection || isBondMarketSection ? 'transparent' : 'grey.50',
+              bgcolor: usesGlassSurface ? 'transparent' : 'grey.50',
             }}
           >
             {/* Tab Content */}
