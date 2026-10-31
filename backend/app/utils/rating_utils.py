@@ -26,13 +26,15 @@ RATINGS: List[str] = [
 """
 
 RU_INDICATORS_PATTERN = re.compile(
-    r"\s*\(RU\)\s*$|\.ru\s*$|^ru\s*|\|ru\|",
+    r"\s*\(RU\)\s*$|\.ru\s*$|^\(RU\)\s*|^ru\s*|\|ru\|",
     flags=re.IGNORECASE,
 )
+SF_SUFFIX_PATTERN = re.compile(r"\.SF$", flags=re.IGNORECASE)
+STANDARD_RATING_PATTERN = re.compile(r"(AAA|AA|A|BBB|BB|B|CCC|CC|C|D)([+-]?)")
 
 
 def standardize_rating(rating: Optional[str]) -> Optional[str]:
-    """Стандартизирует обозначение рейтинга, удаляя русские индикаторы рынка."""
+    """Стандартизирует буквенный рейтинг, сохраняя модификаторы ``+`` и ``-``."""
     if not isinstance(rating, str):
         return None
 
@@ -45,7 +47,12 @@ def standardize_rating(rating: Optional[str]) -> Optional[str]:
         prev = normalized
         normalized = RU_INDICATORS_PATTERN.sub("", normalized)
 
-    normalized = normalized.strip()
+    normalized = SF_SUFFIX_PATTERN.sub("", normalized).strip()
+    grade_candidate = re.sub(r"\s+", "", normalized).upper()
+
+    match = STANDARD_RATING_PATTERN.fullmatch(grade_candidate)
+    if match:
+        return f"{match.group(1)}{match.group(2)}"
 
     return normalized or None
 
@@ -53,7 +60,7 @@ def standardize_rating(rating: Optional[str]) -> Optional[str]:
 def get_rating_index(rating: Optional[str]) -> Optional[int]:
     """Получает индекс рейтинга в шкале рейтингов.
 
-    Определяет позицию рейтинга в списке RATINGS. Поддерживает частичное совпадение.
+    Нормализует обозначение и определяет его точную позицию в списке RATINGS.
 
     Args:
         rating: Строка с рейтингом для поиска. Может быть None или пустой строкой.
@@ -64,17 +71,14 @@ def get_rating_index(rating: Optional[str]) -> Optional[int]:
     """
     if rating is None or not rating:
         return None
-    rating_upper = rating.strip().upper()
+    normalized = standardize_rating(rating)
+    if normalized is None:
+        return None
 
     try:
-        return RATINGS.index(rating_upper)
+        return RATINGS.index(normalized)
     except ValueError:
-        pass
-
-    for i, rating_value in enumerate(RATINGS):
-        if rating_value in rating_upper:
-            return i
-    return None
+        return None
 
 
 def get_worst_rating(ratings_list: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:

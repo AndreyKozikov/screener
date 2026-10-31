@@ -11,6 +11,7 @@ import requests
 
 from app.repository.db.bond_ratings_repository import BondRatingsRepository
 from app.repository.db.bonds_repository import BondsRepository
+from app.utils.rating_utils import standardize_rating
 
 MOEX_SECURITIES_URL = "https://iss.moex.com/iss/securities/{secid}.json?iss.json=extended&iss.meta=off"
 MOEX_RATINGS_URL = (
@@ -197,7 +198,7 @@ class BondRatingsPipelineService:
                 agency_id = int(agency_id)
             except (TypeError, ValueError):
                 continue
-            rating_name = (r.get("rating_level_name_short_ru") or "").strip()
+            rating_name = standardize_rating(r.get("rating_level_name_short_ru")) or ""
             rating_date = r.get("rating_date") or ""
             if isinstance(rating_date, str) and len(rating_date) > 19:
                 rating_date = rating_date[:19]

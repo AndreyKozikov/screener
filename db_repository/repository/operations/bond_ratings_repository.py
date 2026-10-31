@@ -12,6 +12,7 @@ from sqlalchemy import text
 from sqlmodel import Session, create_engine
 
 from db_repository.config.paths import DB_PATH
+from db_repository.utils.rating_utils import standardize_rating
 
 
 class BondRatingsRepository:
@@ -87,7 +88,7 @@ class BondRatingsRepository:
                 agency_id = r.get("agency_id")
                 if agency_id is None:
                     continue
-                rating_level_name = (r.get("rating_level_name") or "").strip() or ""
+                rating_level_name = standardize_rating(r.get("rating_level_name")) or ""
                 rating_date = r.get("rating_date") or ""
                 if isinstance(rating_date, str) and len(rating_date) > 19:
                     rating_date = rating_date[:19]  # YYYY-MM-DD HH:MM:SS
@@ -131,7 +132,7 @@ class BondRatingsRepository:
         return [
             {
                 "agency_id": row[0],
-                "rating_level_name": row[1] or "",
+                "rating_level_name": standardize_rating(row[1]) or "",
                 "rating_date": row[2] or "",
                 "agency_name_short_ru": row[3] or "",
             }

@@ -6,6 +6,7 @@ from db_repository.models.ratings import BondRating, EmitentRating, RatingAgency
 from db_repository.models.bond_emitent import BondEmitent
 from db_repository.models.bond import Bond
 from db_repository.models.emitent import Emitent
+from db_repository.utils.rating_utils import standardize_rating
 from sqlalchemy.dialects.sqlite import insert
 
 class RatingRepository:
@@ -22,7 +23,6 @@ class RatingRepository:
         try:
             with get_session() as session:
                 result = session.exec(statement).fetchall()
-
                 return result
         except:
             raise
@@ -49,7 +49,10 @@ class RatingRepository:
         try:
             with get_session() as session:
                 result = session.exec(statement).fetchall()
-                return result
+                return [
+                    (secid, agency_name, standardize_rating(level) or "")
+                    for secid, agency_name, level in result
+                ]
         except:
             raise
 
@@ -69,12 +72,22 @@ class RatingRepository:
         try:
             with get_session() as session:
                 result = session.exec(statement).fetchall()
-                return result
+                return [
+                    (secid, emitent_type, agency_name, standardize_rating(level) or "")
+                    for secid, emitent_type, agency_name, level in result
+                ]
         except:
             raise
 
     def update_emitents_rating(self, data: list[dict[str, Any]]):
-        stmt = insert(EmitentRating).values(data)
+        normalized_data = [
+            {
+                **rating,
+                "rating_level_name": standardize_rating(rating.get("rating_level_name")) or "",
+            }
+            for rating in data
+        ]
+        stmt = insert(EmitentRating).values(normalized_data)
 
         stmt = stmt.on_conflict_do_update(
             index_elements=[

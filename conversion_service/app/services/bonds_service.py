@@ -277,7 +277,7 @@ class BondsUpdateService:
                 if not secid:
                     continue
                 name_ru = (agency_name_short_ru or "").strip()
-                level = (rating_level_name or "").strip()
+                level = standardize_rating(rating_level_name) or ""
                 if not name_ru:
                     continue
                 entry = {
@@ -316,7 +316,7 @@ class BondsUpdateService:
                 if not secid:
                     continue
                 name_ru = (agency_name_short_ru or "").strip()
-                level = (rating_level_name or "").strip() if rating_level_name else ""
+                level = standardize_rating(rating_level_name) or ""
                 if secid not in emitent_map:
                     type_val = (emitent_type or "").strip() or None
                     emitent_map[secid] = {"type": type_val, "cci_rating_companies": []}
@@ -353,7 +353,7 @@ class BondsUpdateService:
             level = (rating.get("rating_level_name_short_ru") or "").strip()
             if not level:
                 continue
-            idx = get_rating_index(level)
+            idx = get_rating_index(standardize_rating(level) or level)
             if idx is not None and idx > worst_index:
                 worst_index = idx
                 worst_rating = rating

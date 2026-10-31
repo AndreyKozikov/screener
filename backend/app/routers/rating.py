@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Query
 from typing import Any, Dict, List
 
 from app.services.bond_ratings_pipeline_service import BondRatingsPipelineService
+from app.utils.rating_utils import standardize_rating
 from app.utils.logger import get_data_update_logger
 
 router = APIRouter(prefix="/api/rating", tags=["rating"])
@@ -30,7 +31,7 @@ def _format_rating_for_api(r: Dict[str, Any]) -> Dict[str, Any]:
         "agency_name_short_ru": r.get("agency_name_short_ru", ""),
         "rating_level_id": 0,
         "rating_date": r.get("rating_date", ""),
-        "rating_level_name_short_ru": r.get("rating_level_name", ""),
+        "rating_level_name_short_ru": standardize_rating(r.get("rating_level_name")) or "",
     }
 
 

@@ -1,20 +1,17 @@
 import React, { useEffect, useMemo, useCallback, useState, useRef } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import type { ColDef, RowClickedEvent, CellClickedEvent, ICellRendererParams, IHeaderParams } from 'ag-grid-community';
-import { ModuleRegistry, AllCommunityModule } from 'ag-grid-community';
-import 'ag-grid-community/styles/ag-grid.css';
-import 'ag-grid-community/styles/ag-theme-material.css';
+import { ModuleRegistry, AllCommunityModule, themeQuartz } from 'ag-grid-community';
 import './ag-grid-tooltips.css';
 import { Box, Card, CardContent, Tooltip, IconButton } from '@mui/material';
 import FilterAltIcon from '@mui/icons-material/FilterAlt';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import FullscreenIcon from '@mui/icons-material/Fullscreen';
 import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
 import CloseIcon from '@mui/icons-material/Close';
 import ShowChartIcon from '@mui/icons-material/ShowChart';
 
-// Register AG Grid modules
-ModuleRegistry.registerModules([AllCommunityModule]);
 import { useBondsStore } from '../../stores/bondsStore';
 import { useFiltersStore } from '../../stores/filtersStore';
 import { useUiStore } from '../../stores/uiStore';
@@ -39,6 +36,171 @@ import { SearchFilter } from '../filters/AllFilters';
 import { FloaterCardDialog } from './FloaterCardDialog';
 import { PriceHistoryDialog } from './PriceHistoryDialog';
 
+// Register AG Grid modules
+ModuleRegistry.registerModules([AllCommunityModule]);
+
+const bondsGridTheme = themeQuartz.withParams({
+  accentColor: '#1976d2',
+  backgroundColor: '#ffffff',
+  foregroundColor: '#26364a',
+  borderColor: '#e4eaf2',
+  chromeBackgroundColor: '#f7f9fc',
+  headerBackgroundColor: '#f5f8fc',
+  headerTextColor: '#42526b',
+  headerFontSize: 12,
+  headerFontWeight: 600,
+  dataFontSize: 13,
+  cellTextColor: '#26364a',
+  cellHorizontalPadding: 10,
+  headerVerticalPaddingScale: 1.15,
+  rowHeight: 42,
+  spacing: 8,
+  wrapperBorder: { color: '#e4eaf2', width: 1 },
+  wrapperBorderRadius: 8,
+  headerRowBorder: { color: '#e4eaf2', width: 1 },
+  headerColumnBorder: false,
+  columnBorder: false,
+  rowBorder: { color: '#edf1f6', width: 1 },
+  oddRowBackgroundColor: '#fcfdff',
+  rowHoverColor: '#f2f7ff',
+});
+
+const bondsGridLocaleRu: Record<string, string> = {
+  // Column menu and sorting
+  columnMenu: 'Меню столбца',
+  filterMenuTab: 'Фильтр',
+  generalMenuTab: 'Общие',
+  columnsMenuTab: 'Столбцы',
+  sortAscending: 'Сортировать по возрастанию',
+  sortDescending: 'Сортировать по убыванию',
+  sortUnSort: 'Сбросить сортировку',
+
+  // Text, number, and date filter controls
+  textFilter: 'Текстовый фильтр',
+  numberFilter: 'Числовой фильтр',
+  dateFilter: 'Фильтр по дате',
+  setFilter: 'Фильтр значений',
+  filterOoo: 'Фильтр...',
+  empty: 'Выберите условие',
+  equals: 'Равно',
+  notEqual: 'Не равно',
+  lessThan: 'Меньше',
+  greaterThan: 'Больше',
+  lessThanOrEqual: 'Меньше или равно',
+  greaterThanOrEqual: 'Больше или равно',
+  inRange: 'Между',
+  inRangeStart: 'От',
+  inRangeEnd: 'До',
+  contains: 'Содержит',
+  notContains: 'Не содержит',
+  startsWith: 'Начинается с',
+  endsWith: 'Заканчивается на',
+  blank: 'Пусто',
+  notBlank: 'Не пусто',
+  before: 'Раньше',
+  after: 'Позже',
+  andCondition: 'И',
+  orCondition: 'ИЛИ',
+  dateFormatOoo: 'дд.мм.гггг',
+
+  // Filter buttons and set-filter search
+  applyFilter: 'Применить',
+  clearFilter: 'Очистить',
+  resetFilter: 'Сбросить',
+  cancelFilter: 'Отмена',
+  selectAll: '(Выбрать всё)',
+  selectAllSearchResults: '(Выбрать все найденные)',
+  searchOoo: 'Поиск...',
+  blanks: '(Пустые)',
+  noMatches: 'Совпадений не найдено',
+
+  // Pagination and empty states
+  page: 'Страница',
+  more: 'ещё',
+  to: '—',
+  of: 'из',
+  next: 'Следующая',
+  last: 'Последняя',
+  first: 'Первая',
+  previous: 'Предыдущая',
+  loadingOoo: 'Загрузка...',
+  noRowsToShow: 'Нет данных',
+};
+
+type TooltipHeaderParams = IHeaderParams & { tooltipText?: string };
+
+const BondHeaderLabel = React.memo((params: TooltipHeaderParams) => {
+  const label = params.displayName || '';
+
+  return (
+    <Box
+      component="span"
+      sx={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 0.35,
+        width: '100%',
+        maxWidth: '100%',
+        minWidth: 0,
+        px: 0.5,
+        whiteSpace: 'normal',
+        textAlign: 'center',
+      }}
+    >
+      <Box component="span" sx={{ flex: '0 1 auto', minWidth: 0, whiteSpace: 'normal' }}>
+        {label}
+      </Box>
+      {params.tooltipText && (
+        <Tooltip
+          title={params.tooltipText}
+          arrow
+          placement="top"
+          enterDelay={300}
+          disableInteractive
+          slotProps={{
+            popper: { sx: { zIndex: 2100 } },
+            tooltip: {
+              sx: {
+                maxWidth: 420,
+                bgcolor: '#172338',
+                color: '#fff',
+                fontSize: 12,
+                lineHeight: 1.55,
+                px: 1.5,
+                py: 1.1,
+                borderRadius: 1.5,
+                boxShadow: '0 8px 24px rgba(15, 23, 42, 0.22)',
+                '& .MuiTooltip-arrow': { color: '#172338' },
+              },
+            },
+          }}
+        >
+          <IconButton
+            size="small"
+            aria-label={`Описание колонки: ${label}`}
+            onClick={(event) => event.stopPropagation()}
+            onMouseDown={(event) => event.stopPropagation()}
+            sx={{
+              flex: '0 0 auto',
+              width: 18,
+              height: 18,
+              p: 0,
+              color: '#7b8ba2',
+              '&:hover': { color: 'primary.main', bgcolor: 'rgba(25, 118, 210, 0.08)' },
+              '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main' },
+            }}
+          >
+            <InfoOutlinedIcon sx={{ fontSize: 14 }} />
+          </IconButton>
+        </Tooltip>
+      )}
+    </Box>
+  );
+});
+
+BondHeaderLabel.displayName = 'BondHeaderLabel';
+
 type FieldDescriptionMap = Record<string, string>;
 
 export type BondsTableProps = {
@@ -62,8 +224,8 @@ const flattenDescriptions = (descriptions: DescriptionsResponse): FieldDescripti
 };
 
 /**
- * Нормализует рейтинг, удаляя префиксы, суффиксы и локальные индикаторы
- * Оставляет только основную буквенную часть: AAA, AA, A, BBB, BB, B, CCC, CC, C, D
+ * Определяет базовую группу рейтинга только для выбора цвета ячейки.
+ * Знаки +/- влияют на порядок рейтингов, но не меняют цветовую группу.
  * 
  * Примеры:
  * "ruAAA" → "AAA"
@@ -281,19 +443,6 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
       setError(null);
       const response = await fetchBonds(filters);
       setBonds(response);
-      
-      // Explicitly refresh AG Grid data after loading
-      if (gridRef.current?.api) {
-        // Small delay to ensure state is updated
-        setTimeout(() => {
-          if (gridRef.current?.api) {
-            // Refresh all cells to ensure data is displayed
-            gridRef.current.api.refreshCells({ force: true });
-            // Resize columns to fit new data
-            gridRef.current.api.sizeColumnsToFit();
-          }
-        }, 100);
-      }
     } catch (error) {
       console.error('Error loading bonds:', error);
       if (error instanceof Error) {
@@ -405,75 +554,6 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
     setPriceHistoryOpen(false);
     setPriceHistoryData(null);
   }, []);
-
-  // Custom header component with Material-UI Tooltip
-  const CustomHeaderWithTooltip = React.memo((params: IHeaderParams) => {
-    const displayName = params.displayName || '';
-    const tooltipText = params.column?.getColDef().headerTooltip as string | undefined;
-    
-    // Если нет tooltip, просто возвращаем стандартный заголовок
-    if (!tooltipText) {
-      return (
-        <div className="ag-header-cell-label" style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          {displayName}
-        </div>
-      );
-    }
-
-    return (
-      <Tooltip
-        title={tooltipText}
-        arrow
-        placement="top"
-        enterDelay={300}
-        leaveDelay={0}
-        disableInteractive
-        slotProps={{
-          tooltip: {
-            sx: {
-              maxWidth: 400,
-              minWidth: 200,
-              bgcolor: 'rgba(255, 255, 255, 0.98)',
-              color: 'rgba(0, 0, 0, 0.87)',
-              fontSize: '13px',
-              lineHeight: 1.5,
-              padding: '12px 16px',
-              borderRadius: '8px',
-              boxShadow: '0px 3px 5px -1px rgba(0, 0, 0, 0.2), 0px 6px 10px 0px rgba(0, 0, 0, 0.14), 0px 1px 18px 0px rgba(0, 0, 0, 0.12)',
-              border: '1px solid rgba(0, 0, 0, 0.12)',
-              fontFamily: 'Roboto, Helvetica, Arial, sans-serif',
-              fontWeight: 400,
-              wordWrap: 'break-word',
-              whiteSpace: 'normal',
-              textAlign: 'left',
-              '& .MuiTooltip-arrow': {
-                color: 'rgba(255, 255, 255, 0.98)',
-                '&::before': {
-                  border: '1px solid rgba(0, 0, 0, 0.12)',
-                },
-              },
-            },
-          },
-        }}
-      >
-        <div 
-          className="ag-header-cell-label" 
-          style={{ 
-            width: '100%', 
-            height: '100%', 
-            display: 'flex', 
-            alignItems: 'center', 
-            justifyContent: 'center',
-            cursor: 'default'
-          }}
-        >
-          {displayName}
-        </div>
-      </Tooltip>
-    );
-  });
-
-  CustomHeaderWithTooltip.displayName = 'CustomHeaderWithTooltip';
 
   // Portfolio icon SVG component
   const PortfolioIcon = React.memo(() => (
@@ -777,10 +857,10 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
 
     // Base column definition with common properties
     const createColumnDef = (field: string, headerName: string, otherProps: Partial<ColDef> = {}): ColDef => {
-      const tooltipText = otherProps.headerTooltip !== undefined ? otherProps.headerTooltip : getFieldDescription(field);
-      
-      // Remove cellStyle from otherProps to avoid conflicts
-      const { cellStyle: otherCellStyle, ...restProps } = otherProps;
+      // Descriptions are rendered inside the provided header so AG Grid keeps
+      // ownership of sorting, filter buttons, menu and keyboard navigation.
+      const { cellStyle: otherCellStyle, headerTooltip, ...restProps } = otherProps;
+      const tooltipText = headerTooltip !== undefined ? headerTooltip : getFieldDescription(field);
       
       // Create cellStyle without undefined properties
       let cellStyle: ColDef['cellStyle'];
@@ -802,9 +882,12 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
         field,
         headerName,
         headerClass: 'ag-header-center',
-        // Используем кастомный header component с Material-UI Tooltip
-        headerComponent: tooltipText ? CustomHeaderWithTooltip : undefined,
-        headerTooltip: tooltipText, // Оставляем для совместимости
+        headerComponentParams: tooltipText
+          ? {
+              innerHeaderComponent: BondHeaderLabel,
+              innerHeaderComponentParams: { tooltipText },
+            }
+          : undefined,
         // Center align cell content by default (can be overridden in otherProps)
         cellStyle,
         ...restProps,
@@ -1009,6 +1092,7 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
   // Default column properties
   const defaultColDef: ColDef = useMemo(() => ({
     sortable: true,
+    unSortIcon: true,
     filter: true,
     resizable: true,
     minWidth: 80,
@@ -1131,7 +1215,7 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
 
   // Calculate dynamic header height based on content
   const calculateHeaderHeight = useCallback(() => {
-    const gridContainer = document.querySelector<HTMLElement>('.ag-theme-material');
+    const gridContainer = document.querySelector<HTMLElement>('.bonds-grid');
     if (!gridContainer) return;
 
     const headerCells = gridContainer.querySelectorAll<HTMLElement>('.ag-header-cell');
@@ -1177,28 +1261,12 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
       // Also update CSS variable for AG Grid
       gridContainer.style.setProperty('--ag-header-height', `${calculatedHeight}px`);
       
-      // Force AG Grid to recalculate header height
-      if (gridRef.current?.api) {
-        gridRef.current.api.sizeColumnsToFit();
-      }
     }
   }, [headerHeight]);
 
   // Handle grid ready
   const onGridReady = useCallback(() => {
-    if (gridRef.current?.api) {
-      // Auto-size all columns to fit content
-      gridRef.current.api.autoSizeAllColumns(false); // false = exclude header from calculation
-      
-      // Calculate header height after headers are rendered
-      setTimeout(() => {
-        calculateHeaderHeight();
-        // Auto-size again after header height is calculated
-        if (gridRef.current?.api) {
-          gridRef.current.api.autoSizeAllColumns(false);
-        }
-      }, 250);
-    }
+    window.setTimeout(calculateHeaderHeight, 250);
   }, [calculateHeaderHeight]);
 
   // Handle first data rendered - set default sort
@@ -1215,9 +1283,6 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
       }
     }
   }, []);
-
-  // Track previous bonds for auto-sizing on initial load
-  const prevBondsRef = useRef<BondListItem[]>([]);
 
   // Filter bonds by search query
   const filteredBonds = useMemo(() => {
@@ -1239,18 +1304,12 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
   }, [bonds, filters.search]);
 
 
-  // Recalculate header height and auto-size columns when data, columns, or window resize
-  // Only auto-size on initial load or when columns actually change, not on portfolio updates
+  // Recalculate header height when data, columns, or descriptions change.
+  // Column widths are fitted once by AG Grid's autoSizeStrategy and then remain stable.
   useEffect(() => {
     if (bonds.length > 0 && gridRef.current?.api) {
       const timeoutId = setTimeout(() => {
         calculateHeaderHeight();
-        // Only auto-size on initial load or major data changes, not on cell updates
-        // This prevents table reformatting when portfolio changes
-        if (bonds.length > 0 && prevBondsRef.current.length === 0) {
-          gridRef.current?.api.autoSizeAllColumns(false);
-        }
-        prevBondsRef.current = bonds;
       }, 500);
 
       return () => clearTimeout(timeoutId);
@@ -1317,10 +1376,10 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
       width: isFullscreen ? '100vw' : '100%',
       height: isFullscreen ? '100vh' : '100%',
       zIndex: isFullscreen ? 2000 : 'auto',
-      borderRadius: isFullscreen ? 0 : '6px',
+      borderRadius: isFullscreen ? 0 : '10px',
       backgroundColor: '#ffffff',
-      border: '1px solid #e0e0e0',
-      boxShadow: isFullscreen ? '0 4px 10px rgba(0,0,0,0.15)' : '0 2px 4px rgba(0,0,0,0.06)',
+      border: '1px solid #e4eaf2',
+      boxShadow: isFullscreen ? '0 8px 28px rgba(15, 23, 42, 0.18)' : '0 4px 16px rgba(15, 23, 42, 0.06)',
       display: 'flex',
       flexDirection: 'column',
     }}>
@@ -1334,19 +1393,19 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
         {/* Header with search and icon buttons */}
         <Box
           sx={{
-            px: 1.5,
+            px: 2,
             py: 1,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            borderBottom: '1px solid #e0e0e0',
-            backgroundColor: '#fafafa',
-            minHeight: '46px',
+            borderBottom: '1px solid #e8edf4',
+            backgroundColor: '#f8fafd',
+            minHeight: '54px',
             gap: 2,
           }}
         >
           {/* Search field */}
-          <Box sx={{ flex: 1, maxWidth: '400px' }}>
+          <Box sx={{ flex: 1, maxWidth: '440px' }}>
             <SearchFilter />
           </Box>
           
@@ -1356,17 +1415,15 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
               <Tooltip title="Фильтры">
                 <IconButton
                   size="small"
+                  aria-label="Открыть фильтры облигаций"
                   onClick={onOpenFilters}
                   sx={{ 
-                    width: 28, 
-                    height: 28,
-                    padding: '4px',
-                    '&:focus': {
-                      outline: 'none',
-                    },
-                    '&:focus-visible': {
-                      outline: 'none',
-                    },
+                    width: 34,
+                    height: 34,
+                    borderRadius: 1.5,
+                    color: '#5c6b80',
+                    '&:hover': { bgcolor: 'rgba(25, 118, 210, 0.08)', color: 'primary.main' },
+                    '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' },
                   }}
                 >
                   <FilterAltIcon fontSize="small" />
@@ -1375,24 +1432,22 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
             )}
 
             {/* Vertical divider */}
-            <Box sx={{ width: '1px', backgroundColor: '#ddd', mx: 1 }} />
+            <Box sx={{ width: '1px', height: 24, backgroundColor: '#e1e7ef', mx: 1 }} />
 
             {/* Refresh button */}
             <Tooltip title="Обновить данные">
               <IconButton
                 size="small"
+                aria-label="Обновить данные"
                 onClick={() => triggerDataRefresh()}
                 disabled={isLoading}
                 sx={{ 
-                  padding: '4px', 
-                  width: 28, 
-                  height: 28,
-                  '&:focus': {
-                    outline: 'none',
-                  },
-                  '&:focus-visible': {
-                    outline: 'none',
-                  },
+                  width: 34,
+                  height: 34,
+                  borderRadius: 1.5,
+                  color: '#5c6b80',
+                  '&:hover': { bgcolor: 'rgba(25, 118, 210, 0.08)', color: 'primary.main' },
+                  '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' },
                 }}
               >
                 <RefreshIcon fontSize="small" />
@@ -1403,17 +1458,15 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
             <Tooltip title={isFullscreen ? 'Свернуть' : 'На весь экран'}>
               <IconButton
                 size="small"
+                aria-label={isFullscreen ? 'Свернуть таблицу' : 'Развернуть таблицу на весь экран'}
                 onClick={() => setIsFullscreen(prev => !prev)}
                 sx={{ 
-                  padding: '4px', 
-                  width: 28, 
-                  height: 28,
-                  '&:focus': {
-                    outline: 'none',
-                  },
-                  '&:focus-visible': {
-                    outline: 'none',
-                  },
+                  width: 34,
+                  height: 34,
+                  borderRadius: 1.5,
+                  color: '#5c6b80',
+                  '&:hover': { bgcolor: 'rgba(25, 118, 210, 0.08)', color: 'primary.main' },
+                  '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' },
                 }}
               >
                 {isFullscreen ? <FullscreenExitIcon fontSize="small" /> : <FullscreenIcon fontSize="small" />}
@@ -1424,17 +1477,15 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
             <Tooltip title="Закрыть таблицу">
               <IconButton
                 size="small"
+                aria-label="Закрыть таблицу"
                 onClick={() => setIsClosed(true)}
                 sx={{ 
-                  padding: '4px', 
-                  width: 28, 
-                  height: 28,
-                  '&:focus': {
-                    outline: 'none',
-                  },
-                  '&:focus-visible': {
-                    outline: 'none',
-                  },
+                  width: 34,
+                  height: 34,
+                  borderRadius: 1.5,
+                  color: '#5c6b80',
+                  '&:hover': { bgcolor: 'rgba(239, 68, 68, 0.08)', color: 'error.main' },
+                  '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' },
                 }}
               >
                 <CloseIcon fontSize="small" />
@@ -1453,208 +1504,91 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
           }}>
         <Box sx={{ px: 2, width: '100%', height: '100%' }}>
         <Box
-          className="ag-theme-material"
+          className="bonds-grid"
           sx={{
             height: '100%',
             width: '100%',
             flexGrow: 1,
-            // Dynamic header height - use CSS variable if headerHeight is set
             ...(headerHeight && {
               '--ag-header-height': `${headerHeight}px`,
             }),
-            // External border for table (Bootstrap .table-bordered style)
             '& .ag-root-wrapper': {
-              border: '1px solid #dee2e6',
-              borderRadius: '4px',
-            },
-            // Header cell: center content horizontally and vertically
-            '& .ag-header': {
-              borderBottom: '1px solid #ddd',
+              overflow: 'hidden',
             },
             '& .ag-header-cell': {
-              display: 'flex',
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '4px 4px',
-              boxSizing: 'border-box',
-              gap: '0px !important',
-              // Bootstrap-style borders
-              borderRight: '1px solid #dee2e6 !important',
-              borderBottom: '1px solid #dee2e6 !important',
-              fontWeight: 600,
-              color: '#444',
-              background: '#fafafa',
+              padding: '6px 12px',
             },
-            // Remove right border only from the last header cell in the main container
-            '& .ag-header-cell:last-child': {
-              borderRight: 'none !important',
-            },
-            '& .ag-center-cols-container ~ .ag-pinned-right-header .ag-header-cell:last-child': {
-              borderRight: 'none !important',
-            },
-            // Ensure pinned-left header cells keep their right border
-            '& .ag-pinned-left-header .ag-header-cell': {
-              borderRight: '1px solid #dee2e6 !important',
-            },
-            // Label: only take space needed, allow text wrapping, remove all right spacing
             '& .ag-header-cell-label': {
-              fontWeight: 600,
-              display: 'flex',
-              alignItems: 'center',
               justifyContent: 'center',
-              textAlign: 'center',
-              whiteSpace: 'normal',
-              wordBreak: 'break-word',
-              lineHeight: 1.3,
-              flex: '0 1 auto',
               minWidth: 0,
-              padding: '2px 0px 2px 8px !important',
-              marginRight: '0px !important',
-              marginLeft: '0px !important',
-              marginTop: '0px !important',
-              marginBottom: '0px !important',
-              overflow: 'visible',
-              boxSizing: 'border-box',
             },
             '& .ag-header-cell-text': {
-              whiteSpace: 'normal',
-              wordBreak: 'break-word',
-              lineHeight: 1.5,
-              textAlign: 'center',
               display: 'block',
               overflow: 'visible',
+              padding: '0 2px',
+              boxSizing: 'border-box',
+              whiteSpace: 'normal',
+              wordBreak: 'break-word',
+              lineHeight: 1.35,
+              textAlign: 'center',
               hyphens: 'auto',
-              marginRight: '0px !important',
-              paddingRight: '0px !important',
               fontSize: '12px',
             },
-            // Filter buttons: positioned immediately after label text, minimal gap
-            '& .ag-header-cell-menu-button': {
-              flexShrink: 0,
-              alignSelf: 'center',
-              marginLeft: '1px !important',
-              marginRight: '0px !important',
-              marginTop: '0px !important',
-              marginBottom: '0px !important',
-              padding: '0px !important',
-              width: 'auto !important',
-              minWidth: 'auto !important',
+            '& .ag-header-cell-menu-button, & .ag-header-cell-filter-button': {
+              opacity: 0.72,
+              transition: 'opacity 120ms ease, color 120ms ease',
             },
-            '& .ag-header-cell-filter-button': {
-              flexShrink: 0,
-              alignSelf: 'center',
-              marginLeft: '1px !important',
-              marginRight: '0px !important',
-              marginTop: '0px !important',
-              marginBottom: '0px !important',
-              padding: '0px !important',
-              width: 'auto !important',
-              minWidth: 'auto !important',
-            },
-            // Remove any spacing between label and buttons
-            '& .ag-header-cell-label + .ag-header-cell-menu-button': {
-              marginLeft: '1px !important',
-            },
-            '& .ag-header-cell-label + .ag-header-cell-filter-button': {
-              marginLeft: '1px !important',
-            },
-            // Ensure filter icons are always visible on the right
-            '& .ag-header-cell-filtered .ag-header-cell-menu-button': {
+            '& .ag-header-cell:hover .ag-header-cell-menu-button, & .ag-header-cell:hover .ag-header-cell-filter-button, & .ag-header-cell-filtered .ag-header-cell-menu-button, & .ag-header-cell-filtered .ag-header-cell-filter-button': {
               opacity: 1,
             },
-            '& .ag-header-cell-filtered .ag-header-cell-filter-button': {
-              opacity: 1,
-            },
-            // Unified font style and styling for cells
             '& .ag-cell': {
-              fontFamily: 'Roboto, Helvetica, Arial, sans-serif',
-              fontSize: '14px',
-              lineHeight: 1.35,
-              // Bootstrap-style borders
-              borderRight: '1px solid #dee2e6 !important',
-              borderBottom: '1px solid #dee2e6 !important',
+              fontFamily: 'inherit',
+              fontSize: '13px',
+              lineHeight: 1.4,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               padding: '8px 12px !important',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
-              maxHeight: '38px !important',
-              height: '38px !important',
               boxSizing: 'border-box',
-              '& > *': {
-                maxHeight: '38px !important',
-                overflow: 'hidden',
-              },
-            },
-            // Remove right border only from the last cell in the main container (not pinned-left/right)
-            '& .ag-center-cols-container .ag-row .ag-cell:last-child': {
-              borderRight: 'none !important',
-            },
-            '& .ag-pinned-right-cols-container .ag-row .ag-cell:last-child': {
-              borderRight: 'none !important',
-            },
-            // Ensure pinned-left cells keep their right border (especially the last one before main content)
-            '& .ag-pinned-left-cols-container .ag-cell': {
-              borderRight: '1px solid #dee2e6 !important',
             },
             '& .ag-cell[col-id="SHORTNAME"]': {
               justifyContent: 'flex-start',
               textAlign: 'left !important',
             },
-            // Ensure numeric columns are centered
-            '& .ag-cell[col-id="PREVPRICE"], & .ag-cell[col-id="COUPON_YIELD_TO_PRICE"], & .ag-cell[col-id="YIELDATPREVWAPRICE"], & .ag-cell[col-id="FACEVALUE"], & .ag-cell[col-id="COUPONPERCENT"], & .ag-cell[col-id="COUPONPERCENT_NOMINAL"], & .ag-cell[col-id="COUPONPERIOD"], & .ag-cell[col-id="ACCRUEDINT"], & .ag-cell[col-id="DURATION_YEARS"], & .ag-cell[col-id="FACEUNIT"], & .ag-cell[col-id="RATING"]': {
+            '& .ag-cell[col-id="PREVPRICE"], & .ag-cell[col-id="COUPON_YIELD_TO_PRICE"], & .ag-cell[col-id="YIELDATPREVWAPRICE"], & .ag-cell[col-id="FACEVALUE"], & .ag-cell[col-id="COUPONPERCENT"], & .ag-cell[col-id="COUPONPERCENT_NOMINAL"], & .ag-cell[col-id="COUPONPERIOD"], & .ag-cell[col-id="ACCRUEDINT"], & .ag-cell[col-id="DURATION_YEARS"]': {
+              justifyContent: 'center',
+              textAlign: 'center !important',
+              fontVariantNumeric: 'tabular-nums',
+            },
+            '& .ag-cell[col-id="FACEUNIT"], & .ag-cell[col-id="RATING"]': {
               justifyContent: 'center',
               textAlign: 'center !important',
             },
-            // Row styling - fixed height
             '& .ag-row': {
               cursor: 'pointer',
-              minHeight: '38px !important',
-              maxHeight: '38px !important',
-              height: '38px !important',
-              '& > *': {
-                maxHeight: '38px !important',
-              },
             },
-            '& .ag-row-hover': {
-              backgroundColor: '#f7f9fc !important',
-            },
-            // Prevent row click when clicking on portfolio action cell
             '& .ag-cell.portfolio-action-cell': {
               pointerEvents: 'auto',
               '& *': {
                 pointerEvents: 'auto',
               },
             },
-            // Center header class
             '& .ag-header-center .ag-header-cell-label': {
               justifyContent: 'center',
             },
-            // Remove shadow from pinned-right sections to make it look like part of the table
             '& .ag-pinned-right-header': {
-              boxShadow: 'none !important',
+              boxShadow: 'none',
             },
             '& .ag-pinned-right-cols-container': {
-              boxShadow: 'none !important',
+              boxShadow: 'none',
             },
-            // Make pinned-right cells look continuous with the rest of the table
-            '& .ag-pinned-right-cols-container .ag-cell': {
-              background: '#fff !important',
-              borderRight: 'none !important',
-            },
-            // Add vertical divider between comparison and portfolio columns
             '& .ag-pinned-right-cols-container .ag-cell[col-id="addToComparison"]': {
-              borderRight: '1px solid #dee2e6 !important',
+              borderRight: '1px solid #e4eaf2',
             },
-            '& .ag-pinned-right-header .ag-header-cell': {
-              background: '#fafafa !important',
-              borderRight: 'none !important',
-            },
-            // Add vertical divider in header between comparison and portfolio columns
             '& .ag-pinned-right-header .ag-header-cell[col-id="addToComparison"]': {
-              borderRight: '1px solid #dee2e6 !important',
+              borderRight: '1px solid #e4eaf2',
             },
           }}
         >
@@ -1673,7 +1607,7 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
             paginationPageSizeSelector={[50, 100, 200, 500]}
             enableCellTextSelection={true}
             headerHeight={headerHeight}
-            rowHeight={38}
+            rowHeight={42}
             autoSizeStrategy={{
               type: 'fitGridWidth',
               defaultMinWidth: 80,
@@ -1681,7 +1615,8 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
             suppressAggFuncInHeader={true}
             suppressMenuHide={true}
             getRowId={(params) => params.data.SECID}
-            theme="legacy"
+            localeText={bondsGridLocaleRu}
+            theme={bondsGridTheme}
             overlayNoRowsTemplate={
               '<div style="padding: 20px; text-align: center; color: #666;">' +
               '<div style="font-size: 48px; margin-bottom: 16px;">🔍</div>' +

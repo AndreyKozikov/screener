@@ -27,7 +27,7 @@ const RATING_SCALE = [
 ];
 
 /**
- * Normalize rating string to extract base rating (AAA, AA, A, BBB, etc.)
+ * Normalize agency-specific labels while keeping the +/- grade modifier.
  */
 const normalizeRating = (rating: string): string => {
   if (!rating || rating.trim() === '' || rating === '—' || rating === '-') {
@@ -37,37 +37,22 @@ const normalizeRating = (rating: string): string => {
   // Convert to uppercase and trim
   let normalized = rating.toUpperCase().trim();
   
-  // Remove prefixes: RU, (RU) at the start
-  normalized = normalized.replace(/^RU\s*/i, '');
-  normalized = normalized.replace(/^\(RU\)\s*/i, '');
-  
-  // Remove all brackets and their contents
-  normalized = normalized.replace(/\([^)]*\)/g, '');
-  
-  // Remove suffixes: .SF, -SF, .sf at the end
-  normalized = normalized.replace(/[.\-]?SF$/i, '');
-  normalized = normalized.replace(/\.sf$/i, '');
-  
-  // Remove + and - at the end
-  normalized = normalized.replace(/[+\-]+$/, '');
-  
-  // Remove all dots and dashes
-  normalized = normalized.replace(/[.\-]/g, '');
-  
-  // Extract base letter part (AAA, AA, A, BBB, BB, B, CCC, CC, C, D)
-  const letterMatch = normalized.match(/^(AAA|AA|A|BBB|BB|B|CCC|CC|C|D)/);
-  if (letterMatch) {
-    return letterMatch[1];
+  // Strip only known market/agency decorations; +/- remains part of the grade.
+  let previous = '';
+  while (normalized !== previous) {
+    previous = normalized;
+    normalized = normalized
+      .replace(/\s*\(RU\)\s*$/i, '')
+      .replace(/\.ru\s*$/i, '')
+      .replace(/^\(RU\)\s*/i, '')
+      .replace(/^RU\s*/i, '')
+      .replace(/\|ru\|/i, '');
   }
-  
-  // If no exact match, try to extract only letters and find pattern
-  const lettersOnly = normalized.replace(/[^A-Z]/g, '');
-  const patternMatch = lettersOnly.match(/^(AAA|AA|A|BBB|BB|B|CCC|CC|C|D)/);
-  if (patternMatch) {
-    return patternMatch[1];
-  }
-  
-  return '';
+  normalized = normalized.replace(/\.SF$/i, '').trim();
+  const gradeCandidate = normalized.replace(/\s+/g, '').toUpperCase();
+
+  const gradeMatch = gradeCandidate.match(/^(AAA|AA|A|BBB|BB|B|CCC|CC|C|D)([+-]?)$/);
+  return gradeMatch ? `${gradeMatch[1]}${gradeMatch[2]}` : rating.trim();
 };
 
 /**
@@ -79,23 +64,8 @@ const getRatingIndex = (rating: string): number => {
     return RATING_SCALE.length; // Worst possible (not found)
   }
   
-  // Try exact match first
-  const exactIndex = RATING_SCALE.findIndex(r => r === normalized);
-  if (exactIndex !== -1) {
-    return exactIndex;
-  }
-  
-  // Try to find base match (e.g., "AA" matches "AA+", "AA", "AA-")
-  const baseMatch = RATING_SCALE.findIndex(r => {
-    const base = normalizeRating(r);
-    return base === normalized;
-  });
-  
-  if (baseMatch !== -1) {
-    return baseMatch;
-  }
-  
-  return RATING_SCALE.length; // Worst possible (not found)
+  const index = RATING_SCALE.indexOf(normalized);
+  return index === -1 ? RATING_SCALE.length : index;
 };
 
 /**
@@ -145,7 +115,9 @@ export const getWorstRating = (ratings: Rating[]): Rating | null => {
  */
 export const getRatingLevel = (rating: Rating | null): string | null => {
   if (!rating) return null;
-  return rating.rating_level_name_short_ru || null;
+  const level = rating.rating_level_name_short_ru;
+  if (!level) return null;
+  return normalizeRating(level) || null;
 };
 
 /**

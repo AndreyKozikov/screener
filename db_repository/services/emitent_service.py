@@ -1,6 +1,7 @@
 from typing import Optional, Any
 from db_repository.repository.emitent_repository import get_emitent_repository
 from db_repository.repository.ratings_repository import get_ratings_repository
+from db_repository.utils.rating_utils import standardize_rating
 
 
 class EmitentService:
@@ -49,7 +50,7 @@ class EmitentService:
             {
                 "emitent_id": inn_to_id[inn],
                 "agency_id": rating["agency_id"],
-                "rating_level_name": rating["rating_level_name_short_ru"],
+                "rating_level_name": standardize_rating(rating.get("rating_level_name_short_ru")) or "",
                 "rating_date": rating["rating_date"],
                 "rating_publicate_date": rating["rating_publicate_date"],
             }

@@ -25,6 +25,7 @@ from app.models import (
 from app.models.schemasDTO.bond_repository_dto import BondRepositoryRowDTO
 from app.repository.db.bonds_repository import BondsRepository
 from app.services.emitent_service import get_emitent_service
+from app.utils.rating_utils import standardize_rating
 
 
 def _load_mappings(data_dir: Path) -> Tuple[Dict[int, str], Dict[int, str]]:
@@ -125,7 +126,7 @@ def _bond_to_screener_dto(
     if duration_days_from_bond is not None:
         duration_days = duration_days_from_bond
 
-    rating = (bond.rating or "").strip() or None
+    rating = standardize_rating(bond.rating)
     ratings: Optional[List[Dict[str, Any]]] = None
     if rating:
         ratings = [
@@ -323,7 +324,7 @@ def _build_securities_dict(
         "CALLOPTIONDATE": bond.call_option_date,
         "PUTOPTIONDATE": bond.put_option_date,
         "DURATIONWAPRICE": bond.duration_waprice,
-        "RATING_LEVEL": bond.rating,
+        "RATING_LEVEL": standardize_rating(bond.rating),
         "RATING_AGENCY": bond.rating_agency,
         "FACEUNIT": bond.face_unit,
     }
@@ -364,7 +365,10 @@ def _build_securities_dict(
     sec["BONDTYPE43"] = bond_kind_str
     # Используем нормализованный рейтинг из столбца rating вместо ratings
     if bond.rating:
-        sec["RATINGS"] = [{"rating_level_name_short_ru": bond.rating, "agency_name_short_ru": bond.rating_agency or ""}]
+        sec["RATINGS"] = [{
+            "rating_level_name_short_ru": standardize_rating(bond.rating) or "",
+            "agency_name_short_ru": bond.rating_agency or "",
+        }]
     else:
         sec["RATINGS"] = None
     return sec

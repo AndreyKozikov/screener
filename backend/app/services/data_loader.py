@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 from app.models import BondListItem
 from app.repository.files.file_storage import FileStorage
 
-from app.utils.rating_utils import get_rating_index
+from app.utils.rating_utils import get_rating_index, standardize_rating
 from app.services.moex_client import MoexClient
 from app.utils.logger import get_data_update_logger
 
@@ -152,7 +152,7 @@ class DataLoader:
             if not rating_level:
                 continue
             
-            rating_index = get_rating_index(rating_level)
+            rating_index = get_rating_index(standardize_rating(rating_level))
             if rating_index is not None and rating_index > worst_index:
                 worst_index = rating_index
                 worst_rating = rating

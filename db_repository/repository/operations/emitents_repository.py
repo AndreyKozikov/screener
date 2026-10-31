@@ -8,6 +8,7 @@ from sqlalchemy import text
 from sqlmodel import Session, create_engine
 
 from db_repository.config.paths import DB_PATH
+from db_repository.utils.rating_utils import standardize_rating
 
 
 class EmitentsRepository:
@@ -73,8 +74,8 @@ class EmitentsRepository:
                     cci_rating_companies.append({
                         "agency_id": agency_id,
                         "agency_name_short_ru": (agency_name_short_ru or "").strip() or None,
-                        "rating_level_name_short_ru": rating_level_name,
-                        "rating_level_name": rating_level_name,
+                        "rating_level_name_short_ru": standardize_rating(rating_level_name),
+                        "rating_level_name": standardize_rating(rating_level_name),
                         "rating_date": str(rating_date) if rating_date else None,
                         "rating_publicate_date": str(rating_publicate_date) if rating_publicate_date else None,
                     })
