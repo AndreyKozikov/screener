@@ -165,7 +165,7 @@ export const PriceHistoryDialog: React.FC<PriceHistoryDialogProps> = ({
                     plot_bgcolor: 'rgba(255,255,255,0)',
                     paper_bgcolor: 'rgba(255,255,255,0)',
                   }}
-                  config={{ responsive: true, displayModeBar: 'hover', scrollZoom: true, displaylogo: false, locale: 'ru', locales: russianPlotlyLocales }}
+                  config={{ responsive: true, displayModeBar: 'hover', scrollZoom: false, displaylogo: false, locale: 'ru', locales: russianPlotlyLocales }}
                   style={{ width: '100%', height: '100%' }}
                 />
               </Box>

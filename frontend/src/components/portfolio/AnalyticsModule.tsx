@@ -1,18 +1,12 @@
 import React from 'react';
-import { Box, Button, Typography, Card, CardContent, alpha } from '@mui/material';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-
-export interface AnalyticsModuleProps {
-  onBack: () => void;
-}
+import { Box, Typography, Card, CardContent, alpha } from '@mui/material';
 
 /**
  * AnalyticsModule Component
  * 
  * Module view for portfolio analytics (placeholder for future implementation)
- * Includes back button
  */
-export const AnalyticsModule: React.FC<AnalyticsModuleProps> = ({ onBack }) => {
+export const AnalyticsModule: React.FC = () => {
   return (
     <Box sx={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', bgcolor: '#F8FAFC' }}>
       {/* Glassmorphism sticky header */}
@@ -32,30 +26,6 @@ export const AnalyticsModule: React.FC<AnalyticsModuleProps> = ({ onBack }) => {
           boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.05)',
         }}
       >
-        <Button
-          startIcon={<ArrowBackIcon />}
-          onClick={onBack}
-          variant="outlined"
-          sx={{ 
-            minWidth: 'auto',
-            px: 2,
-            py: 1,
-            borderRadius: '12px',
-            borderColor: '#E2E8F0',
-            color: 'text.primary',
-            textTransform: 'none',
-            fontFamily: 'var(--app-font-family)',
-            fontWeight: 500,
-            backgroundColor: '#ffffff',
-            '&:hover': {
-              borderColor: '#CBD5E1',
-              backgroundColor: '#F8FAFC',
-              boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.08)',
-            },
-          }}
-        >
-          Назад к инструментам
-        </Button>
         <Typography 
           variant="h5" 
           sx={{ 

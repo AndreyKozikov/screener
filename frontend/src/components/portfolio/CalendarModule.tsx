@@ -1,19 +1,14 @@
 import React from 'react';
-import { Box, Button, Typography, alpha } from '@mui/material';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import { Box, Typography, alpha } from '@mui/material';
 import { PaymentCalendar } from './PaymentCalendar';
-
-export interface CalendarModuleProps {
-  onBack: () => void;
-}
 
 /**
  * CalendarModule Component
  * 
  * Module view for payment calendar
- * Includes back button and payment calendar
+ * Includes the payment calendar
  */
-export const CalendarModule: React.FC<CalendarModuleProps> = ({ onBack }) => {
+export const CalendarModule: React.FC = () => {
   return (
     <Box sx={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', bgcolor: '#F8FAFC' }}>
       {/* Glassmorphism sticky header */}
@@ -33,30 +28,6 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({ onBack }) => {
           boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.05)',
         }}
       >
-        <Button
-          startIcon={<ArrowBackIcon />}
-          onClick={onBack}
-          variant="outlined"
-          sx={{ 
-            minWidth: 'auto',
-            px: 2,
-            py: 1,
-            borderRadius: '12px',
-            borderColor: '#E2E8F0',
-            color: 'text.primary',
-            textTransform: 'none',
-            fontFamily: 'var(--app-font-family)',
-            fontWeight: 500,
-            backgroundColor: '#ffffff',
-            '&:hover': {
-              borderColor: '#CBD5E1',
-              backgroundColor: '#F8FAFC',
-              boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.08)',
-            },
-          }}
-        >
-          Назад к инструментам
-        </Button>
         <Typography 
           variant="h5" 
           sx={{ 

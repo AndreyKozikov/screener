@@ -12,7 +12,6 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import CalculateRoundedIcon from '@mui/icons-material/CalculateRounded';
 import TipsAndUpdatesRoundedIcon from '@mui/icons-material/TipsAndUpdatesRounded';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import PlaylistAddCheckRoundedIcon from '@mui/icons-material/PlaylistAddCheckRounded';
 import ReactMarkdown from 'react-markdown';
@@ -38,7 +37,6 @@ interface StepContentProps {
   methodology?: string;
   practicalApplication?: string;
   onStepComplete: () => void;
-  onStepBack?: () => void;
 }
 
 /**
@@ -63,7 +61,6 @@ export const StepContent: React.FC<StepContentProps> = ({
   methodology,
   practicalApplication,
   onStepComplete,
-  onStepBack,
 }) => {
   const [showDetails, setShowDetails] = useState(false);
   const [isSubordinatedBondsModalOpen, setIsSubordinatedBondsModalOpen] = useState(false);
@@ -324,16 +321,6 @@ export const StepContent: React.FC<StepContentProps> = ({
 
       {/* Step Complete Button */}
       <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center', mb: 1.1 }}>
-        {stepNumber > 1 && onStepBack && (
-          <Button
-            variant="outlined"
-            startIcon={<ArrowBackIcon />}
-            onClick={onStepBack}
-            sx={{ borderRadius: 2, textTransform: 'none', borderColor: 'rgba(47,102,182,0.28)', color: '#31547f' }}
-          >
-            Назад
-          </Button>
-        )}
         <Button
           variant="contained"
           onClick={onStepComplete}

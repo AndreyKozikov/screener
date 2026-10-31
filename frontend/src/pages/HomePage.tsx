@@ -6,7 +6,7 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import PsychologyIcon from '@mui/icons-material/Psychology';
 import FeedbackIcon from '@mui/icons-material/Feedback';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import HomeOutlinedIcon from '@mui/icons-material/HomeOutlined';
 import ShowChartIcon from '@mui/icons-material/ShowChart';
 import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
@@ -23,7 +23,7 @@ import { ForecastTable } from '../components/forecast/ForecastTable';
 import { ForecastHubCard } from '../components/forecast/ForecastHubCard';
 import { RuoniaTable } from '../components/ruonia/RuoniaTable';
 import { KeyRateTable } from '../components/keyrate/KeyRateTable';
-import { Workbench } from '../components/portfolio/Workbench';
+import { Workbench, type WorkbenchModule } from '../components/portfolio/Workbench';
 import { HubCard } from '../components/portfolio/HubCard';
 import { ComparisonTable } from '../components/bonds/ComparisonTable';
 import { SpreadAnalysis } from '../components/bonds/SpreadAnalysis';
@@ -37,6 +37,7 @@ import { RefreshDataDialog } from '../components/common/RefreshDataDialog';
 import { ForecastFileDialog } from '../components/common/ForecastFileDialog';
 import { FeedbackDialog } from '../components/common/FeedbackDialog';
 import { HelpDialog, type HelpSection } from '../components/common/HelpDialog';
+import { SiteNavigationDrawer, type SiteNavigationItem } from '../components/common/SiteNavigationDrawer';
 import { SettingsDialog } from '../components/common/SettingsDialog';
 import { HubCardIllustration, type HubCardIllustrationVariant } from '../components/common/HubCardIllustration';
 import { BlogPage, type BlogMode } from './BlogPage';
@@ -132,6 +133,7 @@ export const HomePage: React.FC = () => {
   const [blogMode, setBlogMode] = useState<BlogMode>(savedPageView.blogMode);
   const [forecastSubView, setForecastSubView] = useState<ForecastSubView | null>(savedPageView.forecastSubView);
   const [comparisonSubView, setComparisonSubView] = useState<ComparisonSubView | null>(savedPageView.comparisonSubView);
+  const [portfolioModule, setPortfolioModule] = useState<WorkbenchModule>('HUB');
   
   // Refresh data dialog state
   const [isRefreshDialogOpen, setIsRefreshDialogOpen] = useState(false);
@@ -606,11 +608,91 @@ export const HomePage: React.FC = () => {
     if (tabIndex === 4) {
       setComparisonSubView(null);
     }
+    if (tabIndex === 3) {
+      setPortfolioModule('HUB');
+    }
   };
 
   const handleBackToHub = () => {
     setViewMode('HUB');
     setBlogMode('list');
+  };
+
+  const handleSiteNavigationSelect = (id: string) => {
+    if (id === 'home') {
+      handleBackToHub();
+      return;
+    }
+    if (id === 'market') {
+      handleHubCardClick(0);
+      return;
+    }
+    if (id === 'forecasts') {
+      handleHubCardClick(2);
+      return;
+    }
+    if (id === 'portfolio') {
+      handleHubCardClick(3);
+      return;
+    }
+    if (id === 'comparison') {
+      handleHubCardClick(4);
+      return;
+    }
+    if (id === 'blog') {
+      handleHubCardClick(5);
+      return;
+    }
+
+    const forecastDestinations: Record<string, ForecastSubView> = {
+      'forecast:zerocupon': 'zerocupon',
+      'forecast:forecast': 'forecast',
+      'forecast:ruonia': 'ruonia',
+      'forecast:keyrate': 'keyrate',
+      'forecast:inflation-expectations': 'inflation-expectations',
+      'forecast:ipc': 'ipc',
+    };
+    const forecastDestination = forecastDestinations[id];
+    if (forecastDestination) {
+      setCurrentTab(2);
+      setViewMode('TABLE');
+      setBlogMode('list');
+      setForecastSubView(forecastDestination);
+      return;
+    }
+
+    const portfolioDestinations: Record<string, WorkbenchModule> = {
+      'portfolio:holdings': 'PORTFOLIO',
+      'portfolio:calendar': 'CALENDAR',
+      'portfolio:analytics': 'ANALYTICS',
+    };
+    const portfolioDestination = portfolioDestinations[id];
+    if (portfolioDestination) {
+      setCurrentTab(3);
+      setViewMode('TABLE');
+      setBlogMode('list');
+      setPortfolioModule(portfolioDestination);
+      return;
+    }
+
+    const comparisonDestinations: Record<string, ComparisonSubView> = {
+      'comparison:comparison': 'comparison',
+      'comparison:spread-analysis': 'spread-analysis',
+    };
+    const comparisonDestination = comparisonDestinations[id];
+    if (comparisonDestination) {
+      setCurrentTab(4);
+      setViewMode('TABLE');
+      setBlogMode('list');
+      setComparisonSubView(comparisonDestination);
+      return;
+    }
+
+    if (id === 'blog:guide') {
+      setCurrentTab(5);
+      setViewMode('TABLE');
+      setBlogMode('guide');
+    }
   };
 
   // Determine current help section based on view state
@@ -706,6 +788,59 @@ export const HomePage: React.FC = () => {
     },
   ];
 
+  const siteNavigationItems: SiteNavigationItem[] = [
+    {
+      id: 'home',
+      label: 'Центр управления',
+      icon: <HomeOutlinedIcon />,
+    },
+    {
+      id: 'market',
+      label: 'Рынок облигаций',
+      icon: <ShowChartIcon />,
+    },
+    {
+      id: 'forecasts',
+      label: 'Прогнозы',
+      icon: <TrendingUpIcon />,
+      children: [
+        { id: 'forecast:zerocupon', label: 'Кривая бескупонной доходности' },
+        { id: 'forecast:forecast', label: 'Среднесрочный прогноз Банка России' },
+        { id: 'forecast:ruonia', label: 'Ставка RUONIA' },
+        { id: 'forecast:keyrate', label: 'Ключевая ставка ЦБ' },
+        { id: 'forecast:inflation-expectations', label: 'Инфляционные ожидания' },
+        { id: 'forecast:ipc', label: 'Индекс потребительских цен' },
+      ],
+    },
+    {
+      id: 'portfolio',
+      label: 'Мой портфель',
+      icon: <AccountBalanceWalletIcon />,
+      children: [
+        { id: 'portfolio:holdings', label: 'Портфель облигаций' },
+        { id: 'portfolio:calendar', label: 'Календарь выплат' },
+        { id: 'portfolio:analytics', label: 'Аналитика портфеля' },
+      ],
+    },
+    {
+      id: 'comparison',
+      label: 'Сравнение',
+      icon: <CompareArrowsIcon />,
+      children: [
+        { id: 'comparison:comparison', label: 'Сравнение облигаций' },
+        { id: 'comparison:spread-analysis', label: 'Анализ кривой спредов' },
+      ],
+    },
+    {
+      id: 'blog',
+      label: 'Блог',
+      icon: <ArticleIcon />,
+      children: [
+        { id: 'blog:guide', label: 'Гид по выбору облигаций' },
+      ],
+    },
+  ];
+
   const marketMetrics = [
     { key: 'EUR', label: 'EUR', flag: '🇪🇺', value: dashboardRates?.rates.EUR?.rate, percent: false },
     { key: 'USD', label: 'USD', flag: '🇺🇸', value: dashboardRates?.rates.USD?.rate, percent: false },
@@ -717,20 +852,52 @@ export const HomePage: React.FC = () => {
   const isForecastOverview = viewMode === 'TABLE' && currentTab === 2 && forecastSubView === null;
   const isBondMarketSection = viewMode === 'TABLE' && currentTab === 0;
   const isBlogSection = viewMode === 'TABLE' && currentTab === 5;
-  const isBlogDetail = isBlogSection && blogMode !== 'list';
   const usesGlassSurface = viewMode === 'HUB' || isBondMarketSection || isForecastOverview || isBlogSection;
+  const activeNavigationId = (() => {
+    if (viewMode === 'HUB') return 'home';
+    if (currentTab === 0) return 'market';
+    if (currentTab === 1) return 'forecast:zerocupon';
+    if (currentTab === 2) return forecastSubView ? `forecast:${forecastSubView}` : 'forecasts';
+    if (currentTab === 3) {
+      if (portfolioModule === 'PORTFOLIO') return 'portfolio:holdings';
+      if (portfolioModule === 'CALENDAR') return 'portfolio:calendar';
+      if (portfolioModule === 'ANALYTICS') return 'portfolio:analytics';
+      return 'portfolio';
+    }
+    if (currentTab === 4) return comparisonSubView ? `comparison:${comparisonSubView}` : 'comparison';
+    if (currentTab === 5) return blogMode === 'guide' ? 'blog:guide' : 'blog';
+    return 'home';
+  })();
 
   return (
     <Box sx={{
       display: 'flex',
-      flexDirection: 'column',
-      minHeight: '100vh',
+      height: '100vh',
+      width: '100%',
+      overflow: 'hidden',
+      '@supports (height: 100dvh)': { height: '100dvh' },
       bgcolor: usesGlassSurface ? '#EAF3FF' : '#F4F7FD',
       backgroundImage: usesGlassSurface ? 'linear-gradient(180deg, rgba(236,244,255,0.08), rgba(236,244,255,0.18)), url("/images/bond-glass-background.png")' : 'none',
       backgroundSize: 'cover',
       backgroundPosition: 'center',
       backgroundAttachment: 'fixed',
     }}>
+      <SiteNavigationDrawer
+        activeId={activeNavigationId}
+        items={siteNavigationItems}
+        onSelect={handleSiteNavigationSelect}
+      />
+
+      <Box sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        flex: '1 1 0',
+        minWidth: 0,
+        minHeight: 0,
+        height: '100%',
+        overflowY: 'auto',
+        overscrollBehaviorY: 'contain',
+      }}>
       {/* Compact App Bar */}
       <AppBar 
         position="sticky"
@@ -770,55 +937,6 @@ export const HomePage: React.FC = () => {
                 Центр управления
               </Typography>
             </Box>
-            {viewMode === 'TABLE' && (
-              <Box sx={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: { xs: 'flex-start', md: 'center' },
-                gap: { xs: 0.5, sm: 1, md: 1.5 },
-                gridColumn: { xs: '1 / -1', md: '2 / 3' },
-                gridRow: { xs: '2 / 3', md: '1 / 2' },
-                minWidth: 0,
-                flexWrap: 'wrap',
-              }}>
-                <Button
-                  startIcon={<ArrowBackIcon />}
-                  onClick={handleBackToHub}
-                  size="small"
-                  sx={{
-                    minWidth: 0,
-                    px: { xs: 0.75, sm: 1 },
-                    color: '#3d5d88',
-                    textTransform: 'none',
-                    whiteSpace: 'nowrap',
-                    fontSize: { xs: '0.67rem', sm: '0.76rem' },
-                    '& .MuiButton-startIcon': { mr: 0.5 },
-                    '&:hover': { bgcolor: 'rgba(255,255,255,0.58)' },
-                  }}
-                >
-                  Назад в центр управления
-                </Button>
-                {isBlogDetail && (
-                  <Button
-                    startIcon={<ArrowBackIcon />}
-                    onClick={() => setBlogMode('list')}
-                    size="small"
-                    sx={{
-                      minWidth: 0,
-                      px: { xs: 0.75, sm: 1 },
-                      color: '#3d5d88',
-                      textTransform: 'none',
-                      whiteSpace: 'nowrap',
-                      fontSize: { xs: '0.67rem', sm: '0.76rem' },
-                      '& .MuiButton-startIcon': { mr: 0.5 },
-                      '&:hover': { bgcolor: 'rgba(255,255,255,0.58)' },
-                    }}
-                  >
-                    Назад к блогу
-                  </Button>
-                )}
-              </Box>
-            )}
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: { xs: 0.25, sm: 0.75 }, gridColumn: { xs: '2 / 3', md: '3 / 4' }, gridRow: '1 / 2' }}>
               <IconButton
                 size="small"
@@ -1239,32 +1357,6 @@ export const HomePage: React.FC = () => {
                 ) : (
                   // Forecast Content
                   <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-                    {/* Back Button */}
-                    <Box sx={{ 
-                      display: 'flex',
-                      alignItems: 'center',
-                      mb: 2,
-                      px: 2,
-                    }}>
-                      <Button
-                        startIcon={<ArrowBackIcon />}
-                        onClick={() => setForecastSubView(null)}
-                        variant="text"
-                        size="small"
-                        sx={{
-                          textTransform: 'none',
-                          fontFamily: 'var(--app-font-family)',
-                          fontSize: '0.875rem',
-                          color: 'text.secondary',
-                          '&:hover': {
-                            bgcolor: 'action.hover',
-                          },
-                        }}
-                      >
-                        Назад к выбору прогнозов
-                      </Button>
-                    </Box>
-                    
                     {/* Forecast Content */}
                     {forecastSubView === 'zerocupon' && (
                       <Box sx={{ flexGrow: 1, minHeight: 0 }}>
@@ -1308,7 +1400,10 @@ export const HomePage: React.FC = () => {
 
             {currentTab === 3 && (
               <Box sx={{ flexGrow: 1, minHeight: 0 }}>
-                <Workbench />
+                <Workbench
+                  selectedModule={portfolioModule}
+                  onSelectedModuleChange={setPortfolioModule}
+                />
               </Box>
             )}
 
@@ -1344,32 +1439,6 @@ export const HomePage: React.FC = () => {
                 ) : (
                   // Comparison Content
                   <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-                    {/* Back Button */}
-                    <Box sx={{ 
-                      display: 'flex',
-                      alignItems: 'center',
-                      mb: 2,
-                      px: 2,
-                    }}>
-                      <Button
-                        startIcon={<ArrowBackIcon />}
-                        onClick={() => setComparisonSubView(null)}
-                        variant="text"
-                        size="small"
-                        sx={{
-                          textTransform: 'none',
-                          fontFamily: 'var(--app-font-family)',
-                          fontSize: '0.875rem',
-                          color: 'text.secondary',
-                          '&:hover': {
-                            bgcolor: 'action.hover',
-                          },
-                        }}
-                      >
-                        Назад к выбору разделов
-                      </Button>
-                    </Box>
-                    
                     {/* Comparison Content */}
                     {comparisonSubView === 'comparison' && (
                       <Box sx={{ flexGrow: 1, minHeight: 0 }}>
@@ -1537,6 +1606,7 @@ export const HomePage: React.FC = () => {
         onClose={() => setIsHelpDialogOpen(false)}
         section={getCurrentHelpSection()}
       />
+      </Box>
     </Box>
   );
 };

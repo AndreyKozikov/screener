@@ -13,15 +13,24 @@ export type WorkbenchModule = 'HUB' | 'PORTFOLIO' | 'CALENDAR' | 'ANALYTICS';
  * Main component managing the Portfolio Workbench state
  * Controls which module is currently displayed
  */
-export const Workbench: React.FC = () => {
-  const [selectedModule, setSelectedModule] = useState<WorkbenchModule>('HUB');
+type WorkbenchProps = {
+  selectedModule?: WorkbenchModule;
+  onSelectedModuleChange?: (module: WorkbenchModule) => void;
+};
 
-  const handleModuleSelect = (module: WorkbenchModule) => {
-    setSelectedModule(module);
+export const Workbench: React.FC<WorkbenchProps> = ({ selectedModule: controlledModule, onSelectedModuleChange }) => {
+  const [internalSelectedModule, setInternalSelectedModule] = useState<WorkbenchModule>('HUB');
+  const selectedModule = controlledModule ?? internalSelectedModule;
+
+  const updateSelectedModule = (module: WorkbenchModule) => {
+    if (controlledModule === undefined) {
+      setInternalSelectedModule(module);
+    }
+    onSelectedModuleChange?.(module);
   };
 
-  const handleBackToHub = () => {
-    setSelectedModule('HUB');
+  const handleModuleSelect = (module: WorkbenchModule) => {
+    updateSelectedModule(module);
   };
 
   // Render HUB view when no module is selected
@@ -33,13 +42,13 @@ export const Workbench: React.FC = () => {
   return (
     <Box sx={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
       {selectedModule === 'PORTFOLIO' && (
-        <PortfolioModule onBack={handleBackToHub} />
+        <PortfolioModule />
       )}
       {selectedModule === 'CALENDAR' && (
-        <CalendarModule onBack={handleBackToHub} />
+        <CalendarModule />
       )}
       {selectedModule === 'ANALYTICS' && (
-        <AnalyticsModule onBack={handleBackToHub} />
+        <AnalyticsModule />
       )}
     </Box>
   );

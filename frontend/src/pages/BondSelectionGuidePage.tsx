@@ -394,12 +394,6 @@ export const BondSelectionGuidePage: React.FC = () => {
     }
   };
 
-  const handleStepBack = () => {
-    if (currentStep > 1) {
-      setCurrentStep(currentStep - 1);
-    }
-  };
-
   const handleStepClick = (stepId: number) => {
     setCurrentStep(stepId);
   };
@@ -556,7 +550,6 @@ export const BondSelectionGuidePage: React.FC = () => {
                     methodology={currentStepData.methodology}
                     practicalApplication={currentStepData.practicalApplication}
                     onStepComplete={handleStepComplete}
-                    onStepBack={handleStepBack}
                   />
                 ) : (
                   <Box sx={{ textAlign: 'center', py: 4 }}>
