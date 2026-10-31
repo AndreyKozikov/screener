@@ -54,17 +54,8 @@ export const theme = createTheme({
 
   // Typography
   typography: {
-    fontFamily: [
-      'Inter',
-      '-apple-system',
-      'BlinkMacSystemFont',
-      '"Segoe UI"',
-      'Roboto',
-      '"Helvetica Neue"',
-      'Arial',
-      'sans-serif',
-    ].join(','),
-    fontSize: 14,
+    fontFamily: 'var(--app-font-family)',
+    fontSize: 15,
     fontWeightLight: 300,
     fontWeightRegular: 400,
     fontWeightMedium: 500,
@@ -74,13 +65,13 @@ export const theme = createTheme({
       fontSize: '2rem',
       fontWeight: 700,
       lineHeight: 1.2,
-      letterSpacing: '-0.02em',
+      letterSpacing: '0.005em',
     },
     h2: {
       fontSize: '1.5rem',
       fontWeight: 600,
       lineHeight: 1.3,
-      letterSpacing: '-0.01em',
+      letterSpacing: '0.005em',
     },
     h3: {
       fontSize: '1.25rem',
@@ -105,12 +96,12 @@ export const theme = createTheme({
       letterSpacing: '0.08em',
     },
     body1: {
-      fontSize: '0.875rem',
-      lineHeight: 1.5,
+      fontSize: '0.9375rem',
+      lineHeight: 1.6,
     },
     body2: {
-      fontSize: '0.75rem',
-      lineHeight: 1.43,
+      fontSize: '0.8125rem',
+      lineHeight: 1.55,
     },
     button: {
       fontSize: '0.875rem',
@@ -118,8 +109,8 @@ export const theme = createTheme({
       textTransform: 'none', // No uppercase for better readability
     },
     caption: {
-      fontSize: '0.75rem',
-      lineHeight: 1.66,
+      fontSize: '0.8125rem',
+      lineHeight: 1.55,
       color: '#757575',
     },
   },

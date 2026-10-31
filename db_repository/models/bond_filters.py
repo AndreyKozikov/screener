@@ -124,12 +124,12 @@ class BondFilters(BaseModel):
     # Rating range filter
     rating_min: Optional[str] = Field(
         None,
-        description="Минимальный рейтинг облигации из шкалы рейтингов"
+        description="Граница «От»: выбранный рейтинг и все более высокие"
     )
 
     rating_max: Optional[str] = Field(
         None,
-        description="Максимальный рейтинг облигации из шкалы рейтингов"
+        description="Граница «До»: выбранный рейтинг и все более низкие"
     )
 
     # Search

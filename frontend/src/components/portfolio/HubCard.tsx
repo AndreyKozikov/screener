@@ -114,8 +114,8 @@ export const HubCard: React.FC<HubCardProps> = ({
               fontSize: '0.875rem',
               color: 'text.primary',
               flex: 1,
-              fontFamily: '"Inter", "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-              letterSpacing: '-0.01em',
+              fontFamily: 'var(--app-font-family)',
+              letterSpacing: '0.005em',
             }}
           >
             {title}
@@ -131,8 +131,8 @@ export const HubCard: React.FC<HubCardProps> = ({
             color: 'text.primary',
             mb: 1,
             lineHeight: 1.2,
-            fontFamily: '"Inter", "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-            letterSpacing: '-0.02em',
+            fontFamily: 'var(--app-font-family)',
+            letterSpacing: '0.005em',
           }}
         >
           {formattedValue}
@@ -147,7 +147,7 @@ export const HubCard: React.FC<HubCardProps> = ({
             color: 'text.secondary',
             fontSize: '0.75rem',
             flex: 1,
-            fontFamily: '"Inter", "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+            fontFamily: 'var(--app-font-family)',
           }}
         >
           {subtitle}

@@ -85,7 +85,11 @@ class BondRepository:
             rating_min: Optional[str],
             rating_max: Optional[str],
     ) -> Optional[List[str]]:
-        """Возвращает список рейтингов в диапазоне [rating_min, rating_max] по шкале RATINGS_ORDER.
+        """Возвращает включительный диапазон рейтингов по шкале от лучшего к худшему.
+
+        rating_min («От») включает выбранный рейтинг и все более высокие.
+        rating_max («До») включает выбранный рейтинг и все более низкие.
+        Если заданы обе границы, возвращается диапазон между ними.
 
         Returns:
             Список строк рейтингов или None, если фильтр не применим.
@@ -93,13 +97,19 @@ class BondRepository:
         if rating_min is None and rating_max is None:
             return None
         try:
-            idx_start = RATINGS_ORDER.index(rating_min.upper()) if rating_min else 0
-            idx_end = RATINGS_ORDER.index(rating_max.upper()) if rating_max else len(RATINGS_ORDER) - 1
+            idx_min = RATINGS_ORDER.index(rating_min.upper()) if rating_min else None
+            idx_max = RATINGS_ORDER.index(rating_max.upper()) if rating_max else None
         except ValueError:
             self.logger.warning("Рейтинг не найден в шкале RATINGS_ORDER: min=%s, max=%s", rating_min, rating_max)
             return None
-        low = min(idx_start, idx_end)
-        high = max(idx_start, idx_end)
+
+        if idx_min is not None and idx_max is not None:
+            low, high = sorted((idx_min, idx_max))
+        elif idx_min is not None:
+            low, high = 0, idx_min
+        else:
+            low, high = idx_max if idx_max is not None else 0, len(RATINGS_ORDER) - 1
+
         return RATINGS_ORDER[low: high + 1]
 
     def _build_where_conditions(

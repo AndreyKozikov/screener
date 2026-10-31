@@ -16,7 +16,6 @@ import AssessmentIcon from '@mui/icons-material/Assessment';
 import AnalyticsIcon from '@mui/icons-material/Analytics';
 import PercentIcon from '@mui/icons-material/Percent';
 import ArticleIcon from '@mui/icons-material/Article';
-import { FiltersModal } from '../components/filters/FiltersModal';
 import { BondsTable } from '../components/bonds/BondsTable';
 import { BondDetails } from '../components/bonds/BondDetails';
 import { ZerocuponTable } from '../components/zerocupon/ZerocuponTable';
@@ -71,17 +70,68 @@ import { submitFeedback } from '../api/feedback';
  * Main page of the application displaying bonds screener
  */
 type ViewMode = 'HUB' | 'TABLE';
+type ForecastSubView = 'zerocupon' | 'forecast' | 'ruonia' | 'keyrate' | 'inflation-expectations' | 'ipc';
+type ComparisonSubView = 'comparison' | 'spread-analysis';
+
+type SavedHomePageView = {
+  viewMode: ViewMode;
+  currentTab: number;
+  blogMode: BlogMode;
+  forecastSubView: ForecastSubView | null;
+  comparisonSubView: ComparisonSubView | null;
+};
+
+const HOME_PAGE_VIEW_STORAGE_KEY = 'bonds-screener:home-page-view';
+const DEFAULT_HOME_PAGE_VIEW: SavedHomePageView = {
+  viewMode: 'HUB',
+  currentTab: 0,
+  blogMode: 'list',
+  forecastSubView: null,
+  comparisonSubView: null,
+};
+
+const readSavedHomePageView = (): SavedHomePageView => {
+  if (typeof window === 'undefined') return DEFAULT_HOME_PAGE_VIEW;
+
+  try {
+    const serializedView = window.sessionStorage.getItem(HOME_PAGE_VIEW_STORAGE_KEY);
+    if (!serializedView) return DEFAULT_HOME_PAGE_VIEW;
+
+    const savedView = JSON.parse(serializedView) as Partial<SavedHomePageView>;
+    const forecastSubViews: ForecastSubView[] = [
+      'zerocupon', 'forecast', 'ruonia', 'keyrate', 'inflation-expectations', 'ipc',
+    ];
+    const comparisonSubViews: ComparisonSubView[] = ['comparison', 'spread-analysis'];
+    const currentTab = Number(savedView.currentTab);
+
+    return {
+      viewMode: savedView.viewMode === 'TABLE' ? 'TABLE' : 'HUB',
+      currentTab: Number.isInteger(currentTab) && currentTab >= 0 && currentTab <= 5 ? currentTab : 0,
+      // BlogPage keeps the selected article in memory, so restore the list after a reload.
+      blogMode: savedView.blogMode === 'guide' ? 'guide' : 'list',
+      forecastSubView: forecastSubViews.includes(savedView.forecastSubView as ForecastSubView)
+        ? savedView.forecastSubView as ForecastSubView
+        : null,
+      comparisonSubView: comparisonSubViews.includes(savedView.comparisonSubView as ComparisonSubView)
+        ? savedView.comparisonSubView as ComparisonSubView
+        : null,
+    };
+  } catch {
+    return DEFAULT_HOME_PAGE_VIEW;
+  }
+};
 
 export const HomePage: React.FC = () => {
   const triggerDataRefresh = useUiStore((state) => state.triggerDataRefresh);
   const setError = useBondsStore((state) => state.setError);
   const comparisonBonds = useComparisonStore((state) => state.comparisonBonds);
   const settings = useSettingsStore((state) => state.settings);
-  const [viewMode, setViewMode] = useState<ViewMode>('HUB');
-  const [currentTab, setCurrentTab] = useState(0);
-  const [blogMode, setBlogMode] = useState<BlogMode>('list');
-  const [forecastSubView, setForecastSubView] = useState<'zerocupon' | 'forecast' | 'ruonia' | 'keyrate' | 'inflation-expectations' | 'ipc' | null>(null);
-  const [comparisonSubView, setComparisonSubView] = useState<'comparison' | 'spread-analysis' | null>(null);
+  const [savedPageView] = useState(readSavedHomePageView);
+  const [viewMode, setViewMode] = useState<ViewMode>(savedPageView.viewMode);
+  const [currentTab, setCurrentTab] = useState(savedPageView.currentTab);
+  const [blogMode, setBlogMode] = useState<BlogMode>(savedPageView.blogMode);
+  const [forecastSubView, setForecastSubView] = useState<ForecastSubView | null>(savedPageView.forecastSubView);
+  const [comparisonSubView, setComparisonSubView] = useState<ComparisonSubView | null>(savedPageView.comparisonSubView);
   
   // Refresh data dialog state
   const [isRefreshDialogOpen, setIsRefreshDialogOpen] = useState(false);
@@ -122,7 +172,6 @@ export const HomePage: React.FC = () => {
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [modelUsed, setModelUsed] = useState<string>('');
   const [isNoSelectionDialogOpen, setIsNoSelectionDialogOpen] = useState(false);
-  const [isFiltersModalOpen, setIsFiltersModalOpen] = useState(false);
   const [isFeedbackDialogOpen, setIsFeedbackDialogOpen] = useState(false);
   const [isHelpDialogOpen, setIsHelpDialogOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -136,6 +185,20 @@ export const HomePage: React.FC = () => {
   const [forecastLastDate, setForecastLastDate] = useState<string | null>(null);
   /** Список дат прогнозов (YYYY-MM-DD), загружается при входе в комнату «Прогнозы», передаётся в ForecastTable чтобы не дублировать запрос */
   const [availableForecastDates, setAvailableForecastDates] = useState<string[] | null>(null);
+
+  useEffect(() => {
+    try {
+      window.sessionStorage.setItem(HOME_PAGE_VIEW_STORAGE_KEY, JSON.stringify({
+        viewMode,
+        currentTab,
+        blogMode,
+        forecastSubView,
+        comparisonSubView,
+      } satisfies SavedHomePageView));
+    } catch {
+      // Keep the page usable when browser storage is unavailable.
+    }
+  }, [viewMode, currentTab, blogMode, forecastSubView, comparisonSubView]);
 
   // Helper function to format date from DD.MM.YYYY or YYYY-MM-DD to DD.MM.YYYY
   const formatDateForDisplay = (dateStr: string | null): string | null => {
@@ -652,9 +715,10 @@ export const HomePage: React.FC = () => {
   ];
 
   const isForecastOverview = viewMode === 'TABLE' && currentTab === 2 && forecastSubView === null;
+  const isBondMarketSection = viewMode === 'TABLE' && currentTab === 0;
   const isBlogSection = viewMode === 'TABLE' && currentTab === 5;
   const isBlogDetail = isBlogSection && blogMode !== 'list';
-  const usesGlassSurface = viewMode === 'HUB' || isForecastOverview || isBlogSection;
+  const usesGlassSurface = viewMode === 'HUB' || isBondMarketSection || isForecastOverview || isBlogSection;
 
   return (
     <Box sx={{
@@ -698,8 +762,8 @@ export const HomePage: React.FC = () => {
                 component="h1" 
                 fontWeight={600}
                 sx={{
-                  fontFamily: '"Inter", "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                  letterSpacing: '-0.01em',
+                  fontFamily: 'var(--app-font-family)',
+                  letterSpacing: '0.005em',
                   fontSize: { xs: '0.75rem', sm: '1rem' },
                 }}
               >
@@ -865,7 +929,7 @@ export const HomePage: React.FC = () => {
                 <Box>
                   <Typography
                     component="h2"
-                    sx={{ fontSize: { xs: '1.9rem', md: '2.55rem' }, lineHeight: 1.06, letterSpacing: '-0.04em', fontWeight: 760, maxWidth: 620, color: '#10264A' }}
+                    sx={{ fontSize: { xs: '1.9rem', md: '2.55rem' }, lineHeight: 1.12, letterSpacing: '0.005em', fontWeight: 700, maxWidth: 620, color: '#10264A' }}
                   >
                     Добро пожаловать<br />в BondsScreener
                   </Typography>
@@ -1026,7 +1090,7 @@ export const HomePage: React.FC = () => {
                       >
                         {card.icon}
                       </Box>
-                      <Typography component="h3" sx={{ mt: { xs: 1.2, md: 1.8 }, fontSize: { xs: '0.84rem', md: '1.15rem' }, lineHeight: 1.22, fontWeight: 750, letterSpacing: '-0.025em', color: '#10264A' }}>
+                      <Typography component="h3" sx={{ mt: { xs: 1.2, md: 1.8 }, fontSize: { xs: '0.84rem', md: '1.15rem' }, lineHeight: 1.3, fontWeight: 650, letterSpacing: '0.005em', color: '#10264A' }}>
                         {card.title}
                       </Typography>
                       <Typography sx={{ mt: 0.7, maxWidth: { xs: 'calc(100% - 20px)', md: 220 }, fontSize: { xs: '0.69rem', md: '0.91rem' }, lineHeight: 1.4, color: '#3E5577' }}>
@@ -1083,12 +1147,12 @@ export const HomePage: React.FC = () => {
             maxWidth={false} 
             sx={{ 
               px: isForecastOverview || isBlogSection ? 0 : 2,
-              py: isForecastOverview ? { xs: 3, md: 6 } : isBlogSection ? { xs: 2, md: 3 } : 3,
+              py: isForecastOverview ? { xs: 3, md: 6 } : isBlogSection ? { xs: 2, md: 3 } : isBondMarketSection ? { xs: 1.5, md: 2 } : 3,
               flexGrow: 1, 
               display: 'flex', 
               flexDirection: 'column', 
               width: '100%',
-              bgcolor: isForecastOverview || isBlogSection ? 'transparent' : 'grey.50',
+              bgcolor: isForecastOverview || isBlogSection || isBondMarketSection ? 'transparent' : 'grey.50',
             }}
           >
             {/* Tab Content */}
@@ -1096,9 +1160,7 @@ export const HomePage: React.FC = () => {
               <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', gap: 2, minHeight: 0, width: '100%' }}>
                 <Box sx={{ flexGrow: 1, minWidth: 0, width: '100%' }}>
                   <ErrorBoundary>
-                    <BondsTable 
-                      onOpenFilters={() => setIsFiltersModalOpen(true)}
-                    />
+                    <BondsTable />
                   </ErrorBoundary>
                 </Box>
               </Box>
@@ -1191,7 +1253,7 @@ export const HomePage: React.FC = () => {
                         size="small"
                         sx={{
                           textTransform: 'none',
-                          fontFamily: '"Inter", "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                          fontFamily: 'var(--app-font-family)',
                           fontSize: '0.875rem',
                           color: 'text.secondary',
                           '&:hover': {
@@ -1296,7 +1358,7 @@ export const HomePage: React.FC = () => {
                         size="small"
                         sx={{
                           textTransform: 'none',
-                          fontFamily: '"Inter", "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                          fontFamily: 'var(--app-font-family)',
                           fontSize: '0.875rem',
                           color: 'text.secondary',
                           '&:hover': {
@@ -1336,12 +1398,6 @@ export const HomePage: React.FC = () => {
 
       {/* Bond Details Drawer */}
       <BondDetails />
-
-      {/* Filters Modal */}
-      <FiltersModal
-        open={isFiltersModalOpen}
-        onClose={() => setIsFiltersModalOpen(false)}
-      />
 
       {/* Refresh Data Dialog */}
       <RefreshDataDialog
@@ -1457,7 +1513,7 @@ export const HomePage: React.FC = () => {
             sx={{
               borderRadius: '12px',
               textTransform: 'none',
-              fontFamily: '"Inter", "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+              fontFamily: 'var(--app-font-family)',
             }}
           >
             Понятно

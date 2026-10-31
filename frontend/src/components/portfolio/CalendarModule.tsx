@@ -45,7 +45,7 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({ onBack }) => {
             borderColor: '#E2E8F0',
             color: 'text.primary',
             textTransform: 'none',
-            fontFamily: '"Inter", "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+            fontFamily: 'var(--app-font-family)',
             fontWeight: 500,
             backgroundColor: '#ffffff',
             '&:hover': {
@@ -61,8 +61,8 @@ export const CalendarModule: React.FC<CalendarModuleProps> = ({ onBack }) => {
           variant="h5" 
           sx={{ 
             fontWeight: 600,
-            fontFamily: '"Inter", "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-            letterSpacing: '-0.02em',
+            fontFamily: 'var(--app-font-family)',
+            letterSpacing: '0.005em',
           }}
         >
           Календарь выплат

@@ -130,8 +130,8 @@ export const Hub: React.FC<HubProps> = ({ onModuleSelect }) => {
           fontWeight: 600,
           mb: 3,
           color: 'text.primary',
-          fontFamily: '"Inter", "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-          letterSpacing: '-0.02em',
+          fontFamily: 'var(--app-font-family)',
+          letterSpacing: '0.005em',
         }}
       >
         Инструменты портфеля

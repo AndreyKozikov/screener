@@ -272,7 +272,7 @@ export const StepContent: React.FC<StepContentProps> = ({
           variant="outlined"
           sx={{ mb: 1.2, color: '#1769d2', borderColor: 'rgba(23,105,210,0.34)', bgcolor: 'rgba(255,255,255,0.56)', fontWeight: 700 }}
         />
-        <Typography variant="h4" component="h2" gutterBottom fontWeight={750} sx={{ color: '#0c1d4a', fontSize: { xs: '1rem', sm: '1.5rem', md: '1.85rem' }, lineHeight: 1.2, letterSpacing: '-0.025em' }}>
+        <Typography variant="h4" component="h2" gutterBottom fontWeight={700} sx={{ color: '#0c1d4a', fontSize: { xs: '1rem', sm: '1.5rem', md: '1.85rem' }, lineHeight: 1.3, letterSpacing: '0.005em' }}>
           {title}
         </Typography>
         <Box sx={{ mb: 1.5 }}>

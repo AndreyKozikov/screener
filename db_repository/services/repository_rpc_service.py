@@ -63,7 +63,16 @@ def _encode(value: Any) -> Any:
     if isinstance(value, (list, frozenset)):
         return [_encode(item) for item in value]
     if hasattr(value, "_mapping"):
-        return _encode(dict(value._mapping))
+        mapping = dict(value._mapping)
+        # SQLAlchemy Row objects returned by ``select(Model)`` may expose a
+        # single ORM instance under the model name (for example,
+        # {"DBruonia": <DBruonia>}). Return that model as a normal field dict
+        # so repository clients can read its attributes directly.
+        if len(mapping) == 1:
+            row_value = next(iter(mapping.values()))
+            if isinstance(row_value, BaseModel):
+                return _encode(row_value)
+        return _encode(mapping)
     if hasattr(value, "__dict__") and not isinstance(value, type):
         return _encode(vars(value))
     return value

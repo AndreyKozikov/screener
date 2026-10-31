@@ -4,7 +4,6 @@ import type { ColDef, RowClickedEvent, CellClickedEvent, ICellRendererParams, IH
 import { ModuleRegistry, AllCommunityModule, themeQuartz } from 'ag-grid-community';
 import './ag-grid-tooltips.css';
 import { Box, Card, CardContent, Tooltip, IconButton } from '@mui/material';
-import FilterAltIcon from '@mui/icons-material/FilterAlt';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import FullscreenIcon from '@mui/icons-material/Fullscreen';
@@ -32,7 +31,8 @@ import type { BondFloatParamsDTO } from '../../types/bondFloatParams';
 import AddToPortfolioRenderer from './AddToPortfolioRenderer';
 import AddToComparisonRenderer from './AddToComparisonRenderer';
 import { RatingDisplay } from './RatingDisplay';
-import { SearchFilter } from '../filters/AllFilters';
+import { compareRatingLevels, getRatingLevel, getWorstRating } from '../../utils/ratings';
+import BondMarketFilters from './BondMarketFilters';
 import { FloaterCardDialog } from './FloaterCardDialog';
 import { PriceHistoryDialog } from './PriceHistoryDialog';
 
@@ -47,9 +47,9 @@ const bondsGridTheme = themeQuartz.withParams({
   chromeBackgroundColor: '#f7f9fc',
   headerBackgroundColor: '#f5f8fc',
   headerTextColor: '#42526b',
-  headerFontSize: 12,
+  headerFontSize: 13,
   headerFontWeight: 600,
-  dataFontSize: 13,
+  dataFontSize: 14,
   cellTextColor: '#26364a',
   cellHorizontalPadding: 10,
   headerVerticalPaddingScale: 1.15,
@@ -202,10 +202,6 @@ const BondHeaderLabel = React.memo((params: TooltipHeaderParams) => {
 BondHeaderLabel.displayName = 'BondHeaderLabel';
 
 type FieldDescriptionMap = Record<string, string>;
-
-export type BondsTableProps = {
-  onOpenFilters?: () => void;
-};
 
 const flattenDescriptions = (descriptions: DescriptionsResponse): FieldDescriptionMap => {
   const result: FieldDescriptionMap = {};
@@ -362,7 +358,7 @@ export const getRatingColor = (rating: string | null | undefined): { bg: string;
  * 
  * Main data table displaying bonds using AG Grid
  */
-export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
+export const BondsTable: React.FC = () => {
   const { bonds, isLoading, error, setBonds, setLoading, setError } = useBondsStore();
   const { filters } = useFiltersStore();
   const setSelectedBond = useUiStore((state) => state.setSelectedBond);
@@ -676,7 +672,7 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
               borderRadius: '8px',
               boxShadow: '0px 3px 5px -1px rgba(0, 0, 0, 0.2), 0px 6px 10px 0px rgba(0, 0, 0, 0.14), 0px 1px 18px 0px rgba(0, 0, 0, 0.12)',
               border: '1px solid rgba(0, 0, 0, 0.12)',
-              fontFamily: 'Roboto, Helvetica, Arial, sans-serif',
+              fontFamily: 'var(--app-font-family)',
               fontWeight: 400,
               wordWrap: 'break-word',
               whiteSpace: 'normal',
@@ -735,7 +731,7 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
               borderRadius: '8px',
               boxShadow: '0px 3px 5px -1px rgba(0, 0, 0, 0.2), 0px 6px 10px 0px rgba(0, 0, 0, 0.14), 0px 1px 18px 0px rgba(0, 0, 0, 0.12)',
               border: '1px solid rgba(0, 0, 0, 0.12)',
-              fontFamily: 'Roboto, Helvetica, Arial, sans-serif',
+              fontFamily: 'var(--app-font-family)',
               fontWeight: 400,
               wordWrap: 'break-word',
               whiteSpace: 'normal',
@@ -903,8 +899,15 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
       headerTooltip: getFieldDescription('SHORTNAME'),
       autoHeaderHeight: true,
     }),
-    createColumnDef('RATING', 'Рейтинг', {
+    createColumnDef('RATING_LEVEL', 'Рейтинг', {
       minWidth: 100,
+      valueGetter: (params) => {
+        const bond = params.data;
+        if (!bond) return null;
+        const worstBondRating = bond.RATINGS?.length ? getWorstRating(bond.RATINGS) : null;
+        return getRatingLevel(worstBondRating) ?? bond.RATING_LEVEL;
+      },
+      comparator: (valueA, valueB) => compareRatingLevels(valueA, valueB),
       cellRenderer: (params: ICellRendererParams<BondListItem>) => {
         const bond = params.data;
         if (!bond) {
@@ -915,7 +918,7 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
       cellStyle: { textAlign: 'center' },
       headerTooltip: 'Рейтинг облигации от рейтинговых агентств',
       autoHeaderHeight: true,
-      sortable: false,
+      sortable: true,
       filter: false,
     }),
     createColumnDef('PREVPRICE', 'Текущая цена', {
@@ -1303,7 +1306,6 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
     });
   }, [bonds, filters.search]);
 
-
   // Recalculate header height when data, columns, or descriptions change.
   // Column widths are fitted once by AG Grid's autoSizeStrategy and then remain stable.
   useEffect(() => {
@@ -1357,35 +1359,55 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
 
   // Loading state - only show spinner on initial load
   if (isLoading && bonds.length === 0) {
-    return <LoadingSpinner message="Загрузка облигаций..." />;
+    return (
+      <Box sx={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+        <BondMarketFilters />
+        <Card sx={{ flex: 1, minHeight: { xs: 220, sm: 280 }, display: 'grid', placeItems: 'center', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.88)', bgcolor: 'rgba(255,255,255,0.7)' }}>
+          <LoadingSpinner message="Загрузка облигаций..." />
+        </Card>
+      </Box>
+    );
   }
 
   // Error state
   if (error) {
-    return <ErrorMessage message={error} onRetry={loadBonds} />;
+    return (
+      <Box sx={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+        <BondMarketFilters />
+        <Card sx={{ flex: 1, minHeight: { xs: 220, sm: 280 }, display: 'grid', placeItems: 'center', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.88)', bgcolor: 'rgba(255,255,255,0.7)' }}>
+          <ErrorMessage message={error} onRetry={loadBonds} />
+        </Card>
+      </Box>
+    );
   }
 
   // Note: We always render the table, even with empty data
   // AG Grid will show its overlay for empty results, keeping the table structure visible
 
   return (
+    <Box sx={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+    <BondMarketFilters />
     <Card sx={{ 
       position: isFullscreen ? 'fixed' : 'relative',
       top: isFullscreen ? 0 : 'auto',
       left: isFullscreen ? 0 : 'auto',
       width: isFullscreen ? '100vw' : '100%',
-      height: isFullscreen ? '100vh' : '100%',
+      height: isFullscreen ? '100vh' : 'auto',
       zIndex: isFullscreen ? 2000 : 'auto',
-      borderRadius: isFullscreen ? 0 : '10px',
-      backgroundColor: '#ffffff',
-      border: '1px solid #e4eaf2',
-      boxShadow: isFullscreen ? '0 8px 28px rgba(15, 23, 42, 0.18)' : '0 4px 16px rgba(15, 23, 42, 0.06)',
+      minHeight: 0,
+      flex: isFullscreen ? 'none' : 1,
+      borderRadius: isFullscreen ? 0 : '20px',
+      backgroundColor: 'rgba(255,255,255,0.84)',
+      border: '1px solid rgba(255,255,255,0.9)',
+      boxShadow: isFullscreen ? '0 8px 28px rgba(15, 23, 42, 0.18)' : '0 10px 28px rgba(54, 86, 139, 0.09)',
+      backdropFilter: 'blur(18px) saturate(130%)',
       display: 'flex',
       flexDirection: 'column',
     }}>
       <CardContent sx={{ 
         p: 0, 
         flexGrow: 1, 
+        minHeight: 0,
         display: 'flex', 
         flexDirection: 'column', 
         '&:last-child': { pb: 0 },
@@ -1394,46 +1416,17 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
         <Box
           sx={{
             px: 2,
-            py: 1,
+            py: 1.15,
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'space-between',
+            justifyContent: 'flex-end',
             borderBottom: '1px solid #e8edf4',
-            backgroundColor: '#f8fafd',
+            backgroundColor: 'rgba(246,250,255,0.78)',
             minHeight: '54px',
             gap: 2,
           }}
         >
-          {/* Search field */}
-          <Box sx={{ flex: 1, maxWidth: '440px' }}>
-            <SearchFilter />
-          </Box>
-          
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            {/* Filter button */}
-            {onOpenFilters && (
-              <Tooltip title="Фильтры">
-                <IconButton
-                  size="small"
-                  aria-label="Открыть фильтры облигаций"
-                  onClick={onOpenFilters}
-                  sx={{ 
-                    width: 34,
-                    height: 34,
-                    borderRadius: 1.5,
-                    color: '#5c6b80',
-                    '&:hover': { bgcolor: 'rgba(25, 118, 210, 0.08)', color: 'primary.main' },
-                    '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' },
-                  }}
-                >
-                  <FilterAltIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-            )}
-
-            {/* Vertical divider */}
-            <Box sx={{ width: '1px', height: 24, backgroundColor: '#e1e7ef', mx: 1 }} />
-
             {/* Refresh button */}
             <Tooltip title="Обновить данные">
               <IconButton
@@ -1496,19 +1489,21 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
 
         {/* Table content */}
         <Box sx={{ 
-            flexGrow: 1, 
+            flexGrow: 1,
+            minHeight: 0,
             display: 'flex', 
             height: '100%',
             width: '100%',
             overflow: 'hidden',
           }}>
-        <Box sx={{ px: 2, width: '100%', height: '100%' }}>
+        <Box sx={{ px: { xs: 1, sm: 1.5 }, pb: 1.5, width: '100%', height: '100%', minHeight: 0 }}>
         <Box
           className="bonds-grid"
           sx={{
             height: '100%',
             width: '100%',
             flexGrow: 1,
+            fontFamily: 'var(--app-font-family)',
             ...(headerHeight && {
               '--ag-header-height': `${headerHeight}px`,
             }),
@@ -1528,11 +1523,12 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
               padding: '0 2px',
               boxSizing: 'border-box',
               whiteSpace: 'normal',
-              wordBreak: 'break-word',
+              wordBreak: 'normal',
+              overflowWrap: 'normal',
               lineHeight: 1.35,
               textAlign: 'center',
-              hyphens: 'auto',
-              fontSize: '12px',
+              hyphens: 'manual',
+              fontSize: '13px',
             },
             '& .ag-header-cell-menu-button, & .ag-header-cell-filter-button': {
               opacity: 0.72,
@@ -1543,7 +1539,7 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
             },
             '& .ag-cell': {
               fontFamily: 'inherit',
-              fontSize: '13px',
+              fontSize: '14px',
               lineHeight: 1.4,
               display: 'flex',
               alignItems: 'center',
@@ -1644,6 +1640,7 @@ export const BondsTable: React.FC<BondsTableProps> = ({ onOpenFilters }) => {
         error={priceHistoryError}
       />
     </Card>
+    </Box>
   );
 };
 

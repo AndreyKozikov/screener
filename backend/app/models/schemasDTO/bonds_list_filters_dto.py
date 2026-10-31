@@ -87,12 +87,12 @@ class BondsListFiltersDTO(BaseModel):
 
     rating_min: Optional[str] = Field(
         None,
-        description="Минимальный рейтинг для фильтрации (из шкалы рейтингов)"
+        description="Граница «От»: выбранный рейтинг и все более высокие"
     )
 
     rating_max: Optional[str] = Field(
         None,
-        description="Максимальный рейтинг для фильтрации (из шкалы рейтингов)"
+        description="Граница «До»: выбранный рейтинг и все более низкие"
     )
 
     emitent_title: Optional[str] = Field(

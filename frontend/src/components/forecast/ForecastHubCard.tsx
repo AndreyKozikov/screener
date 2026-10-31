@@ -101,7 +101,7 @@ export const ForecastHubCard: React.FC<ForecastHubCardProps> = ({
             color: '#0d1d4b',
             fontSize: { xs: '0.9rem', md: '1.08rem' },
             lineHeight: 1.35,
-            letterSpacing: '-0.02em',
+            letterSpacing: '0.005em',
             fontWeight: 700,
           }}
         >
@@ -116,7 +116,7 @@ export const ForecastHubCard: React.FC<ForecastHubCardProps> = ({
           color: '#0a1b4c',
           fontSize: { xs: '2.25rem', md: '3rem' },
           lineHeight: 1.08,
-          letterSpacing: '-0.045em',
+          letterSpacing: '0.005em',
           fontWeight: 760,
           fontVariantNumeric: 'tabular-nums',
         }}

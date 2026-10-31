@@ -10,7 +10,7 @@ from typing import List
 RATINGS_ORDER: List[str] = [
     'AAA', 'AA+', 'AA', 'AA-', 'A+', 'A', 'A-', 
     'BBB+', 'BBB', 'BBB-', 'BB+', 'BB', 'BB-', 
-    'B+', 'B', 'B-', 'CCC', 'CC', 'C', 'D'
+    'B+', 'B', 'B-', 'CCC+', 'CCC', 'CCC-', 'CC', 'C', 'D'
 ]
 """Список всех возможных рейтингов в строгом иерархическом порядке.
 

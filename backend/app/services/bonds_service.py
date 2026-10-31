@@ -185,7 +185,9 @@ async def get_bonds_list(
     url = f"{base_url}/api/bonds"
     url_bond_count = f"{base_url}/api/bond_counts"
 
-    json_filters = filters.model_dump()
+    # HTTPX's json= encoder expects JSON values; Pydantic's default Python
+    # mode leaves maturity dates as datetime.date objects.
+    json_filters = filters.model_dump(mode="json")
 
     emitent_title = emitent_title
 

@@ -68,6 +68,12 @@ const getRatingIndex = (rating: string): number => {
   return index === -1 ? RATING_SCALE.length : index;
 };
 
+/** Compare ratings from strongest to weakest; unknown or missing values sort last. */
+export const compareRatingLevels = (
+  left: string | null | undefined,
+  right: string | null | undefined,
+): number => getRatingIndex(left ?? '') - getRatingIndex(right ?? '');
+
 /**
  * Find worst rating from a list of ratings, excluding "Отозван" if other ratings exist
  * 
