@@ -7,7 +7,6 @@ import {
   ListItemText,
   Typography,
 } from '@mui/material';
-import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 
@@ -49,12 +48,12 @@ const NavigationRow: React.FC<{
           px: depth === 0 ? 1.25 : 1,
           py: 0.55,
           borderRadius: 2,
-          color: isSelected ? '#1558A6' : hasActiveChild ? '#244D7B' : '#334B6D',
-          '&:hover': { bgcolor: 'rgba(25,118,210,0.075)' },
+          color: isSelected ? '#1558A6' : hasActiveChild ? '#1a4a7a' : '#2a4060',
+          '&:hover': { bgcolor: 'rgba(255,255,255,0.45)' },
           '&.Mui-selected': {
-            bgcolor: 'rgba(25,118,210,0.105)',
+            bgcolor: 'rgba(255,255,255,0.55)',
             color: '#1558A6',
-            '&:hover': { bgcolor: 'rgba(25,118,210,0.14)' },
+            '&:hover': { bgcolor: 'rgba(255,255,255,0.65)' },
             '&::before': {
               content: '""',
               position: 'absolute',
@@ -84,7 +83,7 @@ const NavigationRow: React.FC<{
               mr: 1.25,
               ml: 0.35,
               borderRadius: '50%',
-              bgcolor: isSelected ? '#1976d2' : '#9CB2CF',
+              bgcolor: isSelected ? '#1976d2' : 'rgba(156,178,207,0.8)',
             }}
           />
         )}
@@ -107,7 +106,7 @@ const NavigationRow: React.FC<{
             mb: 0.7,
             ml: depth === 0 ? 2.05 : 1.7,
             pl: 1.15,
-            borderLeft: '1px solid #D9E5F3',
+            borderLeft: '1px solid rgba(200,218,240,0.6)',
             listStyle: 'none',
           }}
         >
@@ -125,6 +124,22 @@ const NavigationRow: React.FC<{
     </Box>
   );
 };
+
+/** Shared styling for the expand / collapse toggle button */
+const toggleButtonSx = {
+  width: 42,
+  height: 52,
+  borderRadius: '0 0 12px 0',
+  color: '#29476F',
+  bgcolor: 'rgba(255,255,255,0.88)',
+  border: '1px solid rgba(216,228,242,0.92)',
+  boxShadow: '0 3px 12px rgba(29,61,103,0.12)',
+  '&:hover': { bgcolor: '#FFFFFF' },
+} as const;
+
+/** Duration (ms) and easing shared by every animated property */
+const TRANSITION_DURATION = 320;
+const EASING = 'cubic-bezier(0.4, 0, 0.2, 1)';
 
 export const SiteNavigationDrawer: React.FC<SiteNavigationDrawerProps> = ({
   activeId,
@@ -146,134 +161,128 @@ export const SiteNavigationDrawer: React.FC<SiteNavigationDrawerProps> = ({
         zIndex: (theme) => theme.zIndex.appBar + 1,
         flex: '0 0 auto',
         width: isExpanded ? panelWidth : 0,
-        height: isExpanded ? '100dvh' : 0,
-        minHeight: isExpanded ? '100vh' : 0,
+        height: '100dvh',
+        minHeight: '100vh',
         overflow: 'visible',
-        transition: 'width 260ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+        transition: `width ${TRANSITION_DURATION}ms ${EASING}`,
       }}
     >
-      {isExpanded ? (
+      {/* ── Expanded panel (always mounted, animated via CSS) ── */}
+      <Box
+        sx={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          width: panelWidth,
+          height: '100dvh',
+          minHeight: '100vh',
+          color: '#17345B',
+          background: 'linear-gradient(180deg, rgba(235,244,255,0.95) 0%, rgba(241,247,255,0.92) 100%)',
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
+          borderRight: '1px solid rgba(255,255,255,0.72)',
+          boxShadow: '8px 0 24px rgba(29, 61, 103, 0.06)',
+          // Slide + fade animation
+          opacity: isExpanded ? 1 : 0,
+          transform: isExpanded ? 'translateX(0)' : 'translateX(-24px)',
+          pointerEvents: isExpanded ? 'auto' : 'none',
+          visibility: isExpanded ? 'visible' : 'hidden',
+          transition: [
+            `opacity ${TRANSITION_DURATION}ms ${EASING}`,
+            `transform ${TRANSITION_DURATION}ms ${EASING}`,
+            // Keep visible during the closing fade, then hide
+            `visibility 0ms ${isExpanded ? '0ms' : `${TRANSITION_DURATION}ms`}`,
+          ].join(', '),
+        }}
+      >
+        {/* Collapse button — top-right corner */}
         <Box
           sx={{
             display: 'flex',
-            flexDirection: 'column',
-            width: panelWidth,
-            height: '100dvh',
-            minHeight: '100vh',
-            color: '#17345B',
-            background: 'linear-gradient(180deg, rgba(255,255,255,0.985), rgba(247,250,255,0.98))',
-            borderRight: '1px solid #E7EEF7',
-            boxShadow: '8px 0 24px rgba(29, 61, 103, 0.08)',
+            justifyContent: 'flex-end',
+            px: 0,
+            pt: 0,
           }}
         >
-          <Box
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 1,
-              px: 1.25,
-              pt: 1.5,
-              pb: 1.25,
-              minHeight: 64,
-              borderBottom: '1px solid #E7EEF7',
-            }}
-          >
           <IconButton
             aria-label="Свернуть меню разделов"
             aria-controls="site-navigation-drawer"
             aria-expanded="true"
             onClick={() => setIsExpanded(false)}
+            tabIndex={isExpanded ? 0 : -1}
             sx={{
-              flex: '0 0 auto',
-              width: 36,
-              height: 36,
-              borderRadius: 2,
-              color: '#29476F',
-              bgcolor: 'rgba(25,118,210,0.075)',
-              border: '1px solid rgba(216,228,242,0.92)',
-              '&:hover': { bgcolor: 'rgba(25,118,210,0.12)' },
+              ...toggleButtonSx,
+              borderRadius: '0 0 0 12px',
             }}
           >
             <ChevronLeftIcon />
           </IconButton>
-
-            <Box
-              aria-hidden="true"
-              sx={{
-                width: 34,
-                height: 34,
-                flex: '0 0 auto',
-                display: 'grid',
-                placeItems: 'center',
-                borderRadius: 2,
-                color: '#1976d2',
-                bgcolor: 'rgba(25,118,210,0.09)',
-                border: '1px solid rgba(25,118,210,0.10)',
-                '& svg': { fontSize: 18 },
-              }}
-            >
-              <AccountTreeOutlinedIcon />
-            </Box>
-            <Box sx={{ flex: 1, minWidth: 0 }}>
-              <Typography component="h2" sx={{ color: '#17345B', fontWeight: 700, fontSize: '0.96rem', lineHeight: 1.25 }}>
-                Разделы сайта
-              </Typography>
-              <Typography sx={{ color: '#7185A0', fontSize: '0.72rem', mt: 0.2 }}>
-                Выберите нужный инструмент
-              </Typography>
-            </Box>
-          </Box>
-
-          <Box
-            id="site-navigation-items"
-            component="nav"
-            aria-label="Разделы сайта"
-            sx={{ flex: 1, overflowY: 'auto', px: 1.25, py: 1.5, scrollbarWidth: 'thin' }}
-          >
-            <Box component="ul" sx={{ m: 0, p: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 0.4 }}>
-              {items.map((item, index) => (
-                <React.Fragment key={item.id}>
-                  {index === 1 && (
-                    <Box component="li" aria-hidden="true" sx={{ listStyle: 'none', py: 0.65, px: 1.25 }}>
-                      <Box sx={{ height: '1px', bgcolor: '#E7EEF7' }} />
-                    </Box>
-                  )}
-                  <NavigationRow item={item} activeId={activeId} depth={0} onSelect={onSelect} />
-                </React.Fragment>
-              ))}
-            </Box>
-          </Box>
-
-          <Box sx={{ px: 2.25, py: 1.5, borderTop: '1px solid #E7EEF7' }}>
-            <Typography sx={{ color: '#8799B0', fontSize: '0.73rem', letterSpacing: '0.02em' }}>
-              BondsScreener
-            </Typography>
-          </Box>
         </Box>
-      ) : (
-        <IconButton
-          aria-label="Открыть меню разделов"
-          aria-controls="site-navigation-drawer"
-          aria-expanded="false"
-          onClick={() => setIsExpanded(true)}
+
+        {/* Navigation items — scrollbar hidden */}
+        <Box
+          id="site-navigation-items"
+          component="nav"
+          aria-label="Разделы сайта"
           sx={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            zIndex: (theme) => theme.zIndex.appBar + 1,
-            width: 42,
-            height: 52,
-            borderRadius: '0 0 12px 0',
-            color: '#29476F',
-            bgcolor: 'rgba(255,255,255,0.88)',
-            border: '1px solid rgba(216,228,242,0.92)',
-            boxShadow: '0 3px 12px rgba(29,61,103,0.12)',
-            '&:hover': { bgcolor: '#FFFFFF' },
+            flex: 1,
+            overflowY: 'auto',
+            px: 1.25,
+            py: 1.5,
+            scrollbarWidth: 'none',
+            '&::-webkit-scrollbar': { display: 'none' },
           }}
         >
-          <ChevronRightIcon />
-        </IconButton>
-      )}
+          <Box component="ul" sx={{ m: 0, p: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 0.4 }}>
+            {items.map((item, index) => (
+              <React.Fragment key={item.id}>
+                {index === 1 && (
+                  <Box component="li" aria-hidden="true" sx={{ listStyle: 'none', py: 0.65, px: 1.25 }}>
+                    <Box sx={{ height: '1px', bgcolor: 'rgba(200,218,240,0.5)' }} />
+                  </Box>
+                )}
+                <NavigationRow item={item} activeId={activeId} depth={0} onSelect={onSelect} />
+              </React.Fragment>
+            ))}
+          </Box>
+        </Box>
+
+        {/* Footer */}
+        <Box sx={{ px: 2.25, py: 1.5, borderTop: '1px solid rgba(200,218,240,0.5)' }}>
+          <Typography sx={{ color: 'rgba(100,120,150,0.8)', fontSize: '0.73rem', letterSpacing: '0.02em' }}>
+            BondsScreener
+          </Typography>
+        </Box>
+      </Box>
+
+      {/* ── Expand button (always mounted, cross-fades with panel) ── */}
+      <IconButton
+        aria-label="Открыть меню разделов"
+        aria-controls="site-navigation-drawer"
+        aria-expanded="false"
+        onClick={() => setIsExpanded(true)}
+        tabIndex={isExpanded ? -1 : 0}
+        sx={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          zIndex: (theme) => theme.zIndex.appBar + 1,
+          ...toggleButtonSx,
+          opacity: isExpanded ? 0 : 1,
+          transform: isExpanded ? 'scale(0.85)' : 'scale(1)',
+          pointerEvents: isExpanded ? 'none' : 'auto',
+          visibility: isExpanded ? 'hidden' : 'visible',
+          transition: [
+            `opacity ${TRANSITION_DURATION}ms ${EASING}`,
+            `transform ${TRANSITION_DURATION}ms ${EASING}`,
+            `visibility 0ms ${isExpanded ? `${TRANSITION_DURATION}ms` : '0ms'}`,
+          ].join(', '),
+        }}
+      >
+        <ChevronRightIcon />
+      </IconButton>
     </Box>
   );
 };

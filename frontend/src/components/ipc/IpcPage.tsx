@@ -487,7 +487,7 @@ export const IpcPage: React.FC = () => {
                         plot_bgcolor: 'rgba(255,255,255,0)',
                         paper_bgcolor: 'rgba(255,255,255,0)',
                       }}
-                      config={{ responsive: true, displayModeBar: true, scrollZoom: true, displaylogo: false, locale: 'ru', locales: russianPlotlyLocales }}
+                      config={{ responsive: true, displayModeBar: true, scrollZoom: false, displaylogo: false, locale: 'ru', locales: russianPlotlyLocales }}
                       style={{ width: '100%', height: 'clamp(250px, 44vw, 440px)' }}
                     />
                   ) : <Typography color="text.secondary" sx={{ p: 2, textAlign: 'center', fontSize: '0.8rem' }}>Нет месячных данных за выбранный период</Typography>
@@ -507,7 +507,7 @@ export const IpcPage: React.FC = () => {
                         plot_bgcolor: 'rgba(255,255,255,0)',
                         paper_bgcolor: 'rgba(255,255,255,0)',
                       }}
-                      config={{ responsive: true, displayModeBar: true, scrollZoom: true, displaylogo: false, locale: 'ru', locales: russianPlotlyLocales }}
+                      config={{ responsive: true, displayModeBar: true, scrollZoom: false, displaylogo: false, locale: 'ru', locales: russianPlotlyLocales }}
                       style={{ width: '100%', height: 'clamp(250px, 44vw, 440px)' }}
                     />
                   ) : <Typography color="text.secondary" sx={{ p: 2, textAlign: 'center', fontSize: '0.8rem' }}>Нет недельных данных за выбранный период</Typography>
