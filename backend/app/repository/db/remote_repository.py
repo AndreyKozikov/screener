@@ -181,6 +181,10 @@ class RuoniaRepository(RemoteRepository):
     repository = "ruonia"
 
 
+class UsersRepository(RemoteRepository):
+    repository = "users"
+
+
 class TradingHistoryRepository(RemoteRepository):
     repository = "trading_history"
 

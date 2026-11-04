@@ -8,7 +8,7 @@ from app.routers import (
     bonds, metadata, zerocupon, forecast, emitent, rating, currency, ruonia, keyrate,
     feedback, dashboard,
     llm_router, blog, inflations, ipc, settings as settings_router,
-    portfolio
+    portfolio, auth
 )
 
 from app.services.data_loader import init_data_loader
@@ -25,6 +25,7 @@ from app.services.vector_retrieval import init_retrieval_pipeline
 from app.services import init_llm_provider_resolution_service, init_llm_analysis_service, init_runtime_settings
 from app.agent import router as agent_router
 from app.macro_dashboard.router import router as macro_dashboard_router
+from app.services.auth_service import validate_auth_configuration
 
 # Настройка базового логирования
 logging.basicConfig(
@@ -41,6 +42,8 @@ async def lifespan(app: FastAPI):
     print("[STARTUP] init_runtime_settings start", flush=True)
     init_runtime_settings()
     print("[STARTUP] init_runtime_settings done", flush=True)
+    validate_auth_configuration()
+    print("[STARTUP] AUTH_SECRET_KEY loaded from backend/.env", flush=True)
     # Startup: Initialize data loaders
     print("[STARTUP] init_data_loader start", flush=True)
     init_data_loader(DATA_DIR)
@@ -116,6 +119,7 @@ app.include_router(ipc.ipc_router)
 app.include_router(settings_router.router)
 app.include_router(macro_dashboard_router)
 app.include_router(portfolio.router)
+app.include_router(auth.router)
 
 # Root endpoint
 @app.get("/")

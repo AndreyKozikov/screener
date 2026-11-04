@@ -17,6 +17,17 @@ _env_file_path = None
 if (_BACKEND_DIR / ".env").exists():
     _env_file_path = str(_BACKEND_DIR / ".env")
 
+
+def _load_auth_secret_key() -> str:
+    """Read the signing key from its single source: backend/.env."""
+    if _env_file_path is None:
+        return ""
+    for line in Path(_env_file_path).read_text(encoding="utf-8").splitlines():
+        key, separator, value = line.partition("=")
+        if separator and key.strip() == "AUTH_SECRET_KEY":
+            return value.strip().strip("\"'")
+    return ""
+
 _CONFIG_LLM_PATH = _BACKEND_DIR / "config" / "config_llm.toml"
 
 class ProviderConfig(BaseModel):
@@ -57,6 +68,8 @@ class Settings(BaseSettings):
 
     DB_REPOSITORY_URL: str = "http://127.0.0.1:8964"
     DB_REPOSITORY_API_KEY: SecretStr = SecretStr("")
+    AUTH_SECRET_KEY: SecretStr = SecretStr("")
+    AUTH_TOKEN_TTL_HOURS: int = 168
 
     OPENAI_API_KEY: str = ""
     GEMINI_API_KEY: str = ""
@@ -100,4 +113,4 @@ class Settings(BaseSettings):
         env_ignore_empty=True,
     )
 
-settings = Settings()
+settings = Settings(AUTH_SECRET_KEY=_load_auth_secret_key())

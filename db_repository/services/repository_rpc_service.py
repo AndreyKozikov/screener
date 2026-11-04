@@ -32,6 +32,7 @@ from db_repository.repository.operations.forecast_repository import ForecastRepo
 from db_repository.repository.operations.keyrate_repository import KeyrateRepository
 from db_repository.repository.operations.ruonia_repository import RuoniaRepository
 from db_repository.repository.operations.trading_history_repository import TradingHistoryRepository
+from db_repository.repository.operations.users_repository import UsersRepository
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +122,7 @@ def _repository_factories() -> dict[str, Any]:
         "keyrates": lambda: KeyrateRepository(db_path=DB_PATH),
         "ruonia": lambda: RuoniaRepository(db_path=DB_PATH),
         "trading_history": lambda: TradingHistoryRepository(db_path=HISTORY_DB_PATH),
+        "users": lambda: UsersRepository(db_path=DB_PATH),
     }
 
 
@@ -156,6 +158,7 @@ _ALLOWED_OPERATIONS: dict[str, frozenset[str]] = {
     "trading_history": frozenset({
         "get_by_secid_date_range", "get_first_tradedate", "get_last_tradedate", "save_records",
     }),
+    "users": frozenset({"create", "get_by_email", "get_by_id"}),
 }
 
 

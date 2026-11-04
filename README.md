@@ -142,6 +142,12 @@ BondsScreener/
 Configuration is managed via `backend/app/config.py`. You can set:
 - CORS origins
 - Data directory path
+- `AUTH_SECRET_KEY` — secret used to sign user access tokens (at least 32 characters; keep it stable across backend instances)
+- `AUTH_TOKEN_TTL_HOURS` — access token lifetime (default: 168 hours)
+
+### User accounts
+
+Set `AUTH_SECRET_KEY` only in `backend/.env` before starting the service. For example, generate a value with `python -c "import secrets; print(secrets.token_urlsafe(48))"`. The signing key is read from that file alone. The database service applies the `users` table migration on startup. Users can register and log in at `/login`; the API exposes `POST /api/auth/register`, `POST /api/auth/login`, and authenticated `GET /api/auth/me`. Passwords are stored as scrypt hashes. User-owned tables can reference `users.id` with a foreign key; account and future user data must be accessed through the database microservice.
 
 ### Frontend
 Create a `.env` file in the frontend directory:

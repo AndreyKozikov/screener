@@ -14,7 +14,7 @@ class RepositoryCall(BaseModel):
         "blog", "bond_float_params", "bond_ratings", "bonds", "currency_rates",
         "coupons", "kbd", "descriptions", "emission_documents",
         "emitent_edisclosure", "emitents", "events", "forecasts", "keyrates",
-        "ruonia", "trading_history",
+        "ruonia", "trading_history", "users",
     ]
     method: Literal[
         "create", "delete", "delete_event", "fetch_coupons_for_frontend",
@@ -33,7 +33,7 @@ class RepositoryCall(BaseModel):
         "get_secids_by_regnumber", "get_stats", "has_coupons_for_secid", "insert_batch",
         "list_articles", "save", "save_event_changes", "save_forecast", "save_kbd_records",
         "save_many", "save_moex_coupons", "save_records", "update",
-        "upsert", "upsert_mapping", "upsert_ratings_for_bond",
+        "upsert", "upsert_mapping", "upsert_ratings_for_bond", "get_by_email", "get_by_id",
     ]
     args: list[Any] = Field(default_factory=list)
     kwargs: dict[str, Any] = Field(default_factory=dict)

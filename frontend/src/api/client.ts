@@ -34,6 +34,12 @@ export const apiClient = axios.create({
   },
 });
 
+apiClient.interceptors.request.use((config) => {
+  const token = localStorage.getItem('bonds-access-token');
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
+
 export const conversionApiClient = axios.create({
   baseURL: getConversionApiBaseUrl(),
   timeout: 600000,

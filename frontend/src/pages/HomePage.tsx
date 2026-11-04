@@ -780,6 +780,15 @@ export const HomePage: React.FC = () => {
               </Typography>
             </Box>
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: { xs: 0.25, sm: 0.75 }, gridColumn: { xs: '2 / 3', md: '3 / 4' }, gridRow: '1 / 2' }}>
+              <Button size="small" onClick={() => {
+                if (localStorage.getItem('bonds-access-token')) {
+                  localStorage.removeItem('bonds-access-token');
+                  localStorage.removeItem('bonds-user-email');
+                  window.location.reload();
+                } else navigate('/login');
+              }} sx={{ minWidth: 0, color: '#29476F', textTransform: 'none', px: 1 }}>
+                {localStorage.getItem('bonds-user-email') ? 'Выйти' : 'Войти'}
+              </Button>
               <IconButton
                 size="small"
                 aria-label="Обновить данные"
