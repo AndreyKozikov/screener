@@ -1,4 +1,4 @@
-import { apiClient } from './client';
+import { apiClient, conversionApiClient } from './client';
 
 import type { Rating } from '../utils/ratings';
 
@@ -39,10 +39,10 @@ export const getEmitentBySecid = (secid: string): Promise<EmitentInfo> => {
 
 /**
  * Refresh emitents data for all bonds
- * Backend will read bonds.json and update emitent data for each bond
+ * conversion_service loads issuer data for bonds and stores it in the database
  */
 export const refreshEmitentsData = async (): Promise<void> => {
-  await apiClient.post('/emitent/refresh');
+  await conversionApiClient.post('/emitents/update');
   clearEmitentInfoCache();
 };
 

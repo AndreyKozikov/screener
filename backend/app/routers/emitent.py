@@ -6,6 +6,7 @@
 """
 
 import asyncio
+import logging
 from typing import Dict, List
 
 from fastapi import APIRouter, HTTPException
@@ -14,10 +15,9 @@ from app.models import EmitentInfo
 from app.repository.db.emitents_repository import EmitentsRepository
 from app.services.data_loader import get_data_loader
 from app.services.emitent_service import get_emitent_service
-from app.utils.logger import get_data_update_logger
-from config.paths import DATA_DIR
 
 router = APIRouter(prefix="/api/emitent", tags=["emitent"])
+logger = logging.getLogger(__name__)
 
 
 @router.get("/list")
@@ -60,7 +60,6 @@ async def list_emitents() -> Dict[str, List[str]]:
         return {"emitents": emitent_titles}
 
     except Exception as exc:
-        logger = get_data_update_logger()
         logger.error("[API /emitent/list] ERROR: %s - %s", type(exc).__name__, str(exc))
         raise HTTPException(
             status_code=500,

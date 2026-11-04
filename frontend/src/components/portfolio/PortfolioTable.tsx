@@ -9,6 +9,7 @@ import { Box, Card, CardContent, Button, Tooltip, IconButton, Alert, Toolbar } f
 import DeleteIcon from '@mui/icons-material/Delete';
 import SaveIcon from '@mui/icons-material/Save';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
+import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
 
 // Register AG Grid modules
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -27,7 +28,9 @@ import { EmptyState } from '../common/EmptyState';
 import type { BondListItem, PortfolioBond } from '../../types/bond';
 import { PortfolioExportDialog } from './PortfolioExportDialog';
 import { PortfolioImportDialog } from './PortfolioImportDialog';
+import { BrokerReportImportDialog } from './BrokerReportImportDialog';
 import { exportPortfolio, type PortfolioExportFormat } from '../../utils/portfolioExport';
+import type { BrokerPortfolioImportMode } from '../../api/brokerPortfolio';
 import { RatingDisplay } from '../bonds/RatingDisplay';
 
 type FieldDescriptionMap = Record<string, string>;
@@ -58,6 +61,7 @@ export const PortfolioTable: React.FC = () => {
   const portfolioBonds = usePortfolioStore((state) => state.portfolioBonds);
   const removeBondFromPortfolio = usePortfolioStore((state) => state.removeBondFromPortfolio);
   const loadPortfolioBonds = usePortfolioStore((state) => state.loadPortfolioBonds);
+  const importBrokerPortfolioBonds = usePortfolioStore((state) => state.importBrokerPortfolioBonds);
   const clearPortfolio = usePortfolioStore((state) => state.clearPortfolio);
   const updateBondQuantity = usePortfolioStore((state) => state.updateBondQuantity);
   const updateBondAveragePurchasePrice = usePortfolioStore((state) => state.updateBondAveragePurchasePrice);
@@ -69,6 +73,7 @@ export const PortfolioTable: React.FC = () => {
   const portfolioCellClickedRef = useRef(false);
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [isBrokerReportDialogOpen, setIsBrokerReportDialogOpen] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
 
   // Load field descriptions
@@ -921,6 +926,10 @@ export const PortfolioTable: React.FC = () => {
     loadPortfolioBonds(bonds);
   };
 
+  const handleBrokerReportImport = (bonds: PortfolioBond[], mode: BrokerPortfolioImportMode) => {
+    importBrokerPortfolioBonds(bonds, mode);
+  };
+
   const handleClearPortfolio = () => {
     if (window.confirm('Вы уверены, что хотите удалить все облигации из портфеля?')) {
       clearPortfolio();
@@ -960,6 +969,14 @@ export const PortfolioTable: React.FC = () => {
               >
                 Загрузить портфель
               </Button>
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<ReceiptLongIcon />}
+                onClick={() => setIsBrokerReportDialogOpen(true)}
+              >
+                Импорт из отчёта
+              </Button>
             </Box>
             <Box sx={{ flexGrow: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <EmptyState
@@ -972,6 +989,12 @@ export const PortfolioTable: React.FC = () => {
             open={isImportDialogOpen}
             onClose={() => setIsImportDialogOpen(false)}
             onImport={handleImportPortfolio}
+          />
+          <BrokerReportImportDialog
+            open={isBrokerReportDialogOpen}
+            hasExistingPortfolio={portfolioBonds.length > 0}
+            onClose={() => setIsBrokerReportDialogOpen(false)}
+            onImport={handleBrokerReportImport}
           />
         </Card>
       </Box>
@@ -1037,6 +1060,14 @@ export const PortfolioTable: React.FC = () => {
                 onClick={() => setIsImportDialogOpen(true)}
               >
                 Загрузить портфель
+              </Button>
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<ReceiptLongIcon />}
+                onClick={() => setIsBrokerReportDialogOpen(true)}
+              >
+                Импорт из отчёта
               </Button>
             </Box>
             <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
@@ -1279,6 +1310,12 @@ export const PortfolioTable: React.FC = () => {
           open={isImportDialogOpen}
           onClose={() => setIsImportDialogOpen(false)}
           onImport={handleImportPortfolio}
+        />
+        <BrokerReportImportDialog
+          open={isBrokerReportDialogOpen}
+          hasExistingPortfolio={portfolioBonds.length > 0}
+          onClose={() => setIsBrokerReportDialogOpen(false)}
+          onImport={handleBrokerReportImport}
         />
       </Card>
       </Box>

@@ -48,4 +48,32 @@ export const uploadAndParseInflationFile = async (file: File): Promise<Inflation
   }
 };
 
+/**
+ * Отправка URL на Excel-файл данных по инфляции: сервис сам скачивает файл,
+ * обрабатывает его и удаляет скачанный файл после успешной обработки.
+ */
+export const uploadAndParseInflationByUrl = async (url: string): Promise<InflationDataLoadResponse> => {
+  try {
+    const response = await conversionClient.post<InflationDataLoadResponse>(
+      '/inflations/upload_inflation_data_by_url',
+      { url },
+      {
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
+    return response.data;
+  } catch {
+    // Резервный вызов напрямую к conversion_service на порт 12345
+    const fallbackResponse = await axios.post<InflationDataLoadResponse>(
+      'http://127.0.0.1:12345/api/inflations/upload_inflation_data_by_url',
+      { url },
+      {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 120000,
+      }
+    );
+    return fallbackResponse.data;
+  }
+};
+
 

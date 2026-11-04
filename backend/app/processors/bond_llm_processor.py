@@ -4,7 +4,7 @@ import json
 import logging
 from app.repository.db import get_bonds_repository, get_history_repository
 from app.repository.files import get_markdownfile_repository, get_file_storage
-from app.parsers.emission_documents_parser import extract_series_from_markdown
+from app.parsers.emission_series_parser import extract_series_from_markdown
 
 
 from app.services.vector_retrieval import get_retrieval_pipeline

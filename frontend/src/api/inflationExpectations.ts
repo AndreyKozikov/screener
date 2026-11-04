@@ -31,4 +31,19 @@ export const uploadAndParseInflationExpectationsFile = async (file: File): Promi
   return response.data;
 };
 
+/**
+ * Отправка URL на Excel-файл инфляционных ожиданий: сервис сам скачивает файл,
+ * обрабатывает его и удаляет скачанный файл после успешной обработки.
+ */
+export const uploadAndParseInflationExpectationsByUrl = async (url: string): Promise<InflationExpectationsLoadResponse> => {
+  const response = await conversionClient.post<InflationExpectationsLoadResponse>(
+    '/inflations/upload_by_url',
+    { url },
+    {
+      headers: { 'Content-Type': 'application/json' },
+    }
+  );
+  return response.data;
+};
+
 

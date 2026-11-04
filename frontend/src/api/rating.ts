@@ -1,4 +1,4 @@
-import { apiClient } from './client';
+import { apiClient, conversionApiClient } from './client';
 import { clearEmitentInfoCache } from './emitent';
 
 export interface Rating {
@@ -21,12 +21,12 @@ export const getBondRating = async (secid: string, boardid: string): Promise<Rat
 
 /**
  * Refresh ratings data for all bonds
- * Backend will read bonds.json and update ratings for each bond
+ * conversion_service loads ratings for bonds and stores them in the database
  * 
  * @param forceUpdate - If true, force update all ratings regardless of last_updated date
  */
 export const refreshRatingsData = async (forceUpdate: boolean = false): Promise<void> => {
-  await apiClient.post('/rating/refresh', null, {
+  await conversionApiClient.post('/rating/refresh', null, {
     params: { force_update: forceUpdate }
   });
   clearEmitentInfoCache();

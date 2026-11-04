@@ -19,6 +19,7 @@ interface PortfolioState {
   clearPortfolio: () => void;
   loadBondsToPortfolio: (bonds: BondListItem[]) => void;
   loadPortfolioBonds: (bonds: PortfolioBond[]) => void;
+  importBrokerPortfolioBonds: (bonds: PortfolioBond[], mode: 'merge' | 'replace') => void;
   updateBondQuantity: (secid: string, quantity: number) => void;
   updateBondAveragePurchasePrice: (secid: string, averagePurchasePrice: number | null) => void;
   setCouponsForBond: (secid: string, coupons: Coupon[]) => void;
@@ -242,6 +243,76 @@ export const usePortfolioStore = create<PortfolioState>()(
             portfolioBonds: [...state.portfolioBonds, ...newBonds],
           };
         });
+      },
+
+      importBrokerPortfolioBonds: (importedBonds, mode) => {
+        let secidsToLoadCoupons: string[] = [];
+
+        set((state) => {
+          let nextBonds: PortfolioBond[];
+
+          if (mode === 'replace') {
+            nextBonds = importedBonds.map((bond) => ({ ...bond }));
+          } else {
+            nextBonds = [...state.portfolioBonds];
+
+            for (const importedBond of importedBonds) {
+              const importedIsin = importedBond.ISIN?.trim().toUpperCase();
+              const existingIndex = nextBonds.findIndex((existingBond) => {
+                const existingIsin = existingBond.ISIN?.trim().toUpperCase();
+                return existingBond.SECID.trim().toUpperCase() === importedBond.SECID.trim().toUpperCase() ||
+                  Boolean(importedIsin && existingIsin && importedIsin === existingIsin);
+              });
+
+              if (existingIndex < 0) {
+                nextBonds.push({ ...importedBond });
+                continue;
+              }
+
+              const existingBond = nextBonds[existingIndex];
+              const existingQuantity = Math.max(1, Math.floor(existingBond.quantity || 1));
+              const importedQuantity = Math.max(1, Math.floor(importedBond.quantity || 1));
+              const existingPrice = existingBond.averagePurchasePrice ?? existingBond.PREVPRICE ?? null;
+              const importedPrice = importedBond.averagePurchasePrice ?? importedBond.PREVPRICE ?? null;
+              let averagePurchasePrice = existingPrice ?? importedPrice;
+
+              if (existingPrice !== null && importedPrice !== null) {
+                averagePurchasePrice = (
+                  existingPrice * existingQuantity + importedPrice * importedQuantity
+                ) / (existingQuantity + importedQuantity);
+              }
+
+              nextBonds[existingIndex] = {
+                ...existingBond,
+                ...importedBond,
+                quantity: existingQuantity + importedQuantity,
+                averagePurchasePrice: averagePurchasePrice === null
+                  ? null
+                  : Math.round(averagePurchasePrice * 1_000_000) / 1_000_000,
+              };
+            }
+          }
+
+          const couponsBySecid = mode === 'replace'
+            ? Object.fromEntries(
+              Object.entries(state.couponsBySecid).filter(([secid]) =>
+                nextBonds.some((bond) => bond.SECID === secid)
+              )
+            )
+            : state.couponsBySecid;
+
+          secidsToLoadCoupons = nextBonds
+            .filter((bond) => bond.BOARDID && !couponsBySecid[bond.SECID])
+            .map((bond) => bond.SECID);
+
+          return { portfolioBonds: nextBonds, couponsBySecid };
+        });
+
+        for (const secid of secidsToLoadCoupons) {
+          fetchBondCoupons(secid)
+            .then((response) => get().setCouponsForBond(secid, response.coupons || []))
+            .catch((err) => console.error(`Failed to load coupons for ${secid}:`, err));
+        }
       },
 
       updateBondQuantity: (secid, quantity) => {

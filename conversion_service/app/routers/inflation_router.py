@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Dict
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
+from conversion_service.app.models.inflation_dto import InflationLoadByUrlRequest
 from conversion_service.app.repository.files.file_storage import FileStorage
 from conversion_service.app.services.inflation_service import (
     DEFAULT_EXCEL_PATH,
@@ -14,6 +15,15 @@ from conversion_service.app.services.inflation_service import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/inflations", tags=["inflations"])
+
+
+def _handle_processing_error(exc: Exception) -> None:
+    """Логирует и оборачивает ошибку обработки в HTTPException."""
+    logger.error("[INFLATION ROUTER] Ошибка при обработке файла: %s", exc, exc_info=True)
+    raise HTTPException(
+        status_code=500,
+        detail=f"Ошибка обработки файла: {exc}",
+    ) from exc
 
 
 @router.post(
@@ -43,15 +53,22 @@ async def upload_and_parse_inflation_expectations(
         )
         return result
     except Exception as exc:
-        logger.error(
-            "[INFLATION EXPECTATIONS ROUTER] Ошибка при обработке загруженного файла: %s",
-            exc,
-            exc_info=True,
-        )
-        raise HTTPException(
-            status_code=500,
-            detail=f"Ошибка обработки загруженного файла: {exc}",
-        ) from exc
+        _handle_processing_error(exc)
+
+@router.post(
+    "/upload_by_url",
+    summary="Скачивание Excel-файла инфляционных ожиданий по URL, парсинг и удаление скачанного файла",
+)
+async def parse_inflation_expectations_by_url(
+    request: InflationLoadByUrlRequest,
+) -> Dict[str, Any]:
+    """Принимает URL на Excel-файл, скачивает его, парсит и после успешной обработки удаляет скачанный файл."""
+    service = get_inflation_service()
+    try:
+        result = await service.download_and_parse_excel(url=request.url)
+        return result
+    except Exception as exc:
+        _handle_processing_error(exc)
 
 @router.post("/upload_inflation_data")
 async def upload_and_parse_inflation_data(
@@ -76,12 +93,16 @@ async def upload_and_parse_inflation_data(
         )
         return result
     except Exception as exc:
-        logger.error(
-            "[INFLATION EXPECTATIONS ROUTER] Ошибка при обработке загруженного файла: %s",
-            exc,
-            exc_info=True,
-        )
-        raise HTTPException(
-            status_code=500,
-            detail=f"Ошибка обработки загруженного файла: {exc}",
-        ) from exc
+        _handle_processing_error(exc)
+
+@router.post("/upload_inflation_data_by_url")
+async def parse_inflation_data_by_url(
+        request: InflationLoadByUrlRequest,
+):
+    """Принимает URL на Excel-файл, скачивает его, парсит и после успешной обработки удаляет скачанный файл."""
+    service = get_inflation_service()
+    try:
+        result = await service.download_and_parse_est_infl(url=request.url)
+        return result
+    except Exception as exc:
+        _handle_processing_error(exc)

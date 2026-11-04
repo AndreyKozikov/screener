@@ -1,65 +1,58 @@
-"""Сервис агрегации макроэкономических показателей для информационной панели.
-
-Модуль консолидирует данные о курсах валют, ставках RUONIA и ключевой ставке
-из специализированных сервисов для отображения актуального состояния рынка
-на главной странице приложения.
-"""
+"""Aggregate market rates from the shared database for the dashboard."""
 
 from datetime import date
 from typing import Optional
 
 from app.models import MacroRatesDTO
-from app.services.currency_service import get_currency_service
-from app.services.keyrate_service import get_keyrate_service
-from app.services.ruonia_service import get_ruonia_service
+from app.repository.db.currencyrate_repository import CurrencyrateRepository
+from app.repository.db.keyrate_repository import KeyrateRepository
+from app.repository.db.ruonia_repository import RuoniaRepository
 
 
 def get_dashboard_rates() -> MacroRatesDTO:
-    """Собирает сводную информацию о макроэкономических показателях.
+    today = date.today()
+    currency_repository = CurrencyrateRepository()
+    currency_row = currency_repository.get_by_date(today)
+    if currency_row is None:
+        currency_row = currency_repository.get_latest_on_or_before(today)
+    currency_dict = _currency_row_to_api_dict(currency_row, today)
 
-    Функция запрашивает последние доступные данные у сервисов валют, RUONIA
-    и ключевой ставки. Используется метод получения данных без принудительного
-    обновления (чтение из кэша/БД).
-
-    Returns:
-        MacroRatesDTO: Объект с актуальными значениями всех индикаторов.
-
-    Raises:
-        RuntimeError: Если какой-либо из необходимых сервисов недоступен.
-    """
-    currency_service = get_currency_service()
-    ruonia_service = get_ruonia_service()
-    keyrate_service = get_keyrate_service()
-
-    currency_dict = currency_service.get_rates(target_date=None, force_refresh=False)
-
-    ruonia_rate_value: Optional[float] = None
-    ruonia_response = ruonia_service.get_ruonia_data(date_from=None, date_to=None)
-    if ruonia_response.data:
-        first_record = ruonia_response.data[0]
-        ruonia_rate_value = first_record.stavka_ruonia
+    ruonia_rows = RuoniaRepository().get_by_date_range()
+    ruonia_rate_value: Optional[float] = ruonia_rows[0].ruo if ruonia_rows else None
 
     key_rate_value: Optional[float] = None
-    keyrate_dict = keyrate_service.get_keyrate_data()
-    if keyrate_dict:
-        today = date.today()
-        closest_date: Optional[str] = None
-        min_diff = float("inf")
-        for date_str, rate in keyrate_dict.items():
-            try:
-                d = date.fromisoformat(date_str)
-            except ValueError:
-                continue
-            if d <= today:
-                diff = abs((today - d).days)
-                if diff < min_diff:
-                    min_diff = diff
-                    closest_date = date_str
-        if closest_date is not None:
-            key_rate_value = keyrate_dict[closest_date]
+    keyrate_rows = KeyrateRepository().get_by_date_range()
+    for row in keyrate_rows:
+        if row.dt <= today:
+            key_rate_value = row.rate
+            break
 
     return MacroRatesDTO.from_services(
         currency_dict=currency_dict,
         ruonia_rate_value=ruonia_rate_value,
         key_rate_value=key_rate_value,
     )
+
+
+def _currency_row_to_api_dict(row, target_date: date) -> dict:
+    if row is None:
+        return {"date": target_date.isoformat(), "source_date": "", "rates": {}}
+
+    rates = {}
+    for code, value, nominal, original in (
+        ("USD", row.usd_rate, row.usd_nominal, row.usd_original_value),
+        ("EUR", row.eur_rate, row.eur_nominal, row.eur_original_value),
+        ("CNY", row.cny_rate, row.cny_nominal, row.cny_original_value),
+    ):
+        if value is not None:
+            rates[code] = {
+                "code": code,
+                "rate": value,
+                "nominal": nominal or 1,
+                "original_value": original or "",
+            }
+    return {
+        "date": row.dt.isoformat() if hasattr(row.dt, "isoformat") else str(row.dt),
+        "source_date": row.source_date or "",
+        "rates": rates,
+    }

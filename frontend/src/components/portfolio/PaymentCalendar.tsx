@@ -10,11 +10,22 @@ import {
   Divider,
   Chip,
   Card,
+  CardContent,
+  TextField,
   alpha,
   useTheme,
 } from '@mui/material';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import { usePortfolioStore } from '../../stores/portfolioStore';
 import { getCurrencyRates, type CurrencyRatesResponse } from '../../api/currency';
 import { formatNumber } from '../../utils/formatters';
@@ -41,6 +52,37 @@ interface MonthSummary {
   totalInRubles: number; // Итоговая сумма всех выплат в рублях
 }
 
+interface PaymentChartMonth {
+  key: string;
+  label: string;
+  amount: number;
+}
+
+const toDateInputValue = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const fromDateInputValue = (value: string): Date | null => {
+  const [year, month, day] = value.split('-').map(Number);
+  if (!year || !month || !day) return null;
+  return new Date(year, month - 1, day);
+};
+
+const getInitialChartPeriod = () => {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setFullYear(end.getFullYear() + 1);
+  end.setDate(end.getDate() - 1);
+  return {
+    start: toDateInputValue(start),
+    end: toDateInputValue(end),
+  };
+};
+
 /**
  * PaymentCalendar Component
  * 
@@ -59,6 +101,9 @@ export const PaymentCalendar: React.FC = () => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
   });
+  const [initialChartPeriod] = useState(getInitialChartPeriod);
+  const [chartStartDate, setChartStartDate] = useState(initialChartPeriod.start);
+  const [chartEndDate, setChartEndDate] = useState(initialChartPeriod.end);
 
   // Currency rates for conversion to rubles
   const [currencyRates, setCurrencyRates] = useState<CurrencyRatesResponse | null>(null);
@@ -230,6 +275,50 @@ export const PaymentCalendar: React.FC = () => {
     });
   }, [paymentEvents, currencyRates]);
 
+  const chartPeriodIsValid = useMemo(() => {
+    const start = fromDateInputValue(chartStartDate);
+    const end = fromDateInputValue(chartEndDate);
+    return Boolean(start && end && start.getTime() <= end.getTime());
+  }, [chartStartDate, chartEndDate]);
+
+  const paymentChartData = useMemo<PaymentChartMonth[]>(() => {
+    const start = fromDateInputValue(chartStartDate);
+    const end = fromDateInputValue(chartEndDate);
+    if (!start || !end || start.getTime() > end.getTime()) return [];
+
+    const endOfPeriod = new Date(end);
+    endOfPeriod.setHours(23, 59, 59, 999);
+    const amountsByMonth = new Map<string, number>();
+
+    paymentEvents.forEach((payment) => {
+      if (payment.date < start || payment.date > endOfPeriod) return;
+      const year = payment.date.getFullYear();
+      const month = payment.date.getMonth();
+      const key = `${year}-${String(month + 1).padStart(2, '0')}`;
+      amountsByMonth.set(
+        key,
+        (amountsByMonth.get(key) ?? 0) + convertToRubles(payment.amount, payment.currency),
+      );
+    });
+
+    const chartMonths: PaymentChartMonth[] = [];
+    const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+    const lastMonth = new Date(end.getFullYear(), end.getMonth(), 1);
+    while (cursor <= lastMonth) {
+      const year = cursor.getFullYear();
+      const month = cursor.getMonth();
+      const key = `${year}-${String(month + 1).padStart(2, '0')}`;
+      chartMonths.push({
+        key,
+        label: cursor.toLocaleDateString('ru-RU', { month: 'short', year: '2-digit' }),
+        amount: amountsByMonth.get(key) ?? 0,
+      });
+      cursor.setMonth(cursor.getMonth() + 1);
+    }
+
+    return chartMonths;
+  }, [chartStartDate, chartEndDate, paymentEvents, currencyRates]);
+
   // Get payments for selected month
   const selectedMonthPayments = useMemo(() => {
     const year = selectedDate.getFullYear();
@@ -340,7 +429,96 @@ export const PaymentCalendar: React.FC = () => {
   }
 
   return (
-    <Box sx={{ p: 3 }}>
+    <Box sx={{ width: '100%', maxWidth: 1660, mx: 'auto', p: { xs: 1.5, sm: 2.5, md: 3 } }}>
+      <Card
+        sx={{
+          mb: 2.5,
+          borderRadius: '20px',
+          border: '1px solid #E2E8F0',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.04)',
+          bgcolor: '#ffffff',
+        }}
+      >
+        <CardContent sx={{ p: { xs: 2, sm: 2.5 }, '&:last-child': { pb: { xs: 2, sm: 2.5 } } }}>
+          <Box
+            sx={{
+              display: 'flex',
+              flexDirection: { xs: 'column', sm: 'row' },
+              alignItems: { xs: 'stretch', sm: 'flex-start' },
+              justifyContent: 'space-between',
+              gap: 2,
+              mb: 1.5,
+            }}
+          >
+            <Box>
+              <Typography variant="h5" sx={{ color: '#10264A', fontSize: '1.1rem', fontWeight: 700 }}>
+                График выплат
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#64748B', mt: 0.35 }}>
+                Сумма купонов и погашений по месяцам, в рублёвом эквиваленте
+              </Typography>
+            </Box>
+            <Box sx={{ display: 'flex', gap: 1.25, flexWrap: 'wrap' }}>
+              <TextField
+                label="Период с"
+                type="date"
+                size="small"
+                value={chartStartDate}
+                onChange={(event) => setChartStartDate(event.target.value)}
+                slotProps={{ inputLabel: { shrink: true } }}
+                sx={{ width: { xs: 'calc(50% - 5px)', sm: 160 } }}
+              />
+              <TextField
+                label="Период по"
+                type="date"
+                size="small"
+                value={chartEndDate}
+                onChange={(event) => setChartEndDate(event.target.value)}
+                slotProps={{ inputLabel: { shrink: true } }}
+                sx={{ width: { xs: 'calc(50% - 5px)', sm: 160 } }}
+              />
+            </Box>
+          </Box>
+
+          {!chartPeriodIsValid ? (
+            <Typography variant="body2" color="error" sx={{ py: 5, textAlign: 'center' }}>
+              Укажите корректный период: дата начала должна быть раньше даты окончания.
+            </Typography>
+          ) : (
+            <Box sx={{ width: '100%', height: { xs: 250, sm: 300 }, mt: 1 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={paymentChartData} margin={{ top: 12, right: 12, left: 4, bottom: 4 }}>
+                  <CartesianGrid vertical={false} stroke="#E8EEF7" strokeDasharray="3 3" />
+                  <XAxis
+                    dataKey="label"
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fill: '#64748B', fontSize: 12 }}
+                    minTickGap={12}
+                  />
+                  <YAxis
+                    axisLine={false}
+                    tickLine={false}
+                    width={64}
+                    tick={{ fill: '#64748B', fontSize: 11 }}
+                    tickFormatter={(value: number) => new Intl.NumberFormat('ru-RU', {
+                      notation: 'compact',
+                      maximumFractionDigits: 1,
+                    }).format(value)}
+                  />
+                  <Tooltip
+                    cursor={{ fill: 'rgba(59, 130, 246, 0.08)' }}
+                    formatter={(value) => [`${formatNumber(Number(value), 2)} RUB`, 'Выплаты']}
+                    contentStyle={{ borderRadius: 12, border: '1px solid #E2E8F0', boxShadow: '0 8px 24px rgba(16, 38, 74, 0.12)' }}
+                  />
+                  <Bar dataKey="amount" name="Выплаты" fill="#3B82F6" radius={[6, 6, 0, 0]} maxBarSize={52} />
+                </BarChart>
+              </ResponsiveContainer>
+            </Box>
+          )}
+        </CardContent>
+      </Card>
+
         <Box
           sx={{
             display: 'flex',
@@ -354,10 +532,10 @@ export const PaymentCalendar: React.FC = () => {
               sx={{
                 width: '30%',
                 minWidth: '280px',
-                borderRadius: '16px',
-                border: '1px solid rgba(0,0,0,0.08)',
-                boxShadow: 2,
-                bgcolor: 'background.paper',
+                borderRadius: '20px',
+                border: '1px solid #E2E8F0',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.04)',
+                bgcolor: '#ffffff',
                 height: 'fit-content',
                 maxHeight: '600px',
                 display: 'flex',
@@ -417,7 +595,7 @@ export const PaymentCalendar: React.FC = () => {
                             '&:hover': {
                               backgroundColor: isSelected
                                 ? alpha(muiTheme.palette.primary.main, 0.12)
-                                : 'rgba(0, 0, 0, 0.04)',
+                                : '#F4F7FD',
                             },
                             transition: 'background-color 0.2s ease-in-out',
                             py: 1.5,
@@ -480,15 +658,13 @@ export const PaymentCalendar: React.FC = () => {
               flex: 1,
               minWidth: 0,
               width: isMobile ? '100%' : 'auto',
-              borderRadius: '16px',
-              border: '1px solid rgba(0,0,0,0.08)',
-              boxShadow: 2,
-              bgcolor: 'background.paper',
+              borderRadius: '20px',
+              border: '1px solid #E2E8F0',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.04)',
+              bgcolor: '#ffffff',
               overflow: 'hidden',
               transition: 'box-shadow 0.2s ease-in-out',
-              '&:hover': {
-                boxShadow: 4,
-              },
+              '&:hover': { boxShadow: '0 8px 24px rgba(16, 38, 74, 0.08)' },
             }}
           >
             <Box sx={{ p: 2 }}>
@@ -507,7 +683,7 @@ export const PaymentCalendar: React.FC = () => {
                   sx={{
                     color: 'text.secondary',
                     '&:hover': {
-                      backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                      backgroundColor: '#F4F7FD',
                     },
                   }}
                 >
@@ -531,7 +707,7 @@ export const PaymentCalendar: React.FC = () => {
                   sx={{
                     color: 'text.secondary',
                     '&:hover': {
-                      backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                      backgroundColor: '#F4F7FD',
                     },
                   }}
                 >
@@ -542,8 +718,8 @@ export const PaymentCalendar: React.FC = () => {
               {/* Calendar grid */}
               <Box
                 sx={{
-                  border: '1px solid rgba(0,0,0,0.08)',
-                  borderRadius: '12px',
+                  border: '1px solid #E2E8F0',
+                  borderRadius: '16px',
                   overflow: 'hidden',
                   bgcolor: 'background.paper',
                 }}
@@ -553,8 +729,8 @@ export const PaymentCalendar: React.FC = () => {
                   sx={{
                     display: 'grid',
                     gridTemplateColumns: 'repeat(7, 1fr)',
-                    borderBottom: '1px solid rgba(0,0,0,0.08)',
-                    backgroundColor: 'rgba(0, 0, 0, 0.02)',
+                    borderBottom: '1px solid #E2E8F0',
+                    backgroundColor: '#F8FAFC',
                   }}
                 >
                   {weekdayNames.map((day) => (
@@ -566,7 +742,7 @@ export const PaymentCalendar: React.FC = () => {
                         fontWeight: 600,
                         fontSize: '0.875rem',
                         color: 'text.secondary',
-                        borderRight: '1px solid rgba(0,0,0,0.08)',
+                        borderRight: '1px solid #E2E8F0',
                         '&:last-child': {
                           borderRight: 'none',
                         },
@@ -590,17 +766,17 @@ export const PaymentCalendar: React.FC = () => {
                       key={index}
                       sx={{
                         minHeight: '100px',
-                        borderRight: '1px solid rgba(0,0,0,0.08)',
-                        borderBottom: '1px solid rgba(0,0,0,0.08)',
+                        borderRight: '1px solid #E2E8F0',
+                        borderBottom: '1px solid #E2E8F0',
                         p: 1,
                         backgroundColor: day.isCurrentMonth
                           ? 'background.paper'
-                          : 'rgba(0, 0, 0, 0.02)',
+                          : '#F8FAFC',
                         position: 'relative',
                         ...(day.isToday && {
                           border: '2px solid',
                           borderColor: 'primary.main',
-                          borderRadius: '4px',
+                          borderRadius: '8px',
                           zIndex: 1,
                         }),
                         '&:nth-of-type(7n)': {
@@ -681,9 +857,9 @@ export const PaymentCalendar: React.FC = () => {
                   sx={{
                     mt: 2,
                     p: 2,
-                    backgroundColor: 'rgba(0, 0, 0, 0.02)',
-                    borderRadius: '12px',
-                    border: '1px solid rgba(0,0,0,0.08)',
+                    backgroundColor: '#F8FAFC',
+                    borderRadius: '16px',
+                    border: '1px solid #E2E8F0',
                   }}
                 >
                   <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
@@ -713,7 +889,7 @@ export const PaymentCalendar: React.FC = () => {
                         color: 'primary.main',
                         mt: 1,
                         pt: 1,
-                        borderTop: '1px solid rgba(0,0,0,0.1)',
+                        borderTop: '1px solid #E2E8F0',
                       }}
                     >
                       Итого: {formatNumber(currentMonthSummary.totalInRubles, 2)} RUB

@@ -5,17 +5,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.routers import (
-    bonds, metadata, zerocupon, forecast, emitent, rating,
-    feedback, currency, ruonia, keyrate, dashboard, trading_history,
-    edisclosure, pipeline, llm_router, blog, inflations, ipc
+    bonds, metadata, zerocupon, forecast, emitent, rating, currency, ruonia, keyrate,
+    feedback, dashboard,
+    llm_router, blog, inflations, ipc, settings as settings_router,
+    portfolio
 )
 
 from app.services.data_loader import init_data_loader
 from app.services.emitent_service import init_emitent_service
-from app.services.currency_service import init_currency_service
-from app.services.ruonia_service import init_ruonia_service
-from app.services.keyrate_service import init_keyrate_service
-from app.services.trading_history_service import init_trading_history_service
 from app.services.kbd_service import init_kbd_service
 from config.settings import settings
 from app.repository.db.emitents_repository import EmitentsRepository
@@ -25,7 +22,9 @@ from app.repository.db import init_bonds_repository, init_history_repository, in
 from app.repository.files import init_markdownfile_repository, init_file_storage
 from app.processors import init_events_processor, init_bond_llm_processor
 from app.services.vector_retrieval import init_retrieval_pipeline
-from app.services import init_llm_provider_resolution_service, init_llm_analysis_service
+from app.services import init_llm_provider_resolution_service, init_llm_analysis_service, init_runtime_settings
+from app.agent import router as agent_router
+from app.macro_dashboard.router import router as macro_dashboard_router
 
 # Настройка базового логирования
 logging.basicConfig(
@@ -38,6 +37,10 @@ logger = logging.getLogger(__name__)
 # Lifespan context manager for startup/shutdown events
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Startup: apply runtime settings overrides before services initialize
+    print("[STARTUP] init_runtime_settings start", flush=True)
+    init_runtime_settings()
+    print("[STARTUP] init_runtime_settings done", flush=True)
     # Startup: Initialize data loaders
     print("[STARTUP] init_data_loader start", flush=True)
     init_data_loader(DATA_DIR)
@@ -46,18 +49,6 @@ async def lifespan(app: FastAPI):
     emitents_repo = EmitentsRepository()
     init_emitent_service(DATA_DIR, emitents_repository=emitents_repo)
     print("[STARTUP] init_emitent_service done", flush=True)
-    print("[STARTUP] init_currency_service start", flush=True)
-    init_currency_service()
-    print("[STARTUP] init_currency_service done", flush=True)
-    print("[STARTUP] init_ruonia_service start", flush=True)
-    init_ruonia_service(DATA_DIR)
-    print("[STARTUP] init_ruonia_service done", flush=True)
-    print("[STARTUP] init_keyrate_service start", flush=True)
-    init_keyrate_service()
-    print("[STARTUP] init_keyrate_service done", flush=True)
-    print("[STARTUP] init_trading_history_service start", flush=True)
-    init_trading_history_service(DATA_DIR)
-    print("[STARTUP] init_trading_history_service done", flush=True)
     # Initialize KBD service (uses database, not data_dir)
     print("[STARTUP] init_kbd_service start", flush=True)
     init_kbd_service()
@@ -109,20 +100,22 @@ app.include_router(forecast.router)
 app.include_router(llm_router.router)
 app.include_router(emitent.router)
 app.include_router(rating.router)
-app.include_router(feedback.router)
 app.include_router(currency.router)
 app.include_router(ruonia.router)
 app.include_router(keyrate.router)
+app.include_router(feedback.router)
 app.include_router(dashboard.router)
-app.include_router(trading_history.router)
-app.include_router(edisclosure.router)
-app.include_router(pipeline.router)
 #app.include_router(llm_float_analize_param.router)
 #app.include_router(vector_retrieval.router)
+if settings.AGENT_ENABLED:
+    app.include_router(agent_router.router)
 app.include_router(blog.public_router)
 app.include_router(blog.admin_router)
 app.include_router(inflations.inflation_router)
 app.include_router(ipc.ipc_router)
+app.include_router(settings_router.router)
+app.include_router(macro_dashboard_router)
+app.include_router(portfolio.router)
 
 # Root endpoint
 @app.get("/")
@@ -138,6 +131,7 @@ async def root():
             "health": "/health",
             "bonds": "/api/bonds",
             "bond_detail": "/api/bonds/{secid}",
+            "portfolio_broker_import": "/api/portfolio/import/broker-report",
             "columns": "/api/columns",
             "descriptions": "/api/descriptions",
             "filter_options": "/api/filter-options"

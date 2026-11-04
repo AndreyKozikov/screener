@@ -55,11 +55,6 @@ class Settings(BaseSettings):
 
     DATA_DIR: str = "./data"
 
-    MOEX_BONDS_URL: str = (
-        "https://iss.moex.com/iss/engines/stock/markets/bonds/securities.json"
-    )
-
-    PDF2MD_BASE_URL: str = "http://localhost:9000"
     DB_REPOSITORY_URL: str = "http://127.0.0.1:8964"
     DB_REPOSITORY_API_KEY: SecretStr = SecretStr("")
 
@@ -76,6 +71,17 @@ class Settings(BaseSettings):
     LOCAL_LLM_ANALYSIS_TOP_P: float = 0.9
 
     FLOATER_ANALYSIS_PROMPT_MAX_CHARS: int = 980000
+
+    # ИИ-агент подбора облигаций. agent_enabled=False полностью отключает
+    # регистрацию роутера /api/agent/chat без правок кода.
+    AGENT_ENABLED: bool = True
+    # Имя LLM-провайдера из config_llm.toml (например "gemini-flash");
+    # пустая строка = AUTO (перебор доступных провайдеров с пробой).
+    AGENT_PROVIDER: str = ""
+    # Логирование сессий агента: каждый новый диалог пишется в отдельную
+    # папку с запросами/уточнениями пользователя и JSON-ответами модели.
+    AGENT_LOG_ENABLED: bool = True
+    AGENT_LOG_DIR: str = "logs/agent_sessions"
 
     def model_post_init(self, __context: Any) -> None:
         if _CONFIG_LLM_PATH.exists():

@@ -2,7 +2,7 @@
 
 Этот модуль содержит роутеры FastAPI для обработки HTTP запросов, связанных
 с облигациями и купонами. Включает endpoints для получения списка облигаций,
-детальной информации об облигациях, данных о купонах и обновления данных.
+детальной информации об облигациях и данных о купонах.
 """
 
 import asyncio
@@ -14,6 +14,7 @@ from app.models import (
     BondFilters,
     BondYieldRuoniaChartResponse,
     BondsListResponse,
+    Coupon,
     CouponsBySecid,
     CouponsListResponse,
     MultipleCouponsResponse,
@@ -22,19 +23,15 @@ from app.models import (
 from app.models.schemasDTO.bond_float_params_dto import BondFloatParamsDTO
 from app.models.schemasDTO.bonds_list_filters_dto import BondsListFiltersDTO
 from app.services.bond_float_params_service import BondFloatParamsService
+from app.services.coupon_service import get_coupon_service
 from app.services.bonds_service import (
     get_bond_detail,
     get_bonds_list,
 )
-from app.services.coupon_service import get_coupon_service
 from app.services.bond_ruonia_chart_service import get_yield_ruonia_chart_data
-from app.services.data_loader import get_data_loader
-from app.services.moex_client import MoexClient
 from app.services.trading_history_service import get_trading_history_service
 from app.repository.db.bonds_repository import BondsRepository
 from app.repository.db.bond_float_params_repository import BondFloatParamsRepository
-from app.repository.db.db_coupon import DBCoupon
-from app.utils.logger import get_data_update_logger
 
 router = APIRouter(prefix="/api/bonds", tags=["bonds"])
 """Роутер FastAPI для обработки запросов к API облигаций."""
@@ -60,6 +57,43 @@ async def list_bonds(payload: BondsListFiltersDTO):
         exclude_spob=data.get("exclude_spob", False)
     )
     return result
+
+
+@router.get("/coupons/batch", response_model=MultipleCouponsResponse)
+async def get_bonds_coupons_batch(secids: List[str] = Query(..., min_length=1)):
+    clean_secids = list(dict.fromkeys(item.strip() for item in secids if item and item.strip()))
+    if not clean_secids:
+        raise HTTPException(status_code=400, detail="At least one valid secid is required")
+    batch = await asyncio.to_thread(get_coupon_service().get_coupons_batch, clean_secids)
+    return MultipleCouponsResponse(data=[
+        CouponsBySecid(
+            secid=secid,
+            coupons=[Coupon(**item) for item in batch.get(secid, {}).get("coupons", [])],
+        )
+        for secid in clean_secids
+    ])
+
+
+@router.get("/{secid}/coupons", response_model=CouponsListResponse)
+async def get_bond_coupons(
+    secid: str,
+    secids: Optional[List[str]] = Query(None),
+) -> CouponsListResponse:
+    service = get_coupon_service()
+    if secids:
+        clean_secids = list(dict.fromkeys(item.strip() for item in secids if item and item.strip()))
+        if not clean_secids:
+            raise HTTPException(status_code=400, detail="At least one valid secid is required")
+        target = secid if secid in clean_secids else clean_secids[0]
+        batch = await asyncio.to_thread(service.get_coupons_batch, clean_secids)
+        coupons = batch.get(target, {}).get("coupons", [])
+    else:
+        try:
+            data = await asyncio.to_thread(service.get_coupons, secid)
+            coupons = data.get("coupons", [])
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Failed to get coupons: {exc}") from exc
+    return CouponsListResponse(coupons=[Coupon(**item) for item in coupons])
 
 
 @router.get("/float-params/secids", response_model=List[str])
@@ -172,288 +206,3 @@ async def get_bond_details(secid: str):
         marketdata_yields=dto.marketdata_yields,
         emitent_inn=dto.emitent_inn,
     )
-
-
-@router.post("/refresh-coupons")
-async def refresh_coupons_data(force_refresh: bool = Query(False,
-                                                           description="Force refresh all coupons, ignoring cache (last_updated date)")):
-    """Обновляет данные о купонах для всех облигаций из БД.
-    
-    Загружает список облигаций одним запросом (SELECT id, secid FROM bonds),
-    для каждой облигации запрашивает купоны из API MOEX по secid и сохраняет
-    в таблицу coupons с bond_id без дополнительных запросов к bonds.
-    
-    Args:
-        force_refresh: Если True, принудительно обновляет все купоны независимо от кэша
-            (игнорирует дату last_updated). Если False, обновляет только устаревшие купоны
-            (старше 14 дней).
-    
-    Returns:
-        Словарь со статистикой обновления, содержащий:
-        - status: Статус операции ("ok")
-        - total_bonds: Общее количество облигаций для обработки
-        - updated: Количество успешно обновленных облигаций
-        - errors: Количество ошибок при обновлении
-        - skipped: Количество пропущенных облигаций (отсутствует SECID)
-    
-    Raises:
-        HTTPException: Если произошла критическая ошибка при обновлении данных
-            (статус 500).
-    
-    Note:
-        Ошибки при обновлении отдельных облигаций не прерывают процесс. Все ошибки
-        логируются, и обработка продолжается для остальных облигаций.
-    """
-    logger = get_data_update_logger()
-    if force_refresh:
-        logger.info(
-            "[API /bonds/refresh-coupons] Received request to refresh coupons data (FORCE REFRESH - ignoring cache)")
-        print(f"[КУПОНЫ] Начало принудительного обновления купонов для всех облигаций (игнорируется кэш)")
-    else:
-        logger.info(
-            "[API /bonds/refresh-coupons] Received request to refresh coupons data (only stale data will be refreshed)")
-        print(f"[КУПОНЫ] Начало обновления купонов для всех облигаций (только устаревшие данные)")
-
-    try:
-        coupon_service = get_coupon_service()
-        bonds_repo = BondsRepository()
-        db_coupon = DBCoupon()
-        moex_client = MoexClient()
-
-        # Одна выборка облигаций: id и secid для всего процесса
-        logger.info("[API /bonds/refresh-coupons] Loading bonds from DB (id, secid)...")
-        id_secid_list = await asyncio.to_thread(bonds_repo.get_id_secid_list)
-        bonds_count = len(id_secid_list)
-        logger.info("[API /bonds/refresh-coupons] Found %s bonds to process", bonds_count)
-        updated_count = 0
-        error_count = 0
-        skipped_count = 0
-        all_records: List[dict] = []
-
-        for idx, (bond_id, secid) in enumerate(id_secid_list):
-            if not secid:
-                logger.warning("[API /bonds/refresh-coupons] Bond %s/%s: Skipping - missing SECID", idx + 1,
-                               bonds_count)
-                skipped_count += 1
-                continue
-
-            progress_percent = ((idx + 1) / bonds_count) * 100
-            if (idx + 1) % 100 == 0:
-                logger.info("[API /bonds/refresh-coupons] Processing bond %s/%s: SECID=%s", idx + 1, bonds_count, secid)
-
-            try:
-                fresh_data = await asyncio.to_thread(moex_client.fetch_coupons, secid)
-                for c in fresh_data.get("coupons", []):
-                    raw = {"bond_id": bond_id, **c}
-                    all_records.append(raw)
-                updated_count += 1
-            except Exception as exc:
-                error_type = type(exc).__name__
-                error_msg = str(exc)
-                logger.error(
-                    "[API /bonds/refresh-coupons] ERROR: Failed to update coupons for %s - %s: %s",
-                    secid, error_type, error_msg,
-                )
-                error_count += 1
-                continue
-        # Запись в БД напрямую с уже известным bond_id, без дополнительных SELECT
-        logger.info("[API /bonds/refresh-coupons] Saving coupons to DB (bulk)...")
-        await asyncio.to_thread(db_coupon.save_moex_coupons, all_records)
-        logger.info("[API /bonds/refresh-coupons] Database table coupons updated: %s records", len(all_records))
-
-        try:
-            get_data_loader().clear_bonds_cache()
-        except RuntimeError:
-            pass
-
-        summary = {
-            "status": "ok",
-            "total_bonds": bonds_count,
-            "updated": updated_count,
-            "errors": error_count,
-            "skipped": skipped_count,
-        }
-        logger.info(
-            "[API /bonds/refresh-coupons] Refresh completed: total=%s, updated=%s, errors=%s, skipped=%s",
-            bonds_count, updated_count, error_count, skipped_count,
-        )
-        print("[КУПОНЫ] Обновление завершено!")
-        return summary
-
-    except Exception as exc:
-        error_type = type(exc).__name__
-        error_msg = str(exc)
-        logger.error(f"[API /bonds/refresh-coupons] ERROR: {error_type} - {error_msg}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to refresh coupons: {error_msg}"
-        ) from exc
-
-
-@router.get("/{secid}/coupons", response_model=CouponsListResponse)
-async def get_bond_coupons(
-        secid: str,
-        secids: Optional[List[str]] = Query(None,
-                                            description="List of secids for batch request (alternative to path parameter)"),
-        force_refresh: bool = Query(False, description="Force refresh from MOEX API")
-):
-    """Получает данные о купонах для одной или нескольких облигаций по SECID.
-    
-    Поддерживает два режима работы:
-    1. Одна облигация: Используется path параметр `{secid}`
-       (например, /api/bonds/RU000A0ZZYQ2/coupons)
-    2. Несколько облигаций: Используется query параметр `secids`
-       (например, /api/bonds/any/coupons?secids=RU000A0ZZYQ2&secids=RU000A0ZZYQ3)
-    
-    Args:
-        secid: Идентификатор облигации (SECID) из path параметра.
-            Используется если не указан query параметр secids.
-        secids: Опциональный список SECID для пакетного запроса.
-            Если указан, имеет приоритет над path параметром secid.
-        force_refresh: Если True, принудительно загружает данные из API MOEX,
-            игнорируя кэш. По умолчанию False.
-    
-    Returns:
-        Объект CouponsListResponse со списком купонов.
-    
-    Raises:
-        HTTPException: Если указаны некорректные secids (статус 400),
-            если данные не найдены (статус 404), или если произошла ошибка
-            при загрузке данных (статус 502 или 500).
-    
-    Note:
-        Если данные отсутствуют или старше 14 дней, автоматически выполняется
-        загрузка из API MOEX (если force_refresh=False). При использовании
-        query параметра secids возвращаются данные для первой облигации из списка
-        (для обратной совместимости).
-    """
-    try:
-        coupon_service = get_coupon_service()
-
-        # If secids query parameter is provided, use batch mode
-        if secids and len(secids) > 0:
-            # Validate secids list
-            if not all(isinstance(s, str) and s.strip() for s in secids):
-                raise HTTPException(
-                    status_code=400,
-                    detail="All secids must be non-empty strings"
-                )
-
-            # Remove duplicates and empty strings
-            unique_secids = list(dict.fromkeys([s.strip() for s in secids if s and s.strip()]))
-
-            if not unique_secids:
-                raise HTTPException(
-                    status_code=400,
-                    detail="At least one valid secid is required"
-                )
-
-            # Get coupons for multiple bonds
-            batch_data = await asyncio.to_thread(
-                coupon_service.get_coupons_batch,
-                unique_secids,
-                use_db=True
-            )
-
-            # For backward compatibility with single bond requests, return first bond's data
-            # But if multiple secids were requested, we should return MultipleCouponsResponse
-            # However, to maintain backward compatibility, we'll return the first one
-            # The frontend should use a separate endpoint or we can add a new endpoint
-            # For now, let's return the first secid's data (or the path secid if it's in the list)
-            target_secid = secid if secid in unique_secids else unique_secids[0]
-
-            if target_secid not in batch_data:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"No coupon data found for {target_secid}"
-                )
-
-            bond_data = batch_data[target_secid]
-            coupons_data = bond_data.get("coupons", [])
-
-            from app.models import Coupon
-            coupons = [Coupon(**coupon) for coupon in coupons_data]
-
-            return CouponsListResponse(coupons=coupons)
-
-        # Single bond mode
-        full_coupon_data = await asyncio.to_thread(
-            coupon_service.get_coupons,
-            secid,
-            force_refresh
-        )
-
-        coupons_data = full_coupon_data.get("coupons", [])
-
-        from app.models import Coupon
-        coupons = [Coupon(**coupon) for coupon in coupons_data]
-
-        return CouponsListResponse(coupons=coupons)
-    except HTTPException:
-        raise
-    except RuntimeError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to get coupons: {str(exc)}") from exc
-
-
-@router.get("/coupons/batch", response_model=MultipleCouponsResponse)
-async def get_bonds_coupons_batch(
-        secids: List[str] = Query(..., description="List of secids for batch request", min_length=1)
-):
-    """Получает данные о купонах для нескольких облигаций по списку SECID.
-    
-    Выполняет пакетную загрузку данных о купонах для списка облигаций.
-    Возвращает купоны, сгруппированные по secid.
-    
-    Args:
-        secids: Список идентификаторов облигаций (SECID) для получения купонов.
-            Должен содержать хотя бы один элемент. Дубликаты автоматически удаляются.
-    
-    Returns:
-        Объект MultipleCouponsResponse со списком данных по облигациям.
-    """
-    try:
-        # Validate secids list
-        if not all(isinstance(s, str) and s.strip() for s in secids):
-            raise HTTPException(
-                status_code=400,
-                detail="All secids must be non-empty strings"
-            )
-
-        # Remove duplicates and empty strings
-        unique_secids = list(dict.fromkeys([s.strip() for s in secids if s and s.strip()]))
-
-        if not unique_secids:
-            raise HTTPException(
-                status_code=400,
-                detail="At least one valid secid is required"
-            )
-
-        coupon_service = get_coupon_service()
-
-        # Get coupons for multiple bonds
-        batch_data = await asyncio.to_thread(
-            coupon_service.get_coupons_batch,
-            unique_secids,
-            use_db=True
-        )
-
-        # Convert to response model
-        from app.models import Coupon
-        result_data = []
-
-        for secid in unique_secids:
-            if secid in batch_data:
-                bond_data = batch_data[secid]
-                coupons_data = bond_data.get("coupons", [])
-                coupons = [Coupon(**coupon) for coupon in coupons_data]
-                result_data.append(CouponsBySecid(secid=secid, coupons=coupons))
-            else:
-                result_data.append(CouponsBySecid(secid=secid, coupons=[]))
-
-        return MultipleCouponsResponse(data=result_data)
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to get coupons batch: {str(exc)}") from exc

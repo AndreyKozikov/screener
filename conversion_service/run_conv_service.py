@@ -11,6 +11,17 @@ from conversion_service.app.routers import (
     ipc_router,
     inflation_router,
 )
+from conversion_service.app.routers.market_data_router import (
+    coupons_router,
+    currency_router,
+    keyrate_router,
+    rating_router,
+    ruonia_router,
+    trading_history_router,
+    zerocupon_router,
+)
+from conversion_service.app.routers import event_processing_router, edisclosure_update_router
+from conversion_service.app.routers import forecast_router
 from config.settings import settings
 
 
@@ -37,6 +48,9 @@ def create_app() -> FastAPI:
         edisclosure_events.router,
         prefix=settings.API_V1_STR,
     )
+    app.include_router(event_processing_router.router, prefix=settings.API_V1_STR)
+    app.include_router(edisclosure_update_router.router, prefix=settings.API_V1_STR)
+    app.include_router(forecast_router.router, prefix=settings.API_V1_STR)
 
     app.include_router(
         bonds_router.router,
@@ -57,6 +71,17 @@ def create_app() -> FastAPI:
         inflation_router.router,
         prefix=settings.API_V1_STR,
     )
+
+    for router in (
+        coupons_router,
+        currency_router,
+        keyrate_router,
+        rating_router,
+        ruonia_router,
+        trading_history_router,
+        zerocupon_router,
+    ):
+        app.include_router(router, prefix=settings.API_V1_STR)
 
     return app
 

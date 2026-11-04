@@ -1,4 +1,4 @@
-import { apiClient } from './client';
+import { conversionApiClient } from './client';
 
 export interface TradingHistoryRefreshResponse {
   updated: number;
@@ -8,11 +8,11 @@ export interface TradingHistoryRefreshResponse {
 }
 
 /**
- * Запускает обновление истории торгов по всем облигациям.
- * Бэкенд сам получает список из bonds.json; фронтенд не передаёт данных.
+ * Запускает обновление истории торгов по всем облигациям через conversion_service.
+ * Список облигаций загружается сервисом; фронтенд его не передаёт.
  */
 export const refreshTradingHistory = async (): Promise<TradingHistoryRefreshResponse> => {
-  const response = await apiClient.get<TradingHistoryRefreshResponse>(
+  const response = await conversionApiClient.get<TradingHistoryRefreshResponse>(
     '/trading-history/download',
     { timeout: 600_000 }
   );

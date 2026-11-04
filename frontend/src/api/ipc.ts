@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { apiClient } from './client';
 import type { IpcData, IpcLoadResponse } from '../types/ipc';
 
 const getConversionApiBaseUrl = (): string => {
@@ -64,16 +65,8 @@ export const parseLocalIpcFile = async (filePath?: string): Promise<IpcLoadRespo
  * Получение сохранённых данных ИПЦ из JSON-файла.
  */
 export const fetchSavedIpcData = async (): Promise<IpcData> => {
-  try {
-    const response = await conversionClient.get<IpcData>('/ipc/data');
-    return response.data;
-  } catch (err) {
-    const fallbackResponse = await axios.get<IpcData>(
-      'http://127.0.0.1:12345/api/ipc/data',
-      { timeout: 30000 }
-    );
-    return fallbackResponse.data;
-  }
+  const response = await apiClient.get<IpcData>('/ipc/data');
+  return response.data;
 };
 
 /**

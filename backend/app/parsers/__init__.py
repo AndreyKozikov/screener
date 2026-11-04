@@ -1,6 +1,5 @@
 """Парсеры входных данных (Markdown, CSV, HTML и т.д.) в структуры для БД."""
 
-from app.parsers.emission_documents_parser import parse_emission_documents
 from app.parsers.emission_series_parser import (
     event_matches_reg_number,
     event_matches_secid,
@@ -25,7 +24,6 @@ __all__ = [
     "extract_series_from_markdown",
     "filter_events_by_secid_regnumber_series",
     "markdown_has_decision_header",
-    "parse_emission_documents",
     "parse_forecast_content",
     "select_event_by_secid_regnumber_series",
 ]

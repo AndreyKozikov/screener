@@ -1,4 +1,4 @@
-import { apiClient } from './client';
+import { apiClient, conversionApiClient } from './client';
 import type { BondsListResponse } from '../types/api';
 import type { BondDetail } from '../types/bond';
 import type { BondFloatParamsDTO } from '../types/bondFloatParams';
@@ -83,6 +83,38 @@ export const fetchBonds = async (filters: BondFilters, emitentTitle?: string, ex
     };
 };
 
+/** Load only the bonds identified by the supplied ISIN values. */
+export const fetchBondsByIsins = async (isins: string[]): Promise<BondsListResponse> => {
+    const uniqueIsins = Array.from(new Set(isins.map(isin => isin.trim().toUpperCase()).filter(Boolean)));
+    if (uniqueIsins.length === 0) {
+        return { total: 0, filtered: 0, skip: 0, limit: 0, bonds: [] };
+    }
+
+    const bonds: BondsListResponse['bonds'] = [];
+    let total = 0;
+    const batchSize = 1000;
+
+    for (let offset = 0; offset < uniqueIsins.length; offset += batchSize) {
+        const batch = uniqueIsins.slice(offset, offset + batchSize);
+        const response = await apiClient.post<BondsListResponse>('/bonds/', {
+            isins: batch,
+            exclude_spob: false,
+            skip: 0,
+            limit: batch.length,
+        });
+        bonds.push(...response.data.bonds);
+        total = response.data.total;
+    }
+
+    return {
+        total,
+        filtered: bonds.length,
+        skip: 0,
+        limit: bonds.length,
+        bonds,
+    };
+};
+
 
 /**
  * Точка графика сравнения доходности облигации и RUONIA
@@ -159,14 +191,14 @@ export const exportBondsJson = (bonds: Array<Record<string, unknown>>): void => 
 };
 
 /**
- * Request a dataset refresh from the backend
+ * Refresh the bond dataset through conversion_service
  */
 export const refreshBondsData = async (): Promise<void> => {
-    await apiClient.post('http://localhost:12345/api/update/bonds_data');
+    await conversionApiClient.post('/update/bonds_data');
 };
 
 /**
- * Request coupons data refresh for all bonds from the backend
+ * Refresh coupon data for all bonds through conversion_service
  * @param forceRefresh If true, force refresh all coupons regardless of cache (ignore last_updated date)
  */
 export const refreshCouponsData = async (forceRefresh: boolean = false): Promise<void> => {
@@ -174,7 +206,7 @@ export const refreshCouponsData = async (forceRefresh: boolean = false): Promise
     if (forceRefresh) {
         params.force_refresh = true;
     }
-    await apiClient.post('/bonds/refresh-coupons', null, { params });
+    await conversionApiClient.post('/bonds/refresh-coupons', null, { params });
 };
 
 /**
@@ -183,12 +215,19 @@ export const refreshCouponsData = async (forceRefresh: boolean = false): Promise
  * @param forceRefresh If true, force refresh from MOEX API
  */
 export const fetchBondCoupons = async (secid: string, forceRefresh: boolean = false): Promise<CouponsListResponse> => {
+    const response = await apiClient.get<CouponsListResponse>(`/bonds/${secid}/coupons`);
+    if (!forceRefresh && response.data.coupons.length > 0) {
+        return response.data;
+    }
+
+    // Keep coupon refresh behavior in conversion_service; coupon reads stay on the backend.
     const params: Record<string, boolean> = {};
     if (forceRefresh) {
         params.force_refresh = true;
     }
-    const response = await apiClient.get<CouponsListResponse>(`/bonds/${secid}/coupons`, { params });
-    return response.data;
+    await conversionApiClient.post(`/bonds/${secid}/refresh-coupons`, null, { params });
+    const refreshedResponse = await apiClient.get<CouponsListResponse>(`/bonds/${secid}/coupons`);
+    return refreshedResponse.data;
 };
 
 /**

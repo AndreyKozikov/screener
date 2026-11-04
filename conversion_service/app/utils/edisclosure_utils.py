@@ -228,6 +228,20 @@ def search_company_by_inn(inn: str) -> List[Dict[str, Any]]:
     return result
 
 
+def fetch_emission_documents_page(edisclosure_id: int) -> str:
+    """Download the emission-document list page for an e-disclosure company."""
+    url = f"{_FILES_PAGE_URL}?id={edisclosure_id}&type=7"
+    print(f"  [API] GET {url}", flush=True)
+    session, _ = _get_session()
+    response = session.get(url, headers=_HTML_HEADERS, timeout=_TIMEOUT)
+    if response.status_code == 403:
+        _clear_session_cache()
+        session, _ = _get_session()
+        response = session.get(url, headers=_HTML_HEADERS, timeout=_TIMEOUT)
+    response.raise_for_status()
+    return response.text
+
+
 def _extract_event_text(pseudo_guid: str, session: cf_requests.Session) -> Optional[str]:
     """Извлекает текст события из HTML страницы по pseudoGUID.
     

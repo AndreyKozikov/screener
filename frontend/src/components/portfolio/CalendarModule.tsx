@@ -10,22 +10,23 @@ import { PaymentCalendar } from './PaymentCalendar';
  */
 export const CalendarModule: React.FC = () => {
   return (
-    <Box sx={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', bgcolor: '#F8FAFC' }}>
+    <Box sx={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', bgcolor: '#F4F7FD' }}>
       {/* Glassmorphism sticky header */}
       <Box
         sx={{
           display: 'flex',
           alignItems: 'center',
           gap: 2,
-          p: 2,
+          px: { xs: 1.5, sm: 2 },
+          py: 1.5,
           position: 'sticky',
           top: 0,
           zIndex: 10,
           backgroundColor: alpha('#ffffff', 0.8),
           backdropFilter: 'blur(20px)',
           WebkitBackdropFilter: 'blur(20px)',
-          borderBottom: '1px solid rgba(226, 232, 240, 0.5)',
-          boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.05)',
+          borderBottom: '1px solid #E2E8F0',
+          boxShadow: '0 2px 8px rgba(16, 38, 74, 0.04)',
         }}
       >
         <Typography 
@@ -34,6 +35,7 @@ export const CalendarModule: React.FC = () => {
             fontWeight: 600,
             fontFamily: 'var(--app-font-family)',
             letterSpacing: '0.005em',
+            color: '#10264A',
           }}
         >
           Календарь выплат

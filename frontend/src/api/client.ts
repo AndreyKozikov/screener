@@ -18,9 +18,25 @@ const getApiBaseUrl = (): string => {
 
 const API_BASE_URL = getApiBaseUrl();
 
+const getConversionApiBaseUrl = (): string => {
+  const envUrl = import.meta.env.VITE_CONVERSION_API_BASE_URL;
+  if (envUrl && envUrl.trim() !== '') {
+    return envUrl;
+  }
+  return 'http://127.0.0.1:12345/api';
+};
+
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
   timeout: 300000, // Увеличено до 5 минут для очень тяжелых запросов (LLM)
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+export const conversionApiClient = axios.create({
+  baseURL: getConversionApiBaseUrl(),
+  timeout: 600000,
   headers: {
     'Content-Type': 'application/json',
   },

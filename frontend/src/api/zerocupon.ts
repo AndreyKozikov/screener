@@ -1,4 +1,4 @@
-import { apiClient } from './client';
+import { apiClient, conversionApiClient } from './client';
 
 export interface ZerocuponRecord {
   Дата: string;
@@ -119,7 +119,7 @@ export interface ZerocuponRefreshResponse {
  * @param updateZeroCouponCurve - If true, updates the database table kbd after saving data to file
  */
 export const refreshZerocuponData = async (updateZeroCouponCurve: boolean = false): Promise<ZerocuponRefreshResponse> => {
-  const response = await apiClient.post<ZerocuponRefreshResponse>('/zerocupon/refresh', null, {
+  const response = await conversionApiClient.post<ZerocuponRefreshResponse>('/zerocupon/refresh', null, {
     params: { update_zero_coupon_curve: updateZeroCouponCurve }
   });
   return response.data;

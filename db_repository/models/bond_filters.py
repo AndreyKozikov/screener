@@ -121,6 +121,20 @@ class BondFilters(BaseModel):
 "- 9: Структурная облигация"
     )
 
+    # Exclude amortized / embedded options
+    exclude_amortized: bool = Field(
+        False,
+        description="Если True, исключает амортизируемые облигации (с амортизацией долга)"
+    )
+
+    exclude_options: bool = Field(
+        False,
+        description=(
+            "Если True, исключает облигации со встроенными опционами "
+            "(оферты call/put, досрочный выкуп/продажа)"
+        )
+    )
+
     # Rating range filter
     rating_min: Optional[str] = Field(
         None,
@@ -137,6 +151,13 @@ class BondFilters(BaseModel):
         None,
         description="Строка поиска для фильтрации по SECID, SHORTNAME или SECNAME."
                     "Поиск выполняется без учета регистра и частично совпадающих подстрок"
+    )
+
+    isins: Optional[List[str]] = Field(
+        None,
+        min_length=1,
+        max_length=1000,
+        description="Точный список ISIN для пакетного поиска облигаций портфеля",
     )
 
     # Pagination

@@ -1,8 +1,7 @@
 """Центральный сервисный модуль для работы с облигациями.
 
-Реализует ключевую бизнес-логику скринера: фильтрацию, агрегацию данных из различных
-источников, расчет производных финансовых показателей и оркестрацию процессов
-обновления данных.
+Реализует бизнес-логику скринера: фильтрацию и агрегацию данных из репозитория,
+расчет производных финансовых показателей и подготовку API-ответов.
 """
 
 from datetime import date
@@ -198,11 +197,13 @@ async def get_bonds_list(
             headers={"Content-Type": "application/json"}
         )
         response_bonds.raise_for_status()
-        response_count = await client.get(
-            url=url_bond_count,
-            params={"exclude_spob": exclude_spob},
-        )
-        response_count.raise_for_status()
+        response_count = None
+        if filters.isins is None:
+            response_count = await client.get(
+                url=url_bond_count,
+                params={"exclude_spob": exclude_spob},
+            )
+            response_count.raise_for_status()
 
     bonds_data = response_bonds.json()
 
@@ -213,7 +214,7 @@ async def get_bonds_list(
 
     print(len(bond_rows))
 
-    total = response_count.json().get("total", 0)
+    total = len(bond_rows) if filters.isins is not None else response_count.json().get("total", 0)
 
     today = date.today()
     bonds: List[BondScreenerDTO] = []

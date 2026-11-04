@@ -100,9 +100,29 @@ class BondsListFiltersDTO(BaseModel):
         description="Название эмитента для фильтрации облигаций"
     )
 
+    isins: Optional[List[str]] = Field(
+        None,
+        min_length=1,
+        max_length=1000,
+        description="Точный список ISIN для загрузки отдельных облигаций портфеля",
+    )
+
     exclude_spob: bool = Field(
         True,
         description="Если True, исключает облигации с режимом торгов SPOB"
+    )
+
+    exclude_amortized: bool = Field(
+        False,
+        description="Если True, исключает амортизируемые облигации (с амортизацией долга)"
+    )
+
+    exclude_options: bool = Field(
+        False,
+        description=(
+            "Если True, исключает облигации со встроенными опционами "
+            "(оферты call/put, досрочный выкуп/продажа)"
+        )
     )
 
     skip: int = Field(

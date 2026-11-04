@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Any, List
 
 from pydantic import field_validator
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Путь к .env — корень conversion_service
@@ -34,6 +35,13 @@ class Settings(BaseSettings):
         return v
 
     PDF2MD_BASE_URL: str = "http://localhost:9000"
+    DB_REPOSITORY_URL: str = "http://127.0.0.1:8964"
+    DB_REPOSITORY_API_KEY: SecretStr = SecretStr("")
+    LOCAL_LLM_BASE_URL: str = "http://127.0.0.1:7000"
+    LOCAL_LLM_GENERATE_PATH: str = "/api/v1/llm/generate"
+    LOCAL_LLM_ANALYSIS_MAX_NEW_TOKENS: int = 1024
+    LOCAL_LLM_ANALYSIS_TEMPERATURE: float = 0.1
+    LOCAL_LLM_ANALYSIS_TOP_P: float = 0.9
 
     model_config = SettingsConfigDict(
         env_file=_env_file_path,

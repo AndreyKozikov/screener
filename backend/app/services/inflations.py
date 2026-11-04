@@ -25,6 +25,17 @@ class InflationService:
         except Exception as e:
             raise
 
+    async def get_sustainable_inflation_data(self, payload: InflationDateFilter):
+        data = payload.model_dump(mode="json", exclude_none=True)
+        async with httpx.AsyncClient(timeout=600) as client:
+            response = await client.post(
+                url="http://127.0.0.1:8964/api/sustainable_inflation_data_get",
+                json=data,
+                headers={"Content-Type": "application/json"},
+            )
+            response.raise_for_status()
+            return response.json()
+
 inflation_service: Optional[InflationService] = None
 
 def get_inflation_service():

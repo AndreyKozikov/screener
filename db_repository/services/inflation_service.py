@@ -1,6 +1,11 @@
 from datetime import date
 from typing import Optional
-from db_repository.models.inflations import InflationExpectationsBase, InflationDataBase, InflationExpectations
+from db_repository.models.inflations import (
+    InflationData,
+    InflationExpectations,
+    InflationExpectationsBase,
+    InflationDataBase,
+)
 from db_repository.models.inflations_dto import InflationDateFilter
 from db_repository.repository.inflation_repository import get_inflation_repository
 
@@ -24,6 +29,12 @@ class InflationService:
         values = data.model_dump()
         result = self._repository.inflation_data_select(data=values)
         return result
+
+    async def select_sustainable_inflation_data(
+            self, data: InflationDateFilter
+    ) -> list[InflationData]:
+        values = data.model_dump()
+        return self._repository.sustainable_inflation_data_select(data=values)
 
 
 inflation_service: Optional[InflationService] = None

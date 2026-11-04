@@ -15,9 +15,12 @@ import {
   Select,
   MenuItem,
   Chip,
+  TextField,
+  Divider,
 } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
+import LinkIcon from '@mui/icons-material/Link';
 
 export interface RefreshTask {
   id: string;
@@ -36,6 +39,8 @@ interface RefreshDataDialogProps {
     ipcFile?: File | null,
     inflationExpectationsFile?: File | null,
     inflationFile?: File | null,
+    inflationExpectationsUrl?: string,
+    inflationUrl?: string,
   ) => Promise<void>;
   tasks: RefreshTask[];
   isRefreshing: boolean;
@@ -71,9 +76,13 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
   const [inflationExpectationsFile, setInflationExpectationsFile] = useState<File | null>(null);
   const [inflationExpectationsFileError, setInflationExpectationsFileError] = useState<string | null>(null);
   const inflationExpectationsFileInputRef = useRef<HTMLInputElement>(null);
+  const [inflationExpectationsUrl, setInflationExpectationsUrl] = useState('');
+  const [inflationExpectationsUrlError, setInflationExpectationsUrlError] = useState<string | null>(null);
   const [inflationFile, setInflationFile] = useState<File | null>(null);
   const [inflationFileError, setInflationFileError] = useState<string | null>(null);
   const inflationFileInputRef = useRef<HTMLInputElement>(null);
+  const [inflationUrl, setInflationUrl] = useState('');
+  const [inflationUrlError, setInflationUrlError] = useState<string | null>(null);
 
   // Reset selected tasks when dialog opens or tasks change
   useEffect(() => {
@@ -93,11 +102,15 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
       }
       setInflationExpectationsFile(null);
       setInflationExpectationsFileError(null);
+      setInflationExpectationsUrl('');
+      setInflationExpectationsUrlError(null);
       if (inflationExpectationsFileInputRef.current) {
         inflationExpectationsFileInputRef.current.value = '';
       }
       setInflationFile(null);
       setInflationFileError(null);
+      setInflationUrl('');
+      setInflationUrlError(null);
       if (inflationFileInputRef.current) {
         inflationFileInputRef.current.value = '';
       }
@@ -159,6 +172,32 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
     setInflationFile(file);
   };
 
+  const validateUrl = (value: string): string | null => {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+    try {
+      const parsed = new URL(trimmed);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        return 'URL должен начинаться с http:// или https://';
+      }
+      return null;
+    } catch {
+      return 'Некорректный URL';
+    }
+  };
+
+  const handleInflationExpectationsUrlChange = (value: string) => {
+    setInflationExpectationsUrlError(null);
+    setInflationExpectationsUrl(value);
+  };
+
+  const handleInflationUrlChange = (value: string) => {
+    setInflationUrlError(null);
+    setInflationUrl(value);
+  };
+
   const handleConfirm = async () => {
     const selected = tasks
       .filter(task => selectedTasks[task.id])
@@ -168,10 +207,25 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
       return;
     }
 
+    const inflationExpectationsUrlErrorValue = selectedTasks['inflation-expectations']
+      ? validateUrl(inflationExpectationsUrl)
+      : null;
+    const inflationUrlErrorValue = selectedTasks['inflation']
+      ? validateUrl(inflationUrl)
+      : null;
+    if (inflationExpectationsUrlErrorValue) {
+      setInflationExpectationsUrlError(inflationExpectationsUrlErrorValue);
+      return;
+    }
+    if (inflationUrlErrorValue) {
+      setInflationUrlError(inflationUrlErrorValue);
+      return;
+    }
+
     // Close dialog immediately without waiting for server response
     onClose();
     // Start refresh in background (fire and forget)
-    void onConfirm(selected, forceUpdateRatings, forceRefreshCoupons, floatersProvider, ipcFile, inflationExpectationsFile, inflationFile);
+    void onConfirm(selected, forceUpdateRatings, forceRefreshCoupons, floatersProvider, ipcFile, inflationExpectationsFile, inflationFile, inflationExpectationsUrl.trim(), inflationUrl.trim());
   };
 
   const handleClose = () => {
@@ -183,11 +237,15 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
       }
       setInflationExpectationsFile(null);
       setInflationExpectationsFileError(null);
+      setInflationExpectationsUrl('');
+      setInflationExpectationsUrlError(null);
       if (inflationExpectationsFileInputRef.current) {
         inflationExpectationsFileInputRef.current.value = '';
       }
       setInflationFile(null);
       setInflationFileError(null);
+      setInflationUrl('');
+      setInflationUrlError(null);
       if (inflationFileInputRef.current) {
         inflationFileInputRef.current.value = '';
       }
@@ -388,7 +446,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                       Файл данных инфляционных ожиданий (.xlsx):
                     </Typography>
                     <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-                      Выберите Excel-файл с данными инфляционных ожиданий для отправки на сервер.
+                      Выберите Excel-файл с данными инфляционных ожиданий либо укажите прямую ссылку на файл. Сервис сам скачает файл по ссылке и удалит его после обработки.
                     </Typography>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
                       <input
@@ -432,6 +490,24 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                         </Typography>
                       )}
                     </Box>
+                    <Divider sx={{ my: 1.5 }}>
+                      <Typography variant="caption" color="text.secondary">или</Typography>
+                    </Divider>
+                    <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+                      <TextField
+                        size="small"
+                        fullWidth
+                        placeholder="https://example.com/inflation_expectations.xlsx"
+                        value={inflationExpectationsUrl}
+                        onChange={(e) => handleInflationExpectationsUrlChange(e.target.value)}
+                        disabled={isRefreshing || !!inflationExpectationsFile}
+                        error={!!inflationExpectationsUrlError}
+                        helperText={inflationExpectationsUrlError}
+                        InputProps={{
+                          startAdornment: <LinkIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 18 }} />,
+                        }}
+                      />
+                    </Box>
                     {inflationExpectationsFileError && (
                       <Typography variant="caption" color="error" sx={{ display: 'block', mt: 0.5 }}>
                         {inflationExpectationsFileError}
@@ -454,7 +530,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                       Файл данных по инфляции (.xlsx):
                     </Typography>
                     <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-                      Выберите Excel-файл с данными по инфляции для отправки на сервер.
+                      Выберите Excel-файл с данными по инфляции либо укажите прямую ссылку на файл. Сервис сам скачает файл по ссылке и удалит его после обработки.
                     </Typography>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
                       <input
@@ -497,6 +573,24 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                           (файл не выбран)
                         </Typography>
                       )}
+                    </Box>
+                    <Divider sx={{ my: 1.5 }}>
+                      <Typography variant="caption" color="text.secondary">или</Typography>
+                    </Divider>
+                    <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+                      <TextField
+                        size="small"
+                        fullWidth
+                        placeholder="https://example.com/inflation_data.xlsx"
+                        value={inflationUrl}
+                        onChange={(e) => handleInflationUrlChange(e.target.value)}
+                        disabled={isRefreshing || !!inflationFile}
+                        error={!!inflationUrlError}
+                        helperText={inflationUrlError}
+                        InputProps={{
+                          startAdornment: <LinkIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 18 }} />,
+                        }}
+                      />
                     </Box>
                     {inflationFileError && (
                       <Typography variant="caption" color="error" sx={{ display: 'block', mt: 0.5 }}>

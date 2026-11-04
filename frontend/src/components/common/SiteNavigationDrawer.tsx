@@ -20,6 +20,7 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ShowChartIcon from '@mui/icons-material/ShowChart';
+import SettingsIcon from '@mui/icons-material/Settings';
 
 export type SiteNavigationItem = {
   id: string;
@@ -32,6 +33,7 @@ type SiteNavigationDrawerProps = {
   activeId: string;
   items: SiteNavigationItem[];
   onSelect: (id: string) => void;
+  onOpenSettings?: () => void;
 };
 
 const NAV_EXPANDED_STORAGE_KEY = 'bonds-screener:nav-expanded';
@@ -441,6 +443,7 @@ export const SiteNavigationDrawer: React.FC<SiteNavigationDrawerProps> = ({
   activeId,
   items,
   onSelect,
+  onOpenSettings,
 }) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
@@ -586,7 +589,7 @@ export const SiteNavigationDrawer: React.FC<SiteNavigationDrawerProps> = ({
           ))}
         </Box>
 
-        {/* Compact footer (avatar/badge like on screenshot) */}
+        {/* Compact footer: settings gear (opens settings page) */}
         <Box
           sx={{
             py: 1.5,
@@ -595,28 +598,26 @@ export const SiteNavigationDrawer: React.FC<SiteNavigationDrawerProps> = ({
             justifyContent: 'center',
           }}
         >
-          <Tooltip title="BondsScreener" placement="right" arrow>
-            <Box
+          <Tooltip title="Настройки" placement="right" arrow>
+            <IconButton
+              onClick={onOpenSettings}
+              aria-label="Настройки приложения"
               sx={{
                 width: 38,
                 height: 38,
                 borderRadius: '10px',
                 bgcolor: 'rgba(25,118,210,0.12)',
                 border: '1px solid rgba(25,118,210,0.2)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
+                color: '#1558A6',
                 transition: 'all 0.2s ease',
                 '&:hover': {
                   bgcolor: 'rgba(25,118,210,0.2)',
                   transform: 'scale(1.05)',
                 },
               }}
-              onClick={toggleExpanded}
             >
-              <ShowChartIcon sx={{ fontSize: 20, color: '#1558A6' }} />
-            </Box>
+              <SettingsIcon sx={{ fontSize: 20 }} />
+            </IconButton>
           </Tooltip>
         </Box>
       </Box>
@@ -738,7 +739,7 @@ export const SiteNavigationDrawer: React.FC<SiteNavigationDrawerProps> = ({
           </Box>
         </Box>
 
-        {/* Footer profile card (inspired by bottom card on screenshot) */}
+        {/* Footer settings card (gear button instead of the BondsScreener profile card) */}
         <Box
           sx={{
             p: 1.5,
@@ -746,14 +747,28 @@ export const SiteNavigationDrawer: React.FC<SiteNavigationDrawerProps> = ({
           }}
         >
           <Box
+            component="button"
+            type="button"
+            onClick={onOpenSettings}
+            aria-label="Настройки приложения"
             sx={{
               display: 'flex',
               alignItems: 'center',
               gap: 1.25,
+              width: '100%',
               p: 1,
               borderRadius: 2,
               bgcolor: 'rgba(255,255,255,0.45)',
               border: '1px solid rgba(255,255,255,0.7)',
+              cursor: 'pointer',
+              textAlign: 'left',
+              fontFamily: 'inherit',
+              color: '#17345B',
+              transition: 'all 0.2s ease',
+              '&:hover': {
+                bgcolor: 'rgba(255,255,255,0.75)',
+                transform: 'translateY(-1px)',
+              },
             }}
           >
             <Box
@@ -766,13 +781,11 @@ export const SiteNavigationDrawer: React.FC<SiteNavigationDrawerProps> = ({
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                fontWeight: 700,
-                fontSize: '0.8rem',
                 flexShrink: 0,
                 boxShadow: '0 2px 6px rgba(21,88,166,0.3)',
               }}
             >
-              BS
+              <SettingsIcon sx={{ fontSize: 20 }} />
             </Box>
             <Box sx={{ minWidth: 0, flex: 1 }}>
               <Typography
@@ -784,7 +797,7 @@ export const SiteNavigationDrawer: React.FC<SiteNavigationDrawerProps> = ({
                   lineHeight: 1.2,
                 }}
               >
-                Bonds Screener
+                Настройки
               </Typography>
               <Typography
                 noWrap
@@ -795,7 +808,7 @@ export const SiteNavigationDrawer: React.FC<SiteNavigationDrawerProps> = ({
                   mt: 0.2,
                 }}
               >
-                Аналитический терминал
+                Параметры приложения
               </Typography>
             </Box>
           </Box>

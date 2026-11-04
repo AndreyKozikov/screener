@@ -1,11 +1,10 @@
 """Сервис чтения и подготовки данных эмитентов из репозитория базы данных."""
 
+import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from app.utils.logger import get_data_update_logger
-
-logger = get_data_update_logger()
+logger = logging.getLogger(__name__)
 
 
 class EmitentService:

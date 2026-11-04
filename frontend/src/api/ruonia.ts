@@ -1,4 +1,4 @@
-import { apiClient } from './client';
+import { apiClient, conversionApiClient } from './client';
 
 export interface RuoniaRefreshResponse {
   status: 'ok' | 'error';
@@ -86,7 +86,7 @@ export const downloadRuoniaMarkdown = async (
  * Request a refresh of RUONIA rate data from CBR
  */
 export const refreshRuoniaData = async (): Promise<RuoniaRefreshResponse> => {
-  const response = await apiClient.post<RuoniaRefreshResponse>('/ruonia/refresh');
+  const response = await conversionApiClient.post<RuoniaRefreshResponse>('/ruonia/refresh');
   return response.data;
 };
 

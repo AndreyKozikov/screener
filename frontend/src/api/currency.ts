@@ -1,4 +1,4 @@
-import { apiClient } from './client';
+import { apiClient, conversionApiClient } from './client';
 
 export interface CurrencyRate {
   code: string;
@@ -39,7 +39,7 @@ export const refreshCurrencyRates = async (targetDate?: string): Promise<{
   updated: boolean;
   error?: string;
 }> => {
-  const response = await apiClient.post('/currency/refresh', null, {
+  const response = await conversionApiClient.post('/currency/refresh', null, {
     params: targetDate ? { target_date: targetDate } : undefined
   });
   return response.data;

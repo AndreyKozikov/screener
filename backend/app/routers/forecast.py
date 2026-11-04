@@ -7,23 +7,15 @@
 """
 
 import json
-import re
 from pathlib import Path
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, Query, UploadFile, File
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 
 from app.models.schemasDTO.forecast_dto import ForecastDatesResponse
 from app.services.forecast_service import get_forecast_service
 
 router = APIRouter(prefix="/api/forecast", tags=["forecast"])
-
-
-def _get_data_dir() -> Path:
-    """Путь к директории backend/app/data."""
-    return Path(__file__).resolve().parent.parent / "data"
-
-
 
 
 def _get_forecast_path() -> Path:
@@ -59,45 +51,6 @@ def _load_forecast_data() -> dict:
             return json.load(f)
     except (json.JSONDecodeError, IOError) as e:
         raise HTTPException(status_code=500, detail=f"Error reading forecast data: {str(e)}")
-
-
-ALLOWED_FORECAST_EXTENSION = ".pdf"
-
-
-@router.post("/upload")
-async def upload_forecast_pdf(file: UploadFile = File(..., description="PDF file with Bank of Russia forecast (.pdf)")):
-    """Загружает файл прогноза в формате PDF, конвертирует в Markdown и сохраняет данные в БД.
-
-    Принимает только файлы с расширением .pdf. Имя файла sanitize-ится.
-    """
-    if not file.filename or not file.filename.lower().endswith(ALLOWED_FORECAST_EXTENSION):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Разрешён только формат PDF (.pdf). Получено: {file.filename or 'без имени'}",
-        )
-    safe_name = re.sub(r"[^\w.\-]", "_", file.filename)
-    if not safe_name.lower().endswith(ALLOWED_FORECAST_EXTENSION):
-        safe_name = safe_name.rstrip("_") + ALLOWED_FORECAST_EXTENSION
-    data_dir = _get_data_dir()
-    data_dir.mkdir(parents=True, exist_ok=True)
-    dest = data_dir / safe_name
-    try:
-        content = await file.read()
-        dest.write_bytes(content)
-    except IOError as e:
-        raise HTTPException(status_code=500, detail=f"Ошибка записи файла: {str(e)}")
-
-    try:
-        get_forecast_service().process_pdf_and_save(safe_name)
-    except PdfConversionConnectionError as e:
-        raise HTTPException(status_code=503, detail=f"Сервис конвертации недоступен: {str(e)}")
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-    md_filename = Path(safe_name).stem + ".md"
-    return {"filename": safe_name, "md_file": md_filename, "saved_to": str(dest)}
 
 
 @router.get("/dates", response_model=ForecastDatesResponse)

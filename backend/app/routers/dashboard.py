@@ -5,14 +5,15 @@
 """
 
 import asyncio
+import logging
 
 from fastapi import APIRouter, HTTPException
 
 from app.models import MacroRatesDTO
 from app.services.dashboard_rates_service import get_dashboard_rates
-from app.utils.logger import get_data_update_logger
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
+logger = logging.getLogger(__name__)
 
 
 @router.get("/rates", response_model=MacroRatesDTO)
@@ -28,7 +29,6 @@ async def get_dashboard_rates_endpoint() -> MacroRatesDTO:
     Raises:
         HTTPException: 502 при недоступности сервисов, 500 при прочих ошибках.
     """
-    logger = get_data_update_logger()
     logger.info("[API /dashboard/rates] Request received")
     try:
         result = await asyncio.to_thread(get_dashboard_rates)

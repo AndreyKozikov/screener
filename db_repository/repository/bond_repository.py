@@ -43,6 +43,16 @@ class BondRepository:
         pass
 
     @staticmethod
+    def _date_is_null(column: Any) -> Any:
+        """Проверяет, что колонка даты пустая (NULL, '' или '0000-00-00')."""
+        trimmed = func.trim(column)
+        return or_(
+            column.is_(None),
+            trimmed == "",
+            trimmed == "0000-00-00",
+        )
+
+    @staticmethod
     def _not_pact_condition() -> Any:
         """Исключает режим PACT из рабочих выборок."""
         return or_(
@@ -123,6 +133,9 @@ class BondRepository:
             Выражение SQLAlchemy (and_ из условий) или True (1=1).
         """
         conditions: List[Any] = self._base_bond_conditions(exclude_spob=exclude_spob)
+        if filters.isins is not None:
+            normalized_isins = [value.strip().upper() for value in filters.isins if value and value.strip()]
+            conditions.append(func.upper(func.trim(Bond.isin)).in_(normalized_isins))
         if filters.coupon_min is not None:
             conditions.append(Bond.coupon_percent >= filters.coupon_min)
         if filters.coupon_max is not None:
@@ -155,6 +168,21 @@ class BondRepository:
             conditions.append(Bond.bond_type.in_(filters.bondtype))
         if filters.bondtype43:
             conditions.append(Bond.bond_kind.in_(filters.bondtype43))
+        if filters.exclude_amortized:
+            conditions.append(
+                or_(
+                    Bond.bond_kind.is_(None),
+                    Bond.bond_kind != 1,
+                )
+            )
+        if filters.exclude_options:
+            conditions.append(
+                and_(
+                    self._date_is_null(Bond.call_option_date),
+                    self._date_is_null(Bond.put_option_date),
+                    self._date_is_null(Bond.offer_date),
+                )
+            )
         ratings_in_range = self._rating_range_list(filters.rating_min, filters.rating_max)
         if ratings_in_range:
             conditions.append(Bond.rating.isnot(None))

@@ -1,4 +1,4 @@
-import { apiClient } from './client';
+import { apiClient, conversionApiClient } from './client';
 
 export interface KeyRateData {
   [date: string]: number; // date in YYYY-MM-DD format, value is rate (float)
@@ -14,7 +14,7 @@ export interface KeyRateRecord {
  * @returns Dictionary with date (YYYY-MM-DD) as key and rate (float) as value
  */
 export const loadKeyRateData = async (): Promise<KeyRateData> => {
-  const response = await apiClient.post<KeyRateData>('/keyrate/load');
+  const response = await conversionApiClient.post<KeyRateData>('/keyrate/load');
   return response.data;
 };
 

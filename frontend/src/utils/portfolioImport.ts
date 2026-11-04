@@ -1,5 +1,6 @@
-import type { PortfolioBond } from '../types/bond';
-import { fetchBonds } from '../api/bonds';
+import type { BondListItem, PortfolioBond } from '../types/bond';
+import { fetchBonds, fetchBondsByIsins } from '../api/bonds';
+import type { BrokerPortfolioPosition } from '../api/brokerPortfolio';
 import type { BondsListResponse } from '../types/api';
 import type { PortfolioSecidFormat } from './portfolioExport';
 
@@ -210,17 +211,7 @@ export const parsePortfolioFile = (
 /**
  * Load bonds data by SECIDs from API and convert to PortfolioBond with quantities and averagePurchasePrices
  */
-const loadBondsBySecids = async (
-  secids: string[],
-  quantities: Record<string, number>,
-  averagePurchasePrices: Record<string, number>
-): Promise<PortfolioBond[]> => {
-  if (secids.length === 0) {
-    return [];
-  }
-
-  // Fetch all bonds (no filters) to get the full list
-  // Then filter by SECIDs on client side
+const fetchAllBondsForPortfolio = async (): Promise<BondListItem[]> => {
   const response: BondsListResponse = await fetchBonds({
     couponMin: null,
     couponMax: null,
@@ -242,9 +233,23 @@ const loadBondsBySecids = async (
     limit: 10000, // Large limit to get all bonds
   });
 
+  return response.bonds;
+};
+
+const loadBondsBySecids = async (
+  secids: string[],
+  quantities: Record<string, number>,
+  averagePurchasePrices: Record<string, number>
+): Promise<PortfolioBond[]> => {
+  if (secids.length === 0) {
+    return [];
+  }
+
+  const allBonds = await fetchAllBondsForPortfolio();
+
   // Filter bonds by SECIDs and convert to PortfolioBond with quantities and averagePurchasePrices
   const secidSet = new Set(secids);
-  const filteredBonds: PortfolioBond[] = response.bonds
+  const filteredBonds: PortfolioBond[] = allBonds
     .filter(bond => secidSet.has(bond.SECID))
     .map(bond => ({
       ...bond,
@@ -275,6 +280,72 @@ const loadBondsBySecids = async (
   }
 
   return Array.from(uniqueBondsMap.values());
+};
+
+export interface BrokerPositionsLoadResult {
+  bonds: PortfolioBond[];
+  unmatchedIsins: string[];
+}
+
+/**
+ * Resolve parsed broker positions with the screener API's exact ISIN filter.
+ * Only requested securities are returned from the database.
+ */
+export const loadBrokerReportPositions = async (
+  positions: BrokerPortfolioPosition[],
+): Promise<BrokerPositionsLoadResult> => {
+  if (positions.length === 0) {
+    return { bonds: [], unmatchedIsins: [] };
+  }
+
+  const matchedBonds = await fetchBondsByIsins(positions.map((position) => position.isin));
+  const bondsByIsin = new Map<string, BondListItem>();
+
+  for (const bond of matchedBonds.bonds) {
+    const isin = bond.ISIN?.trim().toUpperCase();
+    if (isin && (!bondsByIsin.has(isin) || bond.SECID.trim().toUpperCase() === isin)) {
+      bondsByIsin.set(isin, bond);
+    }
+  }
+
+  const bondsByResolvedSecid = new Map<string, PortfolioBond>();
+  const unmatchedIsins: string[] = [];
+
+  for (const position of positions) {
+    const isin = position.isin.trim().toUpperCase();
+    const marketBond = bondsByIsin.get(isin);
+    if (!marketBond) {
+      unmatchedIsins.push(position.isin);
+      continue;
+    }
+
+    const importedBond: PortfolioBond = {
+      ...marketBond,
+      quantity: position.quantity,
+      averagePurchasePrice: position.averagePurchasePrice,
+    };
+    const existing = bondsByResolvedSecid.get(marketBond.SECID);
+    if (!existing) {
+      bondsByResolvedSecid.set(marketBond.SECID, importedBond);
+      continue;
+    }
+
+    const totalQuantity = existing.quantity + importedBond.quantity;
+    const oldPrice = existing.averagePurchasePrice ?? existing.PREVPRICE ?? 0;
+    const newPrice = importedBond.averagePurchasePrice ?? importedBond.PREVPRICE ?? 0;
+    bondsByResolvedSecid.set(marketBond.SECID, {
+      ...importedBond,
+      quantity: totalQuantity,
+      averagePurchasePrice: totalQuantity > 0
+        ? (oldPrice * existing.quantity + newPrice * importedBond.quantity) / totalQuantity
+        : null,
+    });
+  }
+
+  return {
+    bonds: Array.from(bondsByResolvedSecid.values()),
+    unmatchedIsins,
+  };
 };
 
 /**

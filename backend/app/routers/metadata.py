@@ -11,7 +11,6 @@ from typing import Dict, List
 from app.models import DescribeDTO
 from app.repository.db.describe_repository import DescribeRepository
 from app.services.data_loader import get_data_loader
-from app.utils.logger import get_data_update_logger
 
 router = APIRouter(prefix="/api", tags=["metadata"])
 """Роутер FastAPI для обработки запросов к API метаданных."""
@@ -78,31 +77,4 @@ async def get_filter_options():
         "listlevels": sorted(listlevels),
         "faceunits": sorted(faceunits),
         "bondtypes": sorted(bondtypes),
-    }
-
-
-@router.post("/refresh-metadata")
-async def refresh_metadata():
-    """Очищает кэш метаданных (колонки) для принудительной перезагрузки из файлов.
-
-    Очищает кэш маппинга колонок в DataLoader. Описания полей берутся из БД
-    (таблица describe_fields). При следующем запросе /api/columns данные
-    будут перезагружены из columns.json.
-    
-    Returns:
-        Словарь с результатом операции, содержащий:
-        - status: Статус операции ("ok")
-        - message: Сообщение о том, что кэш очищен и данные будут перезагружены
-            при следующем запросе
-    """
-    logger = get_data_update_logger()
-    logger.info("[API /refresh-metadata] Received request to refresh metadata cache")
-    
-    loader = get_data_loader()
-    loader.clear_metadata_cache()
-    
-    logger.info("[API /refresh-metadata] Metadata cache cleared successfully")
-    return {
-        "status": "ok",
-        "message": "Metadata cache cleared. Columns will be reloaded on next request.",
     }

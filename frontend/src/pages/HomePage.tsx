@@ -1,26 +1,22 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Container, Box, Typography, AppBar, Toolbar, Button, CircularProgress, Dialog, DialogTitle, DialogContent, DialogActions, Alert, IconButton, Card, CardContent } from '@mui/material';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import SettingsIcon from '@mui/icons-material/Settings';
 import PsychologyIcon from '@mui/icons-material/Psychology';
 import FeedbackIcon from '@mui/icons-material/Feedback';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
-import HomeOutlinedIcon from '@mui/icons-material/HomeOutlined';
 import ShowChartIcon from '@mui/icons-material/ShowChart';
 import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
 import TimelineIcon from '@mui/icons-material/Timeline';
-import AssessmentIcon from '@mui/icons-material/Assessment';
 import AnalyticsIcon from '@mui/icons-material/Analytics';
-import PercentIcon from '@mui/icons-material/Percent';
 import ArticleIcon from '@mui/icons-material/Article';
 import { BondsTable } from '../components/bonds/BondsTable';
 import { BondDetails } from '../components/bonds/BondDetails';
 import { ZerocuponTable } from '../components/zerocupon/ZerocuponTable';
 import { ForecastTable } from '../components/forecast/ForecastTable';
-import { ForecastHubCard } from '../components/forecast/ForecastHubCard';
 import { RuoniaTable } from '../components/ruonia/RuoniaTable';
 import { KeyRateTable } from '../components/keyrate/KeyRateTable';
 import { Workbench, type WorkbenchModule } from '../components/portfolio/Workbench';
@@ -30,6 +26,8 @@ import { SpreadAnalysis } from '../components/bonds/SpreadAnalysis';
 import { AnalysisParamsDialog } from '../components/llm/AnalysisParamsDialog';
 import { InflationExpectationsChart } from '../components/inflationExpectations/InflationExpectationsChart';
 import { IpcPage } from '../components/ipc/IpcPage';
+import { SustainableInflationPage } from '../components/inflation/SustainableInflationPage';
+import { MacroDashboard } from '../components/forecast/MacroDashboard';
 import { AnalysisResultDialog } from '../components/llm/AnalysisResultDialog';
 import { LLMAnalysisModelDialog, type LLMModel } from '../components/llm/LLMAnalysisModelDialog';
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
@@ -37,14 +35,23 @@ import { RefreshDataDialog } from '../components/common/RefreshDataDialog';
 import { ForecastFileDialog } from '../components/common/ForecastFileDialog';
 import { FeedbackDialog } from '../components/common/FeedbackDialog';
 import { HelpDialog, type HelpSection } from '../components/common/HelpDialog';
-import { SiteNavigationDrawer, type SiteNavigationItem } from '../components/common/SiteNavigationDrawer';
-import { SettingsDialog } from '../components/common/SettingsDialog';
+import { SiteNavigationDrawer } from '../components/common/SiteNavigationDrawer';
 import { HubCardIllustration, type HubCardIllustrationVariant } from '../components/common/HubCardIllustration';
 import { HubQueryBar } from '../components/common/HubQueryBar';
+import { useAgentStore } from '../stores/agentStore';
 import { BlogPage, type BlogMode } from './BlogPage';
+import {
+  readSavedHomePageView,
+  resolveSiteNavigationTarget,
+  siteNavigationItems,
+  writeSavedHomePageView,
+  type SavedHomePageView,
+  type SiteForecastSubView,
+} from '../utils/siteNavigation';
+import { parseMarketFiltersUrl } from '../utils/agentDeepLink';
 import { refreshBondsData, refreshCouponsData } from '../api/bonds';
 import { refreshFloatersData } from '../api/edisclosure';
-import { refreshZerocuponData, fetchZerocuponData } from '../api/zerocupon';
+import { refreshZerocuponData } from '../api/zerocupon';
 import { refreshRatingsData } from '../api/rating';
 import { refreshRuoniaData } from '../api/ruonia';
 import { fetchForecastDates, uploadForecastPdf } from '../api/forecast';
@@ -54,11 +61,12 @@ import { getDashboardRates, type MacroRatesResponse } from '../api/dashboard';
 import { refreshCurrencyRates } from '../api/currency';
 import { loadKeyRateData } from '../api/keyrate';
 import { uploadAndParseIpcFile, parseLocalIpcFile, uploadIpcWeekly } from '../api/ipc';
-import { uploadAndParseInflationExpectationsFile } from '../api/inflationExpectations';
-import { uploadAndParseInflationFile } from '../api/inflation';
+import { uploadAndParseInflationExpectationsFile, uploadAndParseInflationExpectationsByUrl } from '../api/inflationExpectations';
+import { uploadAndParseInflationFile, uploadAndParseInflationByUrl } from '../api/inflation';
 import { useUiStore } from '../stores/uiStore';
 import { useBondsStore } from '../stores/bondsStore';
 import { useComparisonStore } from '../stores/comparisonStore';
+import { useFiltersStore } from '../stores/filtersStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { getBondsDataForLLM, getZerocuponDataForLLM, getForecastDataForLLM } from '../utils/llmDataExport';
 import { analyzeBondsWithLLM } from '../api/llm';
@@ -72,58 +80,12 @@ import { submitFeedback } from '../api/feedback';
  * Main page of the application displaying bonds screener
  */
 type ViewMode = 'HUB' | 'TABLE';
-type ForecastSubView = 'zerocupon' | 'forecast' | 'ruonia' | 'keyrate' | 'inflation-expectations' | 'ipc';
+type ForecastSubView = SiteForecastSubView;
 type ComparisonSubView = 'comparison' | 'spread-analysis';
 
-type SavedHomePageView = {
-  viewMode: ViewMode;
-  currentTab: number;
-  blogMode: BlogMode;
-  forecastSubView: ForecastSubView | null;
-  comparisonSubView: ComparisonSubView | null;
-};
-
-const HOME_PAGE_VIEW_STORAGE_KEY = 'bonds-screener:home-page-view';
-const DEFAULT_HOME_PAGE_VIEW: SavedHomePageView = {
-  viewMode: 'HUB',
-  currentTab: 0,
-  blogMode: 'list',
-  forecastSubView: null,
-  comparisonSubView: null,
-};
-
-const readSavedHomePageView = (): SavedHomePageView => {
-  if (typeof window === 'undefined') return DEFAULT_HOME_PAGE_VIEW;
-
-  try {
-    const serializedView = window.sessionStorage.getItem(HOME_PAGE_VIEW_STORAGE_KEY);
-    if (!serializedView) return DEFAULT_HOME_PAGE_VIEW;
-
-    const savedView = JSON.parse(serializedView) as Partial<SavedHomePageView>;
-    const forecastSubViews: ForecastSubView[] = [
-      'zerocupon', 'forecast', 'ruonia', 'keyrate', 'inflation-expectations', 'ipc',
-    ];
-    const comparisonSubViews: ComparisonSubView[] = ['comparison', 'spread-analysis'];
-    const currentTab = Number(savedView.currentTab);
-
-    return {
-      viewMode: savedView.viewMode === 'TABLE' ? 'TABLE' : 'HUB',
-      currentTab: Number.isInteger(currentTab) && currentTab >= 0 && currentTab <= 5 ? currentTab : 0,
-      // BlogPage keeps the selected article in memory, so restore the list after a reload.
-      blogMode: savedView.blogMode === 'guide' ? 'guide' : 'list',
-      forecastSubView: forecastSubViews.includes(savedView.forecastSubView as ForecastSubView)
-        ? savedView.forecastSubView as ForecastSubView
-        : null,
-      comparisonSubView: comparisonSubViews.includes(savedView.comparisonSubView as ComparisonSubView)
-        ? savedView.comparisonSubView as ComparisonSubView
-        : null,
-    };
-  } catch {
-    return DEFAULT_HOME_PAGE_VIEW;
-  }
-};
-
 export const HomePage: React.FC = () => {
+  const navigate = useNavigate();
+  const agentSendNew = useAgentStore((state) => state.sendNew);
   const triggerDataRefresh = useUiStore((state) => state.triggerDataRefresh);
   const setError = useBondsStore((state) => state.setError);
   const comparisonBonds = useComparisonStore((state) => state.comparisonBonds);
@@ -134,7 +96,7 @@ export const HomePage: React.FC = () => {
   const [blogMode, setBlogMode] = useState<BlogMode>(savedPageView.blogMode);
   const [forecastSubView, setForecastSubView] = useState<ForecastSubView | null>(savedPageView.forecastSubView);
   const [comparisonSubView, setComparisonSubView] = useState<ComparisonSubView | null>(savedPageView.comparisonSubView);
-  const [portfolioModule, setPortfolioModule] = useState<WorkbenchModule>('HUB');
+  const [portfolioModule, setPortfolioModule] = useState<WorkbenchModule>(savedPageView.portfolioModule);
   
   // Refresh data dialog state
   const [isRefreshDialogOpen, setIsRefreshDialogOpen] = useState(false);
@@ -147,7 +109,9 @@ export const HomePage: React.FC = () => {
   const [pendingForceRefreshCoupons, setPendingForceRefreshCoupons] = useState(false);
   const [pendingIpcFile, setPendingIpcFile] = useState<File | null>(null);
   const [pendingInflationExpectationsFile, setPendingInflationExpectationsFile] = useState<File | null>(null);
+  const [pendingInflationExpectationsUrl, setPendingInflationExpectationsUrl] = useState('');
   const [pendingInflationFile, setPendingInflationFile] = useState<File | null>(null);
+  const [pendingInflationUrl, setPendingInflationUrl] = useState('');
   
   // LLM Analysis state
   const [isAnalysisParamsOpen, setIsAnalysisParamsOpen] = useState(false);
@@ -177,49 +141,50 @@ export const HomePage: React.FC = () => {
   const [isNoSelectionDialogOpen, setIsNoSelectionDialogOpen] = useState(false);
   const [isFeedbackDialogOpen, setIsFeedbackDialogOpen] = useState(false);
   const [isHelpDialogOpen, setIsHelpDialogOpen] = useState(false);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   
   // Dashboard rates (currency, RUONIA, key rate) — один ответ с бэкенда, отображаем как есть
   const [dashboardRates, setDashboardRates] = useState<MacroRatesResponse | null>(null);
   const [isLoadingDashboardRates, setIsLoadingDashboardRates] = useState(false);
 
-  // Forecast cards last dates state
-  const [zerocuponLastDate, setZerocuponLastDate] = useState<string | null>(null);
-  const [forecastLastDate, setForecastLastDate] = useState<string | null>(null);
   /** Список дат прогнозов (YYYY-MM-DD), загружается при входе в комнату «Прогнозы», передаётся в ForecastTable чтобы не дублировать запрос */
   const [availableForecastDates, setAvailableForecastDates] = useState<string[] | null>(null);
 
   useEffect(() => {
-    try {
-      window.sessionStorage.setItem(HOME_PAGE_VIEW_STORAGE_KEY, JSON.stringify({
-        viewMode,
-        currentTab,
-        blogMode,
-        forecastSubView,
-        comparisonSubView,
-      } satisfies SavedHomePageView));
-    } catch {
-      // Keep the page usable when browser storage is unavailable.
-    }
-  }, [viewMode, currentTab, blogMode, forecastSubView, comparisonSubView]);
+    writeSavedHomePageView({
+      viewMode,
+      currentTab,
+      blogMode: blogMode === 'guide' ? 'guide' : 'list',
+      forecastSubView,
+      comparisonSubView,
+      portfolioModule,
+    } satisfies SavedHomePageView);
+  }, [viewMode, currentTab, blogMode, forecastSubView, comparisonSubView, portfolioModule]);
 
-  // Helper function to format date from DD.MM.YYYY or YYYY-MM-DD to DD.MM.YYYY
-  const formatDateForDisplay = (dateStr: string | null): string | null => {
-    if (!dateStr) return null;
-    
-    // If already in DD.MM.YYYY format, return as is
-    if (/^\d{2}\.\d{2}\.\d{4}$/.test(dateStr)) {
-      return dateStr;
+  // Обработка «глубокой ссылки» из чата агента: /?view=bonds&yield_min=...&...
+  // применяет фильтры поиска к таблице рынка облигаций и очищает URL.
+  const marketFiltersHandledRef = useRef(false);
+  useEffect(() => {
+    if (marketFiltersHandledRef.current) {
+      return;
     }
-    
-    // If in YYYY-MM-DD format, convert to DD.MM.YYYY
-    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-      const [year, month, day] = dateStr.split('-');
-      return `${day}.${month}.${year}`;
+    const partialFilters = parseMarketFiltersUrl(window.location.search);
+    if (!partialFilters) {
+      return;
     }
-    
-    return dateStr;
-  };
+    marketFiltersHandledRef.current = true;
+    useFiltersStore.getState().applyExternalFilters(partialFilters);
+    setViewMode('TABLE');
+    setCurrentTab(0);
+    setBlogMode('list');
+    setForecastSubView(null);
+    setComparisonSubView(null);
+    setPortfolioModule('HUB');
+    try {
+      window.history.replaceState({}, '', window.location.pathname);
+    } catch {
+      // Не критично — URL останется с параметрами.
+    }
+  }, []);
 
   // Загрузка данных плашки (курсы валют, RUONIA, ключевая ставка) одним запросом
   useEffect(() => {
@@ -237,23 +202,6 @@ export const HomePage: React.FC = () => {
     loadDashboardRates();
   }, []);
 
-  // Load last dates for zerocupon card (once on mount)
-  useEffect(() => {
-    const loadZerocuponLastDate = async () => {
-      try {
-        const zerocuponData = await fetchZerocuponData(null, null);
-        if (zerocuponData.data && zerocuponData.data.length > 0) {
-          const firstRecord = zerocuponData.data[0];
-          const dateStr = firstRecord['Дата'];
-          setZerocuponLastDate(formatDateForDisplay(dateStr));
-        }
-      } catch (error) {
-        console.error('Failed to load zerocupon last date:', error);
-      }
-    };
-    loadZerocuponLastDate();
-  }, []);
-
   // Запрос дат среднесрочных прогнозов при переходе в комнату «Прогнозы» (один раз; список передаётся в ForecastTable)
   useEffect(() => {
     if (currentTab !== 2) return;
@@ -261,15 +209,9 @@ export const HomePage: React.FC = () => {
       try {
         const forecastDates = await fetchForecastDates();
         setAvailableForecastDates(forecastDates ?? []);
-        if (forecastDates && forecastDates.length > 0) {
-          setForecastLastDate(formatDateForDisplay(forecastDates[0]));
-        } else {
-          setForecastLastDate(null);
-        }
       } catch (error) {
         console.error('Failed to load forecast dates:', error);
         setAvailableForecastDates([]);
-        setForecastLastDate(null);
       }
     };
     void loadForecastDates();
@@ -288,6 +230,8 @@ export const HomePage: React.FC = () => {
     ipcFile?: File | null,
     inflationExpectationsFile?: File | null,
     inflationFile?: File | null,
+    inflationExpectationsUrl?: string,
+    inflationUrl?: string,
   ) => {
     if (selectedTasks.length === 0) {
       return;
@@ -300,7 +244,9 @@ export const HomePage: React.FC = () => {
       setPendingForceRefreshCoupons(forceRefreshCoupons ?? false);
       setPendingIpcFile(ipcFile ?? null);
       setPendingInflationExpectationsFile(inflationExpectationsFile ?? null);
+      setPendingInflationExpectationsUrl(inflationExpectationsUrl ?? '');
       setPendingInflationFile(inflationFile ?? null);
+      setPendingInflationUrl(inflationUrl ?? '');
       setIsForecastFileDialogOpen(true);
       return;
     }
@@ -319,6 +265,8 @@ export const HomePage: React.FC = () => {
     const ipcFileRef = ipcFile ?? null;
     const inflationExpectationsFileRef = inflationExpectationsFile ?? null;
     const inflationFileRef = inflationFile ?? null;
+    const inflationExpectationsUrlRef = (inflationExpectationsUrl ?? '').trim() || null;
+    const inflationUrlRef = (inflationUrl ?? '').trim() || null;
 
     // Define task handlers
     const taskHandlers: Record<string, () => Promise<void>> = {
@@ -327,19 +275,8 @@ export const HomePage: React.FC = () => {
         triggerDataRefresh();
       },
       zerocupon: async () => {
-        // Pass update_zero_coupon_curve=true to update database after file save
+        // Refresh the database yield curve through conversion_service.
         await refreshZerocuponData(true);
-        // Reload last date after refresh
-        try {
-          const zerocuponData = await fetchZerocuponData(null, null);
-          if (zerocuponData.data && zerocuponData.data.length > 0) {
-            const firstRecord = zerocuponData.data[0];
-            const dateStr = firstRecord['Дата'];
-            setZerocuponLastDate(formatDateForDisplay(dateStr));
-          }
-        } catch (error) {
-          console.error('Failed to reload zerocupon last date:', error);
-        }
       },
       ratings: async () => {
         await refreshRatingsData(forceUpdateRatings || false);
@@ -381,16 +318,22 @@ export const HomePage: React.FC = () => {
         await uploadIpcWeekly();
       },
       'inflation-expectations': async () => {
-        if (!inflationExpectationsFileRef) {
-          throw new Error('Не выбран файл для обновления инфляционных ожиданий');
+        if (inflationExpectationsFileRef) {
+          await uploadAndParseInflationExpectationsFile(inflationExpectationsFileRef);
+        } else if (inflationExpectationsUrlRef) {
+          await uploadAndParseInflationExpectationsByUrl(inflationExpectationsUrlRef);
+        } else {
+          throw new Error('Не выбран файл и не указана ссылка для обновления инфляционных ожиданий');
         }
-        await uploadAndParseInflationExpectationsFile(inflationExpectationsFileRef);
       },
       inflation: async () => {
-        if (!inflationFileRef) {
-          throw new Error('Не выбран файл для обновления данных по инфляции');
+        if (inflationFileRef) {
+          await uploadAndParseInflationFile(inflationFileRef);
+        } else if (inflationUrlRef) {
+          await uploadAndParseInflationByUrl(inflationUrlRef);
+        } else {
+          throw new Error('Не выбран файл и не указана ссылка для обновления данных по инфляции');
         }
-        await uploadAndParseInflationFile(inflationFileRef);
       },
     };
 
@@ -577,6 +520,12 @@ export const HomePage: React.FC = () => {
 
   // Get current tab name
   const getCurrentTabName = (): string => {
+    if (currentTab === 2 && forecastSubView === 'macro-dashboard') {
+      return 'Макроэкономический обзор';
+    }
+    if (currentTab === 2 && forecastSubView === 'sustainable-inflation') {
+      return 'Устойчивая инфляция';
+    }
     const tabNames = [
       'Скринер облигаций',
       'Кривая бескупонной доходности',
@@ -620,80 +569,21 @@ export const HomePage: React.FC = () => {
   };
 
   const handleSiteNavigationSelect = (id: string) => {
+    if (id === 'chat') {
+      navigate('/agent');
+      return;
+    }
+    const target = resolveSiteNavigationTarget(id);
     if (id === 'home') {
       handleBackToHub();
       return;
     }
-    if (id === 'market') {
-      handleHubCardClick(0);
-      return;
-    }
-    if (id === 'forecasts') {
-      handleHubCardClick(2);
-      return;
-    }
-    if (id === 'portfolio') {
-      handleHubCardClick(3);
-      return;
-    }
-    if (id === 'comparison') {
-      handleHubCardClick(4);
-      return;
-    }
-    if (id === 'blog') {
-      handleHubCardClick(5);
-      return;
-    }
-
-    const forecastDestinations: Record<string, ForecastSubView> = {
-      'forecast:zerocupon': 'zerocupon',
-      'forecast:forecast': 'forecast',
-      'forecast:ruonia': 'ruonia',
-      'forecast:keyrate': 'keyrate',
-      'forecast:inflation-expectations': 'inflation-expectations',
-      'forecast:ipc': 'ipc',
-    };
-    const forecastDestination = forecastDestinations[id];
-    if (forecastDestination) {
-      setCurrentTab(2);
-      setViewMode('TABLE');
-      setBlogMode('list');
-      setForecastSubView(forecastDestination);
-      return;
-    }
-
-    const portfolioDestinations: Record<string, WorkbenchModule> = {
-      'portfolio:holdings': 'PORTFOLIO',
-      'portfolio:calendar': 'CALENDAR',
-      'portfolio:analytics': 'ANALYTICS',
-    };
-    const portfolioDestination = portfolioDestinations[id];
-    if (portfolioDestination) {
-      setCurrentTab(3);
-      setViewMode('TABLE');
-      setBlogMode('list');
-      setPortfolioModule(portfolioDestination);
-      return;
-    }
-
-    const comparisonDestinations: Record<string, ComparisonSubView> = {
-      'comparison:comparison': 'comparison',
-      'comparison:spread-analysis': 'spread-analysis',
-    };
-    const comparisonDestination = comparisonDestinations[id];
-    if (comparisonDestination) {
-      setCurrentTab(4);
-      setViewMode('TABLE');
-      setBlogMode('list');
-      setComparisonSubView(comparisonDestination);
-      return;
-    }
-
-    if (id === 'blog:guide') {
-      setCurrentTab(5);
-      setViewMode('TABLE');
-      setBlogMode('guide');
-    }
+    setViewMode(target.viewMode);
+    setCurrentTab(target.currentTab);
+    setBlogMode(target.blogMode);
+    setForecastSubView(target.forecastSubView);
+    setComparisonSubView(target.comparisonSubView);
+    setPortfolioModule(target.portfolioModule);
   };
 
   // Determine current help section based on view state
@@ -708,7 +598,9 @@ export const HomePage: React.FC = () => {
       return 'bonds-table';
     } else if (currentTab === 2) {
       // Прогнозы
-      if (forecastSubView === 'zerocupon') {
+      if (forecastSubView === null || forecastSubView === 'macro-dashboard') {
+        return 'macro-dashboard';
+      } else if (forecastSubView === 'zerocupon') {
         return 'zerocupon';
       } else if (forecastSubView === 'forecast') {
         return 'forecast';
@@ -789,59 +681,6 @@ export const HomePage: React.FC = () => {
     },
   ];
 
-  const siteNavigationItems: SiteNavigationItem[] = [
-    {
-      id: 'home',
-      label: 'Центр управления',
-      icon: <HomeOutlinedIcon />,
-    },
-    {
-      id: 'market',
-      label: 'Рынок облигаций',
-      icon: <ShowChartIcon />,
-    },
-    {
-      id: 'forecasts',
-      label: 'Прогнозы',
-      icon: <TrendingUpIcon />,
-      children: [
-        { id: 'forecast:zerocupon', label: 'Кривая бескупонной доходности' },
-        { id: 'forecast:forecast', label: 'Среднесрочный прогноз Банка России' },
-        { id: 'forecast:ruonia', label: 'Ставка RUONIA' },
-        { id: 'forecast:keyrate', label: 'Ключевая ставка ЦБ' },
-        { id: 'forecast:inflation-expectations', label: 'Инфляционные ожидания' },
-        { id: 'forecast:ipc', label: 'Индекс потребительских цен' },
-      ],
-    },
-    {
-      id: 'portfolio',
-      label: 'Мой портфель',
-      icon: <AccountBalanceWalletIcon />,
-      children: [
-        { id: 'portfolio:holdings', label: 'Портфель облигаций' },
-        { id: 'portfolio:calendar', label: 'Календарь выплат' },
-        { id: 'portfolio:analytics', label: 'Аналитика портфеля' },
-      ],
-    },
-    {
-      id: 'comparison',
-      label: 'Сравнение',
-      icon: <CompareArrowsIcon />,
-      children: [
-        { id: 'comparison:comparison', label: 'Сравнение облигаций' },
-        { id: 'comparison:spread-analysis', label: 'Анализ кривой спредов' },
-      ],
-    },
-    {
-      id: 'blog',
-      label: 'Блог',
-      icon: <ArticleIcon />,
-      children: [
-        { id: 'blog:guide', label: 'Гид по выбору облигаций' },
-      ],
-    },
-  ];
-
   const marketMetrics = [
     { key: 'EUR', label: 'EUR', flag: '🇪🇺', value: dashboardRates?.rates.EUR?.rate, percent: false },
     { key: 'USD', label: 'USD', flag: '🇺🇸', value: dashboardRates?.rates.USD?.rate, percent: false },
@@ -850,7 +689,7 @@ export const HomePage: React.FC = () => {
     { key: 'KEYRATE', label: 'Ключевая ставка', flag: '%', value: dashboardRates?.key_rate, percent: true },
   ];
 
-  const isForecastOverview = viewMode === 'TABLE' && currentTab === 2 && forecastSubView === null;
+  const isForecastOverview = viewMode === 'TABLE' && currentTab === 2 && (forecastSubView === null || forecastSubView === 'macro-dashboard');
   const isCbrForecastSection = viewMode === 'TABLE' && currentTab === 2 && forecastSubView === 'forecast';
   const isBondMarketSection = viewMode === 'TABLE' && currentTab === 0;
   const isBlogSection = viewMode === 'TABLE' && currentTab === 5;
@@ -888,6 +727,7 @@ export const HomePage: React.FC = () => {
         activeId={activeNavigationId}
         items={siteNavigationItems}
         onSelect={handleSiteNavigationSelect}
+        onOpenSettings={() => navigate('/settings')}
       />
 
       <Box sx={{
@@ -940,17 +780,6 @@ export const HomePage: React.FC = () => {
               </Typography>
             </Box>
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: { xs: 0.25, sm: 0.75 }, gridColumn: { xs: '2 / 3', md: '3 / 4' }, gridRow: '1 / 2' }}>
-              <IconButton
-                size="small"
-                aria-label="Настройки"
-                onClick={() => setIsSettingsOpen(true)}
-                sx={{ 
-                  color: '#29476F', bgcolor: 'rgba(255,255,255,0.42)', border: '1px solid rgba(255,255,255,0.72)', width: { xs: 30, sm: 38 }, height: { xs: 30, sm: 38 },
-                  '&:hover': { bgcolor: 'rgba(255,255,255,0.72)' },
-                }}
-              >
-                <SettingsIcon sx={{ fontSize: 18 }} />
-              </IconButton>
               <IconButton
                 size="small"
                 aria-label="Обновить данные"
@@ -1262,7 +1091,10 @@ export const HomePage: React.FC = () => {
             </Box>
 
             <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', pt: { xs: 0.5, md: 1 } }}>
-              <HubQueryBar />
+              <HubQueryBar onSubmit={(q) => {
+                void agentSendNew(q);
+                navigate('/agent');
+              }} />
             </Box>
           </>
         ) : (
@@ -1297,68 +1129,8 @@ export const HomePage: React.FC = () => {
 
             {currentTab === 2 && (
               <>
-                {forecastSubView === null ? (
-                  // Forecast Selection Screen
-                  <Box
-                    sx={{
-                      width: '100%',
-                      maxWidth: 1532,
-                      mx: 'auto',
-                      px: { xs: 2, sm: 3, xl: 1.5 },
-                      py: { xs: 2, sm: 3 },
-                    }}
-                  >
-                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(3, minmax(0, 1fr))' }, gap: { xs: 2, md: 2.25 } }}>
-                      <ForecastHubCard
-                        title="Кривая бескупонной доходности"
-                        value={zerocuponLastDate || "—"}
-                        subtitle="Анализ временной структуры процентных ставок на основе данных Мосбиржи"
-                        icon={<TimelineIcon />}
-                        color="#1976d2"
-                        onClick={() => setForecastSubView('zerocupon')}
-                      />
-                      <ForecastHubCard
-                        title="Среднесрочный прогноз Банка России"
-                        value={forecastLastDate || "—"}
-                        subtitle="Основные показатели денежно-кредитной политики и макроэкономические ожидания регулятора"
-                        icon={<AssessmentIcon />}
-                        color="#ff9800"
-                        onClick={() => setForecastSubView('forecast')}
-                      />
-                      <ForecastHubCard
-                        title="Ставка RUONIA"
-                        value={dashboardRates?.ruonia_rate != null ? `${dashboardRates.ruonia_rate.toFixed(2)}%` : "—"}
-                        subtitle="Информация о ставке RUONIA"
-                        icon={<PercentIcon />}
-                        color="#9c27b0"
-                        onClick={() => setForecastSubView('ruonia')}
-                      />
-                      <ForecastHubCard
-                        title="Ключевая ставка ЦБ"
-                        value={dashboardRates?.key_rate != null ? `${dashboardRates.key_rate.toFixed(2)}%` : "—"}
-                        subtitle="Информация о ключевой ставке Центрального Банка"
-                        icon={<PercentIcon />}
-                        color="#e91e63"
-                        onClick={() => setForecastSubView('keyrate')}
-                      />
-                      <ForecastHubCard
-                        title="Инфляционные ожидания"
-                        value="—"
-                        subtitle="Анализ инфляционных ожиданий населения"
-                        icon={<AnalyticsIcon />}
-                        color="#3f51b5"
-                        onClick={() => setForecastSubView('inflation-expectations')}
-                      />
-                      <ForecastHubCard
-                        title="Индекс потребительских цен"
-                        value="—"
-                        subtitle="Историческая динамика месячной и недельной инфляции"
-                        icon={<AnalyticsIcon />}
-                        color="#00897b"
-                        onClick={() => setForecastSubView('ipc')}
-                      />
-                    </Box>
-                  </Box>
+                {forecastSubView === null || forecastSubView === 'macro-dashboard' ? (
+                  <MacroDashboard />
                 ) : (
                   // Forecast Content
                   <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
@@ -1396,6 +1168,12 @@ export const HomePage: React.FC = () => {
                     {forecastSubView === 'ipc' && (
                       <Box sx={{ flexGrow: 1, minHeight: 0 }}>
                         <IpcPage />
+                      </Box>
+                    )}
+
+                    {forecastSubView === 'sustainable-inflation' && (
+                      <Box sx={{ flexGrow: 1, minHeight: 0 }}>
+                        <SustainableInflationPage />
                       </Box>
                     )}
                   </Box>
@@ -1482,7 +1260,7 @@ export const HomePage: React.FC = () => {
             setRefreshStatus({});
           }
         }}
-        onConfirm={(tasks, forceRatings, forceCoupons, floatersProvider, ipcFile, inflationExpectationsFile, inflationFile) => handleRefreshConfirm(tasks, forceRatings, forceCoupons, undefined, floatersProvider, ipcFile, inflationExpectationsFile, inflationFile)}
+        onConfirm={(tasks, forceRatings, forceCoupons, floatersProvider, ipcFile, inflationExpectationsFile, inflationFile, inflationExpectationsUrl, inflationUrl) => handleRefreshConfirm(tasks, forceRatings, forceCoupons, undefined, floatersProvider, ipcFile, inflationExpectationsFile, inflationFile, inflationExpectationsUrl, inflationUrl)}
         tasks={[
           { id: 'bonds', label: 'Обновить данные облигаций', checked: false },
           { id: 'zerocupon', label: 'Обновить данные кривой бескупонной доходности', checked: false },
@@ -1512,19 +1290,25 @@ export const HomePage: React.FC = () => {
           setPendingRefreshTasks([]);
           setPendingIpcFile(null);
           setPendingInflationExpectationsFile(null);
+          setPendingInflationExpectationsUrl('');
           setPendingInflationFile(null);
+          setPendingInflationUrl('');
         }}
         onConfirm={(file) => {
           setIsForecastFileDialogOpen(false);
           const tasks = pendingRefreshTasks;
           const savedIpcFile = pendingIpcFile;
           const savedInflationExpectationsFile = pendingInflationExpectationsFile;
+          const savedInflationExpectationsUrl = pendingInflationExpectationsUrl;
           const savedInflationFile = pendingInflationFile;
+          const savedInflationUrl = pendingInflationUrl;
           setPendingRefreshTasks([]);
           setPendingIpcFile(null);
           setPendingInflationExpectationsFile(null);
+          setPendingInflationExpectationsUrl('');
           setPendingInflationFile(null);
-          void handleRefreshConfirm(tasks, pendingForceUpdateRatings, pendingForceRefreshCoupons, file, undefined, savedIpcFile, savedInflationExpectationsFile, savedInflationFile);
+          setPendingInflationUrl('');
+          void handleRefreshConfirm(tasks, pendingForceUpdateRatings, pendingForceRefreshCoupons, file, undefined, savedIpcFile, savedInflationExpectationsFile, savedInflationFile, savedInflationExpectationsUrl, savedInflationUrl);
         }}
       />
 
@@ -1601,10 +1385,6 @@ export const HomePage: React.FC = () => {
         onClose={() => setIsFeedbackDialogOpen(false)}
         onSend={handleFeedbackSend}
         tabName={getCurrentTabName()}
-      />
-      <SettingsDialog
-        open={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
       />
       <HelpDialog
         open={isHelpDialogOpen}

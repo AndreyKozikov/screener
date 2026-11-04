@@ -22,7 +22,7 @@ class KbdDTO(BaseModel):
     Attributes:
         date: Дата расчёта в формате DD.MM.YYYY (сериализуется как «Дата»).
         time: Время расчёта, например HH:MM:SS (сериализуется как «Время»).
-        term_0_25 .. term_20_0: Доходности по срокам до погашения, % годовых.
+        term_0_25 .. term_30_0: Доходности по срокам до погашения, % годовых.
     """
 
     model_config = ConfigDict(
@@ -44,6 +44,7 @@ class KbdDTO(BaseModel):
     term_10_0: Optional[float] = Field(default=None, alias="Срок 10.0 лет")
     term_15_0: Optional[float] = Field(default=None, alias="Срок 15.0 лет")
     term_20_0: Optional[float] = Field(default=None, alias="Срок 20.0 лет")
+    term_30_0: Optional[float] = Field(default=None, alias="Срок 30.0 лет")
 
 
 class KbdDataResponse(BaseModel):

@@ -46,6 +46,7 @@ class KbdService:
             "term_10_0": "Срок 10.0 лет",
             "term_15_0": "Срок 15.0 лет",
             "term_20_0": "Срок 20.0 лет",
+            "term_30_0": "Срок 30.0 лет",
         }
 
     def _raw_record_to_dto(self, record: Dict[str, Any]) -> Optional[KbdDTO]:

@@ -16,12 +16,12 @@ from db_repository.utils.logger import get_data_update_logger
 from db_repository.config.paths import DB_PATH
 
 
-# Колонки для выборки «только для фронта» (без term_30_0)
+# Колонки для выборки кривой доходности, включая все доступные сроки.
 FRONTEND_COLUMNS = (
     "date", "time",
     "term_0_25", "term_0_5", "term_0_75", "term_1_0",
     "term_2_0", "term_3_0", "term_5_0", "term_7_0",
-    "term_10_0", "term_15_0", "term_20_0",
+    "term_10_0", "term_15_0", "term_20_0", "term_30_0",
 )
 
 

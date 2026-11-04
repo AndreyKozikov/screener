@@ -11,3 +11,8 @@ async def get_inflation_data(payload: InflationDateFilter):
     print(payload)
     result = await service.get_inflation_data(payload)
     return result
+
+@inflation_router.post("/sustainable")
+async def get_sustainable_inflation_data(payload: InflationDateFilter):
+    service = get_inflation_service()
+    return await service.get_sustainable_inflation_data(payload)

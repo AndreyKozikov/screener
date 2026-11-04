@@ -75,6 +75,25 @@ class InflationRepository:
             print(f"Ошибка при обновлении эмитентов: {e}")
             raise
 
+    def sustainable_inflation_data_select(
+            self, data: Optional[dict[str, date]] = None
+    ) -> list[InflationData]:
+        stmt = select(InflationData)
+        if data is not None:
+            if data.get("from_date") is not None:
+                stmt = stmt.where(InflationData.record_date >= data["from_date"])
+
+            if data.get("till_date") is not None:
+                stmt = stmt.where(InflationData.record_date <= data["till_date"])
+
+        stmt = stmt.order_by(InflationData.record_date)
+        try:
+            with get_session() as session:
+                return session.exec(stmt).scalars().all()
+        except Exception as e:
+            print(f"Ошибка при чтении данных устойчивой инфляции: {e}")
+            raise
+
 inflation_repository: Optional[InflationRepository] = None
 
 def get_inflation_repository():

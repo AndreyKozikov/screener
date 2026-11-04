@@ -23,6 +23,9 @@ interface FiltersState {
   ) => void;
   applyFilters: () => void;
   resetFilters: () => void;
+  /** Применяет фильтры из внешнего источника (например, ссылки из чата агента)
+   *  сразу к активным и черновым фильтрам и сбрасывает пагинацию. */
+  applyExternalFilters: (partial: Partial<BondFilters>) => void;
   setFilterOptions: (options: FilterOptions) => void;
   setFilterOptionsLoading: (loading: boolean) => void;
   setFilterOptionsError: (error: string | null) => void;
@@ -79,6 +82,16 @@ export const useFiltersStore = create<FiltersState>((set, get) => ({
       skip: 0, // Reset pagination when applying filters
     },
   })),
+
+  // Apply externally provided filters (e.g. deep link from the agent chat)
+  applyExternalFilters: (partial) => set((state) => {
+    const next: BondFilters = {
+      ...state.filters,
+      ...partial,
+      skip: 0, // Reset pagination
+    };
+    return { filters: next, draftFilters: { ...next } };
+  }),
   
   // Reset both active and draft filters
   resetFilters: () => set({ 

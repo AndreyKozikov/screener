@@ -8,7 +8,7 @@ from datetime import date, timedelta
 from typing import Dict, List, Optional, Tuple
 
 from app.models import BondYieldRuoniaChartItem, BondYieldRuoniaChartResponse
-from app.services.ruonia_service import get_ruonia_service
+from app.repository.db.ruonia_repository import RuoniaRepository
 from app.services.trading_history_service import get_trading_history_service
 
 
@@ -46,12 +46,12 @@ def get_yield_ruonia_chart_data(secid: str) -> BondYieldRuoniaChartResponse:
     date_to = date.today() - timedelta(days=1)
     date_from = date_to - timedelta(days=365)
 
-    ruonia_service = get_ruonia_service()
+    ruonia_repository = RuoniaRepository()
     trading_service = get_trading_history_service()
 
-    ruonia_response = ruonia_service.get_ruonia_data(
-        date_from=_date_to_dd_mm_yyyy(date_from),
-        date_to=_date_to_dd_mm_yyyy(date_to),
+    ruonia_records = ruonia_repository.get_by_date_range(
+        date_from=date_from,
+        date_to=date_to,
     )
     bond_points: List[Tuple[date, Optional[float]]] = trading_service.get_history_for_period(
         secid=secid,
@@ -61,10 +61,10 @@ def get_yield_ruonia_chart_data(secid: str) -> BondYieldRuoniaChartResponse:
 
     # Словари дата -> значение (даты в RUONIA в формате YYYY-MM-DD в date_stavki)
     ruonia_by_date: Dict[date, Optional[float]] = {}
-    for dto in ruonia_response.data:
+    for record in ruonia_records:
         try:
-            d = date.fromisoformat(dto.date_stavki)
-            ruonia_by_date[d] = dto.stavka_ruonia
+            d = record.dt if isinstance(record.dt, date) else date.fromisoformat(str(record.dt))
+            ruonia_by_date[d] = record.ruo
         except (ValueError, TypeError):
             continue
 
