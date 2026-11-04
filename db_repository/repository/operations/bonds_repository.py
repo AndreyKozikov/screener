@@ -164,6 +164,66 @@ class BondsRepository:
             )
             return None
 
+    def get_bond_detail_by_isin(
+        self, isin: str
+    ) -> Optional[
+        Tuple[
+            Bond,
+            Optional[BondSecurity],
+            Optional[BondMarketData],
+            Optional[BondMarketDataYield],
+        ]
+    ]:
+        """Получает Bond и связанные данные по ISIN.
+
+        Используется модулем оценки портфеля, когда фронтенд передал только
+        ISIN позиции. Логика аналогична get_bond_detail_by_secid.
+
+        Args:
+            isin: ISIN код облигации.
+
+        Returns:
+            Кортеж (Bond, BondSecurity|None, BondMarketData|None,
+            BondMarketDataYield|None) или None, если облигация не найдена.
+        """
+        if not isin or not str(isin).strip():
+            return None
+
+        try:
+            with Session(self._engine) as session:
+                stmt = select(Bond).where(
+                    and_(
+                        func.upper(func.trim(Bond.isin)) == str(isin).strip().upper(),
+                        *self._base_bond_conditions(),
+                    )
+                )
+                bond = session.exec(stmt).first()
+                if bond is None:
+                    return None
+
+                bond_id = bond.id
+                security = session.exec(
+                    select(BondSecurity).where(BondSecurity.bond_id == bond_id)
+                ).first()
+                market_data = session.exec(
+                    select(BondMarketData).where(BondMarketData.bond_id == bond_id)
+                ).first()
+                market_data_yield = session.exec(
+                    select(BondMarketDataYield).where(
+                        BondMarketDataYield.bond_id == bond_id
+                    )
+                ).first()
+
+                return (bond, security, market_data, market_data_yield)
+        except Exception as e:
+            self.logger.error(
+                "Ошибка при получении деталей облигации по ISIN %s: %s",
+                isin,
+                e,
+                exc_info=True,
+            )
+            return None
+
     def get_reg_number_by_secid(self, secid: str) -> Optional[str]:
         """Получает регистрационный номер облигации по SECID из таблицы bondsecurity.
 

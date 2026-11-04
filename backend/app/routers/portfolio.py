@@ -1,11 +1,15 @@
-"""Portfolio import endpoints."""
+"""Portfolio import and valuation endpoints."""
 
+import asyncio
 import logging
 from pathlib import PurePath
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from app.models.schemasDTO.broker_portfolio_dto import BrokerPortfolioImportResponse
+from app.portfolio.dto import PortfolioValuationDTO, PortfolioValuationRequestDTO
+from app.portfolio.exceptions import PortfolioValuationError
+from app.portfolio.service import PortfolioValuationService
 from app.services.broker_portfolio_import_service import import_broker_report
 from app.utils.broker_report_parser import BrokerReportParseError
 
@@ -40,3 +44,25 @@ async def import_broker_report_endpoint(
         ) from exc
     finally:
         await file.close()
+
+
+@router.post("/valuation", response_model=PortfolioValuationDTO)
+async def portfolio_valuation_endpoint(
+    payload: PortfolioValuationRequestDTO,
+) -> PortfolioValuationDTO:
+    """Оценивает портфель, состав которого передан с фронтенда.
+
+    Расчёты выполняются в отдельном потоке, чтобы не блокировать event loop
+    синхронными запросами к микросервису БД.
+    """
+    service = PortfolioValuationService()
+    try:
+        return await asyncio.to_thread(service.valuate, payload)
+    except PortfolioValuationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    except Exception as exc:
+        logger.exception("Portfolio valuation failed")
+        raise HTTPException(
+            status_code=500,
+            detail="Не удалось выполнить оценку портфеля. Попробуйте позже.",
+        ) from exc

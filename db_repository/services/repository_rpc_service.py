@@ -131,7 +131,7 @@ _ALLOWED_OPERATIONS: dict[str, frozenset[str]] = {
     "bond_float_params": frozenset({"get_bond_ids_with_find", "get_by_bond_id", "get_existing_bond_ids", "upsert"}),
     "bond_ratings": frozenset({"get_agency_name_short_ru_by_agency_id", "get_ratings_by_secid", "upsert_ratings_for_bond"}),
     "bonds": frozenset({
-        "get_all_secids", "get_bond_detail_by_secid", "get_bond_id_by_secid", "get_bonds_for_ratings_pipeline",
+        "get_all_secids", "get_bond_detail_by_isin", "get_bond_detail_by_secid", "get_bond_id_by_secid", "get_bonds_for_ratings_pipeline",
         "get_emitent_inn_by_secid", "get_floater_secids", "get_id_secid_list",
         "get_reg_number_by_secid", "get_secids_by_ids", "get_secids_by_regnumber",
     }),
