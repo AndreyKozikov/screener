@@ -121,6 +121,7 @@ export const siteNavigationItems: SiteNavigationItem[] = [
     id: 'portfolio',
     label: 'Мой портфель',
     icon: <AccountBalanceWalletIcon />,
+    requiresAuth: true,
     children: [
       { id: 'portfolio:holdings', label: 'Портфель облигаций' },
       { id: 'portfolio:calendar', label: 'Календарь выплат' },
@@ -150,6 +151,12 @@ export const siteNavigationItems: SiteNavigationItem[] = [
     icon: <SmartToyIcon />,
   },
 ];
+
+export const getSiteNavigationItems = (authenticated: boolean): SiteNavigationItem[] =>
+  siteNavigationItems.filter((item) => !item.requiresAuth || authenticated);
+
+export const isPortfolioNavigationId = (id: string): boolean =>
+  id === 'portfolio' || id.startsWith('portfolio:');
 
 /**
  * Преобразует id раздела боковой панели в полное описание вида главной страницы.

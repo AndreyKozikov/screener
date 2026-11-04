@@ -27,6 +27,7 @@ export type SiteNavigationItem = {
   label: string;
   icon?: React.ReactNode;
   children?: SiteNavigationItem[];
+  requiresAuth?: boolean;
 };
 
 type SiteNavigationDrawerProps = {

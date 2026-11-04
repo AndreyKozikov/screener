@@ -4,16 +4,21 @@ import asyncio
 import logging
 from pathlib import PurePath
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
 from app.models.schemasDTO.broker_portfolio_dto import BrokerPortfolioImportResponse
 from app.portfolio.dto import PortfolioValuationDTO, PortfolioValuationRequestDTO
 from app.portfolio.exceptions import PortfolioValuationError
 from app.portfolio.service import PortfolioValuationService
+from app.routers.auth import get_current_user
 from app.services.broker_portfolio_import_service import import_broker_report
 from app.utils.broker_report_parser import BrokerReportParseError
 
-router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
+router = APIRouter(
+    prefix="/api/portfolio",
+    tags=["portfolio"],
+    dependencies=[Depends(get_current_user)],
+)
 logger = logging.getLogger(__name__)
 
 MAX_REPORT_SIZE = 10 * 1024 * 1024

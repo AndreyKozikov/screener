@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
 from app.services.auth_service import AuthError, authenticate_token, login, register
@@ -54,11 +54,15 @@ def login_user(credentials: Credentials) -> AuthResponse:
         raise _http_error(exc) from exc
 
 
-@router.get("/me")
-def current_user(authorization: Annotated[str | None, Header()] = None) -> dict:
+def get_current_user(authorization: Annotated[str | None, Header()] = None) -> dict:
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(status_code=401, detail="Требуется вход")
     try:
         return authenticate_token(authorization[7:].strip())
     except AuthError as exc:
         raise _http_error(exc) from exc
+
+
+@router.get("/me")
+def current_user(user: Annotated[dict, Depends(get_current_user)]) -> dict:
+    return user

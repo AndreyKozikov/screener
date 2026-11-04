@@ -33,10 +33,12 @@ import SyncIcon from '@mui/icons-material/Sync';
 import PsychologyIcon from '@mui/icons-material/Psychology';
 import { SiteNavigationDrawer } from '../components/common/SiteNavigationDrawer';
 import {
+  getSiteNavigationItems,
+  isPortfolioNavigationId,
   resolveSiteNavigationTarget,
-  siteNavigationItems,
   writeSavedHomePageView,
 } from '../utils/siteNavigation';
+import { isAuthenticated, PORTFOLIO_AUTH_REDIRECT_STATE } from '../utils/auth';
 import { useSettingsStore } from '../stores/settingsStore';
 import type { AppSettings } from '../types/settings';
 import { DEFAULT_SETTINGS } from '../types/settings';
@@ -511,6 +513,10 @@ export const SettingsPage: React.FC = () => {
   };
 
   const handleSiteNavigationSelect = (id: string) => {
+    if (isPortfolioNavigationId(id) && !isAuthenticated()) {
+      navigate('/login', { state: PORTFOLIO_AUTH_REDIRECT_STATE });
+      return;
+    }
     writeSavedHomePageView(resolveSiteNavigationTarget(id));
     navigate('/');
   };
@@ -577,7 +583,7 @@ export const SettingsPage: React.FC = () => {
     }}>
       <SiteNavigationDrawer
         activeId="settings"
-        items={siteNavigationItems}
+        items={getSiteNavigationItems(isAuthenticated())}
         onSelect={handleSiteNavigationSelect}
         onOpenSettings={() => navigate('/settings')}
       />

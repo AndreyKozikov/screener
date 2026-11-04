@@ -6,10 +6,12 @@ import HomeOutlinedIcon from '@mui/icons-material/HomeOutlined';
 import { SiteNavigationDrawer } from '../components/common/SiteNavigationDrawer';
 import { AgentChat } from '../components/agent/AgentChat';
 import {
+  getSiteNavigationItems,
+  isPortfolioNavigationId,
   resolveSiteNavigationTarget,
-  siteNavigationItems,
   writeSavedHomePageView,
 } from '../utils/siteNavigation';
+import { isAuthenticated, PORTFOLIO_AUTH_REDIRECT_STATE } from '../utils/auth';
 
 /**
  * Отдельная страница диалога с ИИ-ассистентом.
@@ -22,6 +24,10 @@ export const AgentChatPage: React.FC = () => {
 
   const handleSiteNavigationSelect = (id: string) => {
     if (id === 'chat') {
+      return;
+    }
+    if (isPortfolioNavigationId(id) && !isAuthenticated()) {
+      navigate('/login', { state: PORTFOLIO_AUTH_REDIRECT_STATE });
       return;
     }
     writeSavedHomePageView(resolveSiteNavigationTarget(id));
@@ -48,7 +54,7 @@ export const AgentChatPage: React.FC = () => {
     }}>
       <SiteNavigationDrawer
         activeId="chat"
-        items={siteNavigationItems}
+        items={getSiteNavigationItems(isAuthenticated())}
         onSelect={handleSiteNavigationSelect}
         onOpenSettings={() => navigate('/settings')}
       />

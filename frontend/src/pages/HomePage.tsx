@@ -41,13 +41,19 @@ import { HubQueryBar } from '../components/common/HubQueryBar';
 import { useAgentStore } from '../stores/agentStore';
 import { BlogPage, type BlogMode } from './BlogPage';
 import {
+  getSiteNavigationItems,
+  isPortfolioNavigationId,
   readSavedHomePageView,
   resolveSiteNavigationTarget,
-  siteNavigationItems,
   writeSavedHomePageView,
   type SavedHomePageView,
   type SiteForecastSubView,
 } from '../utils/siteNavigation';
+import {
+  clearAuthSession,
+  isAuthenticated,
+  PORTFOLIO_AUTH_REDIRECT_STATE,
+} from '../utils/auth';
 import { parseMarketFiltersUrl } from '../utils/agentDeepLink';
 import { refreshBondsData, refreshCouponsData } from '../api/bonds';
 import { refreshFloatersData } from '../api/edisclosure';
@@ -90,13 +96,21 @@ export const HomePage: React.FC = () => {
   const setError = useBondsStore((state) => state.setError);
   const comparisonBonds = useComparisonStore((state) => state.comparisonBonds);
   const settings = useSettingsStore((state) => state.settings);
+  const [authenticated] = useState(isAuthenticated);
   const [savedPageView] = useState(readSavedHomePageView);
-  const [viewMode, setViewMode] = useState<ViewMode>(savedPageView.viewMode);
-  const [currentTab, setCurrentTab] = useState(savedPageView.currentTab);
+  const portfolioLocked = !authenticated;
+  const [viewMode, setViewMode] = useState<ViewMode>(() =>
+    portfolioLocked && savedPageView.currentTab === 3 ? 'HUB' : savedPageView.viewMode,
+  );
+  const [currentTab, setCurrentTab] = useState(() =>
+    portfolioLocked && savedPageView.currentTab === 3 ? 0 : savedPageView.currentTab,
+  );
   const [blogMode, setBlogMode] = useState<BlogMode>(savedPageView.blogMode);
   const [forecastSubView, setForecastSubView] = useState<ForecastSubView | null>(savedPageView.forecastSubView);
   const [comparisonSubView, setComparisonSubView] = useState<ComparisonSubView | null>(savedPageView.comparisonSubView);
-  const [portfolioModule, setPortfolioModule] = useState<WorkbenchModule>(savedPageView.portfolioModule);
+  const [portfolioModule, setPortfolioModule] = useState<WorkbenchModule>(
+    portfolioLocked && savedPageView.currentTab === 3 ? 'HUB' : savedPageView.portfolioModule,
+  );
   
   // Refresh data dialog state
   const [isRefreshDialogOpen, setIsRefreshDialogOpen] = useState(false);
@@ -159,6 +173,14 @@ export const HomePage: React.FC = () => {
       portfolioModule,
     } satisfies SavedHomePageView);
   }, [viewMode, currentTab, blogMode, forecastSubView, comparisonSubView, portfolioModule]);
+
+  useEffect(() => {
+    if (authenticated || currentTab !== 3) return;
+
+    setCurrentTab(0);
+    setPortfolioModule('HUB');
+    setViewMode('HUB');
+  }, [authenticated, currentTab]);
 
   // Обработка «глубокой ссылки» из чата агента: /?view=bonds&yield_min=...&...
   // применяет фильтры поиска к таблице рынка облигаций и очищает URL.
@@ -545,6 +567,10 @@ export const HomePage: React.FC = () => {
   };
 
   const handleHubCardClick = (tabIndex: number) => {
+    if (tabIndex === 3 && !authenticated) {
+      navigate('/login', { state: PORTFOLIO_AUTH_REDIRECT_STATE });
+      return;
+    }
     setCurrentTab(tabIndex);
     setViewMode('TABLE');
     if (tabIndex !== 5) {
@@ -569,6 +595,10 @@ export const HomePage: React.FC = () => {
   };
 
   const handleSiteNavigationSelect = (id: string) => {
+    if (isPortfolioNavigationId(id) && !authenticated) {
+      navigate('/login', { state: PORTFOLIO_AUTH_REDIRECT_STATE });
+      return;
+    }
     if (id === 'chat') {
       navigate('/agent');
       return;
@@ -647,14 +677,16 @@ export const HomePage: React.FC = () => {
       illustration: 'market',
       onClick: () => handleHubCardClick(0),
     },
-    {
-      title: 'Мой портфель',
-      description: 'Управление инвестициями',
-      icon: <AccountBalanceWalletIcon sx={{ fontSize: 32 }} />,
-      color: '#4caf50',
-      illustration: 'portfolio',
-      onClick: () => handleHubCardClick(3),
-    },
+    ...(authenticated
+      ? [{
+          title: 'Мой портфель',
+          description: 'Управление инвестициями',
+          icon: <AccountBalanceWalletIcon sx={{ fontSize: 32 }} />,
+          color: '#4caf50',
+          illustration: 'portfolio' as HubCardIllustrationVariant,
+          onClick: () => handleHubCardClick(3),
+        }]
+      : []),
     {
       title: 'Прогнозы',
       description: 'Анализ и прогнозирование',
@@ -725,7 +757,7 @@ export const HomePage: React.FC = () => {
     }}>
       <SiteNavigationDrawer
         activeId={activeNavigationId}
-        items={siteNavigationItems}
+        items={getSiteNavigationItems(authenticated)}
         onSelect={handleSiteNavigationSelect}
         onOpenSettings={() => navigate('/settings')}
       />
@@ -781,13 +813,12 @@ export const HomePage: React.FC = () => {
             </Box>
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: { xs: 0.25, sm: 0.75 }, gridColumn: { xs: '2 / 3', md: '3 / 4' }, gridRow: '1 / 2' }}>
               <Button size="small" onClick={() => {
-                if (localStorage.getItem('bonds-access-token')) {
-                  localStorage.removeItem('bonds-access-token');
-                  localStorage.removeItem('bonds-user-email');
+                if (isAuthenticated()) {
+                  clearAuthSession();
                   window.location.reload();
                 } else navigate('/login');
               }} sx={{ minWidth: 0, color: '#29476F', textTransform: 'none', px: 1 }}>
-                {localStorage.getItem('bonds-user-email') ? 'Выйти' : 'Войти'}
+                {authenticated ? 'Выйти' : 'Войти'}
               </Button>
               <IconButton
                 size="small"
@@ -1190,7 +1221,7 @@ export const HomePage: React.FC = () => {
               </>
             )}
 
-            {currentTab === 3 && (
+            {currentTab === 3 && authenticated && (
               <Box sx={{ flexGrow: 1, minHeight: 0 }}>
                 <Workbench
                   selectedModule={portfolioModule}
