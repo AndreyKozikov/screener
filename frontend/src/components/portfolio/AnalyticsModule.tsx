@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Box, Button, Card, CircularProgress, Paper, Typography, alpha } from '@mui/material';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import AccountBalanceWalletOutlinedIcon from '@mui/icons-material/AccountBalanceWalletOutlined';
@@ -7,8 +7,8 @@ import TrendingUpRoundedIcon from '@mui/icons-material/TrendingUpRounded';
 import PieChartOutlineRoundedIcon from '@mui/icons-material/PieChartOutlineRounded';
 import LayersRoundedIcon from '@mui/icons-material/LayersRounded';
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Scatter, ScatterChart, Tooltip as ChartTooltip, XAxis, YAxis } from 'recharts';
-import { usePortfolioStore } from '../../stores/portfolioStore';
-import { fetchPortfolioValuation, type PortfolioValuation } from '../../api/portfolioValuation';
+import { fetchSavedPortfolioValuation, type PortfolioValuation } from '../../api/portfolioValuation';
+import { useSelectedReportPortfolioStore } from '../../stores/selectedReportPortfolioStore';
 
 const COLORS = ['#1769E8', '#34A7F5', '#22B8B0', '#8C78F5', '#F2A94A', '#5284C7', '#44C7A3', '#A8B8D0'];
 const todayLocal = () => {
@@ -16,7 +16,7 @@ const todayLocal = () => {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 };
 const money = (value?: string | null, currency = 'RUB') => value == null ? '—' : new Intl.NumberFormat('ru-RU', { style: 'currency', currency, maximumFractionDigits: 0 }).format(Number(value));
-const percent = (value?: string | null) => value == null ? '—' : `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(Number(value))}%`;
+const percent = (value?: string | number | null) => value == null ? '—' : `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(Number(value))}%`;
 
 type MetricProps = { title: string; value: string; subtitle: string; color: string; icon: React.ReactNode };
 const MetricCard: React.FC<MetricProps> = ({ title, value, subtitle, color, icon }) => (
@@ -33,21 +33,33 @@ const MetricCard: React.FC<MetricProps> = ({ title, value, subtitle, color, icon
 );
 
 export const AnalyticsModule: React.FC = () => {
-  const bonds = usePortfolioStore((state) => state.portfolioBonds);
+  const portfolioId = useSelectedReportPortfolioStore((state) => state.portfolioId);
   const [valuationDate, setValuationDate] = useState(todayLocal);
   const [valuation, setValuation] = useState<PortfolioValuation | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const requestSequence = useRef(0);
 
   const refresh = useCallback(async () => {
-    if (!bonds.length) { setValuation(null); setError(null); return; }
-    setLoading(true); setError(null);
-    try { setValuation(await fetchPortfolioValuation(bonds, valuationDate)); }
-    catch (err) { setError(err instanceof Error ? err.message : 'Не удалось оценить портфель'); }
-    finally { setLoading(false); }
-  }, [bonds, valuationDate]);
+    const requestId = ++requestSequence.current;
+    setValuation(null);
+    setError(null);
+    if (portfolioId == null) { setLoading(false); return; }
+    setLoading(true);
+    try {
+      const result = await fetchSavedPortfolioValuation(portfolioId, valuationDate);
+      if (requestId === requestSequence.current) setValuation(result);
+    } catch (err) {
+      if (requestId === requestSequence.current) setError(err instanceof Error ? err.message : 'Не удалось оценить портфель');
+    } finally {
+      if (requestId === requestSequence.current) setLoading(false);
+    }
+  }, [portfolioId, valuationDate]);
 
-  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    void refresh();
+    return () => { requestSequence.current += 1; };
+  }, [refresh]);
 
   const allocation = useMemo(() => (valuation?.positions ?? []).map((position) => ({
     name: position.name || position.secid,
@@ -86,14 +98,14 @@ export const AnalyticsModule: React.FC = () => {
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'end', gap: 1 }}>
           <Box><Typography component="label" htmlFor="portfolio-valuation-date" sx={{ display: 'block', mb: .45, color: '#29476F', fontSize: '.75rem', fontWeight: 600 }}>Дата оценки</Typography><input id="portfolio-valuation-date" type="date" value={valuationDate} max={todayLocal()} onChange={(event) => setValuationDate(event.target.value)} style={{ height: 40, border: '1px solid #D5E1F0', borderRadius: 10, padding: '0 10px', color: '#10264A', background: 'rgba(255,255,255,.9)', font: 'inherit' }} /></Box>
-          <Button onClick={() => void refresh()} disabled={loading || !bonds.length} startIcon={loading ? <CircularProgress size={17} color="inherit" /> : <RefreshRoundedIcon />} sx={{ height: 42, px: 2, borderRadius: 2.5, color: '#fff', textTransform: 'none', fontWeight: 650, whiteSpace: 'nowrap', background: 'linear-gradient(135deg, #258BFA, #0758F5)', boxShadow: '0 5px 14px rgba(23,105,232,.24)', '&:hover': { background: 'linear-gradient(135deg, #1879E8, #034BD8)' }, '&.Mui-disabled': { color: '#fff', bgcolor: '#9BBBEF' } }}>Обновить</Button>
+          <Button onClick={() => void refresh()} disabled={loading || portfolioId == null} startIcon={loading ? <CircularProgress size={17} color="inherit" /> : <RefreshRoundedIcon />} sx={{ height: 42, px: 2, borderRadius: 2.5, color: '#fff', textTransform: 'none', fontWeight: 650, whiteSpace: 'nowrap', background: 'linear-gradient(135deg, #258BFA, #0758F5)', boxShadow: '0 5px 14px rgba(23,105,232,.24)', '&:hover': { background: 'linear-gradient(135deg, #1879E8, #034BD8)' }, '&.Mui-disabled': { color: '#fff', bgcolor: '#9BBBEF' } }}>Обновить</Button>
         </Box>
       </Box>
       </Paper>
 
       <Box>
         {error && <Alert severity="error" sx={{ mb: 2, borderRadius: 3 }}>{error}</Alert>}
-        {!bonds.length ? <Card sx={{ p: 4, borderRadius: 5, textAlign: 'center', border: '1px solid #E2E8F0', boxShadow: 'none', bgcolor: alpha('#fff', .85) }}><Typography sx={{ fontWeight: 700, color: '#10264A', fontSize: '1.1rem' }}>Портфель пока пуст</Typography><Typography sx={{ mt: .75, color: '#647895' }}>Добавьте облигации в разделе «Портфель», чтобы рассчитать стоимость и доходность.</Typography></Card> : valuation && <>
+        {!valuation && !loading && !error ? <Card sx={{ p: 4, borderRadius: 5, textAlign: 'center', border: '1px solid #E2E8F0', boxShadow: 'none', bgcolor: alpha('#fff', .85) }}><Typography sx={{ fontWeight: 700, color: '#10264A', fontSize: '1.1rem' }}>{portfolioId == null ? 'Выберите портфель' : 'Нет данных для отображения'}</Typography><Typography sx={{ mt: .75, color: '#647895' }}>{portfolioId == null ? 'Выберите сохранённый портфель в разделе «Портфель облигаций».' : 'В выбранном портфеле нет позиций для расчёта.'}</Typography></Card> : valuation && <>
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2,minmax(0,1fr))', sm: 'repeat(4,minmax(0,1fr))' }, gap: { xs: 0.85, sm: 1.25 }, mb: { xs: 1.25, sm: 1.75 } }}>
             <MetricCard title="Рыночная стоимость" value={money(valuation.total_market_value, currency)} subtitle="С учётом НКД" color="#1769E8" icon={<AccountBalanceWalletOutlinedIcon />} />
             <MetricCard title="Средневзвешенная доходность" value={percent(valuation.weighted_ytm_percent)} subtitle="Годовых к погашению" color="#2788E8" icon={<PercentRoundedIcon />} />

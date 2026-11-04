@@ -39,6 +39,7 @@ export interface BondListItem {
   COUPON_YIELD_TO_PRICE?: number | null;  // Доходность купона к текущей цене, %
   COUPON_FREQUENCY?: number | null;      // Число выплат купона в год
   DURATION_YEARS?: number | null;        // Дюрация в годах
+  couponYieldToAveragePurchasePrice?: number | null;
 }
 
 // Detailed bond information

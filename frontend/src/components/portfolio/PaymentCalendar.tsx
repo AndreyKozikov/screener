@@ -26,9 +26,13 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { usePortfolioStore } from '../../stores/portfolioStore';
 import { getCurrencyRates, type CurrencyRatesResponse } from '../../api/currency';
 import { formatNumber } from '../../utils/formatters';
+import { fetchImportedPortfolioTable } from '../../api/portfolioReportImport';
+import { fetchBondsCoupons } from '../../api/bonds';
+import { useSelectedReportPortfolioStore } from '../../stores/selectedReportPortfolioStore';
+import type { PortfolioBond } from '../../types/bond';
+import type { Coupon } from '../../types/coupon';
 
 /**
  * Payment event for a specific date
@@ -91,8 +95,9 @@ const getInitialChartPeriod = () => {
  * - Right side: Calendar grid with daily payments
  */
 export const PaymentCalendar: React.FC = () => {
-  const portfolioBonds = usePortfolioStore((state) => state.portfolioBonds);
-  const couponsBySecid = usePortfolioStore((state) => state.couponsBySecid);
+  const portfolioId = useSelectedReportPortfolioStore((state) => state.portfolioId);
+  const [portfolioBonds, setPortfolioBonds] = useState<PortfolioBond[]>([]);
+  const [couponsBySecid, setCouponsBySecid] = useState<Record<string, Coupon[]>>({});
   const muiTheme = useTheme();
   const isMobile = useMediaQuery(muiTheme.breakpoints.down('md'));
 
@@ -107,6 +112,25 @@ export const PaymentCalendar: React.FC = () => {
 
   // Currency rates for conversion to rubles
   const [currencyRates, setCurrencyRates] = useState<CurrencyRatesResponse | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadSelectedPortfolio = async () => {
+      if (!portfolioId) { setPortfolioBonds([]); setCouponsBySecid({}); return; }
+      try {
+        const bonds = await fetchImportedPortfolioTable(portfolioId);
+        const couponMap = await fetchBondsCoupons(bonds.map((bond) => bond.SECID));
+        if (cancelled) return;
+        setPortfolioBonds(bonds);
+        setCouponsBySecid(Object.fromEntries([...couponMap.entries()].map(([secid, response]) => [secid, response.coupons])));
+      } catch (error) {
+        if (!cancelled) { setPortfolioBonds([]); setCouponsBySecid({}); }
+        console.error('Failed to load selected portfolio calendar data:', error);
+      }
+    };
+    void loadSelectedPortfolio();
+    return () => { cancelled = true; };
+  }, [portfolioId]);
 
   // Calculate payment events from store data
   const paymentEvents = useMemo(() => {

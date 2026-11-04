@@ -89,7 +89,7 @@ class PortfolioDataProvider:
         self._coupons = coupon_repository or DBCoupon()
 
     def get_bond_detail_by_secid(self, secid: str) -> Any:
-        """Возвращает Bond, BondSecurity, BondMarketData и BondMarketDataYield."""
+        """Загружает детали активной облигации по SECID."""
         try:
             return self._bonds.get_bond_detail_by_secid(secid)
         except RemoteRepositoryError as exc:
@@ -99,7 +99,7 @@ class PortfolioDataProvider:
             ) from exc
 
     def get_bond_detail_by_isin(self, isin: str) -> Any:
-        """Возвращает данные облигации по ISIN через сервис БД."""
+        """Загружает детали активной облигации по ISIN."""
         try:
             return self._bonds.get_bond_detail_by_isin(isin)
         except RemoteRepositoryError as exc:

@@ -14,12 +14,12 @@ class RepositoryCall(BaseModel):
         "blog", "bond_float_params", "bond_ratings", "bonds", "currency_rates",
         "coupons", "kbd", "descriptions", "emission_documents",
         "emitent_edisclosure", "emitents", "events", "forecasts", "keyrates",
-        "ruonia", "trading_history", "users",
+        "ruonia", "trading_history", "users", "portfolios",
     ]
     method: Literal[
-        "create", "delete", "delete_event", "fetch_coupons_for_frontend",
+        "create", "delete", "delete_event", "delete_for_user", "fetch_coupons_for_frontend",
         "fetch_coupons_raw", "get_agency_name_short_ru_by_agency_id", "get_all_dates",
-        "get_all_emitent_titles", "get_all_secids", "get_bond_detail_by_secid", "get_bond_id_by_secid",
+        "get_all_emitent_titles", "get_all_secids", "get_bond_detail_by_isin", "get_bond_detail_by_secid", "get_bond_id_by_secid",
         "get_bond_ids_with_find", "get_bonds_for_ratings_pipeline", "get_by_bond_id", "get_by_date",
         "get_by_date_range", "get_by_guid_and_date", "get_by_secid_date_range", "get_by_slug",
         "get_count", "get_descriptions_formatted", "get_edisclosure_id_by_emitent_id",
@@ -34,6 +34,7 @@ class RepositoryCall(BaseModel):
         "list_articles", "save", "save_event_changes", "save_forecast", "save_kbd_records",
         "save_many", "save_moex_coupons", "save_records", "update",
         "upsert", "upsert_mapping", "upsert_ratings_for_bond", "get_by_email", "get_by_id",
+        "find_duplicate", "get_current_positions_for_user", "get_for_user", "list_for_user", "save_report_import",
     ]
     args: list[Any] = Field(default_factory=list)
     kwargs: dict[str, Any] = Field(default_factory=dict)

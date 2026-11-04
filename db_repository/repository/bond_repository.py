@@ -133,9 +133,17 @@ class BondRepository:
             Выражение SQLAlchemy (and_ из условий) или True (1=1).
         """
         conditions: List[Any] = self._base_bond_conditions(exclude_spob=exclude_spob)
+        identifiers: List[Any] = []
         if filters.isins is not None:
             normalized_isins = [value.strip().upper() for value in filters.isins if value and value.strip()]
-            conditions.append(func.upper(func.trim(Bond.isin)).in_(normalized_isins))
+            if normalized_isins:
+                identifiers.append(func.upper(func.trim(Bond.isin)).in_(normalized_isins))
+        if filters.secids is not None:
+            normalized_secids = [value.strip().upper() for value in filters.secids if value and value.strip()]
+            if normalized_secids:
+                identifiers.append(func.upper(func.trim(Bond.secid)).in_(normalized_secids))
+        if identifiers:
+            conditions.append(or_(*identifiers))
         if filters.coupon_min is not None:
             conditions.append(Bond.coupon_percent >= filters.coupon_min)
         if filters.coupon_max is not None:

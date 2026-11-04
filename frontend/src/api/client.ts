@@ -76,7 +76,10 @@ apiClient.interceptors.response.use(
     if (error.response) {
       // Server responded with error
       console.error('[API Client] Error response:', error.response.status, error.response.data);
-      const message = error.response.data?.detail || 'Server error';
+      const detail = error.response.data?.detail;
+      const message = typeof detail === 'string'
+        ? detail
+        : detail?.message || 'Server error';
       return Promise.reject(new Error(message));
     } else if (error.request) {
       // Request made but no response

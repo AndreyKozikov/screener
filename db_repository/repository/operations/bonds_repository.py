@@ -92,12 +92,13 @@ class BondsRepository:
         """Параметры для text-запросов, исключающих погашенные бумаги."""
         return {"active_cutoff_date": date.today().isoformat()}
 
-    def _base_bond_conditions(self, *, exclude_spob: bool = False) -> List[Any]:
+    def _base_bond_conditions(
+        self, *, exclude_spob: bool = False, include_matured: bool = False
+    ) -> List[Any]:
         """Базовые условия для рабочих выборок облигаций."""
-        conditions = [
-            self._not_pact_condition(),
-            self._not_matured_condition(),
-        ]
+        conditions = [self._not_pact_condition()]
+        if not include_matured:
+            conditions.append(self._not_matured_condition())
         if exclude_spob:
             conditions.append(self._not_spob_condition())
         return conditions
@@ -109,7 +110,7 @@ class BondsRepository:
 
 
     def get_bond_detail_by_secid(
-        self, secid: str
+        self, secid: str, include_matured: bool = False
     ) -> Optional[
         Tuple[
             Bond,
@@ -133,7 +134,7 @@ class BondsRepository:
                 stmt = select(Bond).where(
                     and_(
                         Bond.secid == secid,
-                        *self._base_bond_conditions(),
+                        *self._base_bond_conditions(include_matured=include_matured),
                     )
                 )
                 bond = session.exec(stmt).first()
@@ -165,7 +166,7 @@ class BondsRepository:
             return None
 
     def get_bond_detail_by_isin(
-        self, isin: str
+        self, isin: str, include_matured: bool = False
     ) -> Optional[
         Tuple[
             Bond,
@@ -194,7 +195,7 @@ class BondsRepository:
                 stmt = select(Bond).where(
                     and_(
                         func.upper(func.trim(Bond.isin)) == str(isin).strip().upper(),
-                        *self._base_bond_conditions(),
+                        *self._base_bond_conditions(include_matured=include_matured),
                     )
                 )
                 bond = session.exec(stmt).first()

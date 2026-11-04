@@ -185,6 +185,10 @@ class UsersRepository(RemoteRepository):
     repository = "users"
 
 
+class PortfolioImportRepository(RemoteRepository):
+    repository = "portfolios"
+
+
 class TradingHistoryRepository(RemoteRepository):
     repository = "trading_history"
 
@@ -213,6 +217,7 @@ __all__ = [
     "ForecastRepository",
     "KbdRepository",
     "KeyrateRepository",
+    "PortfolioImportRepository",
     "RemoteRepository",
     "RemoteRepositoryError",
     "RepositoryConflictError",

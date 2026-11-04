@@ -26,6 +26,10 @@ from app.portfolio.models import (
     BondCashFlow,
     BondValuationInput,
 )
+from app.repository.db.remote_repository import (
+    PortfolioImportRepository,
+    RemoteRepositoryError,
+)
 
 MONEY_QUANT = Decimal("0.01")
 PRICE_QUANT = Decimal("0.0001")
@@ -256,6 +260,106 @@ class PortfolioValuationService:
             warnings=warnings,
         )
 
+    def valuate_saved_portfolio(
+        self,
+        user_id: str,
+        portfolio_id: int,
+        valuation_date: Optional[date] = None,
+    ) -> PortfolioValuationDTO:
+        """Value the current stored snapshot; portfolio composition comes from positions only."""
+        try:
+            portfolio = PortfolioImportRepository().get_current_positions_for_user(user_id, portfolio_id)
+        except RemoteRepositoryError as exc:
+            raise PortfolioValuationError(
+                "Не удалось получить портфель из микросервиса БД.", status_code=502
+            ) from exc
+        if portfolio is None:
+            raise PortfolioValuationError("Сохранённый портфель не найден.", status_code=404)
+
+        positions: List[PortfolioPositionInputDTO] = []
+        for position in portfolio.get("positions", []):
+            if position.get("asset_type") != "bond":
+                continue
+            quantity = int(position["quantity"])
+            if quantity <= 0:
+                continue
+            secid = str(position.get("security_code") or "").strip() or None
+            isin = str(position.get("isin") or "").strip() or None
+            if not secid and not isin:
+                continue
+
+            positions.append(
+                PortfolioPositionInputDTO(
+                    secid=secid,
+                    isin=isin,
+                    quantity=quantity,
+                    average_purchase_price=None,
+                )
+            )
+
+        if not positions:
+            raise PortfolioValuationError(
+                "В сохранённом портфеле нет позиций облигаций для оценки."
+            )
+
+        request = PortfolioValuationRequestDTO(
+            positions=positions,
+            valuation_date=valuation_date,
+            portfolio_id=portfolio_id,
+            portfolio_name=portfolio.get("portfolio_name"),
+        )
+        return self.valuate(request)
+
+    def calculate_saved_portfolio_accrued_interest(
+        self,
+        user_id: str,
+        portfolio_id: int,
+        valuation_date: Optional[date] = None,
+    ) -> Dict[str, Decimal]:
+        """Calculate per-bond accrued coupon interest for the stored closing positions."""
+        try:
+            portfolio = PortfolioImportRepository().get_current_positions_for_user(user_id, portfolio_id)
+        except RemoteRepositoryError as exc:
+            raise PortfolioValuationError(
+                "Не удалось получить портфель из микросервиса БД.", status_code=502
+            ) from exc
+        if portfolio is None:
+            raise PortfolioValuationError("Сохранённый портфель не найден.", status_code=404)
+
+        assessed_on = valuation_date or date.today()
+        positions = [
+            position for position in portfolio.get("positions", [])
+            if position.get("asset_type") == "bond" and int(position.get("quantity") or 0) > 0
+        ]
+        secids_by_position: list[tuple[str, Any]] = []
+        for position in positions:
+            secid = str(position.get("security_code") or "").strip().upper()
+            isin = str(position.get("isin") or "").strip().upper()
+            detail = self._data_provider.get_bond_detail_by_secid(secid) if secid else None
+            if detail is None and isin:
+                detail = self._data_provider.get_bond_detail_by_isin(isin)
+            if detail is None:
+                continue
+            resolved_secid = str(_value(detail[0], "secid", "")).strip().upper()
+            if resolved_secid:
+                secids_by_position.append((resolved_secid, detail))
+
+        coupons_by_secid = self._data_provider.get_coupons(
+            list(dict.fromkeys(secid for secid, _ in secids_by_position))
+        )
+        accrued_by_secid: Dict[str, Decimal] = {}
+        for secid, detail in secids_by_position:
+            bond = self._data_provider.build_bond_input(
+                secid=secid,
+                detail=detail,
+                coupon_rows=coupons_by_secid.get(secid, []),
+                valuation_date=assessed_on,
+            )
+            accrued_by_secid[secid] = calculate_accrued_interest(
+                bond, assessed_on
+            ).accrued_interest
+        return accrued_by_secid
+
     def _resolve_positions(
         self,
         positions: List[PortfolioPositionInputDTO],
@@ -277,6 +381,13 @@ class PortfolioValuationService:
 
             if secid:
                 detail = self._data_provider.get_bond_detail_by_secid(secid)
+                if detail is not None and position.isin:
+                    detail_isin = str(_value(detail[0], "isin", "")).strip().upper()
+                    if detail_isin and detail_isin != position.isin:
+                        warnings.append(
+                            f"Код {secid} не соответствует ISIN {position.isin}; выполняется поиск по ISIN"
+                        )
+                        detail = None
 
             if detail is None and position.isin:
                 detail = self._data_provider.get_bond_detail_by_isin(position.isin)

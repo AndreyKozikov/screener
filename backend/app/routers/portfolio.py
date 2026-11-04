@@ -7,7 +7,11 @@ from pathlib import PurePath
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
 from app.models.schemasDTO.broker_portfolio_dto import BrokerPortfolioImportResponse
-from app.portfolio.dto import PortfolioValuationDTO, PortfolioValuationRequestDTO
+from app.portfolio.dto import (
+    PortfolioValuationDTO,
+    PortfolioValuationRequestDTO,
+    SavedPortfolioValuationRequestDTO,
+)
 from app.portfolio.exceptions import PortfolioValuationError
 from app.portfolio.service import PortfolioValuationService
 from app.routers.auth import get_current_user
@@ -67,6 +71,31 @@ async def portfolio_valuation_endpoint(
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
     except Exception as exc:
         logger.exception("Portfolio valuation failed")
+        raise HTTPException(
+            status_code=500,
+            detail="Не удалось выполнить оценку портфеля. Попробуйте позже.",
+        ) from exc
+
+
+@router.post("/saved/{portfolio_id}/valuation", response_model=PortfolioValuationDTO)
+async def saved_portfolio_valuation_endpoint(
+    portfolio_id: int,
+    payload: SavedPortfolioValuationRequestDTO,
+    user: dict = Depends(get_current_user),
+) -> PortfolioValuationDTO:
+    """Load and value a saved portfolio entirely on the backend."""
+    service = PortfolioValuationService()
+    try:
+        return await asyncio.to_thread(
+            service.valuate_saved_portfolio,
+            str(user["id"]),
+            portfolio_id,
+            payload.valuation_date,
+        )
+    except PortfolioValuationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    except Exception as exc:
+        logger.exception("Saved portfolio valuation failed for %s", portfolio_id)
         raise HTTPException(
             status_code=500,
             detail="Не удалось выполнить оценку портфеля. Попробуйте позже.",

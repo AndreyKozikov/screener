@@ -106,6 +106,16 @@ class PortfolioValuationRequestDTO(BaseModel):
     )
 
 
+class SavedPortfolioValuationRequestDTO(BaseModel):
+    """Параметры оценки сохранённого на сервере портфеля."""
+
+    valuation_date: Optional[date] = Field(
+        default=None,
+        validation_alias=AliasChoices("valuation_date", "valuationDate"),
+        description="Дата оценки; если не передана, используется текущая дата",
+    )
+
+
 class PortfolioPositionValuationDTO(BaseModel):
     """Результат оценки одной позиции портфеля."""
 

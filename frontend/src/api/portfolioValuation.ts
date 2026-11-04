@@ -57,3 +57,14 @@ export const fetchPortfolioValuation = async (
   });
   return response.data;
 };
+
+export const fetchSavedPortfolioValuation = async (
+  portfolioId: number,
+  valuationDate: string,
+): Promise<PortfolioValuation> => {
+  const response = await apiClient.post<PortfolioValuation>(
+    `/portfolio/saved/${portfolioId}/valuation`,
+    { valuation_date: valuationDate },
+  );
+  return response.data;
+};

@@ -198,7 +198,7 @@ async def get_bonds_list(
         )
         response_bonds.raise_for_status()
         response_count = None
-        if filters.isins is None:
+        if filters.isins is None and filters.secids is None:
             response_count = await client.get(
                 url=url_bond_count,
                 params={"exclude_spob": exclude_spob},
@@ -214,7 +214,11 @@ async def get_bonds_list(
 
     print(len(bond_rows))
 
-    total = len(bond_rows) if filters.isins is not None else response_count.json().get("total", 0)
+    total = (
+        len(bond_rows)
+        if filters.isins is not None or filters.secids is not None
+        else response_count.json().get("total", 0)
+    )
 
     today = date.today()
     bonds: List[BondScreenerDTO] = []

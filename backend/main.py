@@ -8,7 +8,7 @@ from app.routers import (
     bonds, metadata, zerocupon, forecast, emitent, rating, currency, ruonia, keyrate,
     feedback, dashboard,
     llm_router, blog, inflations, ipc, settings as settings_router,
-    portfolio, auth
+    portfolio, auth, portfolio_reports
 )
 
 from app.services.data_loader import init_data_loader
@@ -119,6 +119,7 @@ app.include_router(ipc.ipc_router)
 app.include_router(settings_router.router)
 app.include_router(macro_dashboard_router)
 app.include_router(portfolio.router)
+app.include_router(portfolio_reports.router)
 app.include_router(auth.router)
 
 # Root endpoint
@@ -136,6 +137,7 @@ async def root():
             "bonds": "/api/bonds",
             "bond_detail": "/api/bonds/{secid}",
             "portfolio_broker_import": "/api/portfolio/import/broker-report",
+            "portfolio_report_import": "/api/portfolios/import",
             "columns": "/api/columns",
             "descriptions": "/api/descriptions",
             "filter_options": "/api/filter-options"

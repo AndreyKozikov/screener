@@ -160,6 +160,13 @@ class BondFilters(BaseModel):
         description="Точный список ISIN для пакетного поиска облигаций портфеля",
     )
 
+    secids: Optional[List[str]] = Field(
+        None,
+        min_length=1,
+        max_length=1000,
+        description="Точный список SECID для пакетного поиска облигаций портфеля",
+    )
+
     # Pagination
     skip: int = Field(
         default=0,

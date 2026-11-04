@@ -5,33 +5,28 @@ import { ModuleRegistry, AllCommunityModule } from 'ag-grid-community';
 import 'ag-grid-community/styles/ag-grid.css';
 import 'ag-grid-community/styles/ag-theme-material.css';
 import '../bonds/ag-grid-tooltips.css';
-import { Box, Card, CardContent, Button, Tooltip, IconButton, Alert, Toolbar } from '@mui/material';
+import { Box, Card, CardContent, Button, Tooltip, IconButton, Alert, Toolbar, FormControl, InputLabel, Select, MenuItem, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
-import SaveIcon from '@mui/icons-material/Save';
-import UploadFileIcon from '@mui/icons-material/UploadFile';
 import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
 
 // Register AG Grid modules
 ModuleRegistry.registerModules([AllCommunityModule]);
-import { usePortfolioStore } from '../../stores/portfolioStore';
 import { useUiStore } from '../../stores/uiStore';
 import { fetchDescriptions } from '../../api/metadata';
 import type { DescriptionsResponse } from '../../api/metadata';
 import { 
   formatNumber, 
   formatPercent, 
-  calculateCouponYieldToPrice,
-  calculateCouponFrequency,
-  calculateCouponYieldToAveragePurchasePrice
 } from '../../utils/formatters';
 import { EmptyState } from '../common/EmptyState';
 import type { BondListItem, PortfolioBond } from '../../types/bond';
 import { PortfolioExportDialog } from './PortfolioExportDialog';
-import { PortfolioImportDialog } from './PortfolioImportDialog';
-import { BrokerReportImportDialog } from './BrokerReportImportDialog';
+import { PortfolioReportImportDialog } from './PortfolioReportImportDialog';
+import { ImportedPortfolioListDialog } from './ImportedPortfolioListDialog';
 import { exportPortfolio, type PortfolioExportFormat } from '../../utils/portfolioExport';
-import type { BrokerPortfolioImportMode } from '../../api/brokerPortfolio';
+import { deleteImportedPortfolio, fetchImportedPortfolios, fetchImportedPortfolioTable, type ImportedPortfolioSummary } from '../../api/portfolioReportImport';
 import { RatingDisplay } from '../bonds/RatingDisplay';
+import { useSelectedReportPortfolioStore } from '../../stores/selectedReportPortfolioStore';
 
 type FieldDescriptionMap = Record<string, string>;
 
@@ -58,13 +53,7 @@ const flattenDescriptions = (descriptions: DescriptionsResponse): FieldDescripti
  * but without "Add to Portfolio" column and with "Remove from Portfolio" column
  */
 export const PortfolioTable: React.FC = () => {
-  const portfolioBonds = usePortfolioStore((state) => state.portfolioBonds);
-  const removeBondFromPortfolio = usePortfolioStore((state) => state.removeBondFromPortfolio);
-  const loadPortfolioBonds = usePortfolioStore((state) => state.loadPortfolioBonds);
-  const importBrokerPortfolioBonds = usePortfolioStore((state) => state.importBrokerPortfolioBonds);
-  const clearPortfolio = usePortfolioStore((state) => state.clearPortfolio);
-  const updateBondQuantity = usePortfolioStore((state) => state.updateBondQuantity);
-  const updateBondAveragePurchasePrice = usePortfolioStore((state) => state.updateBondAveragePurchasePrice);
+  const [portfolioBonds, setPortfolioBonds] = useState<PortfolioBond[]>([]);
   const setSelectedBond = useUiStore((state) => state.setSelectedBond);
   const [fieldDescriptions, setFieldDescriptions] = useState<FieldDescriptionMap>({});
   const metadataLoadedRef = useRef(false);
@@ -72,9 +61,62 @@ export const PortfolioTable: React.FC = () => {
   const [headerHeight, setHeaderHeight] = useState<number | undefined>(undefined);
   const portfolioCellClickedRef = useRef(false);
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
-  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
-  const [isBrokerReportDialogOpen, setIsBrokerReportDialogOpen] = useState(false);
+  const [isReportImportDialogOpen, setIsReportImportDialogOpen] = useState(false);
+  const [isImportedPortfolioListOpen, setIsImportedPortfolioListOpen] = useState(false);
+  const [isDeletePortfolioDialogOpen, setIsDeletePortfolioDialogOpen] = useState(false);
+  const [isDeletingPortfolio, setIsDeletingPortfolio] = useState(false);
+  const [importedReportPortfolios, setImportedReportPortfolios] = useState<ImportedPortfolioSummary[]>([]);
+  const selectedImportedPortfolioId = useSelectedReportPortfolioStore((state) => state.portfolioId);
+  const setSharedPortfolioId = useSelectedReportPortfolioStore((state) => state.setPortfolioId);
+  const [reportPortfoliosError, setReportPortfoliosError] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
+
+  const refreshImportedReportPortfolios = useCallback(async () => {
+    try {
+      const portfolios = await fetchImportedPortfolios();
+      setImportedReportPortfolios(portfolios);
+      const currentId = useSelectedReportPortfolioStore.getState().portfolioId;
+      const selectedId = portfolios.some((portfolio) => portfolio.portfolio_id === currentId)
+        ? currentId
+        : portfolios[0]?.portfolio_id ?? null;
+      setSharedPortfolioId(selectedId);
+      setReportPortfoliosError(null);
+    } catch (error) {
+      setReportPortfoliosError(error instanceof Error ? error.message : 'Не удалось загрузить импортированные портфели.');
+    }
+  }, [setSharedPortfolioId]);
+
+  const handleDeleteSelectedPortfolio = useCallback(async () => {
+    if (selectedImportedPortfolioId == null) return;
+    setIsDeletingPortfolio(true);
+    try {
+      await deleteImportedPortfolio(selectedImportedPortfolioId);
+      setIsDeletePortfolioDialogOpen(false);
+      setSharedPortfolioId(null);
+      setPortfolioBonds([]);
+      await refreshImportedReportPortfolios();
+    } catch (error) {
+      setReportPortfoliosError(error instanceof Error ? error.message : 'Не удалось удалить портфель.');
+    } finally {
+      setIsDeletingPortfolio(false);
+    }
+  }, [selectedImportedPortfolioId, setSharedPortfolioId, refreshImportedReportPortfolios]);
+
+  useEffect(() => {
+    if (selectedImportedPortfolioId == null) {
+      setPortfolioBonds([]);
+      return;
+    }
+    let cancelled = false;
+    fetchImportedPortfolioTable(selectedImportedPortfolioId)
+      .then((rows) => { if (!cancelled) setPortfolioBonds(rows); })
+      .catch((error) => { if (!cancelled) setReportPortfoliosError(error instanceof Error ? error.message : 'Не удалось загрузить позиции портфеля.'); });
+    return () => { cancelled = true; };
+  }, [selectedImportedPortfolioId]);
+
+  useEffect(() => {
+    void refreshImportedReportPortfolios();
+  }, [refreshImportedReportPortfolios]);
 
   // Load field descriptions
   useEffect(() => {
@@ -203,8 +245,9 @@ export const PortfolioTable: React.FC = () => {
     { key: 'FACEVALUE', minWidth: 100 },
     { key: 'FACEUNIT', minWidth: 60 },
     { key: 'COUPONPERCENT', minWidth: 100 },
-    { key: 'COUPONPERCENT_NOMINAL', minWidth: 130 },
-    { key: 'COUPONPERIOD', minWidth: 80 },
+    { key: 'COUPONPERCENT', minWidth: 130 },
+    { key: 'COUPONVALUE', minWidth: 100 },
+    { key: 'COUPON_FREQUENCY', minWidth: 80 },
     { key: 'ACCRUEDINT', minWidth: 80 },
     { key: 'DURATION_YEARS', minWidth: 80 },
     { key: 'quantity', minWidth: 100 },
@@ -295,11 +338,6 @@ export const PortfolioTable: React.FC = () => {
       const bond = params.data;
       if (!bond) return null;
 
-      const handleClick = (e: React.MouseEvent) => {
-        e.stopPropagation(); // Prevent row click
-        removeBondFromPortfolio(bond.SECID);
-      };
-
       const handleCellClick = (e: React.MouseEvent) => {
         e.stopPropagation(); // Prevent row click from opening details
         e.preventDefault(); // Prevent default behavior
@@ -326,7 +364,7 @@ export const PortfolioTable: React.FC = () => {
         >
           <IconButton
             size="small"
-            onClick={handleClick}
+            disabled
             sx={{
               color: 'error.main',
               '&:hover': {
@@ -388,12 +426,6 @@ export const PortfolioTable: React.FC = () => {
     }),
     createColumnDef('COUPON_YIELD_TO_PRICE', 'Доходность купона к текущей цене', {
       minWidth: 120,
-      valueGetter: (params) => {
-        const bond = params.data;
-        if (!bond) return null;
-        const couponFrequency = calculateCouponFrequency(bond.COUPONPERIOD);
-        return calculateCouponYieldToPrice(bond.COUPONVALUE, bond.PREVPRICE, bond.FACEVALUE, couponFrequency);
-      },
       valueFormatter: (params) => formatPercent(params.value),
       type: 'numericColumn',
       headerTooltip: 'Рассчитывается как (Размер купона / (Текущая цена × Номинал / 100)) × (Число выплат в год) × 100',
@@ -421,14 +453,12 @@ export const PortfolioTable: React.FC = () => {
     }),
     createColumnDef('FACEUNIT', 'Валюта', {
       minWidth: 60,
-      valueGetter: (params) => params.data?.FACEUNIT ?? null,
       valueFormatter: (params) => params.value || '-',
       headerTooltip: getFieldDescription('FACEUNIT') || 'Валюта номинала',
       autoHeaderHeight: true,
     }),
-    createColumnDef('COUPONPERCENT', 'Купон', {
+    createColumnDef('COUPONVALUE', 'Купон', {
       minWidth: 100,
-      valueGetter: (params) => params.data?.COUPONVALUE ?? null,
       valueFormatter: (params) => {
         if (params.value == null || params.value === undefined) return '-';
         return formatNumber(params.value, 2);
@@ -437,21 +467,15 @@ export const PortfolioTable: React.FC = () => {
       headerTooltip: 'Сумма купона в рублях из данных о купонных выплатах',
       autoHeaderHeight: true,
     }),
-    createColumnDef('COUPONPERCENT_NOMINAL', 'Доходность купона относительно номинала', {
+    createColumnDef('COUPONPERCENT', 'Доходность купона относительно номинала', {
       minWidth: 130,
-      valueGetter: (params) => params.data?.COUPONPERCENT ?? null,
       valueFormatter: (params) => formatPercent(params.value),
       type: 'numericColumn',
       headerTooltip: getFieldDescription('COUPONPERCENT_NOMINAL') || getFieldDescription('COUPONPERCENT'),
       autoHeaderHeight: true,
     }),
-    createColumnDef('COUPONPERIOD', 'Частота купона', {
+    createColumnDef('COUPON_FREQUENCY', 'Частота купона', {
       minWidth: 80,
-      valueGetter: (params) => {
-        const bond = params.data;
-        if (!bond) return null;
-        return calculateCouponFrequency(bond.COUPONPERIOD);
-      },
       valueFormatter: (params) => formatNumber(params.value, 0),
       type: 'numericColumn',
       headerTooltip: getFieldDescription('COUPONPERIOD'),
@@ -466,12 +490,6 @@ export const PortfolioTable: React.FC = () => {
     }),
     createColumnDef('DURATION_YEARS', 'Дюрация, лет', {
       minWidth: 80,
-      valueGetter: (params) => {
-        const bond = params.data;
-        if (!bond || bond.DURATION == null || bond.DURATION === undefined) return null;
-        if (bond.DURATION === 0) return null;
-        return bond.DURATION / 365;
-      },
       valueFormatter: (params) => {
         if (params.value == null || params.value === undefined) return '-';
         return formatNumber(params.value, 2);
@@ -482,37 +500,8 @@ export const PortfolioTable: React.FC = () => {
     }),
     createColumnDef('quantity', 'Количество, шт.', {
       minWidth: 100,
-      editable: true,
-      cellEditor: 'agNumberCellEditor',
-      cellEditorParams: {
-        min: 1,
-        precision: 0,
-        step: 1,
-      },
+      editable: false,
       cellStyle: { textAlign: 'center' },
-      valueSetter: (params) => {
-        const bond = params.data as PortfolioBond | undefined;
-        if (!bond) return false;
-        
-        // Validate: must be integer > 0
-        const newValue = params.newValue;
-        if (typeof newValue !== 'number' || isNaN(newValue) || newValue <= 0) {
-          return false;
-        }
-        
-        const quantity = Math.floor(newValue);
-        if (quantity <= 0) {
-          return false;
-        }
-        
-        // Update both the data object (for grid) and the store (for persistence)
-        const valueChanged = bond.quantity !== quantity;
-        if (valueChanged) {
-          bond.quantity = quantity;
-          updateBondQuantity(bond.SECID, quantity);
-        }
-        return valueChanged;
-      },
       valueFormatter: (params) => {
         const value = params.value;
         if (value == null || value === undefined) return '1';
@@ -524,59 +513,11 @@ export const PortfolioTable: React.FC = () => {
     }),
     createColumnDef('averagePurchasePrice', 'Средняя цена покупки, %', {
       minWidth: 130,
-      editable: true,
-      cellEditor: 'agNumberCellEditor',
-      cellEditorParams: {
-        min: 0,
-        precision: 2,
-        step: 0.01,
-      },
+      editable: false,
       cellStyle: { textAlign: 'center' },
-      valueGetter: (params) => {
-        const bond = params.data as PortfolioBond | undefined;
-        if (!bond) return null;
-        // Return averagePurchasePrice if set, otherwise default to current price (PREVPRICE)
-        return bond.averagePurchasePrice ?? bond.PREVPRICE ?? null;
-      },
-      valueSetter: (params) => {
-        const bond = params.data as PortfolioBond | undefined;
-        if (!bond) return false;
-        
-        // Validate: must be number > 0 or null/undefined
-        const newValue = params.newValue;
-        if (newValue === null || newValue === undefined || newValue === '') {
-          // If cleared, set to current price
-          const currentPrice = bond.PREVPRICE ?? null;
-          const valueChanged = bond.averagePurchasePrice !== currentPrice;
-          if (valueChanged) {
-            bond.averagePurchasePrice = currentPrice;
-            updateBondAveragePurchasePrice(bond.SECID, currentPrice);
-          }
-          return valueChanged;
-        }
-        
-        if (typeof newValue !== 'number' || isNaN(newValue) || newValue <= 0) {
-          return false;
-        }
-        
-        // Update both the data object (for grid) and the store (for persistence)
-        const valueChanged = bond.averagePurchasePrice !== newValue;
-        if (valueChanged) {
-          bond.averagePurchasePrice = newValue;
-          updateBondAveragePurchasePrice(bond.SECID, newValue);
-        }
-        return valueChanged;
-      },
       valueFormatter: (params) => {
         const value = params.value;
-        if (value == null || value === undefined) {
-          // If no value, show current price
-          const bond = params.data as PortfolioBond | undefined;
-          if (bond && bond.PREVPRICE != null) {
-            return formatNumber(bond.PREVPRICE, 2);
-          }
-          return '—';
-        }
+        if (value == null || value === undefined) return '—';
         return formatNumber(value, 2);
       },
       type: 'numericColumn',
@@ -585,35 +526,6 @@ export const PortfolioTable: React.FC = () => {
     }),
     createColumnDef('couponYieldToAveragePurchasePrice', 'Доходность купона к средней цене покупки', {
       minWidth: 180,
-      valueGetter: (params) => {
-        const bond = params.data as PortfolioBond | undefined;
-        if (!bond) return null;
-        
-        // Вычисления только для облигаций с валютой SUR
-        if (bond.FACEUNIT !== 'SUR') {
-          return null;
-        }
-        
-        // Получаем среднюю цену покупки (или текущую цену, если не задана)
-        const averagePurchasePrice = bond.averagePurchasePrice ?? bond.PREVPRICE ?? null;
-        if (averagePurchasePrice === null) return null;
-        
-        // Получаем необходимые данные
-        const couponValue = bond.COUPONVALUE;
-        const faceValue = bond.FACEVALUE;
-        const couponPeriod = bond.COUPONPERIOD;
-        
-        // Вычисляем частоту купона
-        const couponFrequency = calculateCouponFrequency(couponPeriod);
-        
-        // Вычисляем доходность
-        return calculateCouponYieldToAveragePurchasePrice(
-          couponValue,
-          averagePurchasePrice,
-          faceValue,
-          couponFrequency
-        );
-      },
       valueFormatter: (params) => {
         if (params.value == null || params.value === undefined) {
           // Для облигаций не в валюте SUR показываем прочерк
@@ -647,7 +559,7 @@ export const PortfolioTable: React.FC = () => {
       suppressSizeToFit: true,
     },
     ] as ColDef[];
-  }, [getFieldDescription, removeBondFromPortfolio, updateBondQuantity, updateBondAveragePurchasePrice, columnSizeLimits, calculateCouponFrequency, calculateCouponYieldToAveragePurchasePrice]);
+  }, [getFieldDescription, columnSizeLimits]);
 
   // Default column properties
   const defaultColDef: ColDef = useMemo(() => ({
@@ -922,22 +834,27 @@ export const PortfolioTable: React.FC = () => {
     }
   };
 
-  const handleImportPortfolio = (bonds: PortfolioBond[]) => {
-    loadPortfolioBonds(bonds);
-  };
-
-  const handleBrokerReportImport = (bonds: PortfolioBond[], mode: BrokerPortfolioImportMode) => {
-    importBrokerPortfolioBonds(bonds, mode);
-  };
-
-  const handleClearPortfolio = () => {
-    if (window.confirm('Вы уверены, что хотите удалить все облигации из портфеля?')) {
-      clearPortfolio();
-    }
-  };
-
   // Don't apply search filter to portfolio - search is only for bonds market
   const filteredPortfolioBonds = portfolioBonds;
+  const selectedPortfolioName = importedReportPortfolios.find(
+    (portfolio) => portfolio.portfolio_id === selectedImportedPortfolioId,
+  )?.portfolio_name;
+  const deletePortfolioDialog = (
+    <Dialog open={isDeletePortfolioDialogOpen} onClose={() => !isDeletingPortfolio && setIsDeletePortfolioDialogOpen(false)}>
+      <DialogTitle>Удалить сохранённый портфель?</DialogTitle>
+      <DialogContent>
+        <DialogContentText>
+          Портфель «{selectedPortfolioName || 'без названия'}» и все связанные с ним данные отчёта будут удалены.
+        </DialogContentText>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={() => setIsDeletePortfolioDialogOpen(false)} disabled={isDeletingPortfolio}>Отмена</Button>
+        <Button onClick={() => void handleDeleteSelectedPortfolio()} color="error" startIcon={<DeleteIcon />} disabled={isDeletingPortfolio}>
+          {isDeletingPortfolio ? 'Удаление…' : 'Удалить'}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
 
   // Empty state
   if (portfolioBonds.length === 0) {
@@ -956,28 +873,24 @@ export const PortfolioTable: React.FC = () => {
           <CardContent sx={{ p: 0, '&:last-child': { pb: 0 }, flexGrow: 1, display: 'flex', flexDirection: 'column', width: '100%' }}>
             <Box sx={{ p: 1, display: 'flex', justifyContent: 'flex-start', gap: 1, borderBottom: 1, borderColor: 'divider' }}>
               <Button
-                variant="outlined"
-                size="small"
-                startIcon={<UploadFileIcon />}
-                onClick={() => setIsImportDialogOpen(true)}
-                sx={{
-                  '&.Mui-disabled': {
-                    color: 'text.disabled',
-                    borderColor: 'action.disabledBackground',
-                  },
-                }}
-              >
-                Загрузить портфель
-              </Button>
-              <Button
-                variant="outlined"
+                variant="contained"
                 size="small"
                 startIcon={<ReceiptLongIcon />}
-                onClick={() => setIsBrokerReportDialogOpen(true)}
+                onClick={() => setIsReportImportDialogOpen(true)}
               >
-                Импорт из отчёта
+                Создать портфель из отчёта
+              </Button>
+              <FormControl size="small" sx={{ minWidth: 240 }}>
+                <InputLabel id="saved-report-portfolio-label">Портфель из БД</InputLabel>
+                <Select labelId="saved-report-portfolio-label" value={selectedImportedPortfolioId ?? ''} label="Портфель из БД" onChange={(event) => { const id = Number(event.target.value); setSharedPortfolioId(Number.isFinite(id) && id > 0 ? id : null); }}>
+                  {importedReportPortfolios.map((item) => <MenuItem key={item.portfolio_id} value={item.portfolio_id}>{item.portfolio_name}</MenuItem>)}
+                </Select>
+              </FormControl>
+              <Button size="small" color="error" startIcon={<DeleteIcon />} disabled={selectedImportedPortfolioId == null} onClick={() => setIsDeletePortfolioDialogOpen(true)}>
+                Удалить портфель
               </Button>
             </Box>
+            {reportPortfoliosError && <Alert severity="warning" sx={{ mx: 2, mt: 1 }}>{reportPortfoliosError}</Alert>}
             <Box sx={{ flexGrow: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <EmptyState
                 title="Портфель пуст"
@@ -985,17 +898,17 @@ export const PortfolioTable: React.FC = () => {
               />
             </Box>
           </CardContent>
-          <PortfolioImportDialog
-            open={isImportDialogOpen}
-            onClose={() => setIsImportDialogOpen(false)}
-            onImport={handleImportPortfolio}
+          <PortfolioReportImportDialog
+            open={isReportImportDialogOpen}
+            onClose={() => setIsReportImportDialogOpen(false)}
+            onImported={() => { void refreshImportedReportPortfolios(); }}
           />
-          <BrokerReportImportDialog
-            open={isBrokerReportDialogOpen}
-            hasExistingPortfolio={portfolioBonds.length > 0}
-            onClose={() => setIsBrokerReportDialogOpen(false)}
-            onImport={handleBrokerReportImport}
+          <ImportedPortfolioListDialog
+            open={isImportedPortfolioListOpen}
+            portfolios={importedReportPortfolios}
+            onClose={() => setIsImportedPortfolioListOpen(false)}
           />
+          {deletePortfolioDialog}
         </Card>
       </Box>
     );
@@ -1030,6 +943,11 @@ export const PortfolioTable: React.FC = () => {
               {exportError}
             </Alert>
           )}
+          {reportPortfoliosError && (
+            <Alert severity="warning" onClose={() => setReportPortfoliosError(null)} sx={{ m: 2, mb: 0 }}>
+              {reportPortfoliosError}
+            </Alert>
+          )}
           {/* Toolbar with action buttons */}
           <Toolbar
             variant="dense"
@@ -1045,41 +963,21 @@ export const PortfolioTable: React.FC = () => {
           >
             <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
               <Button
-                variant="outlined"
-                size="small"
-                startIcon={<SaveIcon />}
-                onClick={() => setIsExportDialogOpen(true)}
-                disabled={portfolioBonds.length === 0}
-              >
-                Сохранить портфель
-              </Button>
-              <Button
-                variant="outlined"
-                size="small"
-                startIcon={<UploadFileIcon />}
-                onClick={() => setIsImportDialogOpen(true)}
-              >
-                Загрузить портфель
-              </Button>
-              <Button
-                variant="outlined"
+                variant="contained"
                 size="small"
                 startIcon={<ReceiptLongIcon />}
-                onClick={() => setIsBrokerReportDialogOpen(true)}
+                onClick={() => setIsReportImportDialogOpen(true)}
               >
-                Импорт из отчёта
+                Создать портфель из отчёта
               </Button>
-            </Box>
-            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-              <Button
-                variant="outlined"
-                size="small"
-                color="error"
-                startIcon={<DeleteIcon />}
-                onClick={handleClearPortfolio}
-                disabled={portfolioBonds.length === 0}
-              >
-                Очистить портфель
+              <FormControl size="small" sx={{ minWidth: 240 }}>
+                <InputLabel id="saved-report-portfolio-label-main">Портфель из БД</InputLabel>
+                <Select labelId="saved-report-portfolio-label-main" value={selectedImportedPortfolioId ?? ''} label="Портфель из БД" onChange={(event) => { const id = Number(event.target.value); setSharedPortfolioId(Number.isFinite(id) && id > 0 ? id : null); }}>
+                  {importedReportPortfolios.map((item) => <MenuItem key={item.portfolio_id} value={item.portfolio_id}>{item.portfolio_name}</MenuItem>)}
+                </Select>
+              </FormControl>
+              <Button size="small" color="error" startIcon={<DeleteIcon />} disabled={selectedImportedPortfolioId == null} onClick={() => setIsDeletePortfolioDialogOpen(true)}>
+                Удалить портфель
               </Button>
             </Box>
           </Toolbar>
@@ -1213,7 +1111,7 @@ export const PortfolioTable: React.FC = () => {
                 textAlign: 'left !important',
               },
               // Ensure numeric columns are centered
-              '& .ag-cell[col-id="PREVPRICE"], & .ag-cell[col-id="COUPON_YIELD_TO_PRICE"], & .ag-cell[col-id="YIELDATPREVWAPRICE"], & .ag-cell[col-id="FACEVALUE"], & .ag-cell[col-id="COUPONPERCENT"], & .ag-cell[col-id="COUPONPERCENT_NOMINAL"], & .ag-cell[col-id="COUPONPERIOD"], & .ag-cell[col-id="ACCRUEDINT"], & .ag-cell[col-id="DURATION_YEARS"], & .ag-cell[col-id="FACEUNIT"], & .ag-cell[col-id="RATING"], & .ag-cell[col-id="quantity"], & .ag-cell[col-id="averagePurchasePrice"], & .ag-cell[col-id="couponYieldToAveragePurchasePrice"]': {
+              '& .ag-cell[col-id="PREVPRICE"], & .ag-cell[col-id="COUPON_YIELD_TO_PRICE"], & .ag-cell[col-id="YIELDATPREVWAPRICE"], & .ag-cell[col-id="FACEVALUE"], & .ag-cell[col-id="COUPONPERCENT"], & .ag-cell[col-id="COUPONVALUE"], & .ag-cell[col-id="COUPON_FREQUENCY"], & .ag-cell[col-id="ACCRUEDINT"], & .ag-cell[col-id="DURATION_YEARS"], & .ag-cell[col-id="FACEUNIT"], & .ag-cell[col-id="RATING"], & .ag-cell[col-id="quantity"], & .ag-cell[col-id="averagePurchasePrice"], & .ag-cell[col-id="couponYieldToAveragePurchasePrice"]': {
                 justifyContent: 'center',
                 textAlign: 'center !important',
               },
@@ -1306,17 +1204,17 @@ export const PortfolioTable: React.FC = () => {
           onConfirm={handleExportPortfolio}
           bondCount={portfolioBonds.length}
         />
-        <PortfolioImportDialog
-          open={isImportDialogOpen}
-          onClose={() => setIsImportDialogOpen(false)}
-          onImport={handleImportPortfolio}
+        <PortfolioReportImportDialog
+          open={isReportImportDialogOpen}
+          onClose={() => setIsReportImportDialogOpen(false)}
+          onImported={() => { void refreshImportedReportPortfolios(); }}
         />
-        <BrokerReportImportDialog
-          open={isBrokerReportDialogOpen}
-          hasExistingPortfolio={portfolioBonds.length > 0}
-          onClose={() => setIsBrokerReportDialogOpen(false)}
-          onImport={handleBrokerReportImport}
+        <ImportedPortfolioListDialog
+          open={isImportedPortfolioListOpen}
+          portfolios={importedReportPortfolios}
+          onClose={() => setIsImportedPortfolioListOpen(false)}
         />
+          {deletePortfolioDialog}
       </Card>
       </Box>
     </Box>
