@@ -27,7 +27,7 @@ export type SiteForecastSubView =
   | 'ipc'
   | 'sustainable-inflation';
 export type SiteComparisonSubView = 'comparison' | 'spread-analysis';
-export type SitePortfolioModule = 'HUB' | 'PORTFOLIO' | 'CALENDAR' | 'ANALYTICS';
+export type SitePortfolioModule = 'HUB' | 'PORTFOLIO' | 'CALENDAR' | 'ANALYTICS' | 'DEALS';
 
 export type SavedHomePageView = {
   viewMode: SiteViewMode;
@@ -51,7 +51,7 @@ const FORECAST_SUB_VIEWS: SiteForecastSubView[] = [
   'macro-dashboard', 'zerocupon', 'forecast', 'ruonia', 'keyrate', 'inflation-expectations', 'ipc', 'sustainable-inflation',
 ];
 const COMPARISON_SUB_VIEWS: SiteComparisonSubView[] = ['comparison', 'spread-analysis'];
-const PORTFOLIO_MODULES: SitePortfolioModule[] = ['HUB', 'PORTFOLIO', 'CALENDAR', 'ANALYTICS'];
+const PORTFOLIO_MODULES: SitePortfolioModule[] = ['HUB', 'PORTFOLIO', 'CALENDAR', 'ANALYTICS', 'DEALS'];
 
 export const readSavedHomePageView = (): SavedHomePageView => {
   if (typeof window === 'undefined') return DEFAULT_HOME_PAGE_VIEW;
@@ -124,6 +124,7 @@ export const siteNavigationItems: SiteNavigationItem[] = [
     requiresAuth: true,
     children: [
       { id: 'portfolio:holdings', label: 'Портфель облигаций' },
+      { id: 'portfolio:deals', label: 'Сделки' },
       { id: 'portfolio:calendar', label: 'Календарь выплат' },
       { id: 'portfolio:analytics', label: 'Аналитика портфеля' },
     ],
@@ -201,6 +202,8 @@ export const resolveSiteNavigationTarget = (id: string): SavedHomePageView => {
       return tab(3);
     case 'portfolio:holdings':
       return tab(3, { portfolioModule: 'PORTFOLIO' });
+    case 'portfolio:deals':
+      return tab(3, { portfolioModule: 'DEALS' });
     case 'portfolio:calendar':
       return tab(3, { portfolioModule: 'CALENDAR' });
     case 'portfolio:analytics':

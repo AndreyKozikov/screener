@@ -34,7 +34,7 @@ class RepositoryCall(BaseModel):
         "list_articles", "save", "save_event_changes", "save_forecast", "save_kbd_records",
         "save_many", "save_moex_coupons", "save_records", "update",
         "upsert", "upsert_mapping", "upsert_ratings_for_bond", "get_by_email", "get_by_id",
-        "find_duplicate", "get_current_positions_for_user", "get_for_user", "list_for_user", "save_report_import",
+        "find_duplicate", "get_current_positions_for_user", "get_current_position_trades_for_user", "get_for_user", "list_for_user", "save_report_import",
     ]
     args: list[Any] = Field(default_factory=list)
     kwargs: dict[str, Any] = Field(default_factory=dict)

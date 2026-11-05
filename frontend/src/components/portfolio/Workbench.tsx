@@ -4,8 +4,9 @@ import { Hub } from './Hub';
 import { PortfolioModule } from './PortfolioModule';
 import { CalendarModule } from './CalendarModule';
 import { AnalyticsModule } from './AnalyticsModule';
+import { DealsModule } from './DealsModule';
 
-export type WorkbenchModule = 'HUB' | 'PORTFOLIO' | 'CALENDAR' | 'ANALYTICS';
+export type WorkbenchModule = 'HUB' | 'PORTFOLIO' | 'CALENDAR' | 'ANALYTICS' | 'DEALS';
 
 /**
  * Workbench Component
@@ -49,6 +50,9 @@ export const Workbench: React.FC<WorkbenchProps> = ({ selectedModule: controlled
       )}
       {selectedModule === 'ANALYTICS' && (
         <AnalyticsModule />
+      )}
+      {selectedModule === 'DEALS' && (
+        <DealsModule />
       )}
     </Box>
   );

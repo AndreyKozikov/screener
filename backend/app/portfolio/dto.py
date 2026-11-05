@@ -116,6 +116,48 @@ class SavedPortfolioValuationRequestDTO(BaseModel):
     )
 
 
+class PortfolioDealDTO(BaseModel):
+    """Одна сохранённая сделка по облигации, остающейся в портфеле."""
+
+    id: int
+    portfolio_id: int
+    security_id: Optional[int] = None
+    trade_date: str
+    settlement_date: Optional[str] = None
+    trade_time: Optional[str] = None
+    operation_type: str
+    quantity: int
+    price_percent_scaled: Optional[int] = None
+    amount_ex_nkd_minor: Optional[int] = None
+    nkd_minor: Optional[int] = None
+    broker_fee_minor: Optional[int] = None
+    exchange_fee_minor: Optional[int] = None
+    currency_code: Optional[str] = None
+    trade_number: Optional[str] = None
+    status: Optional[str] = None
+    comment: Optional[str] = None
+    source_row_number: Optional[int] = None
+    raw_data_json: Optional[str] = None
+    isin: Optional[str] = None
+    security_code: Optional[str] = None
+    security_name: Optional[str] = None
+    security_currency_code: Optional[str] = None
+    asset_type: Optional[str] = None
+    security_category: Optional[str] = None
+    issuer: Optional[str] = None
+    security_raw_data_json: Optional[str] = None
+    current_quantity: Optional[int] = None
+
+
+class PortfolioDealsDTO(BaseModel):
+    """Все сделки по облигациям, которые входят в текущий снимок портфеля."""
+
+    portfolio_id: int
+    portfolio_name: str
+    base_currency: str
+    deals: List[PortfolioDealDTO] = Field(default_factory=list)
+
+
 class PortfolioPositionValuationDTO(BaseModel):
     """Результат оценки одной позиции портфеля."""
 

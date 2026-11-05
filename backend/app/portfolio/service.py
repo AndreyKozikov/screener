@@ -26,6 +26,7 @@ from app.portfolio.models import (
     BondCashFlow,
     BondValuationInput,
 )
+from app.portfolio.purchase_price import calculate_average_purchase_price
 from app.repository.db.remote_repository import (
     PortfolioImportRepository,
     RemoteRepositoryError,
@@ -276,6 +277,18 @@ class PortfolioValuationService:
         if portfolio is None:
             raise PortfolioValuationError("Сохранённый портфель не найден.", status_code=404)
 
+        try:
+            trades = PortfolioImportRepository().get_current_position_trades_for_user(
+                user_id, portfolio_id
+            )
+        except RemoteRepositoryError as exc:
+            raise PortfolioValuationError(
+                "Не удалось получить цены сделок из микросервиса БД.", status_code=502
+            ) from exc
+        trades_by_security: Dict[int, List[Dict[str, Any]]] = {}
+        for trade in trades:
+            trades_by_security.setdefault(int(trade["security_id"]), []).append(trade)
+
         positions: List[PortfolioPositionInputDTO] = []
         for position in portfolio.get("positions", []):
             if position.get("asset_type") != "bond":
@@ -293,7 +306,10 @@ class PortfolioValuationService:
                     secid=secid,
                     isin=isin,
                     quantity=quantity,
-                    average_purchase_price=None,
+                    average_purchase_price=calculate_average_purchase_price(
+                        trades_by_security.get(int(position["security_id"]), []),
+                        quantity,
+                    ),
                 )
             )
 

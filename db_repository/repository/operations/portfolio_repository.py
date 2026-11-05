@@ -374,5 +374,29 @@ class PortfolioRepository:
             ).fetchall()
             return {**dict(portfolio), "positions": [dict(row) for row in positions]}
 
+    def get_current_position_trades_for_user(
+        self, user_id: str, portfolio_id: int
+    ) -> list[dict[str, Any]]:
+        """Return complete trades for bonds still held in the closing snapshot."""
+        with self._connection() as connection:
+            rows = connection.execute(
+                """SELECT t.*,
+                          s.isin, s.security_code, s.name AS security_name,
+                          s.currency_code AS security_currency_code, s.asset_type,
+                          s.security_category, s.issuer, s.raw_data_json AS security_raw_data_json,
+                          pos.quantity AS current_quantity
+                   FROM portfolio_trades t
+                   JOIN portfolios p ON p.id = t.portfolio_id
+                   JOIN portfolio_positions pos ON pos.portfolio_id = t.portfolio_id
+                       AND pos.security_id = t.security_id
+                       AND pos.snapshot_type = 'CLOSING'
+                   JOIN portfolio_securities s ON s.id = pos.security_id
+                   WHERE p.id = ? AND p.user_id = ? AND pos.quantity > 0
+                     AND s.asset_type = 'bond'
+                   ORDER BY t.security_id, t.trade_date, t.id""",
+                (portfolio_id, user_id),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
 
 __all__ = ["PortfolioRepository"]

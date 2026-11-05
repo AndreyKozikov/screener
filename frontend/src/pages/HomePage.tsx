@@ -733,6 +733,7 @@ export const HomePage: React.FC = () => {
     if (currentTab === 2) return forecastSubView ? `forecast:${forecastSubView}` : 'forecasts';
     if (currentTab === 3) {
       if (portfolioModule === 'PORTFOLIO') return 'portfolio:holdings';
+      if (portfolioModule === 'DEALS') return 'portfolio:deals';
       if (portfolioModule === 'CALENDAR') return 'portfolio:calendar';
       if (portfolioModule === 'ANALYTICS') return 'portfolio:analytics';
       return 'portfolio';

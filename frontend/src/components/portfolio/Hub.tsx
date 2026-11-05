@@ -3,6 +3,7 @@ import { Box, Typography } from '@mui/material';
 import PortfolioIcon from '@mui/icons-material/AccountBalanceWallet';
 import CalendarIcon from '@mui/icons-material/Event';
 import AnalyticsIcon from '@mui/icons-material/Analytics';
+import DealsIcon from '@mui/icons-material/ReceiptLong';
 import { HubCard } from './HubCard';
 import { usePortfolioStore } from '../../stores/portfolioStore';
 import { formatDate } from '../../utils/formatters';
@@ -114,6 +115,17 @@ export const Hub: React.FC<HubProps> = ({ onModuleSelect }) => {
     />
   );
 
+  const dealsCard = (
+    <HubCard
+      title="Сделки"
+      value="Все"
+      subtitle="Операции по облигациям портфеля"
+      icon={<DealsIcon />}
+      color="#1769E8"
+      onClick={() => onModuleSelect('DEALS')}
+    />
+  );
+
   return (
     <Box 
       sx={{ 
@@ -138,6 +150,7 @@ export const Hub: React.FC<HubProps> = ({ onModuleSelect }) => {
       </Typography>
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)' }, gap: 3 }}>
         {portfolioCard}
+        {dealsCard}
         {calendarCard}
         {analyticsCard}
       </Box>

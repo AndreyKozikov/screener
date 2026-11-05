@@ -161,7 +161,7 @@ _ALLOWED_OPERATIONS: dict[str, frozenset[str]] = {
         "get_by_secid_date_range", "get_first_tradedate", "get_last_tradedate", "save_records",
     }),
     "users": frozenset({"create", "get_by_email", "get_by_id"}),
-    "portfolios": frozenset({"find_duplicate", "save_report_import", "list_for_user", "get_for_user", "get_current_positions_for_user", "delete_for_user"}),
+    "portfolios": frozenset({"find_duplicate", "save_report_import", "list_for_user", "get_for_user", "get_current_positions_for_user", "get_current_position_trades_for_user", "delete_for_user"}),
 }
 
 
