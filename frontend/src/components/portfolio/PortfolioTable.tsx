@@ -22,7 +22,6 @@ import { EmptyState } from '../common/EmptyState';
 import type { BondListItem, PortfolioBond } from '../../types/bond';
 import { PortfolioExportDialog } from './PortfolioExportDialog';
 import { PortfolioReportImportDialog } from './PortfolioReportImportDialog';
-import { ImportedPortfolioListDialog } from './ImportedPortfolioListDialog';
 import { exportPortfolio, type PortfolioExportFormat } from '../../utils/portfolioExport';
 import { deleteImportedPortfolio, fetchImportedPortfolios, fetchImportedPortfolioTable, type ImportedPortfolioSummary } from '../../api/portfolioReportImport';
 import { RatingDisplay } from '../bonds/RatingDisplay';
@@ -62,7 +61,6 @@ export const PortfolioTable: React.FC = () => {
   const portfolioCellClickedRef = useRef(false);
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
   const [isReportImportDialogOpen, setIsReportImportDialogOpen] = useState(false);
-  const [isImportedPortfolioListOpen, setIsImportedPortfolioListOpen] = useState(false);
   const [isDeletePortfolioDialogOpen, setIsDeletePortfolioDialogOpen] = useState(false);
   const [isDeletingPortfolio, setIsDeletingPortfolio] = useState(false);
   const [importedReportPortfolios, setImportedReportPortfolios] = useState<ImportedPortfolioSummary[]>([]);
@@ -903,11 +901,6 @@ export const PortfolioTable: React.FC = () => {
             onClose={() => setIsReportImportDialogOpen(false)}
             onImported={() => { void refreshImportedReportPortfolios(); }}
           />
-          <ImportedPortfolioListDialog
-            open={isImportedPortfolioListOpen}
-            portfolios={importedReportPortfolios}
-            onClose={() => setIsImportedPortfolioListOpen(false)}
-          />
           {deletePortfolioDialog}
         </Card>
       </Box>
@@ -1208,11 +1201,6 @@ export const PortfolioTable: React.FC = () => {
           open={isReportImportDialogOpen}
           onClose={() => setIsReportImportDialogOpen(false)}
           onImported={() => { void refreshImportedReportPortfolios(); }}
-        />
-        <ImportedPortfolioListDialog
-          open={isImportedPortfolioListOpen}
-          portfolios={importedReportPortfolios}
-          onClose={() => setIsImportedPortfolioListOpen(false)}
         />
           {deletePortfolioDialog}
       </Card>

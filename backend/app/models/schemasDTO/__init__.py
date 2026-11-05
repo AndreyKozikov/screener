@@ -3,10 +3,6 @@
 from app.models.schemasDTO.bond_float_params_dto import BondFloatParamsDTO
 from app.models.schemasDTO.bond_list_dto import BondDetail, BondListItem
 from app.models.schemasDTO.bonds_dto import BondDetailDTO, BondScreenerDTO, round_float_for_api
-from app.models.schemasDTO.broker_portfolio_dto import (
-    BrokerPortfolioImportResponse,
-    BrokerPortfolioPositionDTO,
-)
 from app.models.schemasDTO.coupons import (
     Coupon,
     CouponsBySecid,
@@ -43,8 +39,6 @@ __all__ = [
     "BondDetailDTO",
     "BondListItem",
     "BondScreenerDTO",
-    "BrokerPortfolioImportResponse",
-    "BrokerPortfolioPositionDTO",
     "round_float_for_api",
     "Coupon",
     "CouponsBySecid",

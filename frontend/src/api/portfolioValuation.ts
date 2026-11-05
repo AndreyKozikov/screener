@@ -1,5 +1,4 @@
 import { apiClient } from './client';
-import type { PortfolioBond } from '../types/bond';
 
 export interface PortfolioPositionValuation {
   bond_id: number | null;
@@ -41,22 +40,6 @@ export interface PortfolioValuation {
   positions: PortfolioPositionValuation[];
   warnings: string[];
 }
-
-export const fetchPortfolioValuation = async (
-  bonds: PortfolioBond[],
-  valuationDate: string,
-): Promise<PortfolioValuation> => {
-  const response = await apiClient.post<PortfolioValuation>('/portfolio/valuation', {
-    valuation_date: valuationDate,
-    positions: bonds.map((bond) => ({
-      secid: bond.SECID,
-      isin: bond.ISIN,
-      quantity: bond.quantity,
-      average_purchase_price: bond.averagePurchasePrice,
-    })),
-  });
-  return response.data;
-};
 
 export const fetchSavedPortfolioValuation = async (
   portfolioId: number,

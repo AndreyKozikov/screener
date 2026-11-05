@@ -136,7 +136,6 @@ async def root():
             "health": "/health",
             "bonds": "/api/bonds",
             "bond_detail": "/api/bonds/{secid}",
-            "portfolio_broker_import": "/api/portfolio/import/broker-report",
             "portfolio_report_import": "/api/portfolios/import",
             "columns": "/api/columns",
             "descriptions": "/api/descriptions",
