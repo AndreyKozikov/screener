@@ -135,7 +135,8 @@ _ALLOWED_OPERATIONS: dict[str, frozenset[str]] = {
     "bond_float_params": frozenset({"get_bond_ids_with_find", "get_by_bond_id", "get_existing_bond_ids", "upsert"}),
     "bond_ratings": frozenset({"get_agency_name_short_ru_by_agency_id", "get_ratings_by_secid", "upsert_ratings_for_bond"}),
     "bonds": frozenset({
-        "get_all_secids", "get_bond_detail_by_isin", "get_bond_detail_by_secid", "get_bond_id_by_secid", "get_bonds_for_ratings_pipeline",
+        "get_all_bond_secids", "get_all_bonds_metadata", "get_all_secids", "get_bond_detail_by_isin",
+        "get_bond_detail_by_secid", "get_bond_id_by_secid", "get_bonds_for_ratings_pipeline",
         "get_emitent_inn_by_secid", "get_floater_secids", "get_id_secid_list",
         "get_reg_number_by_secid", "get_secids_by_ids", "get_secids_by_regnumber",
     }),
@@ -143,8 +144,11 @@ _ALLOWED_OPERATIONS: dict[str, frozenset[str]] = {
     "coupons": frozenset({"fetch_coupons_for_frontend", "fetch_coupons_raw", "has_coupons_for_secid", "save_moex_coupons"}),
     "kbd": frozenset({"get_kbd_data", "get_last_kbd_date", "save_kbd_records"}),
     "descriptions": frozenset({"get_descriptions_formatted"}),
-    "emission_documents": frozenset({"insert_batch"}),
-    "emitent_edisclosure": frozenset({"get_edisclosure_id_by_emitent_id", "get_emitents_ordered_by_missing_docs", "get_existing_emitent_ids", "upsert_mapping"}),
+    "emission_documents": frozenset({"get_all_documents_by_metadata", "get_by_inn_and_reg_number", "insert_batch"}),
+    "emitent_edisclosure": frozenset({
+        "get_edisclosure_id_by_emitent_id", "get_emitent_id_by_edisclosure_id",
+        "get_emitents_ordered_by_missing_docs", "get_existing_emitent_ids", "upsert_mapping",
+    }),
     "emitents": frozenset({
         "get_all_emitent_titles", "get_emitent_data_by_secid", "get_emitent_id_by_inn", "get_emitents_with_inn",
         "get_secid_to_emitent_title_index",

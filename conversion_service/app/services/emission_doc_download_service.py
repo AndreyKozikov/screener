@@ -20,19 +20,17 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 import rarfile
 from conversion_service.app.core.exceptions import PdfConversionConnectionError
-from conversion_service.app.repository.db.emission_document_repository import EmissionDocumentRepository
-from conversion_service.app.repository.files.file_storage import FileStorage
-from conversion_service.app.services.bonds_service import (
-    get_emitent_inn_by_secid,
-    get_all_bond_secids,
-    get_reg_number_by_secid,
-    get_all_bonds_metadata,
+from conversion_service.app.repository.db.remote_repository import (
+    BondsRepository,
+    EmissionDocumentRepository,
 )
+from conversion_service.app.repository.files.file_storage import FileStorage
 from conversion_service.app.services.pdf_conversion_service import PdfConversionService
 from conversion_service.app.utils.edisclosure_utils import (
     clean_markdown_after_pdf2md,
     download_emission_file,
     extract_archive_to_dir,
+    resolve_emission_file_url,
     sanitize_filename,
 )
 from config.paths import DATA_DIR
@@ -50,6 +48,22 @@ _EXTENSION_MIME_MAP: Dict[str, str] = {
     ".doc": "application/msword",
     ".rtf": "application/rtf",
 }
+
+
+def _bond_result(
+    ok: bool,
+    reason: str,
+    documents_found: int = 0,
+    documents_completed: int = 0,
+) -> Dict[str, Any]:
+    """Формирует структурированный результат обработки одной облигации."""
+    return {
+        "ok": ok,
+        "reason": reason,
+        "documents_found": documents_found,
+        "documents_completed": documents_completed,
+        "documents_pending": max(documents_found - documents_completed, 0),
+    }
 
 
 def _get_pipeline_logger() -> logging.Logger:
@@ -102,6 +116,7 @@ class EmissionDocDownloadService:
 
     def __init__(self) -> None:
         self._file_storage: FileStorage = FileStorage()
+        self._bonds_repo: BondsRepository = BondsRepository()
         self._emission_doc_repo: EmissionDocumentRepository = EmissionDocumentRepository()
 
     # ------------------------------------------------------------------
@@ -129,15 +144,43 @@ class EmissionDocDownloadService:
             Summary dict with processing statistics.
         """
         pl_logger: logging.Logger = _get_pipeline_logger()
+        pl_logger.info(
+            "Request params: secid=%r, limit=%r, rating=%r, "
+            "force_recheck=%s, keep_source_files=%s",
+            secid,
+            limit,
+            rating,
+            force_recheck,
+            keep_source_files,
+        )
 
         if secid and secid.strip():
             sid = secid.strip()
-            inn = get_emitent_inn_by_secid(sid)
-            reg_number = get_reg_number_by_secid(sid)
+            inn = self._bonds_repo.get_emitent_inn_by_secid(sid)
+            reg_number = self._bonds_repo.get_reg_number_by_secid(sid)
             expected_urls = None
             if inn and reg_number:
-                db_records = self._emission_doc_repo.get_by_inn_and_reg_number(inn, reg_number)
+                db_records = self._emission_doc_repo.get_by_inn_and_reg_number(
+                    inn,
+                    reg_number,
+                    diagnose_other_issuers=True,
+                )
                 expected_urls = [str(rec["file_url"]).strip() for rec in db_records if rec.get("file_url")]
+                pl_logger.info(
+                    "[%s] Metadata resolved: inn=%r, reg_number=%r, documents_in_db=%d",
+                    sid,
+                    inn,
+                    reg_number,
+                    len(expected_urls),
+                )
+            else:
+                pl_logger.warning(
+                    "[%s] Metadata not found: inn=%r, reg_number=%r "
+                    "(bond is missing in DB or has PACT boardid)",
+                    sid,
+                    inn,
+                    reg_number,
+                )
 
             return self._process_single_by_secid(
                 sid,
@@ -153,10 +196,10 @@ class EmissionDocDownloadService:
         bonds_metadata = {}
         all_docs_by_metadata = {}
         if force_recheck:
-            bonds_metadata = get_all_bonds_metadata(rating=rating)
+            bonds_metadata = self._bonds_repo.get_all_bonds_metadata(rating=rating)
             all_docs_by_metadata = self._emission_doc_repo.get_all_documents_by_metadata()
 
-        all_secids: List[str] = get_all_bond_secids(rating=rating)
+        all_secids: List[str] = self._bonds_repo.get_all_bond_secids(rating=rating)
         total_all: int = len(all_secids)
 
         # Determine which bonds need processing.
@@ -200,6 +243,7 @@ class EmissionDocDownloadService:
         processed: int = 0
         succeeded: int = 0
         failed_secids: List[str] = []
+        reason_counts: Dict[str, int] = {}
 
         for idx, sid in enumerate(to_process, start=1):
             processed += 1
@@ -209,7 +253,7 @@ class EmissionDocDownloadService:
                 expected_urls = all_docs_by_metadata.get((inn, reg_number))
 
             try:
-                ok: bool = self._process_single_bond(
+                result: Dict[str, Any] = self._process_single_bond(
                     sid,
                     pl_logger,
                     force_recheck=force_recheck,
@@ -217,13 +261,25 @@ class EmissionDocDownloadService:
                     inn=inn,
                     reg_number=reg_number,
                     expected_urls=expected_urls,
+                    diagnose_other_issuers=False,
                 )
+                ok: bool = bool(result.get("ok"))
+                reason: str = str(result.get("reason") or "unknown")
+                reason_counts[reason] = reason_counts.get(reason, 0) + 1
                 if ok:
                     succeeded += 1
-                    print(f"[DOWNLOAD] {idx}/{total} — {sid}: OK", flush=True)
+                    print(
+                        f"[DOWNLOAD] {idx}/{total} — {sid}: OK "
+                        f"(documents={result.get('documents_found', 0)})",
+                        flush=True,
+                    )
                 else:
                     failed_secids.append(sid)
-                    print(f"[DOWNLOAD] {idx}/{total} — {sid}: incomplete", flush=True)
+                    print(
+                        f"[DOWNLOAD] {idx}/{total} — {sid}: {reason} "
+                        f"(documents={result.get('documents_found', 0)})",
+                        flush=True,
+                    )
             except PdfConversionConnectionError as exc:
                 pl_logger.error(
                     "[PDF2MD ERROR] Pipeline stopped, secid=%s: %s", sid, exc, exc_info=True,
@@ -234,6 +290,7 @@ class EmissionDocDownloadService:
                 )
                 raise
             except Exception as exc:
+                reason_counts["exception"] = reason_counts.get("exception", 0) + 1
                 pl_logger.error(
                     "[ERROR] secid=%s: %s", sid, exc, exc_info=True,
                 )
@@ -244,9 +301,9 @@ class EmissionDocDownloadService:
             f"[DOWNLOAD PIPELINE DONE] Processed: {processed}, "
             f"succeeded: {succeeded}, failed: {len(failed_secids)}"
         )
-        pl_logger.info(summary)
+        pl_logger.info("%s; reasons=%s", summary, reason_counts)
         pl_logger.info("=" * 60)
-        print(summary, flush=True)
+        print(f"{summary}; reasons={reason_counts}", flush=True)
 
         return {
             "status": "ok",
@@ -256,6 +313,7 @@ class EmissionDocDownloadService:
             "succeeded": succeeded,
             "failed": len(failed_secids),
             "failed_secids": failed_secids,
+            "reason_counts": reason_counts,
         }
 
 
@@ -413,20 +471,31 @@ class EmissionDocDownloadService:
             return True
 
         if not inn or not reg_number:
-            inn = get_emitent_inn_by_secid(secid)
-            reg_number = get_reg_number_by_secid(secid)
+            inn = self._bonds_repo.get_emitent_inn_by_secid(secid)
+            reg_number = self._bonds_repo.get_reg_number_by_secid(secid)
 
         if not inn or not reg_number:
             return False
 
         if expected_urls is None:
-            db_records = self._emission_doc_repo.get_by_inn_and_reg_number(inn, reg_number)
+            db_records = self._emission_doc_repo.get_by_inn_and_reg_number(
+                inn,
+                reg_number,
+                diagnose_other_issuers=False,
+            )
             urls = [str(rec["file_url"]).strip() for rec in db_records if rec.get("file_url")]
         else:
             urls = expected_urls
 
         if not urls:
             if manifest.get("fully_processed") is not True:
+                pl_logger.info(
+                    "[%s] no_documents in DB for inn=%s, reg_number=%s; "
+                    "marking fully_processed=True (batch will skip this bond)",
+                    secid,
+                    inn,
+                    reg_number,
+                )
                 manifest["fully_processed"] = True
                 self._save_manifest(bond_dir, manifest)
             return True
@@ -463,7 +532,11 @@ class EmissionDocDownloadService:
                             is_completed = True
 
             if not is_completed:
-                pl_logger.debug("[%s] URL not fully processed: %s", secid, url)
+                pl_logger.info(
+                    "[%s] URL not fully processed: %s",
+                    secid,
+                    resolve_emission_file_url(url),
+                )
                 # Первым делом делаем отметку, что документы обработаны не полностью
                 if manifest.get("fully_processed") is not False:
                     manifest["fully_processed"] = False
@@ -477,7 +550,6 @@ class EmissionDocDownloadService:
             self._save_manifest(bond_dir, manifest)
         return True
 
-
     def _process_single_by_secid(
         self,
         secid: str,
@@ -490,7 +562,7 @@ class EmissionDocDownloadService:
     ) -> Dict[str, Any]:
         """Process a single bond identified by its SECID."""
         try:
-            ok: bool = self._process_single_bond(
+            result: Dict[str, Any] = self._process_single_bond(
                 secid,
                 pl_logger,
                 force_recheck=force_recheck,
@@ -499,17 +571,28 @@ class EmissionDocDownloadService:
                 reg_number=reg_number,
                 expected_urls=expected_urls,
             )
+            ok: bool = bool(result.get("ok"))
             return {
-                "status": "ok",
+                "status": "ok" if ok else "error",
                 "secid": secid,
                 "ok": ok,
+                "reason": result.get("reason"),
+                "documents_found": result.get("documents_found", 0),
+                "documents_completed": result.get("documents_completed", 0),
+                "documents_pending": result.get("documents_pending", 0),
+                "force_recheck": force_recheck,
+                "keep_source_files": keep_source_files,
             }
         except Exception as exc:
             pl_logger.error("Error processing secid %s: %s", secid, exc, exc_info=True)
             return {
                 "status": "error",
                 "secid": secid,
+                "ok": False,
+                "reason": "exception",
                 "detail": str(exc),
+                "force_recheck": force_recheck,
+                "keep_source_files": keep_source_files,
             }
 
     def _process_single_bond(
@@ -521,8 +604,13 @@ class EmissionDocDownloadService:
         inn: Optional[str] = None,
         reg_number: Optional[str] = None,
         expected_urls: Optional[List[str]] = None,
-    ) -> bool:
+        diagnose_other_issuers: bool = True,
+    ) -> Dict[str, Any]:
         """Download and convert emission documents for a single bond.
+
+        Returns:
+            Структурированный результат: ok, reason, documents_found,
+            documents_completed, documents_pending.
 
         Logic for multi-volume RAR:
         - Download all missing URLs to local files.
@@ -536,24 +624,56 @@ class EmissionDocDownloadService:
         bond_data_dir.mkdir(parents=True, exist_ok=True)
 
         if not inn or not reg_number:
-            inn = get_emitent_inn_by_secid(secid)
-            reg_number = get_reg_number_by_secid(secid)
+            inn = self._bonds_repo.get_emitent_inn_by_secid(secid)
+            reg_number = self._bonds_repo.get_reg_number_by_secid(secid)
 
         if not inn or not reg_number:
-            pl_logger.warning("[SKIP] secid=%s: metadata missing", secid)
-            return False
+            pl_logger.warning(
+                "[SKIP] secid=%s: metadata missing (inn=%r, reg_number=%r). "
+                "Проверьте bonds/bond_emitents/bondsecurity: эмитент не найден, "
+                "нет ИНН/регномера или у бумаги boardid=PACT.",
+                secid,
+                inn,
+                reg_number,
+            )
+            return _bond_result(ok=False, reason="no_metadata")
+
+        pl_logger.info("[%s] Metadata: inn=%s, reg_number=%s", secid, inn, reg_number)
 
         manifest: Dict[str, Any] = self._load_manifest(bond_data_dir)
         archives: Dict[str, Any] = manifest["archives"]
 
         if expected_urls is None:
-            db_records = self._emission_doc_repo.get_by_inn_and_reg_number(inn, reg_number)
+            db_records = self._emission_doc_repo.get_by_inn_and_reg_number(
+                inn,
+                reg_number,
+                diagnose_other_issuers=diagnose_other_issuers,
+            )
             urls = [str(rec["file_url"]).strip() for rec in db_records if rec.get("file_url")]
+            urls_source = "database"
         else:
             urls = expected_urls
+            urls_source = "precomputed"
+
+        pl_logger.info(
+            "[%s] Emission documents: source=%s, found=%d",
+            secid,
+            urls_source,
+            len(urls),
+        )
 
         if not urls:
-            return True
+            pl_logger.warning(
+                "[%s] no_documents: в БД нет ни одной строки emission_documents "
+                "с непустым file_url для inn=%s, reg_number=%s. Скачивать нечего. "
+                "Если документы должны быть на e-disclosure, проверьте лог "
+                "POST /api/edisclosure/fetch-emission-documents: страница могла быть "
+                "пустой/заблокированной антибот-защитой либо изменилась вёрстка таблицы.",
+                secid,
+                inn,
+                reg_number,
+            )
+            return _bond_result(ok=False, reason="no_documents")
 
         # --- Phase 1: Download missing URLs and collect all local files for processing ---
         pl_logger.info("[%s] Phase 1/4: Checking/Downloading files", secid)
@@ -604,6 +724,11 @@ class EmissionDocDownloadService:
                     self._save_manifest(bond_data_dir, manifest)
 
             if is_completed:
+                pl_logger.info(
+                    "[%s] URL already completed, skipping: %s",
+                    secid,
+                    resolve_emission_file_url(url),
+                )
                 continue
 
             # Determine local filename (initial guess)
@@ -615,14 +740,28 @@ class EmissionDocDownloadService:
 
             safe_initial_filename = sanitize_filename(initial_filename)
             local_path = bond_data_dir / safe_initial_filename
+            pl_logger.info(
+                "[%s] Checking URL: %s (local file: %s, exists=%s)",
+                secid,
+                resolve_emission_file_url(url),
+                local_path.name,
+                local_path.exists(),
+            )
             if not local_path.exists():
                 # Try to use company page as referer if we can find it
                 referer = None
-                inn = get_emitent_inn_by_secid(secid)
+                if not inn:
+                    inn = self._bonds_repo.get_emitent_inn_by_secid(secid)
                 if inn:
                     # This is a guess, but often helps
                     referer = f"https://www.e-disclosure.ru/portal/company.aspx?id={inn}"
 
+                pl_logger.info(
+                    "[%s] Downloading URL: %s (referer: %s)",
+                    secid,
+                    resolve_emission_file_url(url),
+                    referer or "-",
+                )
                 try:
                     content, real_filename = download_emission_file(url, referer=referer)
                     if content:
@@ -632,13 +771,24 @@ class EmissionDocDownloadService:
                             archives.setdefault(url, {}).setdefault("files_mapping", {})[safe_real_filename] = real_filename
                         else:
                             archives.setdefault(url, {}).setdefault("files_mapping", {})[safe_initial_filename] = initial_filename
-                            
+                             
                         local_path.write_bytes(content)
+                        pl_logger.info(
+                            "[%s] Downloaded URL: %s -> %s (%d bytes)",
+                            secid,
+                            resolve_emission_file_url(url),
+                            local_path.name,
+                            len(content),
+                        )
                         # Clear error if it was there
                         if url in archives:
                             archives[url]["error"] = None
                     else:
-                        pl_logger.error("[%s] Failed to download: %s", secid, url)
+                        pl_logger.error(
+                            "[%s] Failed to download: %s",
+                            secid,
+                            resolve_emission_file_url(url),
+                        )
                         any_download_error = True
                         archives[url] = {
                             "status": "error",
@@ -647,7 +797,12 @@ class EmissionDocDownloadService:
                         }
                         continue
                 except Exception as e:
-                    pl_logger.error("[%s] Exception during download %s: %s", secid, url, e)
+                    pl_logger.error(
+                        "[%s] Exception during download %s: %s",
+                        secid,
+                        resolve_emission_file_url(url),
+                        e,
+                    )
                     any_download_error = True
                     archives[url] = {
                         "status": "error",
@@ -668,7 +823,14 @@ class EmissionDocDownloadService:
                 files_to_process.add(f)
 
         if not files_to_process:
-            return self._is_bond_fully_processed(
+            completed_count = sum(
+                1
+                for url in urls
+                if isinstance(archives.get(url), dict)
+                and archives[url].get("status") == "completed"
+                and not archives[url].get("error")
+            )
+            fully_processed = self._is_bond_fully_processed(
                 secid,
                 bond_data_dir,
                 pl_logger,
@@ -676,6 +838,20 @@ class EmissionDocDownloadService:
                 inn=inn,
                 reg_number=reg_number,
                 expected_urls=urls,
+            )
+            if not fully_processed:
+                pl_logger.warning(
+                    "[%s] incomplete: files_to_process пуст, но manifest не fully_processed "
+                    "(documents_found=%d, completed=%d)",
+                    secid,
+                    len(urls),
+                    completed_count,
+                )
+            return _bond_result(
+                ok=fully_processed,
+                reason="completed" if fully_processed else "incomplete",
+                documents_found=len(urls),
+                documents_completed=completed_count,
             )
 
         # --- Phase 2: Extraction ---
@@ -987,8 +1163,29 @@ class EmissionDocDownloadService:
         if not keep_source_files and manifest.get("fully_processed"):
             pl_logger.info("[%s] Phase 6/6: Cleaning up source files", secid)
             self._cleanup_source_files(bond_data_dir)
-        
-        return manifest.get("fully_processed", False)
+
+        completed_count = sum(
+            1
+            for url in urls
+            if isinstance(archives.get(url), dict)
+            and archives[url].get("status") == "completed"
+            and not archives[url].get("error")
+        )
+        fully_processed = bool(manifest.get("fully_processed", False))
+        if not fully_processed:
+            pl_logger.warning(
+                "[%s] incomplete: manifest.fully_processed=false после пайплайна "
+                "(documents_found=%d, completed=%d)",
+                secid,
+                len(urls),
+                completed_count,
+            )
+        return _bond_result(
+            ok=fully_processed,
+            reason="completed" if fully_processed else "incomplete",
+            documents_found=len(urls),
+            documents_completed=completed_count,
+        )
 
     def _convert_single_to_markdown(
         self,

@@ -27,9 +27,8 @@ import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import HomeOutlinedIcon from '@mui/icons-material/HomeOutlined';
 import SettingsIcon from '@mui/icons-material/Settings';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
-import SmartToyIcon from '@mui/icons-material/SmartToy';
-import QuestionAnswerIcon from '@mui/icons-material/QuestionAnswer';
 import SyncIcon from '@mui/icons-material/Sync';
+import QuestionAnswerIcon from '@mui/icons-material/QuestionAnswer';
 import PsychologyIcon from '@mui/icons-material/Psychology';
 import { SiteNavigationDrawer } from '../components/common/SiteNavigationDrawer';
 import {
@@ -54,24 +53,6 @@ import {
 const MUTED_TEXT = '#4A5A72';
 
 // ── Option lists (фронтенд-настройки моделей анализа) ─────────────────────────
-
-const GPT_MODELS = [
-  { id: 'gpt-5.1', label: 'GPT-5.1' },
-  { id: 'gpt-4o', label: 'GPT-4o' },
-  { id: 'gpt-4o-mini', label: 'GPT-4o Mini' },
-];
-
-const QWEN_MODELS = [
-  { id: 'qwen/qwen3-235b-a22b:free', label: 'Qwen3 235B A22B (Free)' },
-  { id: 'qwen/qwen3-30b-a3b:free', label: 'Qwen3 30B A3B (Free)' },
-  { id: 'qwen/qwen-2.5-72b-instruct:free', label: 'Qwen 2.5 72B Instruct (Free)' },
-];
-
-const GROK_MODELS = [
-  { id: 'x-ai/grok-4.1-fast:free', label: 'Grok 4.1 Fast (Free)' },
-  { id: 'x-ai/grok-4.1:free', label: 'Grok 4.1 (Free)' },
-  { id: 'x-ai/grok-3-mini-beta', label: 'Grok 3 Mini Beta' },
-];
 
 const BOND_CHAT_MODELS = [
   { id: 'Автоматический выбор доступной модели', label: 'Автоматический выбор доступной модели' },
@@ -348,7 +329,7 @@ const BACKEND_TAB_GROUPS = ['agent', 'providers', 'local', 'services', 'keys', '
  * Страница настроек приложения, реализованная в виде вкладок.
  *
  * Вкладка «Модели анализа» — настройки фронтенда (localStorage): какие LLM
- * используются для анализа облигаций, чата по выпуску и флоатеров.
+ * используются для чата по выпуску и флоатеров.
  * Остальные вкладки — runtime-настройки бэкенда из конфигурационных файлов
  * (config/settings.py, config/config_llm.toml): они сохраняются на сервере
  * через PUT /api/settings и применяются без правки кода.
@@ -771,40 +752,6 @@ export const SettingsPage: React.FC = () => {
                       Настройки языковых моделей, которые фронтенд передаёт на сервер при каждом запросе.
                       Сохраняются в браузере (localStorage) и применяются сразу.
                     </Typography>
-
-                    <SectionHeader
-                      icon={<SmartToyIcon sx={{ fontSize: 20 }} />}
-                      title="Анализ облигаций (AI)"
-                      subtitle="Скринер → Сравнение → AI-анализ"
-                      accentColor="#1976d2"
-                      description="Здесь выбираются языковые модели, которые запускаются при нажатии кнопки анализа в разделе «Сравнение». Для выбранных облигаций модели независимо разбирают риски, доходность и особенности выпусков, а результат объединяется в общий отчёт."
-                    />
-                    <FrontendField
-                      label="GPT (OpenAI) — модель"
-                      description="Модель OpenAI для глубокого разбора выбранных выпусков: оценивает кредитное качество, рассчитывает ключевые метрики и формулирует выводы."
-                      value={frontendDraft.llmGptModel}
-                      options={GPT_MODELS}
-                      defaultValue={DEFAULT_SETTINGS.llmGptModel}
-                      onChange={handleFrontendChange('llmGptModel')}
-                    />
-                    <FrontendField
-                      label="Qwen (OpenRouter) — модель"
-                      description="Бесплатная модель через OpenRouter. Запускается параллельно с GPT и Grok для независимого второго взгляда на те же облигации."
-                      value={frontendDraft.llmQwenModel}
-                      options={QWEN_MODELS}
-                      defaultValue={DEFAULT_SETTINGS.llmQwenModel}
-                      onChange={handleFrontendChange('llmQwenModel')}
-                    />
-                    <FrontendField
-                      label="Grok (OpenRouter) — модель"
-                      description="Модель xAI через OpenRouter. Даёт третий, альтернативный разбор: акцентирует внимание на ликвидности, офертах и событиях эмитента."
-                      value={frontendDraft.llmGrokModel}
-                      options={GROK_MODELS}
-                      defaultValue={DEFAULT_SETTINGS.llmGrokModel}
-                      onChange={handleFrontendChange('llmGrokModel')}
-                    />
-
-                    <Divider sx={{ my: 2.5 }} />
 
                     <SectionHeader
                       icon={<QuestionAnswerIcon sx={{ fontSize: 20 }} />}

@@ -228,32 +228,35 @@ class BondsRepository:
     def get_reg_number_by_secid(self, secid: str) -> Optional[str]:
         """Получает регистрационный номер облигации по SECID из таблицы bondsecurity.
 
+        Погашенные облигации не исключаются: пакетный пайплайн
+        (get_all_bond_secids) тоже их обрабатывает, поэтому одиночный запрос
+        по secid должен вести себя так же. Исключаются только PACT.
+
         Args:
             secid: Идентификатор ценной бумаги (SECID).
 
         Returns:
             Регистрационный номер или None, если не найден.
         """
-        stmt = text(f"""
+        stmt = text("""
             SELECT bs.reg_number
             FROM bonds b
             JOIN bondsecurity bs ON bs.bond_id = b.id
             WHERE b.secid = :secid 
                 AND bs.reg_number IS NOT NULL AND trim(bs.reg_number) != ''
                 AND (b.boardid IS NULL OR UPPER(TRIM(b.boardid)) != 'PACT')
-                AND {self._not_matured_sql("b")}
             LIMIT 1
         """)
         try:
             with Session(self._engine) as session:
-                params = {"secid": secid.strip(), **self._active_cutoff_params()}
+                params = {"secid": secid.strip()}
                 row = session.execute(stmt, params).fetchone()
                 if row is None:
                     return None
                 reg = row[0]
                 return str(reg).strip() if reg else None
         except Exception as e:
-            self.logger.warning(
+            self.logger.exception(
                 "Ошибка при получении reg_number для secid=%s: %s",
                 secid,
                 e,
@@ -263,6 +266,10 @@ class BondsRepository:
     def get_emitent_inn_by_secid(self, secid: str) -> Optional[str]:
         """Получает ИНН эмитента по SECID облигации из таблицы emitents.
 
+        Погашенные облигации не исключаются: пакетный пайплайн
+        (get_all_bond_secids) тоже их обрабатывает, поэтому одиночный запрос
+        по secid должен вести себя так же. Исключаются только PACT.
+
         Связь: bond.secid -> bond_emitents.emitent_id -> emitents.id -> emitents.inn.
 
         Args:
@@ -271,7 +278,7 @@ class BondsRepository:
         Returns:
             ИНН эмитента или None, если эмитент или ИНН отсутствуют.
         """
-        stmt = text(f"""
+        stmt = text("""
             SELECT e.inn
             FROM bonds b
             JOIN bond_emitents be ON be.secid = b.secid
@@ -279,18 +286,17 @@ class BondsRepository:
             WHERE b.secid = :secid 
                 AND e.inn IS NOT NULL AND trim(e.inn) != ''
                 AND (b.boardid IS NULL OR UPPER(TRIM(b.boardid)) != 'PACT')
-                AND {self._not_matured_sql("b")}
         """)
         try:
             with Session(self._engine) as session:
-                params = {"secid": secid, **self._active_cutoff_params()}
+                params = {"secid": secid}
                 row = session.execute(stmt, params).fetchone()
                 if row is None:
                     return None
                 inn = row[0]
                 return str(inn).strip() if inn else None
         except Exception as e:
-            self.logger.warning(
+            self.logger.exception(
                 "Ошибка при получении ИНН эмитента для secid=%s: %s",
                 secid,
                 e,
@@ -490,4 +496,71 @@ class BondsRepository:
                 regnumber, e, exc_info=True,
             )
             return []
+
+    def get_all_bond_secids(self, rating: Optional[str] = None) -> List[str]:
+        """Возвращает список SECID всех облигаций, имеющих регистрационный номер.
+
+        Args:
+            rating: Если указан — фильтр по рейтингу.
+
+        Returns:
+            Список SECID.
+        """
+        stmt = text(f"""
+            SELECT DISTINCT b.secid
+            FROM bonds b
+            JOIN bondsecurity bs ON bs.bond_id = b.id
+            WHERE bs.reg_number IS NOT NULL AND trim(bs.reg_number) != ''
+              AND (b.boardid IS NULL OR UPPER(TRIM(b.boardid)) != 'PACT')
+              {"AND UPPER(TRIM(b.rating)) = :rating" if rating and rating.strip() else ""}
+            ORDER BY b.secid
+        """)
+        params: Dict[str, Any] = {}
+        if rating and rating.strip():
+            params["rating"] = rating.strip().upper()
+        try:
+            with Session(self._engine) as session:
+                rows = session.execute(stmt, params).fetchall()
+                return [str(row[0]).strip() for row in rows if row[0]]
+        except Exception as exc:
+            self.logger.error("Ошибка при получении всех SECID облигаций: %s", exc, exc_info=True)
+            return []
+
+    def get_all_bonds_metadata(
+        self, rating: Optional[str] = None
+    ) -> Dict[str, Tuple[str, str]]:
+        """Возвращает словарь {secid: (inn, reg_number)} для всех облигаций с регистрационными номерами.
+
+        Args:
+            rating: Если указан — фильтр по рейтингу.
+
+        Returns:
+            Словарь: ключ — secid, значение — кортеж (inn, reg_number).
+        """
+        stmt = text(f"""
+            SELECT DISTINCT b.secid, trim(e.inn), trim(bs.reg_number)
+            FROM bonds b
+            JOIN bondsecurity bs ON bs.bond_id = b.id
+            JOIN bond_emitents be ON be.secid = b.secid
+            JOIN emitents e ON be.emitent_id = e.id
+            WHERE bs.reg_number IS NOT NULL AND trim(bs.reg_number) != ''
+              AND (b.boardid IS NULL OR UPPER(TRIM(b.boardid)) != 'PACT')
+              {"AND UPPER(TRIM(b.rating)) = :rating" if rating and rating.strip() else ""}
+            ORDER BY b.secid
+        """)
+        params: Dict[str, Any] = {}
+        if rating and rating.strip():
+            params["rating"] = rating.strip().upper()
+        try:
+            with Session(self._engine) as session:
+                rows = session.execute(stmt, params).fetchall()
+                return {
+                    str(row[0]).strip(): (str(row[1]).strip(), str(row[2]).strip())
+                    for row in rows
+                    if row[0] and row[1] and row[2]
+                }
+        except Exception as exc:
+            self.logger.error("Ошибка при получении метаданных облигаций: %s", exc, exc_info=True)
+            return {}
+
 

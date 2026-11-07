@@ -46,15 +46,64 @@ _SUBSECTION_2_3_START: str = (
 _NEXT_SUBSECTION_BOUNDARY: str = r"(?:^\s*(?:##\s*)?(?:2\.\d+|3)\.)"
 
 
-def _normalize_header_cell(text: str) -> str:
-    """Убирает мягкие переносы, переносы строк и лишние пробелы для сопоставления заголовков."""
-    s: str = (
-        text.replace("\u00ad", "")
-        .replace("\u00a0", " ")
-        .replace("\n", " ")
-        .strip()
-    )
+# Невидимые символы, которые e-disclosure может вставлять в ячейки таблицы.
+_INVISIBLE_CHARS: Tuple[str, ...] = (
+    "\u00ad",  # soft hyphen
+    "\u200b",  # zero-width space
+    "\u200c",  # zero-width non-joiner
+    "\u200d",  # zero-width joiner
+    "\ufeff",  # BOM
+    "\u2060",  # word joiner
+)
+
+
+def normalize_cell_value(text: str) -> str:
+    """Убирает невидимые символы, NBSP и схлопывает пробелы в значении ячейки."""
+    s: str = str(text or "")
+    for ch in _INVISIBLE_CHARS:
+        s = s.replace(ch, "")
+    s = s.replace("\u00a0", " ")
     return re.sub(r"\s+", " ", s).strip()
+
+
+def _normalize_header_cell(text: str) -> str:
+    """Убирает невидимые символы и лишние пробелы для сопоставления заголовков."""
+    return normalize_cell_value(text)
+
+
+# Признаки страницы антибот-защиты e-disclosure. Список намеренно содержит
+# только достаточно специфичные маркеры, чтобы не путать обычные страницы
+# (где может встречаться слово captcha в скриптах) с блокировкой.
+_PROTECTION_MARKERS: Tuple[str, ...] = (
+    "подтвердите, что вы не робот",
+    "подтвердите что вы не робот",
+    "проверьте, что вы не робот",
+    "проверка браузера",
+    "доступ временно ограничен",
+    "доступ ограничен",
+    "запрос заблокирован",
+    "just a moment",
+    "checking your browser",
+    "attention required",
+    "access denied",
+    "request blocked",
+    "are you a robot",
+    "verify you are human",
+    "cf-chl",
+    "qrator",
+    "incapsula",
+    "ddos-guard",
+    "security check",
+)
+
+
+def detect_edisclosure_protection(html_content: str) -> Optional[str]:
+    """Возвращает маркер антибот-защиты, если страница похожа на challenge."""
+    lowered: str = (html_content or "").lower()
+    for marker in _PROTECTION_MARKERS:
+        if marker in lowered:
+            return marker
+    return None
 
 
 # Маппинг заголовков страницы (после нормализации) в поля БД
@@ -115,7 +164,7 @@ class _TableParser(HTMLParser):
                     self.header = [_normalize_header_cell(c) for c in self.current_row]
                     self.seen_header = True
                 else:
-                    self.rows.append([c.strip() for c in self.current_row])
+                    self.rows.append([normalize_cell_value(c) for c in self.current_row])
         elif tag in ("td", "th") and self.in_td:
             self.in_td = False
             self.current_row.append(self.current_cell.strip())
@@ -216,7 +265,7 @@ def _row_to_document(
         if field == "file_url":
             doc[field] = value.strip() or None
         else:
-            doc[field] = value.strip() or None
+            doc[field] = normalize_cell_value(value) or None
 
     if log_unmapped and unmapped:
         print(f"[emission_docs] Несопоставленные заголовки (нижний регистр): {unmapped[:10]}", flush=True)
@@ -233,9 +282,29 @@ def parse_emission_documents(html_content: str) -> List[Dict[str, Optional[Union
     """
     print(f"[emission_docs] Старт парсинга, размер HTML={len(html_content or 0)} байт", flush=True)
 
+    protection: Optional[str] = detect_edisclosure_protection(html_content)
+    if protection:
+        print(
+            f"[emission_docs] WARNING: страница похожа на антибот-защиту e-disclosure "
+            f"(маркер={protection!r}, HTML={len(html_content or 0)} символов). "
+            "Это не значит, что у эмитента нет документов.",
+            flush=True,
+        )
+
     table_html: Optional[str] = _extract_table_by_cont_wrap_space_tbl(html_content)
     if table_html is None:
-        print("[emission_docs] Таблица не извлечена (cont_wrap/spaceTbl/table). Завершение.", flush=True)
+        if protection:
+            print(
+                "[emission_docs] Таблица не извлечена из-за антибот-страницы; "
+                "строки документов не получены.",
+                flush=True,
+            )
+        else:
+            print(
+                "[emission_docs] Таблица не извлечена: cont_wrap/spaceTbl/table не найдены. "
+                "Возможные причины: пустая страница, изменилась вёрстка или у эмитента нет документов.",
+                flush=True,
+            )
         return []
 
     parser = _TableParser()
@@ -251,7 +320,11 @@ def parse_emission_documents(html_content: str) -> List[Dict[str, Optional[Union
         print("[emission_docs] Заголовок таблицы пуст. Завершение.", flush=True)
         return []
     if not parser.rows:
-        print("[emission_docs] Нет строк данных после заголовка. Завершение.", flush=True)
+        print(
+            "[emission_docs] Нет строк данных после заголовка. "
+            "Возможно, у эмитента нет документов или страница отдана не полностью.",
+            flush=True,
+        )
         return []
 
     result: List[Dict[str, Optional[Union[str, int]]]] = []

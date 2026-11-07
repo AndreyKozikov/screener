@@ -1,7 +1,17 @@
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import logging
+import os
+import threading
 from typing import Optional, List, Any
 from urllib.request import Request, urlopen
 import orjson
 import requests
+
+logger = logging.getLogger(__name__)
+
+# Ограничение параллельных запросов к MOEX ISS и шаг логирования прогресса.
+_MAX_WORKERS = 16
+_PROGRESS_STEP = 200
 
 
 class MoexLoader:
@@ -10,6 +20,23 @@ class MoexLoader:
         self.url = url
         self.timeout = timeout
         self.user_agent = user_agent
+        self._session_local = threading.local()
+
+    def _get_session(self) -> requests.Session:
+        """Возвращает переиспользуемую HTTP-сессию для текущего потока."""
+        session = getattr(self._session_local, "session", None)
+        if session is None:
+            session = requests.Session()
+            session.headers.update({"User-Agent": self.user_agent})
+            self._session_local.session = session
+        return session
+
+    @staticmethod
+    def _worker_count(total: int) -> int:
+        if total <= 1:
+            return 1
+        cpu = os.cpu_count() or 4
+        return min(_MAX_WORKERS, max(4, cpu * 2), total)
 
     def bonds_data_load(self, url):
         request = Request(url, headers={"User-Agent": self.user_agent})
@@ -31,63 +58,149 @@ class MoexLoader:
                 "Received invalid JSON while refreshing bonds data"
             ) from exc
 
+    def _emitent_info_load_one(self, secid: str) -> Optional[dict[str, Any]]:
+        """Загружает данные эмитента по одному SECID с MOEX ISS."""
+        url = f"https://iss.moex.com/iss/securities.json?q={secid}"
+        try:
+            response = self._get_session().get(url, timeout=self.timeout)
+            response.raise_for_status()
+            payload = response.json()
+        except (requests.RequestException, ValueError):
+            return None
+
+        securities = payload.get("securities", {})
+        columns = securities.get("columns", [])
+        data = securities.get("data", [])
+
+        if not data:
+            return None
+
+        emitent_info = dict(zip(columns, data[0]))
+
+        try:
+            emitent_info["emitent_id"] = int(emitent_info["emitent_id"])
+        except (KeyError, ValueError, TypeError):
+            return None
+
+        inn = emitent_info.get("emitent_inn")
+        if inn is None:
+            return None
+
+        inn = str(inn).strip()
+        if not inn:
+            return None
+        emitent_info["emitent_inn"] = inn
+        return emitent_info
+
+    def _load_emitent_infos(self, secids: list[str]) -> dict[str, dict[str, Any]]:
+        total = len(secids)
+        infos: dict[str, dict[str, Any]] = {}
+        if total == 0:
+            return infos
+
+        workers = self._worker_count(total)
+        logger.info(
+            "[EMITENTS] Загрузка данных эмитентов с MOEX: %s бумаг, потоков: %s",
+            total, workers,
+        )
+
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {
+                executor.submit(self._emitent_info_load_one, secid): secid
+                for secid in secids
+            }
+            for processed, future in enumerate(as_completed(futures), 1):
+                secid = futures[future]
+                try:
+                    info = future.result()
+                except Exception as exc:
+                    logger.warning(
+                        "[EMITENTS] Ошибка загрузки эмитента по %s: %s", secid, exc,
+                    )
+                    info = None
+                if info is not None:
+                    infos[secid] = info
+                if processed % _PROGRESS_STEP == 0 or processed == total:
+                    unique_emitents = len({item["emitent_inn"] for item in infos.values()})
+                    logger.info(
+                        "[EMITENTS] Обработано %s/%s бумаг, найдено эмитентов: %s",
+                        processed, total, unique_emitents,
+                    )
+
+        return infos
+
+    def _load_ratings(
+        self, emitent_ids: list[int],
+    ) -> dict[int, Optional[list[dict[str, Any]]]]:
+        ratings: dict[int, Optional[list[dict[str, Any]]]] = {}
+        total = len(emitent_ids)
+        if total == 0:
+            return ratings
+
+        workers = self._worker_count(total)
+        logger.info(
+            "[EMITENTS] Загрузка рейтингов эмитентов: %s, потоков: %s",
+            total, workers,
+        )
+
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {
+                executor.submit(self.emitent_ratings_load, emitent_id): emitent_id
+                for emitent_id in emitent_ids
+            }
+            for processed, future in enumerate(as_completed(futures), 1):
+                emitent_id = futures[future]
+                try:
+                    ratings[emitent_id] = future.result()
+                except Exception as exc:
+                    logger.warning(
+                        "[EMITENTS] Ошибка загрузки рейтингов для MOEX ID %s: %s",
+                        emitent_id, exc,
+                    )
+                    ratings[emitent_id] = None
+                if processed % _PROGRESS_STEP == 0 or processed == total:
+                    logger.info(
+                        "[EMITENTS] Рейтинги: обработано %s/%s",
+                        processed, total,
+                    )
+
+        return ratings
+
     def emitent_info_load(self, secids: list[str]):
-        emitents: list[dict[str, Any]] = []
-        secid_to_inn: dict[str, str] = {}
-        inn_to_ratings: dict[str, list[dict[str, Any]]] = {}
+        infos = self._load_emitent_infos(secids)
 
         seen_inn: set[str] = set()
-        ratings_cache: dict[int, Optional[list[dict[str, Any]]]] = {}
+        emitents: list[dict[str, Any]] = []
+        secid_to_inn: dict[str, str] = {}
+        emitent_ids: list[int] = []
 
         for secid in secids:
-            url = f"https://iss.moex.com/iss/securities.json?q={secid}"
-            request = Request(url, headers={"User-Agent": "Mozilla/5.0"})
-            try:
-                with urlopen(request, timeout=30) as response:
-                    raw_payload = response.read()
-            except Exception as e:
+            info = infos.get(secid)
+            if info is None:
                 continue
 
-            try:
-                payload = orjson.loads(raw_payload)
-            except orjson.JSONDecodeError as e:
-                continue
-
-            securities = payload.get("securities", {})
-            columns = securities.get("columns", [])
-            data = securities.get("data", [])
-
-            if not data:
-                continue
-
-            emitent_info = dict(zip(columns, data[0]))
-
-            try:
-                emitent_id = int(emitent_info["emitent_id"])
-            except (KeyError, ValueError, TypeError):
-                continue
-
-            inn = emitent_info.get("emitent_inn")
-            if inn is None:
-                continue
-
-            inn = str(inn).strip()
+            inn = info["emitent_inn"]
             secid_to_inn[secid] = inn
-
-            if emitent_id not in ratings_cache:
-                ratings_cache[emitent_id] = self.emitent_ratings_load(emitent_id)
-
-            ratings = ratings_cache[emitent_id]
-
-            inn_to_ratings[inn] = ratings or []
 
             # Эмитента добавляем только один раз
             if inn in seen_inn:
                 continue
 
             seen_inn.add(inn)
+            emitents.append(info)
+            emitent_ids.append(info["emitent_id"])
 
-            emitents.append(emitent_info)
+        ratings_by_emitent_id = self._load_ratings(emitent_ids)
+
+        inn_to_ratings: dict[str, list[dict[str, Any]]] = {}
+        for secid, inn in secid_to_inn.items():
+            emitent_id = infos[secid]["emitent_id"]
+            inn_to_ratings[inn] = ratings_by_emitent_id.get(emitent_id) or []
+
+        logger.info(
+            "[EMITENTS] Данные загружены: бумаг %s, эмитентов %s, связей secid->inn %s",
+            len(secids), len(emitents), len(secid_to_inn),
+        )
 
         return {
             "emitents": emitents,
@@ -98,11 +211,7 @@ class MoexLoader:
     def emitent_ratings_load(self, emitent_id: int) -> Optional[list[dict[str, Any]]]:
         url = f"https://iss.moex.com/iss/cci/rating/companies/ecbd_{emitent_id}.json?iss.json=extended&iss.meta=off"
         try:
-            response = requests.get(
-                url,
-                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
-                timeout=30,
-            )
+            response = self._get_session().get(url, timeout=self.timeout)
             response.raise_for_status()
             json_data = response.json()
 
@@ -110,10 +219,10 @@ class MoexLoader:
                 return None
             return json_data[1]["cci_rating_companies"]
 
-        except requests.RequestException as exc:
+        except requests.RequestException:
             return None
 
-        except (KeyError, TypeError):
+        except (KeyError, TypeError, ValueError):
             return None
 
 

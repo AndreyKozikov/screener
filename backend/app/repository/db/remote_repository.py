@@ -96,27 +96,30 @@ class RemoteRepository:
         self._base_url = settings.DB_REPOSITORY_URL.rstrip("/")
         self._api_key = settings.DB_REPOSITORY_API_KEY.get_secret_value()
 
+    def _invoke(self, method: str, *args: Any, **kwargs: Any) -> Any:
+        headers = {"X-API-Key": self._api_key} if self._api_key else {}
+        response = self._shared_client.post(
+            f"{self._base_url}/internal/repository/call",
+            json={
+                "repository": self.repository,
+                "method": method,
+                "args": _encode(list(args)),
+                "kwargs": _encode(kwargs),
+            },
+            headers=headers,
+        )
+        if response.status_code == 409:
+            raise RepositoryConflictError(409, _error_detail(response))
+        if response.is_error:
+            raise RemoteRepositoryError(response.status_code, _error_detail(response))
+        return _decode(response.json()["result"])
+
     def __getattr__(self, method: str):
         if method.startswith("_"):
             raise AttributeError(method)
 
         def invoke(*args: Any, **kwargs: Any) -> Any:
-            headers = {"X-API-Key": self._api_key} if self._api_key else {}
-            response = self._shared_client.post(
-                f"{self._base_url}/internal/repository/call",
-                json={
-                    "repository": self.repository,
-                    "method": method,
-                    "args": _encode(list(args)),
-                    "kwargs": _encode(kwargs),
-                },
-                headers=headers,
-            )
-            if response.status_code == 409:
-                raise RepositoryConflictError(409, _error_detail(response))
-            if response.is_error:
-                raise RemoteRepositoryError(response.status_code, _error_detail(response))
-            return _decode(response.json()["result"])
+            return self._invoke(method, *args, **kwargs)
 
         return invoke
 
@@ -135,6 +138,16 @@ class BondRatingsRepository(RemoteRepository):
 
 class BondsRepository(RemoteRepository):
     repository = "bonds"
+
+    def get_all_bonds_metadata(
+        self, rating: str | None = None
+    ) -> dict[str, tuple[str, str]]:
+        result = self._invoke("get_all_bonds_metadata", rating=rating)
+        return {
+            str(k).strip(): (str(v[0]).strip(), str(v[1]).strip())
+            for k, v in result.items()
+            if len(v) >= 2
+        }
 
 
 class CurrencyrateRepository(RemoteRepository):
@@ -155,6 +168,15 @@ class DescribeRepository(RemoteRepository):
 
 class EmissionDocumentRepository(RemoteRepository):
     repository = "emission_documents"
+
+    def get_all_documents_by_metadata(self) -> dict[tuple[str, str], list[str]]:
+        rows = self._invoke("get_all_documents_by_metadata")
+        return {
+            (str(r[0]).strip(), str(r[1]).strip()): [str(u).strip() for u in r[2]]
+            for r in rows
+            if len(r) >= 3 and r[0] and r[1]
+        }
+
 
 
 class EmitentEdisclosureRepository(RemoteRepository):

@@ -116,15 +116,23 @@ class EmitentsRepository:
             return []
 
     def get_emitents_with_inn(self) -> List[Dict[str, Any]]:
-        """Возвращает список эмитентов с непустым ИНН: [{"id": int, "inn": str}, ...]."""
+        """Возвращает список эмитентов с непустым ИНН: [{"id", "inn", "title"}, ...]."""
         stmt = text(
-            "SELECT id, inn FROM emitents "
+            "SELECT id, inn, title FROM emitents "
             "WHERE inn IS NOT NULL AND trim(inn) != ''"
         )
         try:
             with Session(self._engine) as session:
                 rows = session.execute(stmt).fetchall()
-            return [{"id": int(row[0]), "inn": str(row[1]).strip()} for row in rows if row[0] is not None and row[1]]
+            return [
+                {
+                    "id": int(row[0]),
+                    "inn": str(row[1]).strip(),
+                    "title": str(row[2]).strip() if row[2] else "",
+                }
+                for row in rows
+                if row[0] is not None and row[1]
+            ]
         except Exception as e:
             self.logger.warning("Ошибка при чтении эмитентов с ИНН: %s", e)
             return []

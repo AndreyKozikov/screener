@@ -20,6 +20,7 @@ from urllib.parse import urljoin, unquote
 from curl_cffi import requests as cf_requests
 
 from app.utils.edisclosure.cookie_manager import get_cookie_manager
+from app.utils.emission_documents_parser import detect_edisclosure_protection
 
 
 def _load_cookies_from_file() -> Tuple[Dict[str, str], str]:
@@ -82,13 +83,59 @@ _AMENDMENTS_PHRASE_PATTERN: re.Pattern[str] = re.compile(
     re.IGNORECASE,
 )
 
+# Целевые Chrome-профили curl_cffi в порядке предпочтения. Набор поддерживаемых
+# профилей зависит от версии curl_cffi: жёстко заданный "chrome130" может
+# отсутствовать (ImpersonateError), поэтому выбираем первый доступный.
+_PREFERRED_CHROME_IMPERSONATE: Tuple[str, ...] = (
+    "chrome136",
+    "chrome133a",
+    "chrome131",
+    "chrome124",
+    "chrome120",
+    "chrome116",
+    "chrome110",
+)
+
+
+def _resolve_chrome_impersonate() -> Tuple[str, str]:
+    """Возвращает поддерживаемый curl_cffi Chrome-target и его мажорную версию."""
+    try:
+        from curl_cffi.requests.utils import NATIVE_IMPERSONATE_TARGETS
+    except Exception:
+        return "chrome124", "124"
+
+    supported: Dict[str, int] = {}
+    for item in NATIVE_IMPERSONATE_TARGETS:
+        name = str(item.get("target_name") or "")
+        version = str(item.get("version") or "")
+        if item.get("browser") != "Chrome" or not version.isdigit():
+            continue
+        supported[name] = int(version)
+
+    for target in _PREFERRED_CHROME_IMPERSONATE:
+        if target in supported:
+            return target, str(supported[target])
+
+    desktop_targets = [
+        (version, name)
+        for name, version in supported.items()
+        if not name.endswith("_android")
+    ]
+    if desktop_targets:
+        version, target = max(desktop_targets)
+        return target, str(version)
+
+    return "chrome124", "124"
+
 
 def _get_session_data() -> Tuple[cf_requests.Session, str]:
     cookies, token = _load_cookies_from_file()
 
     # Use curl_cffi with Chrome TLS fingerprint impersonation to bypass
     # anti-bot protection that detects Python's standard TLS stack.
-    session = cf_requests.Session(impersonate="chrome130")
+    impersonate_target, chrome_major = _resolve_chrome_impersonate()
+    print(f"  [DEBUG] curl_cffi impersonate target: {impersonate_target}", flush=True)
+    session = cf_requests.Session(impersonate=impersonate_target)
     session.headers.update({
         "Accept": "*/*",
         "Accept-Encoding": "gzip, deflate, br, zstd",
@@ -96,13 +143,16 @@ def _get_session_data() -> Tuple[cf_requests.Session, str]:
         "Connection": "keep-alive",
         "Host": "www.e-disclosure.ru",
         "Referer": "https://www.e-disclosure.ru/poisk-po-kompaniyam",
-        "Sec-Ch-Ua": '"Chromium";v="130", "Not?A_Brand";v="99"',
+        "Sec-Ch-Ua": f'"Chromium";v="{chrome_major}", "Not?A_Brand";v="99"',
         "Sec-Ch-Ua-Mobile": "?0",
         "Sec-Ch-Ua-Platform": '"Windows"',
         "Sec-Fetch-Dest": "empty",
         "Sec-Fetch-Mode": "cors",
         "Sec-Fetch-Site": "same-origin",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            f"(KHTML, like Gecko) Chrome/{chrome_major}.0.0.0 Safari/537.36"
+        ),
         "X-Requested-With": "XMLHttpRequest",
     })
 
@@ -239,7 +289,32 @@ def fetch_emission_documents_page(edisclosure_id: int) -> str:
         session, _ = _get_session()
         response = session.get(url, headers=_HTML_HEADERS, timeout=_TIMEOUT)
     response.raise_for_status()
-    return response.text
+    html_text = response.text
+    content_type = response.headers.get("Content-Type", "")
+    final_url = str(getattr(response, "url", url))
+    print(
+        f"  [API] GET {url} -> status={response.status_code}, "
+        f"content-type={content_type!r}, bytes={len(html_text)}, final_url={final_url}",
+        flush=True,
+    )
+
+    protection = detect_edisclosure_protection(html_text)
+    if protection:
+        print(
+            f"  [API] WARNING: e-disclosure вернул страницу антибот-защиты "
+            f"(маркер={protection!r}, bytes={len(html_text)}). "
+            "Документы не будут разобраны, существующие записи в БД не изменятся.",
+            flush=True,
+        )
+    elif len(html_text) < 1500:
+        print(
+            f"  [API] WARNING: подозрительно короткая страница документов "
+            f"(bytes={len(html_text)}, content-type={content_type!r}). "
+            f"Возможно, страница пустая или отдана частично.",
+            flush=True,
+        )
+
+    return html_text
 
 
 def _extract_event_text(pseudo_guid: str, session: cf_requests.Session) -> Optional[str]:
@@ -690,7 +765,7 @@ def merge_emitent_event_lists(
     return merged
 
 
-def _resolve_emission_file_url(url: str) -> str:
+def resolve_emission_file_url(url: str) -> str:
     """Преобразует относительный URL файла e-disclosure в абсолютный."""
     u = (url or "").strip()
     if not u or u.startswith(("http://", "https://")):
@@ -704,11 +779,11 @@ def download_emission_file(file_url: str, referer: Optional[str] = None) -> Tupl
     Returns:
         Кортеж (содержимое_файла, имя_файла_из_заголовков).
     """
-    resolved = _resolve_emission_file_url(file_url)
+    resolved = resolve_emission_file_url(file_url)
     if not resolved:
         return None, None
     
-    print(f"  [E-DISCLOSURE FILE] GET {resolved[:80]}...", flush=True)
+    print(f"  [E-DISCLOSURE FILE] GET {resolved}", flush=True)
     session, _ = _get_session()
     
     headers = _HTML_HEADERS.copy()
@@ -719,6 +794,24 @@ def download_emission_file(file_url: str, referer: Optional[str] = None) -> Tupl
         # stream=True позволяет прочитать заголовки до загрузки всего тела
         response = session.get(resolved, headers=headers, timeout=_TIMEOUT, stream=True)
         response.raise_for_status()
+
+        # Иногда вместо файла e-disclosure отдаёт HTML-страницу антибот-защиты.
+        content_type = response.headers.get("Content-Type", "")
+        if "text/html" in content_type.lower():
+            preview = response.content[:4096].decode("utf-8", errors="ignore")
+            protection = detect_edisclosure_protection(preview)
+            if protection:
+                print(
+                    f"  [E-DISCLOSURE FILE] WARNING: вместо файла получена "
+                    f"антибот-страница e-disclosure (маркер={protection!r}); url={resolved}",
+                    flush=True,
+                )
+                return None, None
+            print(
+                f"  [E-DISCLOSURE FILE] WARNING: вместо файла получен HTML "
+                f"(content-type={content_type!r}, bytes={len(response.content)}); url={resolved}",
+                flush=True,
+            )
         
         # Пытаемся достать имя файла из Content-Disposition
         filename = None

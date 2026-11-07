@@ -5,6 +5,7 @@
 обработку большого списка ценных бумаг.
 """
 
+import logging
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta
@@ -416,7 +417,7 @@ class TradingHistoryService:
                     future.result()
                     updated += 1
                     _log(f"[TRADING HISTORY] [{i}/{total}] {secid} — OK")
-                except (ValueError, RuntimeError) as e:
+                except Exception as e:
                     failed += 1
                     err_msg = str(e)
                     errors.append({"secid": secid, "error": err_msg})

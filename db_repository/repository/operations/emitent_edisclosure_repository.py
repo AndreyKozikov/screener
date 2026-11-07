@@ -65,6 +65,26 @@ class EmitentEdisclosureRepository:
             ).first()
         return int(row) if row is not None else None
 
+    def get_emitent_id_by_edisclosure_id(self, edisclosure_id: int) -> Optional[int]:
+        """Возвращает emitent_id, уже привязанный к edisclosure_id.
+
+        Используется для защиты от дублей: один e-disclosure ID не должен
+        одновременно принадлежать двум разным эмитентам.
+
+        Args:
+            edisclosure_id: ID компании на e-disclosure.ru.
+
+        Returns:
+            emitent_id или None, если edisclosure_id ещё не используется.
+        """
+        with Session(self._engine) as session:
+            row = session.exec(
+                select(EmitentEdisclosure.emitent_id).where(
+                    EmitentEdisclosure.edisclosure_id == edisclosure_id
+                )
+            ).first()
+        return int(row) if row is not None else None
+
     def get_emitents_ordered_by_missing_docs(
         self, limit: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
