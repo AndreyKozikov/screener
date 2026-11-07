@@ -703,7 +703,7 @@ class EmissionDocDownloadService:
                         entry["files"] = list(extracted.keys())
                         entry["files_mapping"] = extracted
                         entry["processed_at"] = datetime.now().isoformat()
-                    # local_path.unlink(missing_ok=True)
+                    local_path.unlink(missing_ok=True)
                 else:
                     any_error = True
                     url = path_to_url.get(str(local_path.absolute()))
@@ -733,6 +733,7 @@ class EmissionDocDownloadService:
                         entry["files"] = list(extracted.keys())
                         entry["files_mapping"] = extracted
                         entry["processed_at"] = datetime.now().isoformat()
+                    local_path.unlink(missing_ok=True)
                 else:
                     any_error = True
                     url = path_to_url.get(str(local_path.absolute()))
@@ -833,8 +834,10 @@ class EmissionDocDownloadService:
                                         entry["files"] = list(extracted.keys())
                                         entry["files_mapping"] = extracted
                                         entry["processed_at"] = datetime.now().isoformat()
+                                    vol_path.unlink(missing_ok=True)
                             except Exception:
                                 pass
+                            local_path.unlink(missing_ok=True)
                         else:
                             any_error = True
                             url = path_to_url.get(str(local_path.absolute()))
