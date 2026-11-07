@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Callable
 
 class BaseLLMProvider(ABC):
     def __init__(self, config):
@@ -6,7 +7,10 @@ class BaseLLMProvider(ABC):
 
     @abstractmethod
     def generate(self, prompt: str, **kwargs) -> str:
-        """Отправляет промт модели и возвращает текст ответа.
+        """Отправляет промпт и возвращает полный текст ответа.
+
+        Реализации должны вызывать переданный ``on_chunk`` с каждым текстовым
+        фрагментом ответа, если callback задан.
         При ошибках выбрасывает исключение.
         """
         pass

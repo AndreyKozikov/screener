@@ -5,8 +5,10 @@
 import json
 import logging
 from datetime import date
+from time import perf_counter
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlencode
+from uuid import uuid4
 
 from app.agent.dto import (
     AgentChatRequest,
@@ -18,10 +20,19 @@ from app.agent.llm_client import AgentLlmClient
 from app.agent.contracts import validate_router_decision, validate_tool_args
 from app.agent.prompts import (
     ROUTER_JSON_REPAIR_HINT,
+    SKILL_SELECTION_JSON_REPAIR_HINT,
     build_finalizer_prompt,
     build_finalizer_system_prompt,
     build_router_user_prompt,
+    build_skill_selection_system_prompt,
     build_system_prompt,
+)
+from app.agent.skill_loader import (
+    AgentSkill,
+    discover_skills,
+    load_skill_instructions,
+    skill_metadata,
+    validate_skill_selection,
 )
 from app.agent.session import AgentSessionStore, new_session_id
 from app.agent.session_logger import get_session_logger
@@ -35,35 +46,37 @@ class AgentService:
 
     Поток обработки одного сообщения:
     1. Восстановление/создание сессии по session_id.
-    2. LLM-роутер: intent=ask (уточняющий вопрос) | tool (вызов инструмента)
+    2. Выбор относящихся к запросу скилов из локального каталога (если он не пуст).
+    3. LLM-роутер: intent=ask (уточняющий вопрос) | tool (вызов инструмента)
        | answer (прямой ответ).
-    3. Для tool — исполнение обёртки над существующим сервисом, усечение данных,
+    4. Для tool — исполнение обёртки над существующим сервисом, усечение данных,
        LLM-финализатор пишет итоговый ответ в Markdown.
-    4. Ответ и обновление истории сессии.
+    5. Ответ и обновление истории сессии.
     """
 
     def __init__(self) -> None:
         self._sessions = AgentSessionStore()
         self._llm = AgentLlmClient()
         self._llm.set_listener(self._on_llm_event)
-        self._logger = get_session_logger()
-        self._system_prompt = build_system_prompt()
         self._finalizer_system_prompt = build_finalizer_system_prompt()
 
     def _log(self, session_id: str, event: dict) -> None:
-        self._logger.write_event(session_id, event)
+        get_session_logger().write_event(session_id, event)
 
     def _on_llm_event(self, event: dict) -> None:
         session_id = str(event.get("session_id") or "")
         if session_id:
-            self._logger.write_event(session_id, {"type": "llm", **event})
+            get_session_logger().write_event(
+                session_id,
+                {"type": event.get("type") or "llm", **event},
+            )
 
     async def chat(self, request: AgentChatRequest) -> AgentChatResponse:
         session_id = request.session_id or new_session_id()
         self._sessions.get_or_create(session_id)
         if not self._sessions.get_state(session_id, "meta_written"):
             self._sessions.set_state(session_id, "meta_written", True)
-            self._logger.write_meta(
+            get_session_logger().write_meta(
                 session_id,
                 {
                     "session_id": session_id,
@@ -99,9 +112,12 @@ class AgentService:
         ):
             return await self._handle_refine_decline(session_id, request.query)
 
+        active_skills = await self._load_active_skills(user_prompt, session_id)
+        system_prompt = build_system_prompt(active_skills)
+
         try:
             routed = await self._llm.generate_json(
-                self._system_prompt,
+                system_prompt,
                 user_prompt,
                 session_id=session_id,
                 repair_hint=ROUTER_JSON_REPAIR_HINT,
@@ -168,6 +184,71 @@ class AgentService:
             question=question,
         )
 
+    async def _load_active_skills(
+        self, user_prompt: str, session_id: str
+    ) -> List[tuple[str, str]]:
+        """Select relevant skills and load their instructions on demand.
+
+        With no valid skill manifests, this returns immediately and the existing
+        router prompt and call flow remain unchanged. If skill selection fails
+        or returns no applicable skills, no skill instructions are loaded.
+        """
+        available: List[AgentSkill] = discover_skills()
+        if not available:
+            return []
+
+        names = tuple(skill.name for skill in available)
+        selection: Optional[Dict[str, Any]] = None
+        try:
+            selection = await self._llm.generate_json(
+                build_skill_selection_system_prompt(skill_metadata(available)),
+                user_prompt,
+                session_id=session_id,
+                repair_hint=SKILL_SELECTION_JSON_REPAIR_HINT,
+                validator=lambda payload: validate_skill_selection(payload, names),
+                stage="skill_selector_raw",
+            )
+        except Exception as exc:
+            logger.error("[AGENT] Ошибка выбора скилов: %s", exc, exc_info=True)
+            self._log(
+                session_id,
+                {"type": "skill_selection_error", "message": str(exc)},
+            )
+
+        if selection is None:
+            selected: List[AgentSkill] = []
+            selection_status = "invalid_or_failed"
+        else:
+            selected_names = set(selection["skills"])
+            selected = [skill for skill in available if skill.name in selected_names]
+            selection_status = "selected" if selected else "no_match"
+
+        loaded: List[tuple[str, str]] = []
+        for skill in selected:
+            try:
+                loaded.append((skill.name, load_skill_instructions(skill)))
+            except (OSError, UnicodeError, ValueError) as exc:
+                logger.warning("[AGENT] Не удалось загрузить скил %s: %s", skill.name, exc)
+                self._log(
+                    session_id,
+                    {
+                        "type": "skill_load_error",
+                        "skill": skill.name,
+                        "message": str(exc),
+                    },
+                )
+
+        self._log(
+            session_id,
+            {
+                "type": "skill_selection",
+                "available": list(names),
+                "selected": [name for name, _ in loaded],
+                "status": selection_status,
+            },
+        )
+        return loaded
+
     async def _handle_tool(
         self, session_id: str, routed: Dict[str, Any], query: str
     ) -> AgentChatResponse:
@@ -185,15 +266,24 @@ class AgentService:
                 session_id, f"Инструмент «{tool}» недоступен. Уточните запрос."
             )
 
-        self._log(session_id, {"type": "tool_call", "tool": tool, "args": args})
+        call_id = uuid4().hex
+        started = perf_counter()
+        self._log(
+            session_id,
+            {"type": "tool_call", "call_id": call_id, "tool": tool, "args": args},
+        )
         self._sessions.clear_state(session_id, "pending_large")
         try:
             output: ToolOutput = await handler(args)
         except Exception as exc:
             logger.error("[AGENT] Ошибка инструмента %s: %s", tool, exc, exc_info=True)
-            self._log(
-                session_id, {"type": "tool_error", "tool": tool, "message": str(exc)}
-            )
+            self._log(session_id, {
+                "type": "tool_error",
+                "call_id": call_id,
+                "tool": tool,
+                "message": str(exc),
+                "duration_ms": round((perf_counter() - started) * 1000, 2),
+            })
             return self._error_response(
                 session_id, "Ошибка при обращении к данным. Попробуйте позже."
             )
@@ -204,9 +294,15 @@ class AgentService:
                 session_id,
                 {
                     "type": "tool_error_result",
+                    "call_id": call_id,
                     "tool": tool,
                     "error": output.error,
                     "question": question,
+                    "summary": output.summary,
+                    "data": output.data,
+                    "filters": output.filters,
+                    "sources": [source.model_dump() for source in output.sources],
+                    "duration_ms": round((perf_counter() - started) * 1000, 2),
                 },
             )
             self._sessions.append_turn(
@@ -222,10 +318,14 @@ class AgentService:
             session_id,
             {
                 "type": "tool_result",
+                "call_id": call_id,
                 "tool": tool,
                 "summary": output.summary,
-                "sources_count": len(output.sources),
+                "sources": [source.model_dump() for source in output.sources],
                 "data": output.data,
+                "filters": output.filters,
+                "final_answer": output.final_answer,
+                "duration_ms": round((perf_counter() - started) * 1000, 2),
             },
         )
 
@@ -235,6 +335,7 @@ class AgentService:
                 session_id,
                 {
                     "type": "final_answer",
+                    "call_id": call_id,
                     "tool": tool,
                     "answer": answer,
                     "sources": [s.model_dump() for s in output.sources],
@@ -265,6 +366,7 @@ class AgentService:
             session_id,
             {
                 "type": "final_answer",
+                "call_id": call_id,
                 "tool": tool,
                 "answer": answer,
                 "sources": [s.model_dump() for s in output.sources],

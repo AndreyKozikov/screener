@@ -16,12 +16,42 @@ class OpenRouterProvider(BaseLLMProvider):
 
     def generate(self, prompt: str, **kwargs) -> str:
         temperature = kwargs.get("temperature", 0.1)
-        completion = self._client.chat.completions.create(
+        on_chunk = kwargs.get("on_chunk")
+        system_instruction = kwargs.get("system_instruction")
+        messages = []
+        if system_instruction:
+            messages.append({"role": "system", "content": system_instruction})
+        messages.append({"role": "user", "content": prompt})
+
+        if on_chunk is None:
+            completion = self._client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=temperature,
+            )
+            return completion.choices[0].message.content or ""
+
+        chunks = []
+        stream = self._client.chat.completions.create(
             model=self.model,
-            messages=[{"role": "user", "content": prompt}],
+            messages=messages,
             temperature=temperature,
+            stream=True,
         )
-        return completion.choices[0].message.content
+        for item in stream:
+            if not item.choices:
+                continue
+            content = item.choices[0].delta.content
+            if isinstance(content, str) and content:
+                chunks.append(content)
+                on_chunk(content)
+            elif isinstance(content, list):
+                for part in content:
+                    text = getattr(part, "text", None)
+                    if text:
+                        chunks.append(text)
+                        on_chunk(text)
+        return "".join(chunks)
 
 
 register_provider("openrouter", OpenRouterProvider)

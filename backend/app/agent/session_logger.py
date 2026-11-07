@@ -12,19 +12,38 @@
 """
 
 import json
+import logging
 import re
-import time
 from datetime import datetime, timezone
 from pathlib import Path
+from threading import Lock
 from typing import Any, Dict, Optional
 
+from config.paths import BACKEND_DIR
+
 _UNSAFE_CHARS_RE = re.compile(r"[^a-zA-Z0-9_-]+")
+logger = logging.getLogger(__name__)
+
+
+def _resolve_log_dir(log_dir: str | Path) -> Path:
+    """Resolve relative session log paths from the backend root."""
+    path = Path(log_dir).expanduser()
+    if not path.is_absolute():
+        path = BACKEND_DIR / path
+    return path.resolve()
 
 
 class AgentSessionLogger:
-    def __init__(self, log_dir: str, enabled: bool = True) -> None:
-        self._log_dir = Path(log_dir)
+    def __init__(self, log_dir: str | Path, enabled: bool = True) -> None:
+        self._log_dir = _resolve_log_dir(log_dir)
         self._enabled = enabled
+        self._write_lock = Lock()
+        self._failure_lock = Lock()
+        self._failure_reported = False
+
+    @property
+    def config(self) -> tuple[Path, bool]:
+        return self._log_dir, self._enabled
 
     def session_dir(self, session_id: str) -> Path:
         safe_id = _UNSAFE_CHARS_RE.sub("_", session_id) or "unknown"
@@ -34,28 +53,49 @@ class AgentSessionLogger:
         """Дописывает событие в events.jsonl сессии."""
         if not self._enabled:
             return
+        path = self.session_dir(session_id) / "events.jsonl"
         try:
-            directory = self.session_dir(session_id)
-            directory.mkdir(parents=True, exist_ok=True)
-            record = {"ts": _now_iso(), "session_id": session_id, **event}
-            with open(directory / "events.jsonl", "a", encoding="utf-8") as fh:
-                fh.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
+            record = {"ts": _now_iso(), **event, "session_id": session_id}
+            serialized = json.dumps(record, ensure_ascii=False, default=str) + "\n"
+            with self._write_lock:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                with open(path, "a", encoding="utf-8") as fh:
+                    fh.write(serialized)
+            self._clear_failure()
         except Exception:
-            # Логирование не должно ронять агента.
-            pass
+            # Logging must not break the agent, but failures must be visible.
+            self._report_failure(session_id, path)
 
     def write_meta(self, session_id: str, meta: Dict[str, Any]) -> None:
         """Записывает метаданные сессии (создаются один раз)."""
         if not self._enabled:
             return
+        path = self.session_dir(session_id) / "session.json"
         try:
-            directory = self.session_dir(session_id)
-            directory.mkdir(parents=True, exist_ok=True)
             record = {"ts": _now_iso(), **meta}
-            with open(directory / "session.json", "w", encoding="utf-8") as fh:
-                json.dump(record, fh, ensure_ascii=False, indent=2, default=str)
+            serialized = json.dumps(record, ensure_ascii=False, indent=2, default=str)
+            with self._write_lock:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                with open(path, "w", encoding="utf-8") as fh:
+                    fh.write(serialized)
+            self._clear_failure()
         except Exception:
-            pass
+            self._report_failure(session_id, path)
+
+    def _report_failure(self, session_id: str, path: Path) -> None:
+        with self._failure_lock:
+            if self._failure_reported:
+                return
+            self._failure_reported = True
+            logger.exception(
+                "Failed to write agent session log for session %s to %s",
+                session_id,
+                path,
+            )
+
+    def _clear_failure(self) -> None:
+        with self._failure_lock:
+            self._failure_reported = False
 
 
 def _now_iso() -> str:
@@ -63,22 +103,26 @@ def _now_iso() -> str:
 
 
 _default_logger: Optional[AgentSessionLogger] = None
+_default_logger_lock = Lock()
 
 
 def get_session_logger() -> AgentSessionLogger:
     """Возвращает singleton-логгер сессий агента (по настройкам settings)."""
     global _default_logger
-    if _default_logger is None:
+    with _default_logger_lock:
         from config.settings import settings
 
-        _default_logger = AgentSessionLogger(
+        configured = AgentSessionLogger(
             log_dir=settings.AGENT_LOG_DIR,
             enabled=settings.AGENT_LOG_ENABLED,
         )
-    return _default_logger
+        if _default_logger is None or _default_logger.config != configured.config:
+            _default_logger = configured
+        return _default_logger
 
 
 def reset_session_logger() -> None:
     """Сбрасывает singleton (для тестов/перезагрузки настроек)."""
     global _default_logger
-    _default_logger = None
+    with _default_logger_lock:
+        _default_logger = None

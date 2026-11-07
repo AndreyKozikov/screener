@@ -22,11 +22,29 @@ class GeminiProvider(BaseLLMProvider):
 
     def generate(self, prompt: str, **kwargs) -> str | None:
         system_instruction = kwargs.get("system_instruction")
+        on_chunk = kwargs.get("on_chunk")
         config = types.GenerateContentConfig(temperature=0.1)
         if system_instruction:
             config.system_instruction = system_instruction
 
         try:
+            if on_chunk is not None:
+                chunks = []
+                stream = self._client.models.generate_content_stream(
+                    model=self.model,
+                    contents=prompt,
+                    config=config,
+                )
+                for chunk in stream:
+                    try:
+                        text = chunk.text
+                    except (AttributeError, ValueError):
+                        text = None
+                    if text:
+                        chunks.append(text)
+                        on_chunk(text)
+                return "".join(chunks)
+
             response = self._client.models.generate_content(
                 model=self.model,
                 contents=prompt,

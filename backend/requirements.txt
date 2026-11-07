@@ -23,7 +23,7 @@ py7zr==0.22.0
 
 # Additional
 httpx==0.28.1  # для HTTP запросов
-openai==1.54.0  # для LLM анализа и Qwen 3 через OpenRouter (используется OpenAI клиент с base_url)
+openai==1.55.3  # фикс совместимости с httpx 0.28+; для LLM и OpenRouter используется OpenAI клиент
 requests==2.32.3  # для загрузки данных рейтингов с сайта Мосбиржи
 cloudscraper==1.2.71  # для обхода JavaScript-защиты на e-disclosure.ru (опционально)
 playwright==1.48.0  # для обхода JavaScript-защиты через браузер
