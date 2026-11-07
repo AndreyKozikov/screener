@@ -22,6 +22,7 @@ from conversion_service.app.routers.market_data_router import (
 )
 from conversion_service.app.routers import event_processing_router, edisclosure_update_router
 from conversion_service.app.routers import forecast_router
+from conversion_service.app.portfolio_reports.router import router as portfolio_reports_router
 from config.settings import settings
 
 
@@ -51,6 +52,7 @@ def create_app() -> FastAPI:
     app.include_router(event_processing_router.router, prefix=settings.API_V1_STR)
     app.include_router(edisclosure_update_router.router, prefix=settings.API_V1_STR)
     app.include_router(forecast_router.router, prefix=settings.API_V1_STR)
+    app.include_router(portfolio_reports_router, prefix=settings.API_V1_STR)
 
     app.include_router(
         bonds_router.router,

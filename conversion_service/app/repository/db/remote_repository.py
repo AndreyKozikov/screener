@@ -168,6 +168,14 @@ class RuoniaRepository(RemoteRepository):
     repository = "ruonia"
 
 
+class UsersRepository(RemoteRepository):
+    repository = "users"
+
+
+class PortfolioImportRepository(RemoteRepository):
+    repository = "portfolios"
+
+
 class TradingHistoryRepository(RemoteRepository):
     repository = "trading_history"
 
@@ -193,10 +201,12 @@ __all__ = [
     "EventDetailRepository",
     "ForecastRepository",
     "KbdRepository",
+    "PortfolioImportRepository",
     "KeyrateRepository",
     "RemoteRepository",
     "RemoteRepositoryError",
     "RepositoryConflictError",
     "RuoniaRepository",
     "TradingHistoryRepository",
+    "UsersRepository",
 ]

@@ -1,11 +1,13 @@
 """Authenticated API for independently saved report-based portfolios."""
 
-import asyncio
 import logging
+import asyncio
 from datetime import date
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
+import httpx
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Response, UploadFile
 from decimal import Decimal
+from typing import Annotated
 
 from app.models.schemasDTO.portfolio_report_dto import (
     PortfolioReportImportResponse,
@@ -13,11 +15,7 @@ from app.models.schemasDTO.portfolio_report_dto import (
 )
 from app.repository.db.remote_repository import PortfolioImportRepository, RemoteRepositoryError
 from app.routers.auth import get_current_user
-from app.services.portfolio_report_import_service import (
-    DuplicatePortfolioReportError,
-    import_statement_report,
-)
-from app.utils.broker_statement_parser import BrokerStatementParseError
+from config.settings import settings
 from app.models import BondFilters
 from app.portfolio.service import PortfolioValuationService
 from app.portfolio.deals import PortfolioDealsService
@@ -35,42 +33,41 @@ async def import_portfolio_report_endpoint(
     file: UploadFile = File(..., description="HTML-отчёт брокера"),
     portfolio_name: str = Form(..., min_length=1, max_length=120),
     user: dict = Depends(get_current_user),
+    authorization: Annotated[str | None, Header()] = None,
 ) -> PortfolioReportImportResponse:
     try:
         filename = (file.filename or "").replace("\\", "/").rsplit("/", 1)[-1]
-        suffix = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-        if suffix not in {"html", "htm"}:
-            raise HTTPException(status_code=400, detail={"code": "unsupported_format", "message": "Загрузите HTML-отчёт (.html или .htm)."})
-        normalized_name = portfolio_name.strip()
-        if not normalized_name:
-            raise HTTPException(status_code=422, detail={"code": "portfolio_name_required", "message": "Укажите название портфеля."})
         content = await file.read(MAX_REPORT_SIZE + 1)
         if len(content) > MAX_REPORT_SIZE:
             raise HTTPException(status_code=413, detail={"code": "file_too_large", "message": "Размер отчёта не должен превышать 10 МБ."})
-        result = await import_statement_report(
-            content=content,
-            portfolio_name=normalized_name,
-            source_file_name=filename,
-            user_id=str(user["id"]),
-        )
-        return PortfolioReportImportResponse.model_validate(result)
+
+        conversion_url = f"{settings.CONVERSION_SERVICE_URL.rstrip('/')}/portfolios/import"
+        headers = {"Authorization": authorization} if authorization else {}
+        files = {"file": (filename, content, file.content_type or "application/octet-stream")}
+        async with httpx.AsyncClient(timeout=600.0) as client:
+            response = await client.post(
+                conversion_url,
+                data={"portfolio_name": portfolio_name},
+                files=files,
+                headers=headers,
+            )
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            logger.error("Conversion service returned a non-JSON response (%s)", response.status_code)
+            raise HTTPException(status_code=502, detail={
+                "code": "conversion_service_error", "message": "Сервис обработки отчётов вернул некорректный ответ.",
+            }) from exc
+        if response.is_error:
+            detail = payload.get("detail", payload) if isinstance(payload, dict) else payload
+            raise HTTPException(status_code=response.status_code, detail=detail)
+        return PortfolioReportImportResponse.model_validate(payload)
     except HTTPException:
         raise
-    except BrokerStatementParseError as exc:
-        raise HTTPException(status_code=422, detail={"code": "invalid_report", "message": str(exc)}) from exc
-    except DuplicatePortfolioReportError as exc:
-        raise HTTPException(status_code=409, detail={
-            "code": "duplicate_report", "message": str(exc), "portfolio_id": exc.portfolio_id,
-        }) from exc
-    except RemoteRepositoryError as exc:
-        logger.exception("Portfolio report database service failed")
+    except httpx.HTTPError as exc:
+        logger.exception("Conversion service request failed")
         raise HTTPException(status_code=502, detail={
-            "code": "database_service_error", "message": "Микросервис БД не сохранил портфель. Попробуйте позже.",
-        }) from exc
-    except Exception as exc:
-        logger.exception("Portfolio report import failed")
-        raise HTTPException(status_code=502, detail={
-            "code": "import_failed", "message": "Не удалось сохранить отчёт брокера.",
+            "code": "conversion_service_unavailable", "message": "Сервис обработки отчётов недоступен. Попробуйте позже.",
         }) from exc
     finally:
         await file.close()

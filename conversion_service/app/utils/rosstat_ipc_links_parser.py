@@ -16,7 +16,7 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-ROSSTAT_BASE_URL = "https://rosstat.gov.ru/"
+ROSSTAT_BASE_URL = "https://rosstat.gov.ru"
 
 # ---------------------------------------------------------------------------
 # Constants

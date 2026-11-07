@@ -5,8 +5,8 @@ from __future__ import annotations
 import hashlib
 from typing import Any
 
-from app.repository.db.remote_repository import PortfolioImportRepository
-from app.utils.broker_statement_parser import parse_broker_statement
+from conversion_service.app.portfolio_reports.parser import parse_broker_statement
+from conversion_service.app.repository.db.remote_repository import PortfolioImportRepository
 
 
 class DuplicatePortfolioReportError(ValueError):

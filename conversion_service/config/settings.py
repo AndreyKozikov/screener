@@ -12,6 +12,18 @@ if (_SERVICE_DIR / ".env").exists():
     _env_file_path = str(_SERVICE_DIR / ".env")
 
 
+def _load_auth_secret_key() -> str:
+    """Read the shared token signing key from backend/.env when available."""
+    backend_env = _SERVICE_DIR.parent / "backend" / ".env"
+    if not backend_env.exists():
+        return ""
+    for line in backend_env.read_text(encoding="utf-8").splitlines():
+        key, separator, value = line.partition("=")
+        if separator and key.strip() == "AUTH_SECRET_KEY":
+            return value.strip().strip("\"'")
+    return ""
+
+
 class Settings(BaseSettings):
     """Настройки приложения Conversion Service."""
 
@@ -37,6 +49,7 @@ class Settings(BaseSettings):
     PDF2MD_BASE_URL: str = "http://localhost:9000"
     DB_REPOSITORY_URL: str = "http://127.0.0.1:8964"
     DB_REPOSITORY_API_KEY: SecretStr = SecretStr("")
+    AUTH_SECRET_KEY: SecretStr = SecretStr(_load_auth_secret_key())
     LOCAL_LLM_BASE_URL: str = "http://127.0.0.1:7000"
     LOCAL_LLM_GENERATE_PATH: str = "/api/v1/llm/generate"
     LOCAL_LLM_ANALYSIS_MAX_NEW_TOKENS: int = 1024

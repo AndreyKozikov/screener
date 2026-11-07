@@ -68,6 +68,7 @@ class Settings(BaseSettings):
 
     DB_REPOSITORY_URL: str = "http://127.0.0.1:8964"
     DB_REPOSITORY_API_KEY: SecretStr = SecretStr("")
+    CONVERSION_SERVICE_URL: str = "http://127.0.0.1:12345/api"
     AUTH_SECRET_KEY: SecretStr = SecretStr("")
     AUTH_TOKEN_TTL_HOURS: int = 168
 
