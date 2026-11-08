@@ -7,7 +7,12 @@ import subprocess
 import sys
 from pathlib import Path
 
-from db_repository.config.paths import BLOG_DB_PATH, DB_PATH, HISTORY_DB_PATH
+from db_repository.config.paths import (
+    BLOG_DB_PATH,
+    DB_PATH,
+    HISTORY_DB_PATH,
+    PORTFOLIO_DB_PATH,
+)
 
 logger = logging.getLogger(__name__)
 SERVICE_DIR = Path(__file__).resolve().parent.parent
@@ -25,45 +30,62 @@ def _run_alembic(config_name: str, *arguments: str) -> subprocess.CompletedProce
     )
 
 
-def _upgrade(config_name: str, label: str) -> None:
+def _versions_dir(config_name: str) -> Path:
+    return SERVICE_DIR / Path(config_name).stem / "versions"
+
+
+def _upgrade(config_name: str, label: str, db_path: Path | None = None) -> None:
     config_path = SERVICE_DIR / config_name
-    versions = config_path.parent / ("blog_alembic" if config_name == "blog_alembic.ini" else "alembic") / "versions"
+    versions = _versions_dir(config_name)
     if not config_path.is_file() or not any(versions.glob("*.py")):
         logger.info("No %s migration scripts found; skipping", label)
         return
 
-    result = _run_alembic(config_name, "upgrade", "head")
+    arguments = []
+    if db_path is not None:
+        arguments.extend(["-x", f"db_path={db_path}"])
+    arguments.extend(["upgrade", "head"])
+    result = _run_alembic(config_name, *arguments)
     if result.returncode == 0:
         logger.info("%s database migrations applied", label)
         return
 
     output = f"{result.stdout or ''}{result.stderr or ''}"
-    lowered = output.lower()
-    if "can't locate revision" in lowered or "multiple head revisions" in lowered:
-        _run_alembic(config_name, "stamp", "base")
-        retry = _run_alembic(config_name, "upgrade", "head")
-        if retry.returncode == 0:
-            return
-        output = f"{retry.stdout or ''}{retry.stderr or ''}"
-    elif "already exists" in lowered:
-        _run_alembic(config_name, "stamp", "head")
-        return
-
     logger.error("%s database migration failed: %s", label, output)
     raise RuntimeError(f"{label} database migration failed: {output}")
 
 
-def run_migrations() -> None:
-    """Apply the main and history database migration chain."""
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    HISTORY_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    _upgrade("alembic.ini", "main")
+def run_migrations(db_path: Path | None = None) -> None:
+    """Apply the main bonds database migration chain."""
+    path = Path(db_path or DB_PATH)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _upgrade("alembic.ini", "main", db_path=path)
 
 
-def run_blog_migrations() -> None:
+def run_blog_migrations(db_path: Path | None = None) -> None:
     """Apply the separate blog database migration chain."""
-    BLOG_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    _upgrade("blog_alembic.ini", "blog")
+    path = Path(db_path or BLOG_DB_PATH)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _upgrade("blog_alembic.ini", "blog", db_path=path)
 
 
-__all__ = ["run_blog_migrations", "run_migrations"]
+def run_history_migrations(db_path: Path | None = None) -> None:
+    """Apply the separate bond trading history database migration chain."""
+    path = Path(db_path or HISTORY_DB_PATH)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _upgrade("history_alembic.ini", "history", db_path=path)
+
+
+def run_portfolio_migrations(db_path: Path | None = None) -> None:
+    """Apply the separate portfolio database migration chain."""
+    path = Path(db_path or PORTFOLIO_DB_PATH)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _upgrade("portfolio_alembic.ini", "portfolio", db_path=path)
+
+
+__all__ = [
+    "run_blog_migrations",
+    "run_history_migrations",
+    "run_migrations",
+    "run_portfolio_migrations",
+]

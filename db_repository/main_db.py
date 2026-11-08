@@ -11,7 +11,12 @@ from fastapi import FastAPI
 
 from db_repository.config.paths import DB_PATH, PORTFOLIO_DB_PATH
 from db_repository.core.database_init import init_database
-from db_repository.core.migrations import run_blog_migrations, run_migrations
+from db_repository.core.migrations import (
+    run_blog_migrations,
+    run_history_migrations,
+    run_migrations,
+    run_portfolio_migrations,
+)
 from db_repository.core.portfolio_database_init import init_portfolio_database
 
 
@@ -19,6 +24,8 @@ from db_repository.core.portfolio_database_init import init_portfolio_database
 async def lifespan(app: FastAPI):
     run_migrations()
     run_blog_migrations()
+    run_history_migrations()
+    run_portfolio_migrations()
     init_database(DB_PATH)
     init_portfolio_database(PORTFOLIO_DB_PATH)
     yield

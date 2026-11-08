@@ -57,10 +57,16 @@ def get_url() -> str:
     """Возвращает URL базы данных без импорта config (избегаем config.settings/pydantic_settings)."""
     url = config.get_main_option("sqlalchemy.url")
     if url and url.startswith("sqlite"):
-        from db_repository.config.paths import DB_PATH
+        x_args = context.get_x_argument(as_dictionary=True)
+        configured_path = x_args.get("db_path")
+        if configured_path:
+            db_path = Path(configured_path)
+        else:
+            from db_repository.config.paths import DB_PATH
 
-        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-        return f"sqlite:///{DB_PATH}"
+            db_path = DB_PATH
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        return f"sqlite:///{db_path}"
     return url
 
 
