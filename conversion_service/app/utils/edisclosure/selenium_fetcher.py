@@ -143,7 +143,7 @@ def get_cookies_via_selenium() -> Optional[Dict[str, Any]]:
             print("❌ Токен не найден!")
 
         # Step 7: Save via CookieManager
-        from app.utils.edisclosure.cookie_manager import get_cookie_manager
+        from conversion_service.app.utils.edisclosure.cookie_manager import get_cookie_manager
 
         manager = get_cookie_manager()
         saved_path = manager.save_cookies(

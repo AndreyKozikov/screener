@@ -1,7 +1,7 @@
 from typing import Any, Dict, Optional
 from fastapi import APIRouter, HTTPException, Query
-from app.services.edisclosure_events_service import get_edisclosure_events_service
-from app.utils.edisclosure.browser_event_fetcher import EdisclosureAccessBlockedError
+from conversion_service.app.services.edisclosure_events_service import get_edisclosure_events_service
+from conversion_service.app.utils.edisclosure.browser_event_fetcher import EdisclosureAccessBlockedError
 
 router = APIRouter(prefix="/edisclosure", tags=["edisclosure"])
 

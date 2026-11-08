@@ -19,8 +19,8 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 from urllib.parse import urljoin, unquote
 from curl_cffi import requests as cf_requests
 
-from app.utils.edisclosure.cookie_manager import get_cookie_manager
-from app.utils.emission_documents_parser import detect_edisclosure_protection
+from conversion_service.app.utils.edisclosure.cookie_manager import get_cookie_manager
+from conversion_service.app.utils.emission_documents_parser import detect_edisclosure_protection
 
 
 def _load_cookies_from_file() -> Tuple[Dict[str, str], str]:
@@ -773,6 +773,24 @@ def resolve_emission_file_url(url: str) -> str:
     return urljoin(_MAIN_PAGE_URL + "/", u.lstrip("/"))
 
 
+def extract_filename_from_content_disposition(
+    content_disposition: Optional[str],
+) -> Optional[str]:
+    """Извлекает имя файла из заголовка Content-Disposition."""
+    if not content_disposition:
+        return None
+    m_utf8 = re.search(r"filename\*=UTF-8''([^;]+)", content_disposition, re.IGNORECASE)
+    if m_utf8:
+        return unquote(m_utf8.group(1))
+    m_quoted = re.search(r'filename="([^"]+)"', content_disposition, re.IGNORECASE)
+    if m_quoted:
+        return m_quoted.group(1)
+    m_unquoted = re.search(r'filename=([^;]+)', content_disposition, re.IGNORECASE)
+    if m_unquoted:
+        return m_unquoted.group(1).strip(" \"'")
+    return None
+
+
 def download_emission_file(file_url: str, referer: Optional[str] = None) -> Tuple[Optional[bytes], Optional[str]]:
     """Скачивает файл по ссылке с e-disclosure.ru.
     
@@ -814,23 +832,9 @@ def download_emission_file(file_url: str, referer: Optional[str] = None) -> Tupl
             )
         
         # Пытаемся достать имя файла из Content-Disposition
-        filename = None
-        cd = response.headers.get("Content-Disposition")
-        if cd:
-            # Try RFC 5987 filename*=UTF-8''...
-            m_utf8 = re.search(r"filename\*=UTF-8''([^;]+)", cd, re.IGNORECASE)
-            if m_utf8:
-                filename = unquote(m_utf8.group(1))
-            else:
-                # Try double quoted filename="..."
-                m_quoted = re.search(r'filename="([^"]+)"', cd, re.IGNORECASE)
-                if m_quoted:
-                    filename = m_quoted.group(1)
-                else:
-                    # Try unquoted filename=...
-                    m_unquoted = re.search(r'filename=([^;]+)', cd, re.IGNORECASE)
-                    if m_unquoted:
-                        filename = m_unquoted.group(1).strip(" \"'")
+        filename = extract_filename_from_content_disposition(
+            response.headers.get("Content-Disposition")
+        )
         
         return response.content, filename
     except Exception as e:
@@ -838,26 +842,45 @@ def download_emission_file(file_url: str, referer: Optional[str] = None) -> Tupl
         return None, None
 
 
+# Многотомные суффиксы, которые нельзя терять при сокращении имени:
+# rarfile находит остальные тома только по общему базовому имени и этим суффиксам.
+_MULTIVOLUME_SUFFIX_RE: re.Pattern[str] = re.compile(
+    r"^(?P<base>.+?)(?P<suffix>\.part\d+\.rar|\.7z\.\d{3}|\.zip\.\d{3}|\.r\d{2,3}|\.z\d{2,3})$",
+    re.IGNORECASE,
+)
+
+
 def sanitize_filename(filename: str, max_length: int = 50) -> str:
-    """Очищает имя файла от запрещенных символов и ограничивает его длину."""
+    """Очищает имя файла от запрещенных символов и ограничивает его длину.
+
+    Для многотомных архивов (``.partN.rar``, ``.rNN``, ``.7z.NNN`` и т.п.)
+    суффикс сохраняется, а хэш считается от базового имени без номера тома.
+    Благодаря этому все тома одного набора получают одинаковую базу и
+    rarfile может найти их друг по другу.
+    """
     safe_name = re.sub(r'[<>:"/\\|?*]', '_', filename)
     safe_name = re.sub(r'[\x00-\x1f\x7f]', '', safe_name)
-    
+
     if len(safe_name) <= max_length:
         return safe_name
-        
-    path = Path(safe_name)
-    ext = path.suffix
-    stem = path.stem
-    
-    hash_str = hashlib.md5(filename.encode('utf-8', errors='ignore')).hexdigest()[:6]
-    
-    allowed_stem_len = max_length - len(hash_str) - 1 - len(ext)
-    
-    if allowed_stem_len > 0:
-        return f"{stem[:allowed_stem_len]}_{hash_str}{ext}"
+
+    volume_match = _MULTIVOLUME_SUFFIX_RE.match(safe_name)
+    if volume_match:
+        base = volume_match.group("base")
+        suffix = volume_match.group("suffix")
     else:
-        return f"{hash_str}{ext}"[:max_length]
+        path = Path(safe_name)
+        suffix = path.suffix
+        base = path.stem
+
+    # Хэш от базы (без расширения/номера тома): одинаков для всех томов набора.
+    hash_str = hashlib.md5(base.encode("utf-8", errors="ignore")).hexdigest()[:6]
+    allowed_base_len = max_length - len(hash_str) - 1 - len(suffix)
+
+    if allowed_base_len > 0:
+        return f"{base[:allowed_base_len]}_{hash_str}{suffix}"
+    return f"{hash_str}{suffix}"[:max_length]
+
 
 
 def _is_safe_archive_member(name: str) -> bool:
@@ -1008,4 +1031,4 @@ def clean_markdown_after_pdf2md(content: str) -> str:
     if header_match:
         content = content[header_match.start():]
         content = re.sub(r"Утверждено\s+решением.*?(?=Вид,\s*категория\s*\([^)]*\),?\s*ценных\s*бумаг)", "", content, flags=re.DOTALL | re.IGNORECASE)
-    return
+    return content

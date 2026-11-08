@@ -5,8 +5,8 @@ centralized cookie management with TTL, and fallback mechanisms for
 manual cookie retrieval.
 """
 
-from app.utils.edisclosure.cookie_manager import CookieManager, get_cookie_manager
-from app.utils.edisclosure.cloudflare_bypass import CloudflareBypass
+from conversion_service.app.utils.edisclosure.cookie_manager import CookieManager, get_cookie_manager
+from conversion_service.app.utils.edisclosure.cloudflare_bypass import CloudflareBypass
 
 __all__ = [
     "CookieManager",

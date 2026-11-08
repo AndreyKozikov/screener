@@ -1,30 +1,37 @@
-"""Visible-browser workflow for downloading e-disclosure event text.
+"""Visible-browser workflow for e-disclosure events and emission documents.
 
 The browser uses an ordinary Selenium session. If e-disclosure presents a
 verification challenge, the user can complete it in the visible window and
 the downloader continues without copying cookies or switching to a terminal.
-An explicit Forbidden/rate-limit response stops the run so the service can
-checkpoint completed events without continuing to hit the blocked session.
-The dedicated Chrome profile lives in
+The same session is used for company search, the emission-documents page and
+file downloads. An explicit Forbidden/rate-limit response stops the run so the
+service can checkpoint completed events without continuing to hit the blocked
+session. The dedicated Chrome profile lives in
 ``conversion_service/.edisclosure_browser_profile`` and is removed after an
 explicit Forbidden response.
 """
 
+import base64
+import binascii
 import html
 import json
 import re
 import shutil
 import threading
+from contextlib import ExitStack
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
-from urllib.parse import parse_qs, urlencode, urlparse
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+from urllib.parse import parse_qs, urlencode, urljoin, urlparse
 
 
 _SEARCH_PAGE_URL = "https://www.e-disclosure.ru/poisk-po-kompaniyam"
+_SEARCH_API_URL = "https://www.e-disclosure.ru/api/search/companies"
 _COMPANY_PAGE_URL = "https://www.e-disclosure.ru/portal/company.aspx"
 _EVENT_PAGE_URL = "https://www.e-disclosure.ru/portal/event.aspx"
 _EVENTS_API_URL = "https://www.e-disclosure.ru/api/events/page"
+_FILES_PAGE_URL = "https://www.e-disclosure.ru/portal/files.aspx"
+_MAIN_PAGE_URL = "https://www.e-disclosure.ru"
 _INITIAL_WAIT_SECONDS = 20
 _CHALLENGE_WAIT_SECONDS = 300
 _EVENT_PAGE_BATCH_SIZE = 5
@@ -40,7 +47,55 @@ _CHALLENGE_MARKERS = (
     "проверка браузера",
     "ddos protection",
 )
-_CHALLENGE_URL_MARKERS = ("/cdn-cgi/", "/xpvnsulc", "hcheck=")
+_CHALLENGE_URL_MARKERS = ("/cdn-cgi/", "/xpvnsulc", "hcheck=", "back_location=")
+
+_PAGE_FETCH_JS = r"""
+const [url, method, body, contentType, binary, done] = arguments;
+const headers = {
+    "Accept": binary
+        ? "*/*"
+        : "application/json, text/javascript, */*; q=0.01",
+};
+if (!binary) headers["X-Requested-With"] = "XMLHttpRequest";
+if (contentType) headers["Content-Type"] = contentType;
+const options = { method: method, credentials: "same-origin", headers: headers };
+if (body) options.body = body;
+fetch(url, options).then(async response => {
+    const responseContentType = response.headers.get("Content-Type") || "";
+    const disposition = response.headers.get("Content-Disposition") || "";
+    if (binary) {
+        const blob = await response.blob();
+        const dataUrl = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result || ""));
+            reader.onerror = () => reject(reader.error);
+            reader.readAsDataURL(blob);
+        });
+        const commaIndex = dataUrl.indexOf(",");
+        done({
+            status: response.status,
+            contentType: responseContentType,
+            disposition: disposition,
+            body: commaIndex >= 0 ? dataUrl.slice(commaIndex + 1) : ""
+        });
+    } else {
+        done({
+            status: response.status,
+            contentType: responseContentType,
+            disposition: disposition,
+            body: await response.text()
+        });
+    }
+}).catch(error => done({error: String(error)}));
+"""
+
+
+def _detect_protection(value: str) -> Optional[str]:
+    """Возвращает маркер антибот-страницы e-disclosure, если он найден."""
+    from conversion_service.app.utils.emission_documents_parser import (
+        detect_edisclosure_protection,
+    )
+    return detect_edisclosure_protection(value)
 
 
 def _plain_page_text(value: str) -> str:
@@ -143,7 +198,7 @@ class EdisclosureAccessBlockedError(RuntimeError):
 
 
 class EdisclosureBrowserSession:
-    """Download event metadata and text through a visible Chrome window."""
+    """Search companies and download events/documents through visible Chrome."""
 
     def __init__(self) -> None:
         self._driver: Any = None
@@ -254,7 +309,7 @@ class EdisclosureBrowserSession:
 
         script_auth_cleared = False
         try:
-            from app.utils.edisclosure_utils import clear_edisclosure_auth_state
+            from conversion_service.app.utils.edisclosure_utils import clear_edisclosure_auth_state
 
             script_errors = clear_edisclosure_auth_state()
             errors.extend(script_errors)
@@ -720,6 +775,259 @@ class EdisclosureBrowserSession:
         )
         return text.strip() if isinstance(text, str) and text.strip() else None
 
+    # ------------------------------------------------------------------
+    # Emission documents support
+    # ------------------------------------------------------------------
+
+    def search_companies_by_inn(self, inn: str) -> List[Dict[str, Any]]:
+        """Ищет компании по ИНН через браузер, обходя антибот-проверку."""
+        driver = self._require_driver()
+        self._ensure_search_page()
+
+        def _build_form() -> str:
+            token = driver.execute_script(
+                "return document.querySelector('input[name=\"__RequestVerificationToken\"]')"
+                "?.value || '';"
+            )
+            return urlencode(
+                {
+                    "textfield": inn,
+                    "radReg": "FederalDistricts",
+                    "districtsCheckboxGroup": "-1",
+                    "regionsCheckboxGroup": "-1",
+                    "branchesCheckboxGroup": "-1",
+                    "lastPageSize": "10",
+                    "lastPageNumber": "1",
+                    "query": inn,
+                    "__RequestVerificationToken": token or "",
+                }
+            )
+
+        result = self._request_via_page(
+            _SEARCH_API_URL,
+            method="POST",
+            body_builder=_build_form,
+            content_type="application/x-www-form-urlencoded; charset=UTF-8",
+            description=f"поиск компании по ИНН {inn}",
+        )
+        try:
+            payload = json.loads(str(result.get("body") or ""))
+        except (TypeError, json.JSONDecodeError) as exc:
+            raise RuntimeError(
+                "Браузер получил не JSON при поиске компании по ИНН "
+                f"{inn} (HTTP {result.get('status')})."
+            ) from exc
+
+        found_list = payload.get("foundCompaniesList") or []
+        companies: List[Dict[str, Any]] = []
+        for item in found_list:
+            if not isinstance(item, dict):
+                continue
+            companies.append(
+                {
+                    "id": item.get("id"),
+                    "name": item.get("name"),
+                    "district": item.get("district"),
+                    "region": item.get("region"),
+                    "branch": item.get("branch"),
+                }
+            )
+        return companies
+
+    def fetch_emission_documents_html(self, company_id: int) -> str:
+        """Открывает страницу эмиссионных документов и ждёт проверку сайта."""
+        driver = self._require_driver()
+        url = f"{_FILES_PAGE_URL}?id={company_id}&type=7"
+        print(f"  [BROWSER] GET {url}", flush=True)
+        driver.get(url)
+        self._wait_for_element("id", "cont_wrap", "страница эмиссионных документов")
+        self._raise_if_current_page_is_forbidden(url=driver.current_url)
+        return driver.page_source
+
+    def download_file(
+        self,
+        file_url: str,
+        referer: Optional[str] = None,
+    ) -> Tuple[Optional[bytes], Optional[str]]:
+        """Скачивает файл через fetch внутри открытого браузера."""
+        resolved = (file_url or "").strip()
+        if resolved and not resolved.startswith(("http://", "https://")):
+            resolved = urljoin(_MAIN_PAGE_URL + "/", resolved.lstrip("/"))
+        if not resolved:
+            return None, None
+
+        self._ensure_page_origin()
+        print(
+            f"  [BROWSER FILE] GET {resolved} (referer: {referer or '-'})",
+            flush=True,
+        )
+        result = self._request_via_page(
+            resolved,
+            binary=True,
+            description=f"файл эмиссионного документа {resolved}",
+        )
+        status = int(result.get("status") or 0)
+        if status < 200 or status >= 300:
+            print(
+                f"  [BROWSER FILE] HTTP {status} при скачивании {resolved}",
+                flush=True,
+            )
+            return None, None
+
+        raw_body = str(result.get("body") or "")
+        try:
+            content = base64.b64decode(raw_body)
+        except (binascii.Error, ValueError) as exc:
+            raise RuntimeError(
+                f"Браузер вернул некорректные данные файла {resolved}."
+            ) from exc
+
+        content_type = str(result.get("contentType") or "")
+        if "text/html" in content_type.lower():
+            preview = content[:4096].decode("utf-8", errors="ignore")
+            protection = _detect_protection(preview)
+            if protection:
+                print(
+                    f"  [BROWSER FILE] WARNING: вместо файла получена "
+                    f"антибот-страница e-disclosure (маркер={protection!r}); "
+                    f"url={resolved}",
+                    flush=True,
+                )
+                return None, None
+            print(
+                f"  [BROWSER FILE] WARNING: вместо файла получен HTML "
+                f"(content-type={content_type!r}, bytes={len(content)}); "
+                f"url={resolved}",
+                flush=True,
+            )
+
+        from conversion_service.app.utils.edisclosure_utils import (
+            extract_filename_from_content_disposition,
+        )
+        filename = extract_filename_from_content_disposition(
+            str(result.get("disposition") or "")
+        )
+        return content, filename
+
+    def _ensure_page_origin(self) -> None:
+        """Гарантирует, что текущая страница принадлежит e-disclosure.ru."""
+        driver = self._require_driver()
+        try:
+            current_url = driver.current_url or ""
+        except Exception:
+            current_url = ""
+        if "e-disclosure.ru" not in current_url:
+            driver.get(_SEARCH_PAGE_URL)
+            self._wait_for_element("id", "textfield", "поле поиска компании")
+            return
+        self._raise_if_current_page_is_forbidden(url=current_url)
+        if self._is_challenge_page():
+            self._show_challenge_message()
+            self._wait_after_challenge(
+                lambda current: not self._is_challenge_page(),
+                "завершение проверки сайта",
+            )
+
+    def _ensure_search_page(self) -> None:
+        """Открывает страницу поиска, если браузер ещё не на ней."""
+        driver = self._require_driver()
+        try:
+            current_url = driver.current_url or ""
+        except Exception:
+            current_url = ""
+        if not current_url.startswith(_SEARCH_PAGE_URL):
+            driver.get(_SEARCH_PAGE_URL)
+            self._wait_for_element("id", "textfield", "поле поиска компании")
+            return
+        self._raise_if_current_page_is_forbidden(url=current_url)
+        if self._is_challenge_page():
+            self._show_challenge_message()
+            self._wait_after_challenge(
+                lambda current: not self._is_challenge_page(),
+                "завершение проверки сайта",
+            )
+
+    def _recover_after_challenge(self) -> None:
+        """Перезагружает страницу поиска для прохождения проверки вручную."""
+        driver = self._require_driver()
+        driver.get(_SEARCH_PAGE_URL)
+        self._wait_for_element("id", "textfield", "поле поиска компании")
+
+    def _request_via_page(
+        self,
+        url: str,
+        *,
+        method: str = "GET",
+        body: Optional[str] = None,
+        body_builder: Optional[Callable[[], str]] = None,
+        content_type: Optional[str] = None,
+        binary: bool = False,
+        description: str = "данные e-disclosure",
+    ) -> Dict[str, Any]:
+        """Выполняет same-origin fetch из открытой страницы браузера."""
+        driver = self._require_driver()
+        last_result: Optional[Dict[str, Any]] = None
+        for attempt in range(2):
+            request_body = body_builder() if body_builder is not None else (body or "")
+            result = driver.execute_async_script(
+                _PAGE_FETCH_JS,
+                url,
+                method,
+                request_body,
+                content_type or "",
+                bool(binary),
+            )
+            if not isinstance(result, dict) or result.get("error"):
+                detail = result.get("error") if isinstance(result, dict) else result
+                raise RuntimeError(
+                    f"Не удалось выполнить запрос через браузер ({description}): {detail}"
+                )
+            last_result = result
+            status = int(result.get("status") or 0)
+            response_content_type = str(result.get("contentType") or "")
+            preview = self._result_preview(result, binary=binary)
+            if _is_forbidden_response(status, preview):
+                raise EdisclosureAccessBlockedError(
+                    status=status,
+                    response_text=preview,
+                    url=url,
+                )
+            if self._is_challenge_result(status, response_content_type, preview):
+                if attempt == 0:
+                    self._show_challenge_message()
+                    self._recover_after_challenge()
+                    continue
+                raise RuntimeError(
+                    f"Проверка сайта не завершена; запрос {url} не выполнен."
+                )
+            return result
+        return last_result or {}
+
+    @staticmethod
+    def _result_preview(result: Dict[str, Any], *, binary: bool) -> str:
+        """Возвращает текстовый превью ответа для детекта антибот-страницы."""
+        raw = str(result.get("body") or "")
+        if not binary:
+            return raw[:8000]
+        chunk = raw[:16000]
+        chunk = chunk[: len(chunk) - (len(chunk) % 4)]
+        try:
+            return base64.b64decode(chunk).decode("utf-8", errors="ignore")
+        except (binascii.Error, ValueError):
+            return ""
+
+    @staticmethod
+    def _is_challenge_result(status: int, content_type: str, preview: str) -> bool:
+        """Определяет, что ответ сайта является страницей проверки браузера."""
+        if status == 429:
+            return False
+        if status == 403:
+            return True
+        if _detect_protection(preview):
+            return True
+        lowered = (preview or "").lower()
+        return any(marker in lowered for marker in _CHALLENGE_MARKERS)
+
     def _wait_for_element(self, by: str, selector: str, description: str) -> Any:
         from selenium.webdriver.support.ui import WebDriverWait
         from selenium.common.exceptions import TimeoutException
@@ -793,6 +1101,8 @@ class EdisclosureBrowserSession:
             page_content = f"{driver.title}\n{driver.page_source}".lower()
         except Exception:
             return False
+        if _detect_protection(page_content):
+            return True
         return any(marker in page_content for marker in _CHALLENGE_MARKERS)
 
     def _is_forbidden_page(self) -> bool:
@@ -843,3 +1153,36 @@ class EdisclosureBrowserSession:
         if self._driver is None:
             raise RuntimeError("Браузерная сессия не запущена.")
         return self._driver
+
+
+class LazyEdisclosureBrowser:
+    """Запускает видимый браузер только при первом обращении и держит его открытым."""
+
+    def __init__(self) -> None:
+        self._stack: ExitStack = ExitStack()
+        self._session: Optional[EdisclosureBrowserSession] = None
+        self._startup_error: Optional[Exception] = None
+
+    def __enter__(self) -> "LazyEdisclosureBrowser":
+        return self
+
+    def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
+        self._stack.__exit__(exc_type, exc, traceback)
+
+    @property
+    def started(self) -> bool:
+        return self._session is not None
+
+    def get(self) -> EdisclosureBrowserSession:
+        if self._startup_error is not None:
+            raise RuntimeError(
+                f"Браузерная сессия недоступна: {self._startup_error}"
+            ) from self._startup_error
+        if self._session is None:
+            try:
+                self._session = self._stack.enter_context(EdisclosureBrowserSession())
+            except Exception as exc:
+                self._startup_error = exc
+                raise
+        return self._session
+

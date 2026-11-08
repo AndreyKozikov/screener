@@ -16,10 +16,10 @@ from typing import Any, Dict, List, Optional, Tuple
 import httpx
 
 from conversion_service.app.core.exceptions import PdfConversionConnectionError
-from app.repository.files.file_storage import FileStorage
-from app.utils.edisclosure_utils import clean_markdown_after_pdf2md
-from config.paths import DATA_DIR
-from config.settings import settings
+from conversion_service.app.repository.files.file_storage import FileStorage
+from conversion_service.app.utils.edisclosure_utils import clean_markdown_after_pdf2md
+from conversion_service.config.paths import DATA_DIR
+from conversion_service.config.settings import settings
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -152,8 +152,11 @@ class PdfConversionService:
                 continue
 
             md_filename: str = Path(original).stem + ".md"
-            markdown = clean_markdown_after_pdf2md(markdown)
-            self._file_storage.save_text_file(base_dir / md_filename, markdown)
+            cleaned_markdown: Optional[str] = clean_markdown_after_pdf2md(markdown)
+            if not cleaned_markdown:
+                logger.warning("Пустой markdown после очистки для %s", original)
+                continue
+            self._file_storage.save_text_file(base_dir / md_filename, cleaned_markdown)
             logger.info("Сохранён markdown: %s", base_dir / md_filename)
             md_filenames.append(md_filename)
 

@@ -1,11 +1,15 @@
 """Router for Pipeline 1 — emission document download and conversion."""
 
+import asyncio
+import logging
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
 from conversion_service.app.core.exceptions import PdfConversionConnectionError
 from conversion_service.app.services.emission_doc_download_service import get_emission_doc_download_service
+
+logger: logging.Logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/emission-doc-download", tags=["emission-doc-download"])
 
@@ -49,7 +53,8 @@ async def run_download_pipeline(
     """
     try:
         service = get_emission_doc_download_service()
-        return service.download_and_convert(
+        return await asyncio.to_thread(
+            service.download_and_convert,
             secid=secid,
             limit=limit,
             rating=rating,
@@ -57,13 +62,37 @@ async def run_download_pipeline(
             keep_source_files=keep_source_files,
         )
     except PdfConversionConnectionError as exc:
+        logger.error(
+            "PDF conversion service unavailable (secid=%r, limit=%r, rating=%r): %s",
+            secid,
+            limit,
+            rating,
+            exc,
+            exc_info=True,
+        )
         raise HTTPException(
             status_code=503,
             detail=f"PDF conversion service unavailable: {exc}",
         ) from exc
     except ValueError as exc:
+        logger.warning(
+            "Invalid request for download pipeline (secid=%r, limit=%r, rating=%r): %s",
+            secid,
+            limit,
+            rating,
+            exc,
+        )
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
+        logger.exception(
+            "Download pipeline failed (secid=%r, limit=%r, rating=%r, "
+            "force_recheck=%s, keep_source_files=%s)",
+            secid,
+            limit,
+            rating,
+            force_recheck,
+            keep_source_files,
+        )
         raise HTTPException(
             status_code=500,
             detail=f"Error during document download pipeline: {exc}",

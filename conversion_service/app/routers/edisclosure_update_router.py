@@ -20,8 +20,18 @@ def fetch_emission_documents(
 
 
 @router.post("/populate-emitent-edisclosure")
-def populate_emitent_edisclosure() -> Dict[str, int]:
+def populate_emitent_edisclosure(
+    force: bool = Query(
+        False,
+        description=(
+            "Принудительно обновить маппинги всех эмитентов, включая уже "
+            "существующие записи."
+        ),
+    ),
+) -> Dict[str, Any]:
     try:
-        return get_edisclosure_update_service().populate_emitent_edisclosure()
+        return get_edisclosure_update_service().populate_emitent_edisclosure(
+            force=force
+        )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc

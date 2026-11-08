@@ -81,7 +81,7 @@ class CookieManager:
         # Cookies are stale or missing — try automatic refresh
         logger.info("Cookies expired or missing — attempting Cloudflare bypass")
         try:
-            from app.utils.edisclosure.cloudflare_bypass import CloudflareBypass
+            from conversion_service.app.utils.edisclosure.cloudflare_bypass import CloudflareBypass
 
             bypass = CloudflareBypass()
             result = bypass.fetch_cookies()

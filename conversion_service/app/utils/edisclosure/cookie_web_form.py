@@ -339,7 +339,7 @@ def _save_parsed_cookies(
     company_id: Optional[str] = None,
 ) -> dict:
     """Save parsed cookies via the CookieManager and return output."""
-    from app.utils.edisclosure.cookie_manager import get_cookie_manager
+    from conversion_service.app.utils.edisclosure.cookie_manager import get_cookie_manager
 
     manager = get_cookie_manager()
     manager.save_cookies(

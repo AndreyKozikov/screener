@@ -3,15 +3,15 @@ import re
 from datetime import date, timedelta
 from typing import Any, Dict, List, Optional
 
-from app.repository.db.emitents_repository import EmitentsRepository
-from app.repository.db.emitent_edisclosure_repository import EmitentEdisclosureRepository
-from app.repository.files.file_storage import FileStorage
-from app.utils.edisclosure.browser_event_fetcher import (
+from conversion_service.app.repository.db.emitents_repository import EmitentsRepository
+from conversion_service.app.repository.db.emitent_edisclosure_repository import EmitentEdisclosureRepository
+from conversion_service.app.repository.files.file_storage import FileStorage
+from conversion_service.app.utils.edisclosure.browser_event_fetcher import (
     EdisclosureAccessBlockedError,
     EdisclosureBrowserSession,
 )
-from app.utils.edisclosure_utils import merge_emitent_event_lists
-from config.paths import EMITENT_EVENTS_JSON_DIR
+from conversion_service.app.utils.edisclosure_utils import merge_emitent_event_lists
+from conversion_service.config.paths import EMITENT_EVENTS_JSON_DIR
 
 logger = logging.getLogger(__name__)
 

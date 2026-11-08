@@ -26,6 +26,9 @@ from conversion_service.app.repository.db.remote_repository import (
 )
 from conversion_service.app.repository.files.file_storage import FileStorage
 from conversion_service.app.services.pdf_conversion_service import PdfConversionService
+from conversion_service.app.utils.edisclosure.browser_event_fetcher import (
+    LazyEdisclosureBrowser,
+)
 from conversion_service.app.utils.edisclosure_utils import (
     clean_markdown_after_pdf2md,
     download_emission_file,
@@ -33,13 +36,14 @@ from conversion_service.app.utils.edisclosure_utils import (
     resolve_emission_file_url,
     sanitize_filename,
 )
-from config.paths import DATA_DIR
-from config.settings import settings
+from conversion_service.config.paths import DATA_DIR
+from conversion_service.config.settings import settings
 
 logger: logging.Logger = logging.getLogger(__name__)
 
 _DATA_DIR: Path = DATA_DIR
 _MANIFEST_FILENAME: str = ".processed.json"
+_SCAN_PROGRESS_EVERY: int = 100
 
 # MIME types supported for conversion.
 _EXTENSION_MIME_MAP: Dict[str, str] = {
@@ -68,7 +72,7 @@ def _bond_result(
 
 def _get_pipeline_logger() -> logging.Logger:
     """Returns a logger that writes to a separate log file for the download pipeline."""
-    from config.paths import BACKEND_DIR
+    from conversion_service.config.paths import BACKEND_DIR
 
     log_dir: Path = BACKEND_DIR / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -182,48 +186,108 @@ class EmissionDocDownloadService:
                     reg_number,
                 )
 
-            return self._process_single_by_secid(
-                sid,
-                pl_logger,
-                force_recheck=force_recheck,
-                keep_source_files=keep_source_files,
-                inn=inn,
-                reg_number=reg_number,
-                expected_urls=expected_urls,
-            )
+            with LazyEdisclosureBrowser() as browser:
+                return self._process_single_by_secid(
+                    sid,
+                    pl_logger,
+                    force_recheck=force_recheck,
+                    keep_source_files=keep_source_files,
+                    inn=inn,
+                    reg_number=reg_number,
+                    expected_urls=expected_urls,
+                    browser=browser,
+                )
 
-        # Пакетное извлечение метаданных и документов для оптимизации проверки
-        bonds_metadata = {}
-        all_docs_by_metadata = {}
-        if force_recheck:
+        # Пакетное извлечение метаданных и документов для оптимизации проверки.
+        # Выполняется всегда: иначе проверка manifest делает до 3 HTTP-запросов
+        # к сервису БД на каждую облигацию.
+        try:
             bonds_metadata = self._bonds_repo.get_all_bonds_metadata(rating=rating)
+        except Exception as exc:
+            bonds_metadata = {}
+            pl_logger.warning(
+                "Не удалось предзагрузить метаданные облигаций (%s); "
+                "будет использоваться поштучный запрос к БД",
+                exc,
+                exc_info=True,
+            )
+        try:
             all_docs_by_metadata = self._emission_doc_repo.get_all_documents_by_metadata()
+        except Exception as exc:
+            all_docs_by_metadata = {}
+            pl_logger.warning(
+                "Не удалось предзагрузить документы emission_documents (%s); "
+                "будет использоваться поштучный запрос к БД",
+                exc,
+                exc_info=True,
+            )
 
         all_secids: List[str] = self._bonds_repo.get_all_bond_secids(rating=rating)
         total_all: int = len(all_secids)
 
+        pl_logger.info(
+            "[SCAN START] Проверка manifest: всего облигаций %d, "
+            "метаданных предзагружено %d, наборов документов %d",
+            total_all,
+            len(bonds_metadata),
+            len(all_docs_by_metadata),
+        )
+
         # Determine which bonds need processing.
         to_process: List[str] = []
         already_done: int = 0
-        for sid in all_secids:
+        scan_errors: int = 0
+        for idx, sid in enumerate(all_secids, start=1):
             bond_dir: Path = _DATA_DIR / sid
             inn, reg_number = bonds_metadata.get(sid, (None, None))
-            expected_urls = None
-            if inn and reg_number:
-                expected_urls = all_docs_by_metadata.get((inn, reg_number))
+            expected_urls = self._lookup_expected_urls(
+                inn, reg_number, all_docs_by_metadata
+            )
 
-            if self._is_bond_fully_processed(
-                sid,
-                bond_dir,
-                pl_logger,
-                force_recheck=force_recheck,
-                inn=inn,
-                reg_number=reg_number,
-                expected_urls=expected_urls,
-            ):
-                already_done += 1
-                continue
-            to_process.append(sid)
+            try:
+                is_done = self._is_bond_fully_processed(
+                    sid,
+                    bond_dir,
+                    pl_logger,
+                    force_recheck=force_recheck,
+                    inn=inn,
+                    reg_number=reg_number,
+                    expected_urls=expected_urls,
+                )
+            except Exception as exc:
+                # Одна проблемная облигация не должна прерывать весь пакетный прогон.
+                scan_errors += 1
+                pl_logger.error(
+                    "[%s] Ошибка проверки manifest, облигация будет обработана: %s",
+                    sid,
+                    exc,
+                    exc_info=True,
+                )
+                to_process.append(sid)
+            else:
+                if is_done:
+                    already_done += 1
+                else:
+                    to_process.append(sid)
+
+            if idx % _SCAN_PROGRESS_EVERY == 0 and idx != total_all:
+                pl_logger.info(
+                    "[SCAN PROGRESS] %d/%d, к обработке: %d, уже готово: %d, ошибок: %d",
+                    idx,
+                    total_all,
+                    len(to_process),
+                    already_done,
+                    scan_errors,
+                )
+
+        pl_logger.info(
+            "[SCAN DONE] Проверено: %d, уже готово: %d, к обработке: %d, "
+            "ошибок проверки: %d",
+            total_all,
+            already_done,
+            len(to_process),
+            scan_errors,
+        )
 
         if limit is not None:
             to_process = to_process[:limit]
@@ -245,57 +309,59 @@ class EmissionDocDownloadService:
         failed_secids: List[str] = []
         reason_counts: Dict[str, int] = {}
 
-        for idx, sid in enumerate(to_process, start=1):
-            processed += 1
-            inn, reg_number = bonds_metadata.get(sid, (None, None))
-            expected_urls = None
-            if inn and reg_number:
-                expected_urls = all_docs_by_metadata.get((inn, reg_number))
+        with LazyEdisclosureBrowser() as browser:
+            for idx, sid in enumerate(to_process, start=1):
+                processed += 1
+                inn, reg_number = bonds_metadata.get(sid, (None, None))
+                expected_urls = self._lookup_expected_urls(
+                    inn, reg_number, all_docs_by_metadata
+                )
 
-            try:
-                result: Dict[str, Any] = self._process_single_bond(
-                    sid,
-                    pl_logger,
-                    force_recheck=force_recheck,
-                    keep_source_files=keep_source_files,
-                    inn=inn,
-                    reg_number=reg_number,
-                    expected_urls=expected_urls,
-                    diagnose_other_issuers=False,
-                )
-                ok: bool = bool(result.get("ok"))
-                reason: str = str(result.get("reason") or "unknown")
-                reason_counts[reason] = reason_counts.get(reason, 0) + 1
-                if ok:
-                    succeeded += 1
+                try:
+                    result: Dict[str, Any] = self._process_single_bond(
+                        sid,
+                        pl_logger,
+                        force_recheck=force_recheck,
+                        keep_source_files=keep_source_files,
+                        inn=inn,
+                        reg_number=reg_number,
+                        expected_urls=expected_urls,
+                        diagnose_other_issuers=False,
+                        browser=browser,
+                    )
+                    ok: bool = bool(result.get("ok"))
+                    reason: str = str(result.get("reason") or "unknown")
+                    reason_counts[reason] = reason_counts.get(reason, 0) + 1
+                    if ok:
+                        succeeded += 1
+                        print(
+                            f"[DOWNLOAD] {idx}/{total} — {sid}: OK "
+                            f"(documents={result.get('documents_found', 0)})",
+                            flush=True,
+                        )
+                    else:
+                        failed_secids.append(sid)
+                        print(
+                            f"[DOWNLOAD] {idx}/{total} — {sid}: {reason} "
+                            f"(documents={result.get('documents_found', 0)})",
+                            flush=True,
+                        )
+                except PdfConversionConnectionError as exc:
+                    pl_logger.error(
+                        "[PDF2MD ERROR] Pipeline stopped, secid=%s: %s", sid, exc, exc_info=True,
+                    )
                     print(
-                        f"[DOWNLOAD] {idx}/{total} — {sid}: OK "
-                        f"(documents={result.get('documents_found', 0)})",
+                        f"[DOWNLOAD] Pipeline stopped: pdf2md connection error — {exc}",
                         flush=True,
                     )
-                else:
+                    raise
+                except Exception as exc:
+                    reason_counts["exception"] = reason_counts.get("exception", 0) + 1
+                    pl_logger.error(
+                        "[ERROR] secid=%s: %s", sid, exc, exc_info=True,
+                    )
                     failed_secids.append(sid)
-                    print(
-                        f"[DOWNLOAD] {idx}/{total} — {sid}: {reason} "
-                        f"(documents={result.get('documents_found', 0)})",
-                        flush=True,
-                    )
-            except PdfConversionConnectionError as exc:
-                pl_logger.error(
-                    "[PDF2MD ERROR] Pipeline stopped, secid=%s: %s", sid, exc, exc_info=True,
-                )
-                print(
-                    f"[DOWNLOAD] Pipeline stopped: pdf2md connection error — {exc}",
-                    flush=True,
-                )
-                raise
-            except Exception as exc:
-                reason_counts["exception"] = reason_counts.get("exception", 0) + 1
-                pl_logger.error(
-                    "[ERROR] secid=%s: %s", sid, exc, exc_info=True,
-                )
-                failed_secids.append(sid)
-                print(f"[DOWNLOAD] {idx}/{total} — {sid}: error ({exc})", flush=True)
+                    print(f"[DOWNLOAD] {idx}/{total} — {sid}: error ({exc})", flush=True)
 
         summary: str = (
             f"[DOWNLOAD PIPELINE DONE] Processed: {processed}, "
@@ -371,6 +437,22 @@ class EmissionDocDownloadService:
             entry["error"] = None
 
         return entry
+
+    @staticmethod
+    def _lookup_expected_urls(
+        inn: Optional[str],
+        reg_number: Optional[str],
+        docs_by_metadata: Dict[Tuple[str, str], List[str]],
+    ) -> Optional[List[str]]:
+        """Возвращает URL документов из предзагруженного индекса.
+
+        None означает, что точного совпадения в индексе нет; в этом случае
+        вызывающий код выполнит поштучный запрос к БД (там есть нормализация
+        ИНН и регномера).
+        """
+        if not inn or not reg_number:
+            return None
+        return docs_by_metadata.get((inn.strip(), reg_number.strip()))
 
     def _load_manifest(self, bond_dir: Path) -> Dict[str, Any]:
         """Load the processing manifest from the bond directory."""
@@ -532,9 +614,17 @@ class EmissionDocDownloadService:
                             is_completed = True
 
             if not is_completed:
+                if isinstance(entry, dict):
+                    status = entry.get("status") or "без статуса"
+                    error = entry.get("error")
+                    reason = f"статус={status}" + (f", ошибка={error}" if error else "")
+                else:
+                    reason = "нет записи в manifest"
                 pl_logger.info(
-                    "[%s] URL not fully processed: %s",
+                    "[%s] Документ не обработан полностью (%s), "
+                    "облигация будет скачана и сконвертирована заново: %s",
                     secid,
+                    reason,
                     resolve_emission_file_url(url),
                 )
                 # Первым делом делаем отметку, что документы обработаны не полностью
@@ -559,8 +649,9 @@ class EmissionDocDownloadService:
         inn: Optional[str] = None,
         reg_number: Optional[str] = None,
         expected_urls: Optional[List[str]] = None,
+        browser: Optional[LazyEdisclosureBrowser] = None,
     ) -> Dict[str, Any]:
-        """Process a single bond identified by its SECID."""
+        """Process a single bond using an already-open browser when needed."""
         try:
             result: Dict[str, Any] = self._process_single_bond(
                 secid,
@@ -570,6 +661,7 @@ class EmissionDocDownloadService:
                 inn=inn,
                 reg_number=reg_number,
                 expected_urls=expected_urls,
+                browser=browser,
             )
             ok: bool = bool(result.get("ok"))
             return {
@@ -605,6 +697,7 @@ class EmissionDocDownloadService:
         reg_number: Optional[str] = None,
         expected_urls: Optional[List[str]] = None,
         diagnose_other_issuers: bool = True,
+        browser: Optional[LazyEdisclosureBrowser] = None,
     ) -> Dict[str, Any]:
         """Download and convert emission documents for a single bond.
 
@@ -763,7 +856,30 @@ class EmissionDocDownloadService:
                     referer or "-",
                 )
                 try:
-                    content, real_filename = download_emission_file(url, referer=referer)
+                    if browser is not None and browser.started:
+                        pl_logger.info(
+                            "[%s] Downloading URL in browser: %s",
+                            secid,
+                            resolve_emission_file_url(url),
+                        )
+                        content, real_filename = browser.get().download_file(
+                            url, referer=referer
+                        )
+                    else:
+                        content, real_filename = download_emission_file(
+                            url, referer=referer
+                        )
+                        if not content and browser is not None:
+                            pl_logger.warning(
+                                "[%s] HTTP download returned no content; "
+                                "retrying in browser: %s",
+                                secid,
+                                resolve_emission_file_url(url),
+                            )
+                            content, real_filename = browser.get().download_file(
+                                url, referer=referer
+                            )
+
                     if content:
                         if real_filename:
                             safe_real_filename = sanitize_filename(real_filename)
@@ -1236,8 +1352,13 @@ class EmissionDocDownloadService:
 
         if markdown:
             md_filename: str = Path(filename).stem + ".md"
-            markdown = clean_markdown_after_pdf2md(markdown)
-            self._file_storage.save_text_file(base_dir / md_filename, markdown)
+            cleaned_markdown: Optional[str] = clean_markdown_after_pdf2md(markdown)
+            if not cleaned_markdown:
+                pl_logger.warning(
+                    "[%s] Пустой markdown после очистки для %s", secid, filename
+                )
+                return False
+            self._file_storage.save_text_file(base_dir / md_filename, cleaned_markdown)
             return True
             
         return False
