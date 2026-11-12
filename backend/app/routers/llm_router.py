@@ -2,6 +2,8 @@
 
 from typing import Any, Dict
 
+import asyncio
+
 from fastapi import APIRouter
 
 from app.models.schemasDTO.float_param_analize_dto import FloatParamsAnalizeLLM
@@ -26,7 +28,9 @@ async def run_float_bonds_analize(payload: FloatParamsAnalizeLLM) -> Dict[str, A
         Словарь с результатами выполнения пайплайна.
     """
     service = get_llm_analysis_service()
-    return service.analysis_floaters_params(**payload.model_dump())
+    return await asyncio.to_thread(
+        service.analysis_floaters_params, **payload.model_dump()
+    )
 
 
 @router.post("/llm/bond-context")
@@ -44,4 +48,6 @@ async def run_answer_question(payload: BondBondsDocsAnalisisDTO) -> Dict[str, An
         Словарь с результатами выполнения пайплайна.
     """
     service = get_llm_analysis_service()
-    return service.answer_question(**payload.model_dump())
+    return await asyncio.to_thread(
+        service.answer_question, **payload.model_dump()
+    )

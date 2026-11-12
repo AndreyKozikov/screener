@@ -13,7 +13,7 @@ from typing import Dict, List, Optional
 from conversion_service.app.repository.db.remote_repository import BondsRepository
 from conversion_service.app.repository.db.remote_repository import DBCoupon
 from conversion_service.app.utils.moex_client import MoexClient
-from db_repository.utils.coupon_utils import to_frontend_coupon
+from conversion_service.app.utils.coupon_utils import to_frontend_coupon
 
 logger = logging.getLogger(__name__)
 

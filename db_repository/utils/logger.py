@@ -9,8 +9,8 @@ def setup_data_update_logger(log_dir: Optional[Path] = None) -> logging.Logger:
     Set up a logger for data update operations.
     
     Args:
-        log_dir: Directory where log files should be stored. 
-                If None, uses backend/logs directory.
+        log_dir: Directory where log files should be stored.
+                If None, uses db_repository/logs directory.
     
     Returns:
         Configured logger instance.
@@ -22,8 +22,8 @@ def setup_data_update_logger(log_dir: Optional[Path] = None) -> logging.Logger:
         - Log rotation: daily (новый файл каждый день)
     """
     if log_dir is None:
-        from db_repository.config.paths import BACKEND_DIR
-        log_dir = BACKEND_DIR / "logs"
+        from db_repository.config.paths import LOG_DIR
+        log_dir = LOG_DIR
     
     # Create log directory if it doesn't exist
     log_dir.mkdir(parents=True, exist_ok=True)

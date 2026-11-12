@@ -7,6 +7,7 @@
 
 from fastapi import APIRouter
 from typing import Dict, List
+import asyncio
 
 from app.models import DescribeDTO
 from app.repository.db.describe_repository import DescribeRepository
@@ -44,7 +45,7 @@ async def get_descriptions() -> DescribeDTO:
         DescribeDTO с полями securities и marketdata (словари поле -> описание).
     """
     repo = DescribeRepository()
-    data = repo.get_descriptions_formatted()
+    data = await asyncio.to_thread(repo.get_descriptions_formatted)
     return DescribeDTO(
         securities=data.get("securities") or {},
         marketdata=data.get("marketdata") or {},

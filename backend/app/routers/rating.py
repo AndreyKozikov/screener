@@ -2,6 +2,8 @@
 
 from typing import Any, Dict, List
 
+import asyncio
+
 from fastapi import APIRouter, HTTPException, Query
 
 from app.repository.db.bond_ratings_repository import BondRatingsRepository
@@ -27,7 +29,9 @@ async def get_bond_rating(
 ) -> List[Dict[str, Any]]:
     _ = boardid
     try:
-        ratings = BondRatingsRepository().get_ratings_by_secid(secid)
+        ratings = await asyncio.to_thread(
+            BondRatingsRepository().get_ratings_by_secid, secid
+        )
         if not ratings:
             return [{
                 "agency_id": 0,

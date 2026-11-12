@@ -1,3 +1,4 @@
+import asyncio
 from typing import Any, Dict, Optional
 from fastapi import APIRouter, HTTPException, Query
 from conversion_service.app.services.edisclosure_events_service import get_edisclosure_events_service
@@ -27,8 +28,12 @@ async def fetch_emitent_events_by_inn(
     try:
         service = get_edisclosure_events_service()
         if inn is None or inn.strip() == "":
-            return service.fetch_and_save_emitent_events_for_all_emitents()
-        return service.fetch_and_save_emitent_events_by_inn(inn.strip())
+            return await asyncio.to_thread(
+                service.fetch_and_save_emitent_events_for_all_emitents
+            )
+        return await asyncio.to_thread(
+            service.fetch_and_save_emitent_events_by_inn, inn.strip()
+        )
     except EdisclosureAccessBlockedError as exc:
         raise HTTPException(
             status_code=409,

@@ -1,8 +1,8 @@
+import asyncio
 from typing import Optional
 
-import httpx
-
 from app.models.schemasDTO.inflations_dto import InflationDateFilter
+from app.repository.db.client import get_db_repository_client
 
 
 class InflationService:
@@ -10,33 +10,23 @@ class InflationService:
     def __init__(self):
         pass
 
+    async def _post(self, path: str, payload: dict):
+        client = get_db_repository_client()
+        response = await asyncio.to_thread(client.post, path, json=payload)
+        response.raise_for_status()
+        return response.json()
+
     async def get_inflation_data(self, payload: InflationDateFilter):
         data = payload.model_dump(mode="json", exclude_none=True)
-        try:
-            async with httpx.AsyncClient(timeout=600) as client:
-                response = await client.post(
-                    url="http://127.0.0.1:8964/api/get_data_inflations",
-                    json=data,
-                    headers={"Content-Type": "application/json"},
-                )
-                response.raise_for_status()
-                result = response.json()
-                return result
-        except Exception as e:
-            raise
+        return await self._post("/api/get_data_inflations", data)
 
     async def get_sustainable_inflation_data(self, payload: InflationDateFilter):
         data = payload.model_dump(mode="json", exclude_none=True)
-        async with httpx.AsyncClient(timeout=600) as client:
-            response = await client.post(
-                url="http://127.0.0.1:8964/api/sustainable_inflation_data_get",
-                json=data,
-                headers={"Content-Type": "application/json"},
-            )
-            response.raise_for_status()
-            return response.json()
+        return await self._post("/api/sustainable_inflation_data_get", data)
+
 
 inflation_service: Optional[InflationService] = None
+
 
 def get_inflation_service():
     global inflation_service

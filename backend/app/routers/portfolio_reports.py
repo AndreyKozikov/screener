@@ -125,11 +125,17 @@ def delete_imported_portfolio(portfolio_id: int, user: dict = Depends(get_curren
 async def get_portfolio_table_rows(portfolio_id: int, user: dict = Depends(get_current_user)) -> list[dict]:
     """Prepare complete, read-only rows for the existing bonds table on the server."""
     try:
-        portfolio = PortfolioImportRepository().get_current_positions_for_user(str(user["id"]), portfolio_id)
+        portfolio = await asyncio.to_thread(
+            PortfolioImportRepository().get_current_positions_for_user,
+            str(user["id"]),
+            portfolio_id,
+        )
         if portfolio is None:
             raise HTTPException(status_code=404, detail={"code": "portfolio_not_found", "message": "Импортированный портфель не найден."})
-        trades = PortfolioImportRepository().get_current_position_trades_for_user(
-            str(user["id"]), portfolio_id
+        trades = await asyncio.to_thread(
+            PortfolioImportRepository().get_current_position_trades_for_user,
+            str(user["id"]),
+            portfolio_id,
         )
         trades_by_security: dict[int, list[dict]] = {}
         for trade in trades:

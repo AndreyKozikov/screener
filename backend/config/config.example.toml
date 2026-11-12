@@ -1,0 +1,14 @@
+# Несекретная конфигурация backend.
+# Скопируйте файл в config.toml и измените значения для своего окружения.
+# Секреты (DB_REPOSITORY_API_KEY, AUTH_SECRET_KEY, ключи LLM) хранятся только в .env.
+
+[db_repository]
+url = "http://127.0.0.1:8964"
+timeout_seconds = 300.0
+connect_timeout_seconds = 10.0
+verify_tls = true
+ca_bundle = ""
+max_retries = 0
+
+[paths]
+data_dir = "./app/data"

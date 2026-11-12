@@ -5,7 +5,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
 from uuid import uuid4
-import httpx
+from conversion_service.app.repository.db.client import get_db_repository_client
 from conversion_service.app.utils.inflation_expectations_parser import (
     parse_inflation_expectations_excel,
 )
@@ -49,19 +49,14 @@ class InflationService:
 
         # Выполняем синхронный парсинг openpyxl в отдельном потоке
         data = await asyncio.to_thread(self._parse_func, source_path)
-        try:
-            async with httpx.AsyncClient(timeout=600) as client:
-                response = await client.post(
-                    url="http://127.0.0.1:8964/api/inflation_expectations_update",
-                    json=data,
-                    headers={"Content-Type": "application/json"},
-                )
-                response.raise_for_status()
-                result = response.json()
-        except Exception as e:
-            raise
-
-        return result
+        client = get_db_repository_client()
+        response = await asyncio.to_thread(
+            client.post,
+            "/api/inflation_expectations_update",
+            json=data,
+        )
+        response.raise_for_status()
+        return response.json()
 
     async def parse_est_infl(self, excel_path: Path):
         source_path = Path(excel_path).resolve() if excel_path else DEFAULT_EXCEL_PATH
@@ -77,19 +72,14 @@ class InflationService:
         # Выполняем синхронный парсинг openpyxl в отдельном потоке
         data = await asyncio.to_thread(self._parse_est_infl, source_path)
 
-        try:
-            async with httpx.AsyncClient(timeout=600) as client:
-                response = await client.post(
-                    url="http://127.0.0.1:8964/api/inflation_data_update",
-                    json=data,
-                    headers={"Content-Type": "application/json"},
-                )
-                response.raise_for_status()
-                result = response.json()
-        except Exception as e:
-            raise
-
-        return result
+        client = get_db_repository_client()
+        response = await asyncio.to_thread(
+            client.post,
+            "/api/inflation_data_update",
+            json=data,
+        )
+        response.raise_for_status()
+        return response.json()
 
     async def download_and_parse_excel(self, url: str) -> Dict[str, Any]:
         """Скачивает Excel-файл инфляционных ожиданий по URL, парсит и после успешной обработки удаляет файл.

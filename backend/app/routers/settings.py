@@ -7,6 +7,8 @@ PUT  /api/settings — применяет и сохраняет переопре
 
 from typing import Any, Dict
 
+import asyncio
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
@@ -30,7 +32,7 @@ class SettingsUpdateRequest(BaseModel):
 @router.get("/settings")
 async def get_settings() -> Dict[str, Any]:
     """Возвращает схему настроек для страницы настроек фронтенда."""
-    return runtime_settings_service.get_schema()
+    return await asyncio.to_thread(runtime_settings_service.get_schema)
 
 
 @router.put("/settings")
@@ -38,11 +40,13 @@ async def update_settings(request: SettingsUpdateRequest) -> Dict[str, Any]:
     """Применяет переопределения (или сбрасывает) и возвращает обновлённую схему."""
     try:
         if request.reset_all:
-            runtime_settings_service.reset_runtime_settings()
+            await asyncio.to_thread(runtime_settings_service.reset_runtime_settings)
         else:
-            runtime_settings_service.update_runtime_settings(request.updates)
+            await asyncio.to_thread(
+                runtime_settings_service.update_runtime_settings, request.updates
+            )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Не удалось обновить настройки: {exc}")
-    return runtime_settings_service.get_schema()
+    return await asyncio.to_thread(runtime_settings_service.get_schema)

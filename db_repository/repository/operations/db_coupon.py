@@ -35,7 +35,7 @@ class DBCoupon:
 
         Args:
             db_path: Путь к файлу базы данных SQLite. Если не указан,
-                используется путь по умолчанию: backend/db/bonds.db
+                используется путь по умолчанию: db_repository/data/db/bonds.db
 
         Attributes:
             db_path: Путь к файлу базы данных.

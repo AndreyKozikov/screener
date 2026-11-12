@@ -36,7 +36,7 @@ class BondsRepository:
 
         Args:
             db_path: Путь к файлу базы данных SQLite. Если не указан,
-                используется backend/db/bonds.db.
+                используется db_repository/data/db/bonds.db.
         """
         if db_path is None:
             db_path = DB_PATH

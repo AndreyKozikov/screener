@@ -5,12 +5,20 @@
 
 from pathlib import Path
 
+from config.config_loader import load_config, resolve_path
 
-# Корень backend (директория с main_db.py, app/, config/, db/)
+
+# Корень backend (директория с main.py, app/, config/, db/)
 BACKEND_DIR: Path = Path(__file__).resolve().parent.parent
 
-# Директория с JSON/CSV данными (columns.json, zerocupon.csv и т.д.)
-DATA_DIR: Path = BACKEND_DIR / "app" / "data"
+# Директория с JSON/CSV данными (columns.json, zerocupon.csv и т.д.).
+# Значение можно переопределить в backend/config/config.toml: [paths] data_dir.
+_config = load_config()
+_configured_data_dir = _config.get("paths", {}).get("data_dir")
+DATA_DIR: Path = resolve_path(
+    _configured_data_dir,
+    BACKEND_DIR / "app" / "data",
+)
 
 # JSON со всеми событиями эмитента с e-disclosure (по ИНН, без фильтрации по заголовку)
 EMITENT_EVENTS_JSON_DIR: Path = DATA_DIR / "events"

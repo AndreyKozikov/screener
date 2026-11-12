@@ -11,6 +11,8 @@ from typing import Any, List
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from config.config_loader import env_is_set, load_config
+
 # Путь к .env — корень backend (родитель папки config)
 _BACKEND_DIR = Path(__file__).resolve().parent.parent
 _env_file_path = None
@@ -68,8 +70,13 @@ class Settings(BaseSettings):
 
     DB_REPOSITORY_URL: str = "http://127.0.0.1:8964"
     DB_REPOSITORY_API_KEY: SecretStr = SecretStr("")
+    DB_REPOSITORY_TIMEOUT_SECONDS: float = 300.0
+    DB_REPOSITORY_CONNECT_TIMEOUT_SECONDS: float = 10.0
+    DB_REPOSITORY_VERIFY_TLS: bool = True
+    DB_REPOSITORY_CA_BUNDLE: str = ""
+    DB_REPOSITORY_MAX_RETRIES: int = 0
     CONVERSION_SERVICE_URL: str = "http://127.0.0.1:12345/api"
-    AUTH_SECRET_KEY: SecretStr = SecretStr("")
+    AUTH_SECRET_KEY: SecretStr = SecretStr(_load_auth_secret_key())
     AUTH_TOKEN_TTL_HOURS: int = 168
 
     OPENAI_API_KEY: str = ""
@@ -98,6 +105,10 @@ class Settings(BaseSettings):
     AGENT_LOG_DIR: str = "logs/agent_sessions"
 
     def model_post_init(self, __context: Any) -> None:
+        self._load_llm_config()
+        self._load_service_config()
+
+    def _load_llm_config(self) -> None:
         if _CONFIG_LLM_PATH.exists():
             with open(_CONFIG_LLM_PATH, "rb") as f:
                 data = tomllib.load(f)
@@ -105,6 +116,29 @@ class Settings(BaseSettings):
             llm_data = data.get("llm")
             if llm_data:
                 self.llm = LlmConfig.model_validate(llm_data)
+
+    def _load_service_config(self) -> None:
+        """Применить несекретные значения из config/config.toml.
+
+        Переменные окружения имеют приоритет над TOML. Секреты в TOML
+        не хранятся и не читаются.
+        """
+        config = load_config()
+        db_repository = config.get("db_repository", {})
+        paths = config.get("paths", {})
+
+        defaults = {
+            "DB_REPOSITORY_URL": db_repository.get("url"),
+            "DB_REPOSITORY_TIMEOUT_SECONDS": db_repository.get("timeout_seconds"),
+            "DB_REPOSITORY_CONNECT_TIMEOUT_SECONDS": db_repository.get("connect_timeout_seconds"),
+            "DB_REPOSITORY_VERIFY_TLS": db_repository.get("verify_tls"),
+            "DB_REPOSITORY_CA_BUNDLE": db_repository.get("ca_bundle"),
+            "DB_REPOSITORY_MAX_RETRIES": db_repository.get("max_retries"),
+            "DATA_DIR": paths.get("data_dir"),
+        }
+        for field_name, value in defaults.items():
+            if value is not None and not env_is_set(field_name):
+                setattr(self, field_name, value)
 
     model_config = SettingsConfigDict(
         env_file=_env_file_path,
@@ -114,4 +148,4 @@ class Settings(BaseSettings):
         env_ignore_empty=True,
     )
 
-settings = Settings(AUTH_SECRET_KEY=_load_auth_secret_key())
+settings = Settings()

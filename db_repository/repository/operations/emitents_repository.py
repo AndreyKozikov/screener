@@ -18,7 +18,7 @@ class EmitentsRepository:
         """Инициализирует репозиторий.
 
         Args:
-            db_path: Путь к файлу БД. По умолчанию — backend/db/bonds.db.
+            db_path: Путь к файлу БД. По умолчанию — db_repository/data/db/bonds.db.
         """
         self.db_path = Path(db_path) if db_path else DB_PATH
         self._engine = create_engine(

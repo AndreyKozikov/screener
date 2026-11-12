@@ -1,0 +1,26 @@
+# Несекретная конфигурация db_repository.
+# Скопируйте файл в config.toml и измените значения для своего окружения.
+# Секреты (DB_REPOSITORY_API_KEY) хранятся только в .env.
+
+[server]
+host = "0.0.0.0"
+port = 8964
+workers = 1
+reload = false
+log_level = "info"
+run_migrations_on_startup = true
+
+[security]
+require_api_key = true
+
+[paths]
+db_dir = "./data/db"
+data_dir = "./data"
+log_dir = "./logs"
+db_filename = "bonds.db"
+blog_db_filename = "blog.db"
+history_db_filename = "history_db.db"
+portfolio_db_filename = "portfolios.db"
+
+[database]
+sqlite_busy_timeout_ms = 30000

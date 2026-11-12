@@ -2,8 +2,12 @@
 fastapi==0.118.2
 uvicorn[standard]==0.32.0
 
-# Pydantic models and SQLite persistence
+# Pydantic models and settings
 pydantic==2.10.4
+pydantic-core==2.27.2
 pydantic-settings==2.7.0
+
+# SQLite persistence and migrations
+sqlalchemy==2.0.46
 sqlmodel==0.0.31
 alembic==1.18.3

@@ -1,7 +1,7 @@
 import sqlite3
 
-path = r"D:\Andrew\GeekBrains\Python\BondsScreener\backend\db\bonds.db"
+from db_repository.config.paths import DB_PATH
 
-conn = sqlite3.connect(path)
+conn = sqlite3.connect(DB_PATH)
 print("OK")
 conn.close()

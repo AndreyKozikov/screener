@@ -9,6 +9,8 @@
 import json
 from pathlib import Path
 from typing import List, Optional
+import asyncio
+
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 
@@ -60,7 +62,7 @@ async def get_available_dates() -> ForecastDatesResponse:
     Данные запрашиваются у сервиса: репозиторий отдаёт сырые даты из таблицы forecast,
     сервис формирует DTO со строками YYYY-MM-DD, отсортированными от новых к старым.
     """
-    return get_forecast_service().get_available_dates()
+    return await asyncio.to_thread(get_forecast_service().get_available_dates)
 
 
 @router.get("/data")
@@ -88,7 +90,7 @@ async def get_forecast_data(
             или если произошла ошибка при чтении файла (статус 500).
     """
     try:
-        return get_forecast_service().get_forecast_data(date)
+        return await asyncio.to_thread(get_forecast_service().get_forecast_data, date)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 

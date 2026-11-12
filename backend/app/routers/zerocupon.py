@@ -10,6 +10,8 @@ import json
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
+import asyncio
+
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 
@@ -40,7 +42,11 @@ async def get_zerocupon_data(
         date_from = one_year_ago.strftime("%d.%m.%Y")
         date_to = datetime.now().strftime("%d.%m.%Y")
 
-    data = kbd_service.get_kbd_data_formatted(date_from=date_from, date_to=date_to)
+    data = await asyncio.to_thread(
+        kbd_service.get_kbd_data_formatted,
+        date_from=date_from,
+        date_to=date_to,
+    )
     return KbdDataResponse(
         data=data,
         count=len(data),
@@ -62,7 +68,11 @@ async def download_zerocupon_json(
         one_year_ago = datetime.now() - timedelta(days=365)
         date_from = one_year_ago.strftime("%d.%m.%Y")
         date_to = datetime.now().strftime("%d.%m.%Y")
-    dtos = kbd_service.get_kbd_data_formatted(date_from=date_from, date_to=date_to)
+    dtos = await asyncio.to_thread(
+        kbd_service.get_kbd_data_formatted,
+        date_from=date_from,
+        date_to=date_to,
+    )
     periods = [0.25, 0.5, 0.75, 1.0, 2.0, 3.0, 5.0, 7.0, 10.0, 15.0, 20.0]
     term_to_period = {"term_0_25": "0.25", "term_0_5": "0.5", "term_0_75": "0.75", "term_1_0": "1.0",
                       "term_2_0": "2.0", "term_3_0": "3.0", "term_5_0": "5.0", "term_7_0": "7.0",
@@ -124,7 +134,11 @@ async def download_zerocupon_markdown(
         one_year_ago = datetime.now() - timedelta(days=365)
         date_from = one_year_ago.strftime("%d.%m.%Y")
         date_to = datetime.now().strftime("%d.%m.%Y")
-    dtos = kbd_service.get_kbd_data_formatted(date_from=date_from, date_to=date_to)
+    dtos = await asyncio.to_thread(
+        kbd_service.get_kbd_data_formatted,
+        date_from=date_from,
+        date_to=date_to,
+    )
     period_cols = ["Срок 0.25 лет", "Срок 0.5 лет", "Срок 0.75 лет", "Срок 1.0 лет", "Срок 2.0 лет",
                    "Срок 3.0 лет", "Срок 5.0 лет", "Срок 7.0 лет", "Срок 10.0 лет", "Срок 15.0 лет", "Срок 20.0 лет"]
     header_cols = ["Дата", "Время"] + period_cols

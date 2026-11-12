@@ -1,9 +1,9 @@
+import asyncio
 import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
-import httpx
-
 from conversion_service.app.models.bonds_data_dto import BondsDataDTO
+from conversion_service.app.repository.db.client import get_db_repository_client
 from conversion_service.app.repository.db.remote_repository import BondsRepository
 from conversion_service.app.utils.rating_utils import get_rating_index, standardize_rating
 
@@ -135,32 +135,25 @@ class BondsUpdateService:
             bond_data["securities"]["COUPONYIELDTOPRICE"] = coupon_yield_to_price
 
         bonds_data_dto = BondsDataDTO.model_validate(raw_bonds_data)
-        try:
-            async with httpx.AsyncClient(timeout=600) as client:
-                response = await client.post(
-                    url="http://127.0.0.1:8964/api/bonds_data_update",
-                    json=bonds_data_dto.model_dump(by_alias=False),
-                    headers={"Content-Type": "application/json"},
-                )
-                response.raise_for_status()
-                return response.json()
-        except Exception as e:
-            raise
+        client = get_db_repository_client()
+        response = await asyncio.to_thread(
+            client.post,
+            "/api/bonds_data_update",
+            json=bonds_data_dto.model_dump(by_alias=False),
+        )
+        response.raise_for_status()
+        return response.json()
 
     async def _load_current_coupons(self, secids: List[str]):
 
-        try:
-            async with httpx.AsyncClient(timeout=600) as client:
-                response = await client.post(
-                    url="http://127.0.0.1:8964/api/coupons/current_coupon",
-                    json=secids,
-                    headers={"Content-Type": "application/json"},
-                )
-                response.raise_for_status()
-                result = response.json()
-        except Exception as e:
-            raise
-        return result
+        client = get_db_repository_client()
+        response = await asyncio.to_thread(
+            client.post,
+            "/api/coupons/current_coupon",
+            json=secids,
+        )
+        response.raise_for_status()
+        return response.json()
 
     async def _load_ratings_map(self) -> Dict[str, Dict[str, List[Dict[str, Any]]]]:
         """Загружает рейтинги облигаций из БД (bond_ratings + bonds + rating_agency).
@@ -173,32 +166,29 @@ class BondsUpdateService:
             Словарь: ключ — secid, значение — {"all_ratings": [{"agency_name_short_ru", "rating_level_name", "rating_level_name_short_ru"}, ...]}.
         """
         ratings_map: Dict[str, Dict[str, List[Dict[str, Any]]]] = {}
-        try:
-            async with httpx.AsyncClient(timeout=600) as client:
-                response = await client.get(
-                    url="http://127.0.0.1:8964/api/ratings/bonds_rating_map",
-                    headers={"Content-Type": "application/json"},
-                )
-                response.raise_for_status()
-                rows = response.json()
+        client = get_db_repository_client()
+        response = await asyncio.to_thread(
+            client.get,
+            "/api/ratings/bonds_rating_map",
+        )
+        response.raise_for_status()
+        rows = response.json()
 
-            for secid, agency_name_short_ru, rating_level_name in rows:
-                if not secid:
-                    continue
-                name_ru = (agency_name_short_ru or "").strip()
-                level = standardize_rating(rating_level_name) or ""
-                if not name_ru:
-                    continue
-                entry = {
-                    "agency_name_short_ru": name_ru,
-                    "rating_level_name": level,
-                    "rating_level_name_short_ru": level,
-                }
-                if secid not in ratings_map:
-                    ratings_map[secid] = {"all_ratings": []}
-                ratings_map[secid]["all_ratings"].append(entry)
-        except Exception as e:
-            raise
+        for secid, agency_name_short_ru, rating_level_name in rows:
+            if not secid:
+                continue
+            name_ru = (agency_name_short_ru or "").strip()
+            level = standardize_rating(rating_level_name) or ""
+            if not name_ru:
+                continue
+            entry = {
+                "agency_name_short_ru": name_ru,
+                "rating_level_name": level,
+                "rating_level_name_short_ru": level,
+            }
+            if secid not in ratings_map:
+                ratings_map[secid] = {"all_ratings": []}
+            ratings_map[secid]["all_ratings"].append(entry)
         return ratings_map
 
     async def _load_emitent_map(self) -> Dict[str, Dict[str, Any]]:
@@ -212,29 +202,26 @@ class BondsUpdateService:
             Словарь: ключ — secid, значение — {"type": str|None, "cci_rating_companies": [...]}.
         """
         emitent_map: Dict[str, Dict[str, Any]] = {}
-        try:
-            async with httpx.AsyncClient(timeout=600) as client:
-                response = await client.get(
-                    url="http://127.0.0.1:8964/api/ratings/emitents_rating_map",
-                    headers={"Content-Type": "application/json"},
-                )
-                response.raise_for_status()
-                rows = response.json()
+        client = get_db_repository_client()
+        response = await asyncio.to_thread(
+            client.get,
+            "/api/ratings/emitents_rating_map",
+        )
+        response.raise_for_status()
+        rows = response.json()
 
-            for secid, emitent_type, agency_name_short_ru, rating_level_name in rows:
-                if not secid:
-                    continue
-                name_ru = (agency_name_short_ru or "").strip()
-                level = standardize_rating(rating_level_name) or ""
-                if secid not in emitent_map:
-                    type_val = (emitent_type or "").strip() or None
-                    emitent_map[secid] = {"type": type_val, "cci_rating_companies": []}
-                emitent_map[secid]["cci_rating_companies"].append({
-                    "agency_name_short_ru": name_ru,
-                    "rating_level_name_short_ru": level,
-                })
-        except Exception as e:
-            raise
+        for secid, emitent_type, agency_name_short_ru, rating_level_name in rows:
+            if not secid:
+                continue
+            name_ru = (agency_name_short_ru or "").strip()
+            level = standardize_rating(rating_level_name) or ""
+            if secid not in emitent_map:
+                type_val = (emitent_type or "").strip() or None
+                emitent_map[secid] = {"type": type_val, "cci_rating_companies": []}
+            emitent_map[secid]["cci_rating_companies"].append({
+                "agency_name_short_ru": name_ru,
+                "rating_level_name_short_ru": level,
+            })
         return emitent_map
 
     def _get_worst_rating(self, ratings_list: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:

@@ -40,7 +40,9 @@ async def list_emitents() -> Dict[str, List[str]]:
         data_loader = get_data_loader()
 
         all_bonds = await data_loader.get_bonds()
-        secid_to_title = emitent_service.get_secid_to_emitent_title_index()
+        secid_to_title = await asyncio.to_thread(
+            emitent_service.get_secid_to_emitent_title_index
+        )
 
         emitent_titles_set = set()
         for bond in all_bonds:
@@ -55,7 +57,9 @@ async def list_emitents() -> Dict[str, List[str]]:
         # Fallback: если кэш облигаций пуст (например после деплоя), список строится из БД
         if not emitent_titles:
             emitents_repo = EmitentsRepository()
-            emitent_titles = emitents_repo.get_all_emitent_titles()
+            emitent_titles = await asyncio.to_thread(
+                emitents_repo.get_all_emitent_titles
+            )
 
         return {"emitents": emitent_titles}
 

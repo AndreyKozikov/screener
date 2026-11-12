@@ -11,7 +11,7 @@ from uuid import UUID
 import httpx
 from pydantic import BaseModel
 
-from config.settings import settings
+from app.repository.db.client import get_db_repository_client
 
 
 class RemoteRepositoryError(RuntimeError):
@@ -22,8 +22,19 @@ class RemoteRepositoryError(RuntimeError):
         self.status_code = status_code
 
 
+class RepositoryAuthError(RemoteRepositoryError):
+    """The database service rejected the API key."""
+
+
 class RepositoryConflictError(RemoteRepositoryError):
     """A repository write conflicted with a unique constraint."""
+
+
+class RepositoryUnavailableError(RemoteRepositoryError):
+    """The database service could not be reached."""
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(0, detail)
 
 
 class AttrDict(dict):
@@ -89,25 +100,27 @@ class RemoteRepository:
     """Transparent synchronous proxy to one allow-listed repository."""
 
     repository: str
-    _shared_client = httpx.Client(timeout=300.0)
 
     def __init__(self) -> None:
         """Configure the client; database paths remain owned by the service."""
-        self._base_url = settings.DB_REPOSITORY_URL.rstrip("/")
-        self._api_key = settings.DB_REPOSITORY_API_KEY.get_secret_value()
+        self._client = get_db_repository_client()
 
     def _invoke(self, method: str, *args: Any, **kwargs: Any) -> Any:
-        headers = {"X-API-Key": self._api_key} if self._api_key else {}
-        response = self._shared_client.post(
-            f"{self._base_url}/internal/repository/call",
-            json={
-                "repository": self.repository,
-                "method": method,
-                "args": _encode(list(args)),
-                "kwargs": _encode(kwargs),
-            },
-            headers=headers,
-        )
+        try:
+            response = self._client.post(
+                "/internal/repository/call",
+                json={
+                    "repository": self.repository,
+                    "method": method,
+                    "args": _encode(list(args)),
+                    "kwargs": _encode(kwargs),
+                },
+            )
+        except httpx.TransportError as exc:
+            raise RepositoryUnavailableError(str(exc)) from exc
+
+        if response.status_code in (401, 403):
+            raise RepositoryAuthError(response.status_code, _error_detail(response))
         if response.status_code == 409:
             raise RepositoryConflictError(409, _error_detail(response))
         if response.is_error:
@@ -242,7 +255,9 @@ __all__ = [
     "PortfolioImportRepository",
     "RemoteRepository",
     "RemoteRepositoryError",
+    "RepositoryAuthError",
     "RepositoryConflictError",
+    "RepositoryUnavailableError",
     "RuoniaRepository",
     "TradingHistoryRepository",
 ]

@@ -10,7 +10,7 @@ from urllib.request import Request, urlopen
 
 import orjson
 
-from db_repository.utils.coupon_utils import clean_string_value, extract_coupon_for_storage
+from conversion_service.app.utils.coupon_utils import clean_string_value, extract_coupon_for_storage
 import logging
 from conversion_service.config.paths import MOEX_BONDIZATION_BASE_URL, MOEX_COUPONS_QUERY
 

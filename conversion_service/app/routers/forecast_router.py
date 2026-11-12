@@ -1,5 +1,6 @@
 """Endpoints for importing Bank of Russia forecast documents."""
 
+import asyncio
 import re
 from pathlib import Path
 
@@ -27,8 +28,10 @@ async def upload_forecast_pdf(
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     destination = DATA_DIR / safe_name
     try:
-        destination.write_bytes(await file.read())
-        get_forecast_service().process_pdf_and_save(safe_name)
+        await asyncio.to_thread(destination.write_bytes, await file.read())
+        await asyncio.to_thread(
+            get_forecast_service().process_pdf_and_save, safe_name
+        )
     except PdfConversionConnectionError as exc:
         raise HTTPException(status_code=503, detail=f"Сервис конвертации недоступен: {exc}") from exc
     except FileNotFoundError as exc:

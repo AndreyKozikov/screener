@@ -3,6 +3,8 @@
 from datetime import date
 from typing import Any, Dict, Optional
 
+import asyncio
+
 from fastapi import APIRouter, HTTPException, Query
 
 from app.services.currency_service import get_currency_service
@@ -24,4 +26,4 @@ async def get_currency_rates(
             ) from exc
     else:
         parsed_date = None
-    return get_currency_service().get_rates(parsed_date)
+    return await asyncio.to_thread(get_currency_service().get_rates, parsed_date)

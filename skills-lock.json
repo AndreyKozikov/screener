@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "rag-architect": {
+      "source": "alirezarezvani/claude-skills",
+      "sourceType": "github",
+      "skillPath": "engineering/skills/rag-architect/SKILL.md",
+      "computedHash": "342d13d6c0a929be4908b4227af80b639b17cd4cc8f92626446dde9068c96fd6"
+    }
+  }
+}

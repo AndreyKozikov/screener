@@ -157,6 +157,12 @@ tmp_files/
 conversion_service/.edisclosure_browser_profile/
 .kilo/
 
+# Service-local configuration and database files
+/db_repository/config/config.toml
+/backend/config/config.toml
+/conversion_service/config/config.toml
+/db_repository/data/
+
 # IDE and Editor
 *.sublime-project
 *.sublime-workspace

@@ -572,19 +572,6 @@ def _build_specs() -> List[SettingSpec]:
 
     # ── Внешние сервисы и анализ ──
     specs.append(SettingSpec(
-        key="db_repository_url",
-        label="URL репозитория данных",
-        description=(
-            "Базовый адрес отдельного сервиса-репозитория (db_repository), "
-            "через который BondsScreener читает облигации, купоны и рейтинги."
-        ),
-        group="services",
-        value_type=VALUE_TYPE_TEXT,
-        default=settings.DB_REPOSITORY_URL,
-        load=lambda: settings.DB_REPOSITORY_URL,
-        apply=_str_apply("DB_REPOSITORY_URL"),
-    ))
-    specs.append(SettingSpec(
         key="openrouter_http_referer",
         label="OpenRouter: HTTP-Referer",
         description=(

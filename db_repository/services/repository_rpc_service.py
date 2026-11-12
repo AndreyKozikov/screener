@@ -14,7 +14,7 @@ from uuid import UUID
 from pydantic import BaseModel, TypeAdapter
 from pydantic_core import PydanticUndefined
 
-from db_repository.config.paths import BLOG_DB_PATH, DATA_DIR, DB_PATH, HISTORY_DB_PATH, PORTFOLIO_DB_PATH
+from db_repository.config.paths import BLOG_DB_PATH, DB_PATH, HISTORY_DB_PATH, PORTFOLIO_DB_PATH
 from db_repository.models.repository_rpc import RepositoryCall
 from db_repository.repository.operations.blog_repository import BlogRepository
 from db_repository.repository.operations.bond_float_params_repository import BondFloatParamsRepository

@@ -179,7 +179,9 @@ async def refresh_ruonia_data() -> Dict[str, Any]:
 @rating_router.get("/{secid}")
 async def get_bond_rating(secid: str, boardid: str = Query(...)) -> List[Dict[str, Any]]:
     try:
-        ratings = _get_ratings_service().get_ratings_by_secid(secid)
+        ratings = await asyncio.to_thread(
+            _get_ratings_service().get_ratings_by_secid, secid
+        )
         if not ratings:
             return [{
                 "agency_id": 0, "agency_name_short_ru": "", "rating_level_id": 0,

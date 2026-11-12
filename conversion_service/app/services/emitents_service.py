@@ -2,8 +2,7 @@ import asyncio
 import logging
 from typing import Optional
 from conversion_service.app.utils.moex_loader import MoexLoader
-
-import httpx
+from conversion_service.app.repository.db.client import get_db_repository_client
 
 logger = logging.getLogger(__name__)
 
@@ -18,14 +17,14 @@ class Emitents:
         if secids is None:
             logger.info("[EMITENTS] Запрос списка SECID из db_repository")
             try:
-                async with httpx.AsyncClient(timeout=600) as client:
-                    response = await client.get(
-                        url="http://127.0.0.1:8964/api/all_secids",
-                        headers={"Content-Type": "application/json"},
-                    )
-                    response.raise_for_status()
-                    secids = response.json()
-                    reset = True
+                client = get_db_repository_client()
+                response = await asyncio.to_thread(
+                    client.get,
+                    "/api/all_secids",
+                )
+                response.raise_for_status()
+                secids = response.json()
+                reset = True
             except Exception:
                 logger.exception("[EMITENTS] Не удалось получить список SECID из db_repository")
                 raise
@@ -46,14 +45,14 @@ class Emitents:
 
         logger.info("[EMITENTS] Сохранение данных в db_repository")
         try:
-            async with httpx.AsyncClient(timeout=600) as client:
-                response = await client.post(
-                    url="http://127.0.0.1:8964/api/emitents/update",
-                    json=data,
-                    headers={"Content-Type": "application/json"},
-                )
-                response.raise_for_status()
-                result = response.json()
+            client = get_db_repository_client()
+            response = await asyncio.to_thread(
+                client.post,
+                "/api/emitents/update",
+                json=data,
+            )
+            response.raise_for_status()
+            result = response.json()
         except Exception:
             logger.exception("[EMITENTS] Не удалось сохранить эмитентов в db_repository")
             raise

@@ -7,11 +7,10 @@
 from datetime import date
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-import httpx
+import asyncio
 
 import orjson
 
-from config.settings import settings
 from config.paths import DATA_DIR
 
 from app.models import (
@@ -23,6 +22,7 @@ from app.models import (
 )
 from app.models.schemasDTO.bond_repository_dto import BondRepositoryRowDTO
 from app.repository.db.bonds_repository import BondsRepository
+from app.repository.db.client import get_db_repository_client
 from app.services.emitent_service import get_emitent_service
 from app.utils.rating_utils import standardize_rating
 
@@ -180,9 +180,7 @@ async def get_bonds_list(
         exclude_spob: bool = False
 ) -> BondsListResponse:
 
-    base_url = settings.DB_REPOSITORY_URL.rstrip("/")
-    url = f"{base_url}/api/bonds"
-    url_bond_count = f"{base_url}/api/bond_counts"
+    client = get_db_repository_client()
 
     # HTTPX's json= encoder expects JSON values; Pydantic's default Python
     # mode leaves maturity dates as datetime.date objects.
@@ -190,20 +188,20 @@ async def get_bonds_list(
 
     emitent_title = emitent_title
 
-    async with httpx.AsyncClient() as client:
-        response_bonds = await client.post(
-            url=url,
-            json=json_filters,
-            headers={"Content-Type": "application/json"}
+    response_bonds = await asyncio.to_thread(
+        client.post,
+        "/api/bonds",
+        json=json_filters,
+    )
+    response_bonds.raise_for_status()
+    response_count = None
+    if filters.isins is None and filters.secids is None:
+        response_count = await asyncio.to_thread(
+            client.get,
+            "/api/bond_counts",
+            params={"exclude_spob": exclude_spob},
         )
-        response_bonds.raise_for_status()
-        response_count = None
-        if filters.isins is None and filters.secids is None:
-            response_count = await client.get(
-                url=url_bond_count,
-                params={"exclude_spob": exclude_spob},
-            )
-            response_count.raise_for_status()
+        response_count.raise_for_status()
 
     bonds_data = response_bonds.json()
 

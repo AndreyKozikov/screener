@@ -5,8 +5,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
-import httpx
-
+from conversion_service.app.repository.db.client import get_db_repository_client
 from conversion_service.app.repository.files.file_storage import FileStorage
 from conversion_service.app.utils.ipc_excel_parser import IpcExcelParser
 from conversion_service.app.utils.rosstat_ipc_reports_parser import get_ipc_weekly
@@ -60,14 +59,14 @@ class IpcService:
         #self._file_storage.write_json_durable(target_output, data, indent=True, append_newline=True)
 
         try:
-            async with httpx.AsyncClient(timeout=600) as client:
-                response = await client.post(
-                    url="http://127.0.0.1:8964/api/ipc_update",
-                    json=data,
-                    headers={"Content-Type": "application/json"},
-                )
-                response.raise_for_status()
-                result = response.json()
+            client = get_db_repository_client()
+            response = await asyncio.to_thread(
+                client.post,
+                "/api/ipc_update",
+                json=data,
+            )
+            response.raise_for_status()
+            result = response.json()
         except Exception as e:
             raise
 
@@ -77,14 +76,14 @@ class IpcService:
         data = get_ipc_weekly()
         print(data)
         try:
-            async with httpx.AsyncClient(timeout=600) as client:
-                response = await client.post(
-                    url="http://127.0.0.1:8964/api/ipc_weekly_update",
-                    json=data,
-                    headers={"Content-Type": "application/json"},
-                )
-                response.raise_for_status()
-                result = response.json()
+            client = get_db_repository_client()
+            response = await asyncio.to_thread(
+                client.post,
+                "/api/ipc_weekly_update",
+                json=data,
+            )
+            response.raise_for_status()
+            result = response.json()
         except Exception as e:
             raise
 

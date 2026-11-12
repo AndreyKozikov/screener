@@ -6,6 +6,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
+import asyncio
+
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_validator
@@ -86,16 +88,16 @@ async def list_published_articles(
     category: Optional[str] = Query(default=None),
 ) -> List[BlogArticleResponse]:
     """Возвращает опубликованные статьи."""
-    return [
-        _to_response(article)
-        for article in _repository.list_articles(status="published", category=category)
-    ]
+    articles = await asyncio.to_thread(
+        _repository.list_articles, status="published", category=category
+    )
+    return [_to_response(article) for article in articles]
 
 
 @public_router.get("/articles/{slug}", response_model=BlogArticleResponse)
 async def get_published_article(slug: str) -> BlogArticleResponse:
     """Возвращает опубликованную статью по slug."""
-    article = _repository.get_by_slug(slug, status="published")
+    article = await asyncio.to_thread(_repository.get_by_slug, slug, status="published")
     if article is None:
         raise HTTPException(status_code=404, detail="Article not found")
     return _to_response(article)
@@ -114,14 +116,15 @@ async def get_uploaded_image(filename: str) -> FileResponse:
 @admin_router.get("/articles", response_model=List[BlogArticleResponse])
 async def list_admin_articles() -> List[BlogArticleResponse]:
     """Возвращает все статьи для скрытой админки."""
-    return [_to_response(article) for article in _repository.list_articles()]
+    articles = await asyncio.to_thread(_repository.list_articles)
+    return [_to_response(article) for article in articles]
 
 
 @admin_router.post("/articles", response_model=BlogArticleResponse)
 async def create_article(payload: BlogArticlePayload) -> BlogArticleResponse:
     """Создает статью."""
     try:
-        return _to_response(_repository.create(payload))
+        return _to_response(await asyncio.to_thread(_repository.create, payload))
     except RepositoryConflictError as exc:
         raise HTTPException(status_code=409, detail="Article slug already exists") from exc
 
@@ -130,7 +133,9 @@ async def create_article(payload: BlogArticlePayload) -> BlogArticleResponse:
 async def update_article(article_id: int, payload: BlogArticlePayload) -> BlogArticleResponse:
     """Обновляет статью."""
     try:
-        article = _repository.update(article_id, payload.model_dump())
+        article = await asyncio.to_thread(
+            _repository.update, article_id, payload.model_dump()
+        )
     except RepositoryConflictError as exc:
         raise HTTPException(status_code=409, detail="Article slug already exists") from exc
     if article is None:
@@ -141,7 +146,7 @@ async def update_article(article_id: int, payload: BlogArticlePayload) -> BlogAr
 @admin_router.delete("/articles/{article_id}")
 async def delete_article(article_id: int) -> dict[str, bool]:
     """Удаляет статью."""
-    deleted = _repository.delete(article_id)
+    deleted = await asyncio.to_thread(_repository.delete, article_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Article not found")
     return {"success": True}
@@ -162,5 +167,5 @@ async def upload_image(file: UploadFile = File(...)) -> UploadResponse:
     BLOG_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
     filename = f"{uuid.uuid4().hex}{ext}"
     path = BLOG_UPLOADS_DIR / filename
-    path.write_bytes(content)
+    await asyncio.to_thread(path.write_bytes, content)
     return UploadResponse(url=f"/api/blog/uploads/{filename}", filename=filename)

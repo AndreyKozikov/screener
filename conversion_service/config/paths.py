@@ -1,22 +1,25 @@
 from pathlib import Path
 
+from conversion_service.config.config_loader import resolve_path
+from conversion_service.config.settings import settings
+
 # Корень проекта
 PROJECT_ROOT: Path = Path(__file__).resolve().parent.parent.parent
 
-# Корень основного backend
+# Корень основного backend (используется только для общих файлов данных и логов)
 BACKEND_DIR: Path = PROJECT_ROOT / "backend"
 
-# Директория с JSON/CSV данными (columns.json, zerocupon.csv и т.д.)
-DATA_DIR: Path = BACKEND_DIR / "app" / "data"
+# Директория с JSON/CSV данными. Значение задаётся в config/config.toml.
+DATA_DIR: Path = resolve_path(
+    settings.DATA_DIR,
+    PROJECT_ROOT / "backend" / "app" / "data",
+)
 
 # JSON со всеми событиями эмитента с e-disclosure (по ИНН, без фильтрации по заголовку)
-EMITENT_EVENTS_JSON_DIR: Path = DATA_DIR / "events"
-
-# Файл базы данных SQLite (облигации, эмитенты, купоны и т.д.)
-DB_PATH: Path = BACKEND_DIR / "db" / "bonds.db"
-
-# Файл базы данных для истории торгов (отдельная БД)
-HISTORY_DB_PATH: Path = BACKEND_DIR / "db" / "history_db.db"
+EMITENT_EVENTS_JSON_DIR: Path = resolve_path(
+    settings.EMITENT_EVENTS_JSON_DIR,
+    DATA_DIR / "events",
+)
 
 # ——— API Мосбиржи ———
 MOEX_BONDS_URL: str = "https://iss.moex.com/iss/engines/stock/markets/bonds/securities.json"
