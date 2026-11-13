@@ -7,6 +7,7 @@
 
 import asyncio
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime
 from typing import Dict, List, Optional
 
@@ -16,6 +17,9 @@ from conversion_service.app.utils.moex_client import MoexClient
 from conversion_service.app.utils.coupon_utils import to_frontend_coupon
 
 logger = logging.getLogger(__name__)
+
+# Ограничение параллельных запросов купонов к MOEX ISS: не более 10 потоков.
+MAX_COUPON_WORKERS = 10
 
 
 class CouponService:
@@ -46,29 +50,46 @@ class CouponService:
         self._bonds_repo = BondsRepository()
 
     async def refresh_all(self, force_refresh: bool = False) -> Dict[str, int | str]:
-        """Refresh coupon schedules for all bonds and persist them in one batch."""
+        """Refresh coupon schedules for all bonds and persist them in one batch.
+
+        Загрузка купонов с MOEX выполняется параллельно, но не более чем
+        в MAX_COUPON_WORKERS потоков. Запись в БД остаётся единой пачкой
+        после сбора всех записей — алгоритм записи не изменился.
+        """
         logger.info("[API /bonds/refresh-coupons] Starting refresh, force_refresh=%s", force_refresh)
         id_secid_list = await asyncio.to_thread(self._bonds_repo.get_id_secid_list)
+        pairs = [(bond_id, secid) for bond_id, secid in id_secid_list if secid]
         total = len(id_secid_list)
-        updated = errors = skipped = 0
+        updated = errors = 0
+        skipped = total - len(pairs)
         records: List[Dict] = []
 
-        for index, (bond_id, secid) in enumerate(id_secid_list, start=1):
-            if not secid:
-                skipped += 1
-                continue
-            if index % 100 == 0:
-                logger.info("[API /bonds/refresh-coupons] Processing %s/%s: %s", index, total, secid)
-            try:
-                fresh_data = await asyncio.to_thread(self._moex_client.fetch_coupons, secid)
-                records.extend(
-                    {"bond_id": bond_id, **coupon}
-                    for coupon in fresh_data.get("coupons", [])
-                )
+        workers = min(MAX_COUPON_WORKERS, len(pairs)) if pairs else 1
+        logger.info(
+            "[API /bonds/refresh-coupons] Облигаций для обновления: %s, потоков: %s",
+            len(pairs), workers,
+        )
+
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {
+                executor.submit(self._fetch_bond_coupon_records, bond_id, secid): (bond_id, secid)
+                for bond_id, secid in pairs
+            }
+            for processed, future in enumerate(as_completed(futures), start=1):
+                secid = futures[future][1]
+                try:
+                    bond_records = future.result()
+                except Exception as exc:
+                    logger.error("[API /bonds/refresh-coupons] ERROR for %s: %s", secid, exc)
+                    errors += 1
+                    continue
+                records.extend(bond_records)
                 updated += 1
-            except Exception as exc:
-                logger.error("[API /bonds/refresh-coupons] ERROR for %s: %s", secid, exc)
-                errors += 1
+                if processed % 100 == 0 or processed == len(pairs):
+                    logger.info(
+                        "[API /bonds/refresh-coupons] Processing %s/%s: %s",
+                        processed, len(pairs), secid,
+                    )
 
         await asyncio.to_thread(self._db_coupon.save_moex_coupons, records)
         return {
@@ -78,6 +99,14 @@ class CouponService:
             "errors": errors,
             "skipped": skipped,
         }
+
+    def _fetch_bond_coupon_records(self, bond_id: int, secid: str) -> List[Dict]:
+        """Загружает купоны одной облигации с MOEX и готовит записи для БД."""
+        fresh_data = self._moex_client.fetch_coupons(secid)
+        return [
+            {"bond_id": bond_id, **coupon}
+            for coupon in fresh_data.get("coupons", [])
+        ]
 
     def _fetch_bond_coupons_from_db(self, secid: str) -> Dict:
         """Извлекает историю купонных выплат для бумаги из базы данных.
