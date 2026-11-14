@@ -22,7 +22,6 @@ import CurrencyExchangeIcon from '@mui/icons-material/CurrencyExchange';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import LayersIcon from '@mui/icons-material/Layers';
-import PaymentsIcon from '@mui/icons-material/Payments';
 import PercentIcon from '@mui/icons-material/Percent';
 import SearchIcon from '@mui/icons-material/Search';
 import ViewWeekIcon from '@mui/icons-material/ViewWeek';
@@ -68,8 +67,6 @@ const FILTER_OPTIONS: Record<Extract<FilterId, 'couponMonths' | 'currency' | 'bo
 const FILTER_BUTTONS: Array<{ id: FilterId; label: string; icon: React.ReactNode }> = [
   { id: 'maturity', label: 'Дата погашения', icon: <CalendarMonthIcon /> },
   { id: 'yield', label: 'Доходность', icon: <PercentIcon /> },
-  { id: 'coupon', label: 'Купон', icon: <PaymentsIcon /> },
-  { id: 'couponYield', label: 'Купонная доходность', icon: <PercentIcon /> },
   { id: 'rating', label: 'Рейтинг', icon: <LayersIcon /> },
   { id: 'couponMonths', label: 'Месяц выплаты', icon: <ViewWeekIcon /> },
   { id: 'currency', label: 'Валюта', icon: <CurrencyExchangeIcon /> },
@@ -526,9 +523,9 @@ const BondMarketFilters: React.FC = () => {
       const to = draftFilters.matdateTo ? displayDate(draftFilters.matdateTo) : 'без ограничения';
       result.push({ key: 'maturity', label: `Погашение: ${from} — ${to}`, onDelete: () => clearFilter('maturity') });
     }
-    addRangeChip('yield', 'Доходность', draftFilters.yieldMin, draftFilters.yieldMax);
-    addRangeChip('coupon', 'Купон', draftFilters.couponMin, draftFilters.couponMax);
-    addRangeChip('couponYield', 'Купон к цене', draftFilters.couponYieldMin, draftFilters.couponYieldMax);
+    addRangeChip('yield', 'Доходность к погашению (YTM)', draftFilters.yieldMin, draftFilters.yieldMax);
+    addRangeChip('coupon', 'Купонная доходность к номиналу', draftFilters.couponMin, draftFilters.couponMax);
+    addRangeChip('couponYield', 'Купонная доходность к текущей цене', draftFilters.couponYieldMin, draftFilters.couponYieldMax);
     if (draftFilters.ratingMin || draftFilters.ratingMax) {
       result.push({
         key: 'rating',
@@ -550,7 +547,13 @@ const BondMarketFilters: React.FC = () => {
   const renderPopoverContent = (id: FilterId) => {
     switch (id) {
       case 'maturity': return <MaturityEditor />;
-      case 'yield': return <NumericRangeEditor title="Доходность к погашению" minKey="yieldMin" maxKey="yieldMax" max={30} step={0.1} />;
+      case 'yield': return (
+        <Stack spacing={1} sx={{ width: { xs: 'min(360px, calc(100vw - 24px))', sm: 360 } }}>
+          <NumericRangeEditor title="Купонная доходность к номиналу" minKey="couponMin" maxKey="couponMax" max={30} step={0.5} />
+          <NumericRangeEditor title="Купонная доходность к текущей цене" minKey="couponYieldMin" maxKey="couponYieldMax" max={100} step={0.1} />
+          <NumericRangeEditor title="Доходность к погашению (YTM)" minKey="yieldMin" maxKey="yieldMax" max={30} step={0.1} />
+        </Stack>
+      );
       case 'coupon': return <NumericRangeEditor title="Ставка купона" minKey="couponMin" maxKey="couponMax" max={30} step={0.5} />;
       case 'couponYield': return <NumericRangeEditor title="Купонная доходность к текущей цене" minKey="couponYieldMin" maxKey="couponYieldMax" max={100} step={0.1} />;
       case 'rating': return <RatingEditor />;
