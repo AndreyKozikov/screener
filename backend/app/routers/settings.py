@@ -9,12 +9,16 @@ from typing import Any, Dict
 
 import asyncio
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from app.routers.auth import require_admin
 from app.services import runtime_settings_service
 
 router = APIRouter(prefix="/api", tags=["settings"])
+
+
+admin_dependency = [Depends(require_admin)]
 
 
 class SettingsUpdateRequest(BaseModel):
@@ -29,13 +33,13 @@ class SettingsUpdateRequest(BaseModel):
     updates: Dict[str, Any] = Field(default_factory=dict, description="Переопределения настроек")
 
 
-@router.get("/settings")
+@router.get("/settings", dependencies=admin_dependency)
 async def get_settings() -> Dict[str, Any]:
     """Возвращает схему настроек для страницы настроек фронтенда."""
     return await asyncio.to_thread(runtime_settings_service.get_schema)
 
 
-@router.put("/settings")
+@router.put("/settings", dependencies=admin_dependency)
 async def update_settings(request: SettingsUpdateRequest) -> Dict[str, Any]:
     """Применяет переопределения (или сбрасывает) и возвращает обновлённую схему."""
     try:

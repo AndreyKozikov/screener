@@ -38,7 +38,7 @@ elif command -v npm >/dev/null 2>&1; then
     echo "Сборка фронтенда на сервере..."
     cd "${APP_DIR}/frontend"
     npm ci
-    VITE_API_BASE_URL="/api" VITE_CONVERSION_API_BASE_URL="/conversion-api" npm run build
+    VITE_API_BASE_URL="/api" npm run build
     cd "${APP_DIR}"
 fi
 

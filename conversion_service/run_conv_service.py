@@ -1,11 +1,15 @@
 import asyncio
+import hashlib
+import hmac
 import logging
+import time
 from contextlib import asynccontextmanager
 
 import uvicorn
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from conversion_service.app.routers import (
     emission_doc_download,
@@ -83,6 +87,35 @@ def create_app() -> FastAPI:
             allow_headers=["*"],
         )
 
+    @app.middleware("http")
+    async def require_backend_proxy(request: Request, call_next):
+        api_prefix = settings.API_V1_STR.rstrip("/")
+        if request.url.path != api_prefix and not request.url.path.startswith(f"{api_prefix}/"):
+            return await call_next(request)
+
+        secret = settings.AUTH_SECRET_KEY.get_secret_value()
+        timestamp = request.headers.get("x-backend-proxy-timestamp", "")
+        signature = request.headers.get("x-backend-proxy-signature", "")
+        try:
+            timestamp_value = int(timestamp)
+        except ValueError:
+            timestamp_value = 0
+
+        if len(secret) < 32 or abs(int(time.time()) - timestamp_value) > 60 or not signature:
+            return JSONResponse(status_code=403, content={"detail": "Backend proxy required"})
+
+        raw_path = request.scope.get("raw_path", request.url.path.encode("ascii"))
+        query = request.scope.get("query_string", b"")
+        request_target = raw_path + (b"?" + query if query else b"")
+        message = (
+            f"{request.method.upper()}\n{request_target.decode('ascii')}\n{timestamp}"
+        ).encode("utf-8")
+        expected = hmac.new(secret.encode("utf-8"), message, hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(signature, expected):
+            return JSONResponse(status_code=403, content={"detail": "Backend proxy required"})
+
+        return await call_next(request)
+
     app.include_router(
         emission_doc_download.router,
         prefix=settings.API_V1_STR,
@@ -136,7 +169,7 @@ app = create_app()
 if __name__ == "__main__":
     uvicorn.run(
         app,
-        host="0.0.0.0",
+        host="127.0.0.1",
         port=12345,
         reload=False,
         workers=1,

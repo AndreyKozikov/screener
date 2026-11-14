@@ -50,6 +50,7 @@ import {
   isAuthenticated,
   PORTFOLIO_AUTH_REDIRECT_STATE,
 } from '../utils/auth';
+import { useAdminCapabilities } from '../contexts/adminCapabilitiesContext';
 import { parseMarketFiltersUrl } from '../utils/agentDeepLink';
 import { refreshBondsData, refreshCouponsData } from '../api/bonds';
 import { refreshFloatersData } from '../api/edisclosure';
@@ -85,6 +86,7 @@ export const HomePage: React.FC = () => {
   const triggerDataRefresh = useUiStore((state) => state.triggerDataRefresh);
   const setError = useBondsStore((state) => state.setError);
   const [authenticated] = useState(isAuthenticated);
+  const { refresh_data: canRefreshData } = useAdminCapabilities();
   const [savedPageView] = useState(readSavedHomePageView);
   const portfolioLocked = !authenticated;
   const [viewMode, setViewMode] = useState<ViewMode>(() =>
@@ -646,22 +648,24 @@ export const HomePage: React.FC = () => {
               }} sx={{ minWidth: 0, color: '#29476F', textTransform: 'none', px: 1 }}>
                 {authenticated ? 'Выйти' : 'Войти'}
               </Button>
-              <IconButton
-                size="small"
-                aria-label="Обновить данные"
-                onClick={handleRefreshDataClick}
-                disabled={isRefreshing}
-                sx={{ 
-                  color: '#29476F', bgcolor: 'rgba(255,255,255,0.42)', border: '1px solid rgba(255,255,255,0.72)', width: { xs: 30, sm: 38 }, height: { xs: 30, sm: 38 },
-                  '&:hover': { bgcolor: 'rgba(255,255,255,0.72)' },
-                }}
-              >
-                {isRefreshing ? (
-                  <CircularProgress size={18} />
-                ) : (
-                  <RefreshIcon sx={{ fontSize: 18 }} />
-                )}
-              </IconButton>
+              {canRefreshData && (
+                <IconButton
+                  size="small"
+                  aria-label="Обновить данные"
+                  onClick={handleRefreshDataClick}
+                  disabled={isRefreshing}
+                  sx={{
+                    color: '#29476F', bgcolor: 'rgba(255,255,255,0.42)', border: '1px solid rgba(255,255,255,0.72)', width: { xs: 30, sm: 38 }, height: { xs: 30, sm: 38 },
+                    '&:hover': { bgcolor: 'rgba(255,255,255,0.72)' },
+                  }}
+                >
+                  {isRefreshing ? (
+                    <CircularProgress size={18} />
+                  ) : (
+                    <RefreshIcon sx={{ fontSize: 18 }} />
+                  )}
+                </IconButton>
+              )}
               <IconButton
                 size="small"
                 aria-label="Обратная связь"

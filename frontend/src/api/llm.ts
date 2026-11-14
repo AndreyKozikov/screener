@@ -18,7 +18,7 @@ export const runLlmPromptPipeline = async (
       embedding_model: embeddingModel,
     },
     {
-      timeout: 300000, // 5 minutes
+      timeout: 1200000, // batch parameter refresh can run for several minutes
     }
   );
   return response.data;

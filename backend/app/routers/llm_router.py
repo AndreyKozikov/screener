@@ -4,8 +4,9 @@ from typing import Any, Dict
 
 import asyncio
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from app.routers.auth import require_admin
 from app.models.schemasDTO.float_param_analize_dto import FloatParamsAnalizeLLM
 from app.models.schemasDTO.bond_docs_analisis_dto import BondBondsDocsAnalisisDTO
 from app.services import get_llm_analysis_service
@@ -13,7 +14,7 @@ from app.services import get_llm_analysis_service
 router = APIRouter(prefix="/api", tags=["float-bonds-llm-analize"])
 
 
-@router.post("/float-bonds-llm-analize/run")
+@router.post("/float-bonds-llm-analize/run", dependencies=[Depends(require_admin)])
 async def run_float_bonds_analize(payload: FloatParamsAnalizeLLM) -> Dict[str, Any]:
     """Запускает пайплайн анализа LLM для флоатеров с загруженными документами.
 

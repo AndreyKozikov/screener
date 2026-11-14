@@ -8,6 +8,7 @@ import { BlogAdminPage } from './pages/BlogAdminPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { AuthPage } from './pages/AuthPage';
+import { AdminCapabilitiesProvider } from './contexts/AdminCapabilitiesProvider';
 // import { TestPage } from './TestPage';
 
 /**
@@ -26,13 +27,15 @@ function App() {
           </Box>
         }>
           <BrowserRouter>
-            <Routes>
-              <Route path="/" element={<HomePage />} />
-              <Route path="/login" element={<AuthPage />} />
-              <Route path="/agent" element={<AgentChatPage />} />
-              <Route path="/blog-admin" element={<BlogAdminPage />} />
-              <Route path="/settings" element={<SettingsPage />} />
-            </Routes>
+            <AdminCapabilitiesProvider>
+              <Routes>
+                <Route path="/" element={<HomePage />} />
+                <Route path="/login" element={<AuthPage />} />
+                <Route path="/agent" element={<AgentChatPage />} />
+                <Route path="/blog-admin" element={<BlogAdminPage />} />
+                <Route path="/settings" element={<SettingsPage />} />
+              </Routes>
+            </AdminCapabilitiesProvider>
           </BrowserRouter>
         </React.Suspense>
       </ThemeProvider>

@@ -8,16 +8,21 @@ from typing import List, Optional
 
 import asyncio
 
-from fastapi import APIRouter, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_validator
 
+from app.routers.auth import require_admin
 from app.repository.db.blog_repository import BlogRepository
 from app.repository.db.remote_repository import RepositoryConflictError
 from config.paths import BLOG_UPLOADS_DIR
 
 public_router = APIRouter(prefix="/api/blog", tags=["blog"])
-admin_router = APIRouter(prefix="/api/blog-admin", tags=["blog-admin"])
+admin_router = APIRouter(
+    prefix="/api/blog-admin",
+    tags=["blog-admin"],
+    dependencies=[Depends(require_admin)],
+)
 
 _repository = BlogRepository()
 _ALLOWED_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}

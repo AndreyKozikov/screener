@@ -5,7 +5,14 @@ import { apiClient } from '../api/client';
 import { saveAuthSession } from '../utils/auth';
 import { resolveSiteNavigationTarget, writeSavedHomePageView } from '../utils/siteNavigation';
 
-type AuthResult = { access_token: string; user: { id: string; email: string } };
+type AuthResult = {
+  access_token: string;
+  user: {
+    id: string;
+    email: string;
+    capabilities?: { refresh_data: boolean; manage_settings: boolean };
+  };
+};
 
 export function AuthPage() {
   const navigate = useNavigate();
@@ -23,7 +30,7 @@ export function AuthPage() {
     setBusy(true);
     try {
       const { data } = await apiClient.post<AuthResult>(`/auth/${isRegister ? 'register' : 'login'}`, { email, password });
-      saveAuthSession(data.access_token, data.user.email);
+      saveAuthSession(data.access_token, data.user.email, data.user.capabilities);
       if (redirectToPortfolio) {
         writeSavedHomePageView(resolveSiteNavigationTarget('portfolio'));
       }

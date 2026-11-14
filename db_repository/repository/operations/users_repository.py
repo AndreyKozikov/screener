@@ -20,21 +20,21 @@ class UsersRepository:
         now = datetime.now(timezone.utc).isoformat()
         with self._engine.begin() as connection:
             connection.execute(text(
-                "INSERT INTO users (id, email, password_hash, created_at, updated_at) "
-                "VALUES (:id, :email, :password_hash, :now, :now)"
-            ), {"id": user_id, "email": email, "password_hash": password_hash, "now": now})
+                "INSERT INTO users (id, email, password_hash, created_at, updated_at, role) "
+                "VALUES (:id, :email, :password_hash, :now, :now, :role)"
+            ), {"id": user_id, "email": email, "password_hash": password_hash, "now": now, "role": "user"})
         return self.get_by_id(user_id)
 
     def get_by_email(self, email: str) -> dict | None:
         with self._engine.connect() as connection:
             row = connection.execute(text(
-                "SELECT id, email, password_hash, created_at, updated_at FROM users WHERE email = :email"
+                "SELECT id, email, password_hash, created_at, updated_at, role FROM users WHERE email = :email"
             ), {"email": email}).mappings().first()
             return dict(row) if row else None
 
     def get_by_id(self, user_id: str) -> dict | None:
         with self._engine.connect() as connection:
             row = connection.execute(text(
-                "SELECT id, email, password_hash, created_at, updated_at FROM users WHERE id = :id"
+                "SELECT id, email, password_hash, created_at, updated_at, role FROM users WHERE id = :id"
             ), {"id": user_id}).mappings().first()
             return dict(row) if row else None

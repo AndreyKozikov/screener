@@ -14,7 +14,7 @@ export interface TradingHistoryRefreshResponse {
 export const refreshTradingHistory = async (): Promise<TradingHistoryRefreshResponse> => {
   const response = await conversionApiClient.get<TradingHistoryRefreshResponse>(
     '/trading-history/download',
-    { timeout: 600_000 }
+    { timeout: 1_200_000 }
   );
   return response.data;
 };

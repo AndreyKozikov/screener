@@ -15,6 +15,7 @@ from app.models.schemasDTO.portfolio_report_dto import (
 )
 from app.repository.db.remote_repository import PortfolioImportRepository, RemoteRepositoryError
 from app.routers.auth import get_current_user
+from app.services.conversion_proxy_auth import make_conversion_proxy_headers
 from config.settings import settings
 from app.models import BondFilters
 from app.portfolio.service import PortfolioValuationService
@@ -42,11 +43,14 @@ async def import_portfolio_report_endpoint(
             raise HTTPException(status_code=413, detail={"code": "file_too_large", "message": "Размер отчёта не должен превышать 10 МБ."})
 
         conversion_url = f"{settings.CONVERSION_SERVICE_URL.rstrip('/')}/portfolios/import"
-        headers = {"Authorization": authorization} if authorization else {}
+        upstream_url = httpx.URL(conversion_url)
+        headers = make_conversion_proxy_headers("POST", upstream_url.raw_path.decode("ascii"))
+        if authorization:
+            headers["Authorization"] = authorization
         files = {"file": (filename, content, file.content_type or "application/octet-stream")}
         async with httpx.AsyncClient(timeout=600.0) as client:
             response = await client.post(
-                conversion_url,
+                upstream_url,
                 data={"portfolio_name": portfolio_name},
                 files=files,
                 headers=headers,

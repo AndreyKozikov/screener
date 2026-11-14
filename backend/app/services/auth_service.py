@@ -69,6 +69,19 @@ def _issue_token(user_id: str) -> str:
     return f"{header}.{payload}.{signature}"
 
 
+def _public_user(user: dict) -> dict:
+    role = user.get("role") or "user"
+    return {
+        "id": user["id"],
+        "email": user["email"],
+        "created_at": user["created_at"],
+        "capabilities": {
+            "refresh_data": role == "admin",
+            "manage_settings": role == "admin",
+        },
+    }
+
+
 def authenticate_token(token: str) -> dict:
     try:
         header, payload, signature = token.split(".")
@@ -86,7 +99,14 @@ def authenticate_token(token: str) -> dict:
     user = UsersRepository().get_by_id(claims["sub"])
     if not user:
         raise AuthError("User no longer exists")
-    return {"id": user["id"], "email": user["email"], "created_at": user["created_at"]}
+    # This identity is used only by backend dependencies. Public auth responses
+    # are built with _public_user and never include the database role.
+    return {
+        "id": user["id"],
+        "email": user["email"],
+        "created_at": user["created_at"],
+        "role": user.get("role") or "user",
+    }
 
 
 def register(email: str, password: str) -> tuple[dict, str]:
@@ -96,8 +116,7 @@ def register(email: str, password: str) -> tuple[dict, str]:
     if repo.get_by_email(normalized_email):
         raise AuthError("Пользователь с таким email уже зарегистрирован", 409)
     user = repo.create(str(uuid4()), normalized_email, _hash_password(password))
-    public_user = {"id": user["id"], "email": user["email"], "created_at": user["created_at"]}
-    return public_user, _issue_token(user["id"])
+    return _public_user(user), _issue_token(user["id"])
 
 
 def login(email: str, password: str) -> tuple[dict, str]:
@@ -105,5 +124,4 @@ def login(email: str, password: str) -> tuple[dict, str]:
     user = UsersRepository().get_by_email(email.strip().lower())
     if not user or not _verify_password(password, user["password_hash"]):
         raise AuthError("Неверный email или пароль")
-    public_user = {"id": user["id"], "email": user["email"], "created_at": user["created_at"]}
-    return public_user, _issue_token(user["id"])
+    return _public_user(user), _issue_token(user["id"])

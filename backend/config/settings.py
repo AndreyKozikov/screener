@@ -76,6 +76,7 @@ class Settings(BaseSettings):
     DB_REPOSITORY_CA_BUNDLE: str = ""
     DB_REPOSITORY_MAX_RETRIES: int = 0
     CONVERSION_SERVICE_URL: str = "http://127.0.0.1:12345/api"
+    CONVERSION_SERVICE_TIMEOUT_SECONDS: float = 1200.0
     AUTH_SECRET_KEY: SecretStr = SecretStr(_load_auth_secret_key())
     AUTH_TOKEN_TTL_HOURS: int = 168
 

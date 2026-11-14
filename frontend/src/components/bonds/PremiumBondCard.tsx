@@ -24,6 +24,7 @@ import { BondChat } from './BondChat';
 import { runLlmPromptPipeline } from '../../api/llm';
 import { useUiStore } from '../../stores/uiStore';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { useAdminCapabilities } from '../../contexts/adminCapabilitiesContext';
 import type { BondDetail as BondDetailType } from '../../types/bond';
 import { getEmitentBySecid, type EmitentInfo } from '../../api/emitent';
 import {
@@ -53,6 +54,7 @@ export const PremiumBondCard: React.FC<PremiumBondCardProps> = ({ bondDetail }) 
   const [isUpdatingParams, setIsUpdatingParams] = useState(false);
   const { triggerDataRefresh } = useUiStore();
   const settings = useSettingsStore((state) => state.settings);
+  const { refresh_data: canRefreshData } = useAdminCapabilities();
   
   // Fetch emitent info with ratings
   useEffect(() => {
@@ -321,23 +323,25 @@ export const PremiumBondCard: React.FC<PremiumBondCardProps> = ({ bondDetail }) 
                     pl: 0.5
                   }}
                 />
-                <Chip
-                  icon={<RefreshIcon sx={{ fontSize: '16px !important' }} />}
-                  label={isUpdatingParams ? "Обновление..." : "Обновить параметры"}
-                  color="secondary"
-                  variant="filled"
-                  size="small"
-                  onClick={handleUpdateParams}
-                  disabled={isUpdatingParams}
-                  sx={{
-                    cursor: isUpdatingParams ? 'default' : 'pointer',
-                    fontWeight: 600,
-                    '&:hover': {
-                      bgcolor: 'secondary.dark',
-                    },
-                    pl: 0.5
-                  }}
-                />
+                {canRefreshData && (
+                  <Chip
+                    icon={<RefreshIcon sx={{ fontSize: '16px !important' }} />}
+                    label={isUpdatingParams ? "Обновление..." : "Обновить параметры"}
+                    color="secondary"
+                    variant="filled"
+                    size="small"
+                    onClick={handleUpdateParams}
+                    disabled={isUpdatingParams}
+                    sx={{
+                      cursor: isUpdatingParams ? 'default' : 'pointer',
+                      fontWeight: 600,
+                      '&:hover': {
+                        bgcolor: 'secondary.dark',
+                      },
+                      pl: 0.5
+                    }}
+                  />
+                )}
               </Box>
               {secName && secName !== shortName && (
                 <Typography variant="body2" color="text.secondary">

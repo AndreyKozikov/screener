@@ -38,6 +38,7 @@ import {
   writeSavedHomePageView,
 } from '../utils/siteNavigation';
 import { isAuthenticated, PORTFOLIO_AUTH_REDIRECT_STATE } from '../utils/auth';
+import { useAdminCapabilities } from '../contexts/adminCapabilitiesContext';
 import { useSettingsStore } from '../stores/settingsStore';
 import type { AppSettings } from '../types/settings';
 import { DEFAULT_SETTINGS } from '../types/settings';
@@ -335,6 +336,27 @@ const BACKEND_TAB_GROUPS = ['agent', 'providers', 'local', 'services', 'keys', '
  * через PUT /api/settings и применяются без правки кода.
  */
 export const SettingsPage: React.FC = () => {
+  const navigate = useNavigate();
+  const { manage_settings: canManageSettings } = useAdminCapabilities();
+
+  if (!canManageSettings) {
+    return (
+      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', gap: 2, px: 3, textAlign: 'center' }}>
+        <Typography variant="h5" fontWeight={700} color="#29476F">Доступ ограничен</Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 420 }}>
+          Раздел «Настройки» доступен только администратору.
+        </Typography>
+        <Button variant="contained" onClick={() => navigate('/')} sx={{ borderRadius: '10px', px: 3 }}>
+          На главную
+        </Button>
+      </Box>
+    );
+  }
+
+  return <SettingsPageContent />;
+};
+
+const SettingsPageContent: React.FC = () => {
   const navigate = useNavigate();
   const { settings, updateSettings: updateFrontendSettings } = useSettingsStore();
 

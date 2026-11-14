@@ -21,6 +21,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ShowChartIcon from '@mui/icons-material/ShowChart';
 import SettingsIcon from '@mui/icons-material/Settings';
+import { useAdminCapabilities } from '../../contexts/adminCapabilitiesContext';
 
 export type SiteNavigationItem = {
   id: string;
@@ -448,6 +449,7 @@ export const SiteNavigationDrawer: React.FC<SiteNavigationDrawerProps> = ({
 }) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const { manage_settings: canManageSettings } = useAdminCapabilities();
 
   // Track which collapsed item's popup is currently open
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -591,36 +593,38 @@ export const SiteNavigationDrawer: React.FC<SiteNavigationDrawerProps> = ({
         </Box>
 
         {/* Compact footer: settings gear (opens settings page) */}
-        <Box
-          sx={{
-            py: 1.5,
-            borderTop: '1px solid rgba(200,218,240,0.5)',
-            display: 'flex',
-            justifyContent: 'center',
-          }}
-        >
-          <Tooltip title="Настройки" placement="right" arrow>
-            <IconButton
-              onClick={onOpenSettings}
-              aria-label="Настройки приложения"
-              sx={{
-                width: 38,
-                height: 38,
-                borderRadius: '10px',
-                bgcolor: 'rgba(25,118,210,0.12)',
-                border: '1px solid rgba(25,118,210,0.2)',
-                color: '#1558A6',
-                transition: 'all 0.2s ease',
-                '&:hover': {
-                  bgcolor: 'rgba(25,118,210,0.2)',
-                  transform: 'scale(1.05)',
-                },
-              }}
-            >
-              <SettingsIcon sx={{ fontSize: 20 }} />
-            </IconButton>
-          </Tooltip>
-        </Box>
+        {canManageSettings && (
+          <Box
+            sx={{
+              py: 1.5,
+              borderTop: '1px solid rgba(200,218,240,0.5)',
+              display: 'flex',
+              justifyContent: 'center',
+            }}
+          >
+            <Tooltip title="Настройки" placement="right" arrow>
+              <IconButton
+                onClick={onOpenSettings}
+                aria-label="Настройки приложения"
+                sx={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: '10px',
+                  bgcolor: 'rgba(25,118,210,0.12)',
+                  border: '1px solid rgba(25,118,210,0.2)',
+                  color: '#1558A6',
+                  transition: 'all 0.2s ease',
+                  '&:hover': {
+                    bgcolor: 'rgba(25,118,210,0.2)',
+                    transform: 'scale(1.05)',
+                  },
+                }}
+              >
+                <SettingsIcon sx={{ fontSize: 20 }} />
+              </IconButton>
+            </Tooltip>
+          </Box>
+        )}
       </Box>
 
       {/* ── Expanded panel (full width, shown when isExpanded = true) ── */}
@@ -741,6 +745,7 @@ export const SiteNavigationDrawer: React.FC<SiteNavigationDrawerProps> = ({
         </Box>
 
         {/* Footer settings card (gear button instead of the BondsScreener profile card) */}
+        {canManageSettings && (
         <Box
           sx={{
             p: 1.5,
@@ -814,6 +819,7 @@ export const SiteNavigationDrawer: React.FC<SiteNavigationDrawerProps> = ({
             </Box>
           </Box>
         </Box>
+        )}
       </Box>
     </Box>
   );

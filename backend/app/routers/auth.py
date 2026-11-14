@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
-from app.services.auth_service import AuthError, authenticate_token, login, register
+from app.services.auth_service import AuthError, _public_user, authenticate_token, login, register
 
 router = APIRouter(prefix="/api/auth", tags=["authentication"])
 
@@ -23,10 +23,22 @@ class Credentials(BaseModel):
         return value
 
 
+class AuthCapabilities(BaseModel):
+    refresh_data: bool
+    manage_settings: bool
+
+
+class AuthUserResponse(BaseModel):
+    id: str
+    email: str
+    created_at: str
+    capabilities: AuthCapabilities
+
+
 class AuthResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
-    user: dict
+    user: AuthUserResponse
 
 
 def _response(result: tuple[dict, str]) -> AuthResponse:
@@ -63,6 +75,12 @@ def get_current_user(authorization: Annotated[str | None, Header()] = None) -> d
         raise _http_error(exc) from exc
 
 
-@router.get("/me")
-def current_user(user: Annotated[dict, Depends(get_current_user)]) -> dict:
+def require_admin(user: Annotated[dict, Depends(get_current_user)]) -> dict:
+    if (user.get("role") or "user") != "admin":
+        raise HTTPException(status_code=403, detail="Требуются права администратора")
     return user
+
+
+@router.get("/me", response_model=AuthUserResponse)
+def current_user(user: Annotated[dict, Depends(get_current_user)]) -> AuthUserResponse:
+    return _public_user(user)
