@@ -24,6 +24,7 @@ from app.processors import init_events_processor, init_bond_llm_processor
 from app.services.vector_retrieval import init_retrieval_pipeline
 from app.services import init_llm_provider_resolution_service, init_llm_analysis_service, init_runtime_settings
 from app.agent import router as agent_router
+from app.agent.admin_logs_router import router as agent_logs_admin_router
 from app.macro_dashboard.router import router as macro_dashboard_router
 from app.services.auth_service import validate_auth_configuration
 
@@ -112,6 +113,7 @@ app.include_router(dashboard.router)
 #app.include_router(vector_retrieval.router)
 if settings.AGENT_ENABLED:
     app.include_router(agent_router.router)
+app.include_router(agent_logs_admin_router)
 app.include_router(blog.public_router)
 app.include_router(blog.admin_router)
 app.include_router(inflations.inflation_router)

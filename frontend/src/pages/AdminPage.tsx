@@ -14,6 +14,7 @@ import AdminPanelSettingsOutlinedIcon from '@mui/icons-material/AdminPanelSettin
 import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
 import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
 import HomeOutlinedIcon from '@mui/icons-material/HomeOutlined';
+import ManageSearchOutlinedIcon from '@mui/icons-material/ManageSearchOutlined';
 import SettingsSuggestOutlinedIcon from '@mui/icons-material/SettingsSuggestOutlined';
 import SyncAltRoundedIcon from '@mui/icons-material/SyncAltRounded';
 import { useAdminCapabilities } from '../contexts/adminCapabilitiesContext';
@@ -187,6 +188,16 @@ export const AdminPage: React.FC = () => {
               actionLabel="Открыть настройки"
               accent="#0F8B8D"
               onClick={() => navigate('/settings')}
+            />
+          )}
+          {canManageSettings && (
+            <AdminActionCard
+              icon={<ManageSearchOutlinedIcon />}
+              title="Анализ чатов ИИ"
+              description="Просматривайте диалоги и полную трассировку модели, находите сессии по ID и готовьте пакет с исходными событиями для ИИ-анализа."
+              actionLabel="Открыть журналы"
+              accent="#C26A16"
+              onClick={() => navigate('/admin/agent-logs')}
             />
           )}
         </Box>

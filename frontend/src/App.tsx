@@ -11,6 +11,7 @@ const AgentChatPage = React.lazy(() => import('./pages/AgentChatPage').then(({ A
 const BlogAdminPage = React.lazy(() => import('./pages/BlogAdminPage').then(({ BlogAdminPage: page }) => ({ default: page })));
 const SettingsPage = React.lazy(() => import('./pages/SettingsPage').then(({ SettingsPage: page }) => ({ default: page })));
 const AdminPage = React.lazy(() => import('./pages/AdminPage').then(({ AdminPage: page }) => ({ default: page })));
+const AgentLogsAdminPage = React.lazy(() => import('./pages/AgentLogsAdminPage').then(({ AgentLogsAdminPage: page }) => ({ default: page })));
 // import { TestPage } from './TestPage';
 
 /**
@@ -37,6 +38,7 @@ function App() {
                 <Route path="/blog-admin" element={<BlogAdminPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/admin" element={<AdminPage />} />
+                <Route path="/admin/agent-logs" element={<AgentLogsAdminPage />} />
               </Routes>
             </AdminCapabilitiesProvider>
           </BrowserRouter>
