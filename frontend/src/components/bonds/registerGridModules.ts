@@ -1,0 +1,35 @@
+import {
+  CellApiModule,
+  CellStyleModule,
+  ClientSideRowModelApiModule,
+  ClientSideRowModelModule,
+  ColumnApiModule,
+  ColumnAutoSizeModule,
+  DateFilterModule,
+  ModuleRegistry,
+  NumberFilterModule,
+  PaginationModule,
+  RenderApiModule,
+  RowApiModule,
+  RowSelectionModule,
+  TextFilterModule,
+  TooltipModule,
+} from 'ag-grid-community';
+
+// Register only the features used by the application's data tables.
+ModuleRegistry.registerModules([
+  ClientSideRowModelModule,
+  ClientSideRowModelApiModule,
+  ColumnApiModule,
+  CellApiModule,
+  RenderApiModule,
+  RowApiModule,
+  TextFilterModule,
+  NumberFilterModule,
+  DateFilterModule,
+  PaginationModule,
+  ColumnAutoSizeModule,
+  CellStyleModule,
+  RowSelectionModule,
+  TooltipModule,
+]);

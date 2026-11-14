@@ -22,7 +22,7 @@ import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { type Dayjs } from 'dayjs';
 import 'dayjs/locale/ru';
-import Plot from 'react-plotly.js';
+import Plot from '../common/PlotlyScatterChart';
 import {
   fetchInflationExpectationsData,
   type InflationExpectationsDataPoint,

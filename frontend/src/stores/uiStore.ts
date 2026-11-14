@@ -12,6 +12,7 @@ interface UiState {
   
   // Dataset refresh trigger
   dataRefreshVersion: number;
+  refreshDialogRequested: boolean;
   
   // Actions
   setSelectedBond: (secid: string | null) => void;
@@ -19,6 +20,8 @@ interface UiState {
   setDrawerOpen: (open: boolean) => void;
   setInitializing: (loading: boolean) => void;
   triggerDataRefresh: () => void;
+  requestRefreshDialog: () => void;
+  clearRefreshDialogRequest: () => void;
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -27,6 +30,7 @@ export const useUiStore = create<UiState>((set) => ({
   isDrawerOpen: false,
   isInitializing: true,
   dataRefreshVersion: 0,
+  refreshDialogRequested: false,
   
   // Actions
   setSelectedBond: (secid) => set({ selectedBondId: secid }),
@@ -42,6 +46,8 @@ export const useUiStore = create<UiState>((set) => ({
   triggerDataRefresh: () => set((state) => ({
     dataRefreshVersion: state.dataRefreshVersion + 1,
   })),
+  requestRefreshDialog: () => set({ refreshDialogRequested: true }),
+  clearRefreshDialogRequest: () => set({ refreshDialogRequested: false }),
 }));
 
 

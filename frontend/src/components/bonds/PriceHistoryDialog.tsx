@@ -9,7 +9,7 @@ import {
   Typography,
   IconButton,
 } from '@mui/material';
-import Plot from 'react-plotly.js';
+import Plot from '../common/PlotlyScatterChart';
 import CloseIcon from '@mui/icons-material/Close';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import type { BondPriceHistoryResponse } from '../../api/bonds';

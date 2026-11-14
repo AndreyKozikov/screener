@@ -4,6 +4,27 @@ import react from '@vitejs/plugin-react'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  build: {
+    // AG Grid is published as one ESM module (~801 kB) and is lazy-loaded only
+    // when a data-grid view opens; keep warnings for unexpectedly larger chunks.
+    chunkSizeWarningLimit: 900,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes('/node_modules/plotly.js/src/')) return undefined;
+          if (id.includes('/node_modules/plotly.js/src/traces/scatter/')) return 'plotly-scatter';
+          if (id.includes('/node_modules/plotly.js/src/traces/bar/')) return 'plotly-bar';
+          if (id.includes('/node_modules/plotly.js/src/plots/cartesian/')) return 'plotly-cartesian';
+          if (id.includes('/node_modules/plotly.js/src/components/')) return 'plotly-components';
+          if (id.includes('/node_modules/plotly.js/src/plots/')) return 'plotly-plots';
+          if (id.includes('/node_modules/plotly.js/src/lib/')) return 'plotly-lib';
+          if (id.includes('/node_modules/plotly.js/src/plot_api/')) return 'plotly-api';
+          if (id.includes('/node_modules/plotly.js/src/assets/')) return 'plotly-assets';
+          return 'plotly-core';
+        },
+      },
+    },
+  },
   server: {
     host: '0.0.0.0', // Listen on all interfaces for external access
     port: 5173,

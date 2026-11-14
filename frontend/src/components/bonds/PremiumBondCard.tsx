@@ -33,8 +33,7 @@ import {
   formatPercent,
   formatBondStatus,
 } from '../../utils/formatters';
-import { getWorstRating, getRatingLevel, getRatingAgency, type Rating } from '../../utils/ratings';
-import { getRatingColor } from './BondsTable';
+import { getRatingColor, getWorstRating, getRatingLevel, getRatingAgency, type Rating } from '../../utils/ratings';
 
 interface PremiumBondCardProps {
   bondDetail: BondDetailType;

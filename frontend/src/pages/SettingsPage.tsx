@@ -588,7 +588,7 @@ const SettingsPageContent: React.FC = () => {
         activeId="settings"
         items={getSiteNavigationItems(isAuthenticated())}
         onSelect={handleSiteNavigationSelect}
-        onOpenSettings={() => navigate('/settings')}
+        onOpenAdmin={() => navigate('/admin')}
       />
 
       <Box sx={{

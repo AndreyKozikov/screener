@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useCallback, useState, useRef } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import type { ColDef, RowClickedEvent, CellClickedEvent, ICellRendererParams, IHeaderParams } from 'ag-grid-community';
-import { ModuleRegistry, AllCommunityModule } from 'ag-grid-community';
+import '../bonds/registerGridModules';
 import 'ag-grid-community/styles/ag-grid.css';
 import 'ag-grid-community/styles/ag-theme-material.css';
 import '../bonds/ag-grid-tooltips.css';
@@ -9,8 +9,6 @@ import { Box, Card, CardContent, Button, Tooltip, IconButton, Alert, Toolbar, Fo
 import DeleteIcon from '@mui/icons-material/Delete';
 import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
 
-// Register AG Grid modules
-ModuleRegistry.registerModules([AllCommunityModule]);
 import { useUiStore } from '../../stores/uiStore';
 import { fetchDescriptions } from '../../api/metadata';
 import type { DescriptionsResponse } from '../../api/metadata';

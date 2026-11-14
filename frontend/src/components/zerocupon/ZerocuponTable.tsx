@@ -29,7 +29,7 @@ import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import dayjs, { type Dayjs } from 'dayjs';
 import 'dayjs/locale/ru';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
-import Plot from 'react-plotly.js';
+import Plot from '../common/PlotlyScatterChart';
 import {
   downloadZerocuponJson,
   downloadZerocuponMarkdown,

@@ -12,20 +12,9 @@ import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
 import TimelineIcon from '@mui/icons-material/Timeline';
 import AnalyticsIcon from '@mui/icons-material/Analytics';
 import ArticleIcon from '@mui/icons-material/Article';
-import { BondsTable } from '../components/bonds/BondsTable';
 import { BondDetails } from '../components/bonds/BondDetails';
-import { ZerocuponTable } from '../components/zerocupon/ZerocuponTable';
-import { ForecastTable } from '../components/forecast/ForecastTable';
-import { RuoniaTable } from '../components/ruonia/RuoniaTable';
-import { KeyRateTable } from '../components/keyrate/KeyRateTable';
-import { Workbench, type WorkbenchModule } from '../components/portfolio/Workbench';
+import type { WorkbenchModule } from '../components/portfolio/Workbench';
 import { HubCard } from '../components/portfolio/HubCard';
-import { ComparisonTable } from '../components/bonds/ComparisonTable';
-import { SpreadAnalysis } from '../components/bonds/SpreadAnalysis';
-import { InflationExpectationsChart } from '../components/inflationExpectations/InflationExpectationsChart';
-import { IpcPage } from '../components/ipc/IpcPage';
-import { SustainableInflationPage } from '../components/inflation/SustainableInflationPage';
-import { MacroDashboard } from '../components/forecast/MacroDashboard';
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
 import { RefreshDataDialog } from '../components/common/RefreshDataDialog';
 import { ForecastFileDialog } from '../components/common/ForecastFileDialog';
@@ -35,7 +24,7 @@ import { SiteNavigationDrawer } from '../components/common/SiteNavigationDrawer'
 import { HubCardIllustration, type HubCardIllustrationVariant } from '../components/common/HubCardIllustration';
 import { HubQueryBar } from '../components/common/HubQueryBar';
 import { useAgentStore } from '../stores/agentStore';
-import { BlogPage, type BlogMode } from './BlogPage';
+import type { BlogMode } from './BlogPage';
 import {
   getSiteNavigationItems,
   isPortfolioNavigationId,
@@ -80,10 +69,26 @@ type ViewMode = 'HUB' | 'TABLE';
 type ForecastSubView = SiteForecastSubView;
 type ComparisonSubView = 'comparison' | 'spread-analysis';
 
+const BondsTable = React.lazy(() => import('../components/bonds/BondsTable').then(({ BondsTable: component }) => ({ default: component })));
+const ZerocuponTable = React.lazy(() => import('../components/zerocupon/ZerocuponTable').then(({ ZerocuponTable: component }) => ({ default: component })));
+const ForecastTable = React.lazy(() => import('../components/forecast/ForecastTable').then(({ ForecastTable: component }) => ({ default: component })));
+const RuoniaTable = React.lazy(() => import('../components/ruonia/RuoniaTable').then(({ RuoniaTable: component }) => ({ default: component })));
+const KeyRateTable = React.lazy(() => import('../components/keyrate/KeyRateTable').then(({ KeyRateTable: component }) => ({ default: component })));
+const Workbench = React.lazy(() => import('../components/portfolio/Workbench').then(({ Workbench: component }) => ({ default: component })));
+const ComparisonTable = React.lazy(() => import('../components/bonds/ComparisonTable').then(({ ComparisonTable: component }) => ({ default: component })));
+const SpreadAnalysis = React.lazy(() => import('../components/bonds/SpreadAnalysis').then(({ SpreadAnalysis: component }) => ({ default: component })));
+const InflationExpectationsChart = React.lazy(() => import('../components/inflationExpectations/InflationExpectationsChart').then(({ InflationExpectationsChart: component }) => ({ default: component })));
+const IpcPage = React.lazy(() => import('../components/ipc/IpcPage').then(({ IpcPage: component }) => ({ default: component })));
+const SustainableInflationPage = React.lazy(() => import('../components/inflation/SustainableInflationPage').then(({ SustainableInflationPage: component }) => ({ default: component })));
+const MacroDashboard = React.lazy(() => import('../components/forecast/MacroDashboard').then(({ MacroDashboard: component }) => ({ default: component })));
+const BlogPage = React.lazy(() => import('./BlogPage').then(({ BlogPage: component }) => ({ default: component })));
+
 export const HomePage: React.FC = () => {
   const navigate = useNavigate();
   const agentSendNew = useAgentStore((state) => state.sendNew);
   const triggerDataRefresh = useUiStore((state) => state.triggerDataRefresh);
+  const refreshDialogRequested = useUiStore((state) => state.refreshDialogRequested);
+  const clearRefreshDialogRequest = useUiStore((state) => state.clearRefreshDialogRequest);
   const setError = useBondsStore((state) => state.setError);
   const [authenticated] = useState(isAuthenticated);
   const { refresh_data: canRefreshData } = useAdminCapabilities();
@@ -126,6 +131,12 @@ export const HomePage: React.FC = () => {
 
   /** Список дат прогнозов (YYYY-MM-DD), загружается при входе в комнату «Прогнозы», передаётся в ForecastTable чтобы не дублировать запрос */
   const [availableForecastDates, setAvailableForecastDates] = useState<string[] | null>(null);
+
+  useEffect(() => {
+    if (!refreshDialogRequested) return;
+    setIsRefreshDialogOpen(true);
+    clearRefreshDialogRequest();
+  }, [refreshDialogRequested, clearRefreshDialogRequest]);
 
   useEffect(() => {
     writeSavedHomePageView({
@@ -587,7 +598,7 @@ export const HomePage: React.FC = () => {
         activeId={activeNavigationId}
         items={getSiteNavigationItems(authenticated)}
         onSelect={handleSiteNavigationSelect}
-        onOpenSettings={() => navigate('/settings')}
+        onOpenAdmin={() => navigate('/admin')}
       />
 
       <Box sx={{
@@ -706,6 +717,13 @@ export const HomePage: React.FC = () => {
             : { height: 'calc(100vh - 62px)' }
           : {})
       }}>
+        <React.Suspense
+          fallback={(
+            <Box sx={{ flexGrow: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <CircularProgress />
+            </Box>
+          )}
+        >
         {viewMode === 'HUB' ? (
           <>
             <Box
@@ -1100,6 +1118,7 @@ export const HomePage: React.FC = () => {
             )}
           </Container>
         )}
+        </React.Suspense>
       </Box>
 
       {/* Bond Details Drawer */}

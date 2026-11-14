@@ -29,7 +29,8 @@ import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { type Dayjs } from 'dayjs';
 import 'dayjs/locale/ru';
-import Plot from 'react-plotly.js';
+import Plot from '../common/PlotlyScatterChart';
+import BarPlot from '../common/PlotlyBarChart';
 import { fetchIpcDashboardData } from '../../api/ipcDataApi';
 import type { IpcDashboardData, IpcMonthlyPoint, IpcWeeklyPoint } from '../../types/ipcData';
 
@@ -493,7 +494,7 @@ export const IpcPage: React.FC = () => {
                   ) : <Typography color="text.secondary" sx={{ p: 2, textAlign: 'center', fontSize: '0.8rem' }}>Нет месячных данных за выбранный период</Typography>
                 ) : (
                   visibleData.weekly.length ? (
-                    <Plot
+                    <BarPlot
                       data={weeklyChart}
                       layout={{
                         autosize: true,

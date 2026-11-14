@@ -2,13 +2,15 @@ import React from 'react';
 import { ThemeProvider, CssBaseline, Box, Typography } from '@mui/material';
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { theme } from './theme/theme';
-import { HomePage } from './pages/HomePage';
-import { AgentChatPage } from './pages/AgentChatPage';
-import { BlogAdminPage } from './pages/BlogAdminPage';
-import { SettingsPage } from './pages/SettingsPage';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
-import { AuthPage } from './pages/AuthPage';
 import { AdminCapabilitiesProvider } from './contexts/AdminCapabilitiesProvider';
+
+const HomePage = React.lazy(() => import('./pages/HomePage').then(({ HomePage: page }) => ({ default: page })));
+const AuthPage = React.lazy(() => import('./pages/AuthPage').then(({ AuthPage: page }) => ({ default: page })));
+const AgentChatPage = React.lazy(() => import('./pages/AgentChatPage').then(({ AgentChatPage: page }) => ({ default: page })));
+const BlogAdminPage = React.lazy(() => import('./pages/BlogAdminPage').then(({ BlogAdminPage: page }) => ({ default: page })));
+const SettingsPage = React.lazy(() => import('./pages/SettingsPage').then(({ SettingsPage: page }) => ({ default: page })));
+const AdminPage = React.lazy(() => import('./pages/AdminPage').then(({ AdminPage: page }) => ({ default: page })));
 // import { TestPage } from './TestPage';
 
 /**
@@ -34,6 +36,7 @@ function App() {
                 <Route path="/agent" element={<AgentChatPage />} />
                 <Route path="/blog-admin" element={<BlogAdminPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
+                <Route path="/admin" element={<AdminPage />} />
               </Routes>
             </AdminCapabilitiesProvider>
           </BrowserRouter>

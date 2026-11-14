@@ -20,7 +20,7 @@ import {
   Typography,
 } from '@mui/material';
 import CalendarMonthOutlinedIcon from '@mui/icons-material/CalendarMonthOutlined';
-import Plot from 'react-plotly.js';
+import Plot from '../common/PlotlyScatterChart';
 import {
   fetchSustainableInflationData,
   type SustainableInflationDataPoint,

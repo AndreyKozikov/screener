@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useCallback, useState, useRef } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import type { ColDef, RowClickedEvent, CellClickedEvent, ICellRendererParams, IHeaderParams } from 'ag-grid-community';
-import { ModuleRegistry, AllCommunityModule, themeQuartz } from 'ag-grid-community';
+import { themeQuartz } from 'ag-grid-community';
 import './ag-grid-tooltips.css';
 import { Box, Card, CardContent, Tooltip, IconButton } from '@mui/material';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
@@ -34,10 +34,9 @@ import { RatingDisplay } from './RatingDisplay';
 import { compareRatingLevels, getRatingLevel, getWorstRating } from '../../utils/ratings';
 import BondMarketFilters from './BondMarketFilters';
 import { FloaterCardDialog } from './FloaterCardDialog';
-import { PriceHistoryDialog } from './PriceHistoryDialog';
+import './registerGridModules';
 
-// Register AG Grid modules
-ModuleRegistry.registerModules([AllCommunityModule]);
+const PriceHistoryDialog = React.lazy(() => import('./PriceHistoryDialog').then(({ PriceHistoryDialog: component }) => ({ default: component })));
 
 const bondsGridTheme = themeQuartz.withParams({
   accentColor: '#1976d2',
@@ -218,140 +217,6 @@ const flattenDescriptions = (descriptions: DescriptionsResponse): FieldDescripti
 
   return result;
 };
-
-/**
- * Определяет базовую группу рейтинга только для выбора цвета ячейки.
- * Знаки +/- влияют на порядок рейтингов, но не меняют цветовую группу.
- * 
- * Примеры:
- * "ruAAA" → "AAA"
- * "AAA(RU)" → "AAA"
- * "ruBBB+.sf" → "BBB"
- * "ruAA-" → "AA"
- * "A(RU)" → "A"
- * "BBB+" → "BBB"
- * "CCC-" → "CCC"
- */
-const normalizeRating = (rating: string): string => {
-  if (!rating || rating.trim() === '' || rating === '—' || rating === '-') {
-    return '';
-  }
-  
-  // Привести к верхнему регистру и убрать пробелы
-  let normalized = rating.toUpperCase().trim();
-  
-  // Удалить префиксы: RU, (RU) в начале строки
-  normalized = normalized.replace(/^RU\s*/i, '');
-  normalized = normalized.replace(/^\(RU\)\s*/i, '');
-  
-  // Удалить все скобки и их содержимое (включая (RU) в любом месте)
-  normalized = normalized.replace(/\([^)]*\)/g, '');
-  
-  // Удалить суффиксы: .SF, -SF, .sf в конце
-  normalized = normalized.replace(/[.\-]?SF$/i, '');
-  normalized = normalized.replace(/\.sf$/i, '');
-  
-  // Удалить знаки + и - в конце
-  normalized = normalized.replace(/[+\-]+$/, '');
-  
-  // Удалить все точки и дефисы
-  normalized = normalized.replace(/[.\-]/g, '');
-  
-  // Извлечь основную буквенную часть (AAA, AA, A, BBB, BB, B, CCC, CC, C, D)
-  const letterMatch = normalized.match(/^(AAA|AA|A|BBB|BB|B|CCC|CC|C|D)/);
-  if (letterMatch) {
-    return letterMatch[1];
-  }
-  
-  // Если точного совпадения нет, попробуем извлечь только буквы и найти паттерн
-  const lettersOnly = normalized.replace(/[^A-Z]/g, '');
-  const patternMatch = lettersOnly.match(/^(AAA|AA|A|BBB|BB|B|CCC|CC|C|D)/);
-  if (patternMatch) {
-    return patternMatch[1];
-  }
-  
-  // Если ничего не найдено, вернуть пустую строку
-  return '';
-};
-
-/**
- * Определяет цвет рейтинга на основе нормализованного значения
- * 
- * Цветовая схема:
- * - AAA, AA, A → зелёный (#4CAF50)
- * - BBB → жёлтый (#FFB300)
- * - BB, B → оранжевый (#FB8C00)
- * - CCC, CC, C, D → красный (#E53935)
- * - пустой/неопознанный → серый (#E0E0E0)
- */
-export const getRatingColor = (rating: string | null | undefined): { bg: string; color: string } => {
-  if (!rating || rating.trim() === '' || rating === '—' || rating === '-') {
-    return { bg: '#E0E0E0', color: '#666' };
-  }
-  
-  // Нормализовать рейтинг
-  const normalized = normalizeRating(rating);
-  
-  if (!normalized) {
-    return { bg: '#E0E0E0', color: '#666' };
-  }
-  
-  // Проверяем в порядке от более длинных к более коротким для правильного определения
-  
-  // AAA → зелёный (проверяем первым, так как это самое длинное)
-  if (normalized.startsWith('AAA')) {
-    return { bg: '#4CAF50', color: '#fff' };
-  }
-  
-  // AA → зелёный
-  if (normalized.startsWith('AA')) {
-    return { bg: '#4CAF50', color: '#fff' };
-  }
-  
-  // BBB → жёлтый (проверяем перед BB)
-  if (normalized.startsWith('BBB')) {
-    return { bg: '#FFB300', color: '#000' };
-  }
-  
-  // CCC → красный (проверяем перед CC)
-  if (normalized.startsWith('CCC')) {
-    return { bg: '#E53935', color: '#fff' };
-  }
-  
-  // CC → красный
-  if (normalized.startsWith('CC')) {
-    return { bg: '#E53935', color: '#fff' };
-  }
-  
-  // BB → оранжевый
-  if (normalized.startsWith('BB')) {
-    return { bg: '#FB8C00', color: '#fff' };
-  }
-  
-  // A → зелёный
-  if (normalized === 'A') {
-    return { bg: '#4CAF50', color: '#fff' };
-  }
-  
-  // B → оранжевый
-  if (normalized === 'B') {
-    return { bg: '#FB8C00', color: '#fff' };
-  }
-  
-  // C → красный
-  if (normalized === 'C') {
-    return { bg: '#E53935', color: '#fff' };
-  }
-  
-  // D → красный
-  if (normalized === 'D') {
-    return { bg: '#E53935', color: '#fff' };
-  }
-  
-  // Неопознанный рейтинг → серый
-  return { bg: '#E0E0E0', color: '#666' };
-};
-
 
 /**
  * BondsTable Component
@@ -1630,15 +1495,19 @@ export const BondsTable: React.FC = () => {
         onClose={handleCloseFloaterDialog}
         data={floaterDialogData}
       />
-      <PriceHistoryDialog
-        open={priceHistoryOpen}
-        onClose={handleClosePriceHistory}
-        secid={priceHistorySecid}
-        bondName={priceHistoryBondName}
-        data={priceHistoryData}
-        loading={priceHistoryLoading}
-        error={priceHistoryError}
-      />
+      {priceHistoryOpen && (
+        <React.Suspense fallback={null}>
+          <PriceHistoryDialog
+            open={priceHistoryOpen}
+            onClose={handleClosePriceHistory}
+            secid={priceHistorySecid}
+            bondName={priceHistoryBondName}
+            data={priceHistoryData}
+            loading={priceHistoryLoading}
+            error={priceHistoryError}
+          />
+        </React.Suspense>
+      )}
     </Card>
     </Box>
   );

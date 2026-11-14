@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Box } from '@mui/material';
 import type { BondListItem } from '../../types/bond';
-import { getWorstRating, getRatingLevel, type Rating } from '../../utils/ratings';
+import { getRatingColor, getWorstRating, getRatingLevel, type Rating } from '../../utils/ratings';
 import { getEmitentBySecid } from '../../api/emitent';
-import { getRatingColor } from './BondsTable';
 
 interface RatingDisplayProps {
   bond: BondListItem;

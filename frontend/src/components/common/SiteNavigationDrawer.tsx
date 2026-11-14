@@ -20,7 +20,7 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ShowChartIcon from '@mui/icons-material/ShowChart';
-import SettingsIcon from '@mui/icons-material/Settings';
+import AdminPanelSettingsOutlinedIcon from '@mui/icons-material/AdminPanelSettingsOutlined';
 import { useAdminCapabilities } from '../../contexts/adminCapabilitiesContext';
 
 export type SiteNavigationItem = {
@@ -35,7 +35,7 @@ type SiteNavigationDrawerProps = {
   activeId: string;
   items: SiteNavigationItem[];
   onSelect: (id: string) => void;
-  onOpenSettings?: () => void;
+  onOpenAdmin?: () => void;
 };
 
 const NAV_EXPANDED_STORAGE_KEY = 'bonds-screener:nav-expanded';
@@ -445,11 +445,12 @@ export const SiteNavigationDrawer: React.FC<SiteNavigationDrawerProps> = ({
   activeId,
   items,
   onSelect,
-  onOpenSettings,
+  onOpenAdmin,
 }) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
-  const { manage_settings: canManageSettings } = useAdminCapabilities();
+  const { refresh_data: canRefreshData, manage_settings: canManageSettings } = useAdminCapabilities();
+  const isAdmin = canRefreshData || canManageSettings;
 
   // Track which collapsed item's popup is currently open
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -592,8 +593,8 @@ export const SiteNavigationDrawer: React.FC<SiteNavigationDrawerProps> = ({
           ))}
         </Box>
 
-        {/* Compact footer: settings gear (opens settings page) */}
-        {canManageSettings && (
+        {/* Compact footer: administrator panel shortcut */}
+        {isAdmin && (
           <Box
             sx={{
               py: 1.5,
@@ -602,10 +603,10 @@ export const SiteNavigationDrawer: React.FC<SiteNavigationDrawerProps> = ({
               justifyContent: 'center',
             }}
           >
-            <Tooltip title="Настройки" placement="right" arrow>
+            <Tooltip title="Админ-панель" placement="right" arrow>
               <IconButton
-                onClick={onOpenSettings}
-                aria-label="Настройки приложения"
+                onClick={onOpenAdmin}
+                aria-label="Открыть админ-панель"
                 sx={{
                   width: 38,
                   height: 38,
@@ -620,7 +621,7 @@ export const SiteNavigationDrawer: React.FC<SiteNavigationDrawerProps> = ({
                   },
                 }}
               >
-                <SettingsIcon sx={{ fontSize: 20 }} />
+                <AdminPanelSettingsOutlinedIcon sx={{ fontSize: 20 }} />
               </IconButton>
             </Tooltip>
           </Box>
@@ -744,8 +745,8 @@ export const SiteNavigationDrawer: React.FC<SiteNavigationDrawerProps> = ({
           </Box>
         </Box>
 
-        {/* Footer settings card (gear button instead of the BondsScreener profile card) */}
-        {canManageSettings && (
+        {/* Footer administrator panel card */}
+        {isAdmin && (
         <Box
           sx={{
             p: 1.5,
@@ -755,8 +756,8 @@ export const SiteNavigationDrawer: React.FC<SiteNavigationDrawerProps> = ({
           <Box
             component="button"
             type="button"
-            onClick={onOpenSettings}
-            aria-label="Настройки приложения"
+            onClick={onOpenAdmin}
+            aria-label="Открыть админ-панель"
             sx={{
               display: 'flex',
               alignItems: 'center',
@@ -791,7 +792,7 @@ export const SiteNavigationDrawer: React.FC<SiteNavigationDrawerProps> = ({
                 boxShadow: '0 2px 6px rgba(21,88,166,0.3)',
               }}
             >
-              <SettingsIcon sx={{ fontSize: 20 }} />
+                <AdminPanelSettingsOutlinedIcon sx={{ fontSize: 20 }} />
             </Box>
             <Box sx={{ minWidth: 0, flex: 1 }}>
               <Typography
@@ -803,7 +804,7 @@ export const SiteNavigationDrawer: React.FC<SiteNavigationDrawerProps> = ({
                   lineHeight: 1.2,
                 }}
               >
-                Настройки
+                Админ-панель
               </Typography>
               <Typography
                 noWrap
@@ -814,7 +815,7 @@ export const SiteNavigationDrawer: React.FC<SiteNavigationDrawerProps> = ({
                   mt: 0.2,
                 }}
               >
-                Параметры приложения
+                Управление сервисом
               </Typography>
             </Box>
           </Box>

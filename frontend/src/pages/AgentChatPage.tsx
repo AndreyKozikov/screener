@@ -56,7 +56,7 @@ export const AgentChatPage: React.FC = () => {
         activeId="chat"
         items={getSiteNavigationItems(isAuthenticated())}
         onSelect={handleSiteNavigationSelect}
-        onOpenSettings={() => navigate('/settings')}
+        onOpenAdmin={() => navigate('/admin')}
       />
 
       <Box sx={{

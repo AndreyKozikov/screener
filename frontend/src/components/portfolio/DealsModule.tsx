@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import type { ColDef } from 'ag-grid-community';
-import { AllCommunityModule, ModuleRegistry, themeQuartz } from 'ag-grid-community';
+import { themeQuartz } from 'ag-grid-community';
+import '../bonds/registerGridModules';
 import {
   Alert,
   Box,
@@ -23,8 +24,6 @@ import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded';
 import { fetchPortfolioDeals, type PortfolioDeal } from '../../api/portfolioDeals';
 import { fetchImportedPortfolios, type ImportedPortfolioSummary } from '../../api/portfolioReportImport';
 import { useSelectedReportPortfolioStore } from '../../stores/selectedReportPortfolioStore';
-
-ModuleRegistry.registerModules([AllCommunityModule]);
 
 const dealsGridTheme = themeQuartz.withParams({
   accentColor: '#1976d2',

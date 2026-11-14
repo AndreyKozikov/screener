@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Alert,
   Box,
@@ -18,6 +19,7 @@ import SaveIcon from '@mui/icons-material/Save';
 import UploadIcon from '@mui/icons-material/Upload';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
+import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
@@ -56,6 +58,7 @@ const makeSlug = (value: string): string => {
 };
 
 export const BlogAdminPage: React.FC = () => {
+  const navigate = useNavigate();
   const [articles, setArticles] = useState<BlogArticle[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [form, setForm] = useState<BlogArticlePayload>(emptyPayload);
@@ -172,13 +175,23 @@ export const BlogAdminPage: React.FC = () => {
 
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: '#F8FAFC', p: { xs: 2, md: 3 } }}>
-      <Paper elevation={2} sx={{ p: 3, mb: 3 }}>
-        <Typography variant="h4" component="h1" fontWeight={700}>
-          Управление блогом
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-          Скрытая страница публикации: доступна только прямым переходом на /blog-admin.
-        </Typography>
+      <Paper elevation={2} sx={{ p: 3, mb: 3, display: 'flex', alignItems: { xs: 'flex-start', sm: 'center' }, justifyContent: 'space-between', gap: 2 }}>
+        <Box>
+          <Typography variant="h4" component="h1" fontWeight={700}>
+            Управление блогом
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+            Создавайте и публикуйте статьи из админ-панели.
+          </Typography>
+        </Box>
+        <Button
+          variant="outlined"
+          startIcon={<ArrowBackRoundedIcon />}
+          onClick={() => navigate('/admin')}
+          sx={{ flexShrink: 0, textTransform: 'none' }}
+        >
+          Админ-панель
+        </Button>
       </Paper>
 
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}

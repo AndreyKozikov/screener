@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import type { ColDef, ICellRendererParams, IHeaderParams } from 'ag-grid-community';
-import { ModuleRegistry, AllCommunityModule } from 'ag-grid-community';
+import './registerGridModules';
 import 'ag-grid-community/styles/ag-grid.css';
 import 'ag-grid-community/styles/ag-theme-material.css';
 import '../bonds/ag-grid-tooltips.css';
@@ -61,8 +61,6 @@ import { fetchForecastData, type ForecastData } from '../../api/forecast';
 import { getKeyRateData, type KeyRateData } from '../../api/keyrate';
 
 // Register AG Grid modules
-ModuleRegistry.registerModules([AllCommunityModule]);
-
 interface ComparisonRow {
   name: string;
   ticker: string;

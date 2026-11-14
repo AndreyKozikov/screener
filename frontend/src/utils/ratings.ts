@@ -134,6 +134,27 @@ export const getRatingAgency = (rating: Rating | null): string | null => {
   return rating.agency_name_short_ru || null;
 };
 
+/** Choose the display colors for a normalized credit rating. */
+export const getRatingColor = (rating: string | null | undefined): { bg: string; color: string } => {
+  const normalized = rating ? normalizeRating(rating) : '';
+  const grade = normalized.match(/^(AAA|AA|A|BBB|BB|B|CCC|CC|C|D)/)?.[1] ?? '';
+
+  if (grade === 'AAA' || grade === 'AA' || grade === 'A') {
+    return { bg: '#4CAF50', color: '#fff' };
+  }
+  if (grade === 'BBB') {
+    return { bg: '#FFB300', color: '#000' };
+  }
+  if (grade === 'BB' || grade === 'B') {
+    return { bg: '#FB8C00', color: '#fff' };
+  }
+  if (grade === 'CCC' || grade === 'CC' || grade === 'C' || grade === 'D') {
+    return { bg: '#E53935', color: '#fff' };
+  }
+
+  return { bg: '#E0E0E0', color: '#666' };
+};
+
 
 
 

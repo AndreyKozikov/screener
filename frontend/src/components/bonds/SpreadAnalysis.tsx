@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import type { ColDef, ICellRendererParams, IHeaderParams } from 'ag-grid-community';
-import { ModuleRegistry, AllCommunityModule } from 'ag-grid-community';
+import './registerGridModules';
 import 'ag-grid-community/styles/ag-grid.css';
 import 'ag-grid-community/styles/ag-theme-material.css';
 import '../bonds/ag-grid-tooltips.css';
@@ -58,9 +58,6 @@ import {
 } from 'recharts';
 import { CHART_CONFIG } from '../../utils/constants';
 import * as regression from 'regression';
-
-// Register AG Grid modules
-ModuleRegistry.registerModules([AllCommunityModule]);
 
 interface ComparisonRow {
   name: string;
