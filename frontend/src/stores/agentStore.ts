@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { sendAgentQuery, type AgentSource } from '../api/agent';
+import { sendAgentQuery, listAgentChats, fetchAgentChat, deleteAgentChat, type AgentSource, type AgentChatSummary } from '../api/agent';
 import { usePortfolioStore } from './portfolioStore';
 
 export interface AgentMessage {
@@ -18,6 +18,10 @@ interface AgentState {
   messages: AgentMessage[];
   isLoading: boolean;
   error: string | null;
+  chats: AgentChatSummary[];
+  loadChats: () => Promise<void>;
+  openChat: (id: string) => Promise<void>;
+  removeChat: (id: string) => Promise<void>;
   resetChat: () => void;
   send: (query: string) => Promise<void>;
   /** Начинает новый чистый диалог с запроса и сразу отправляет его. */
@@ -36,6 +40,17 @@ export const useAgentStore = create<AgentState>()(
       messages: [],
       isLoading: false,
       error: null,
+      chats: [],
+
+      loadChats: async () => { try { set({ chats: await listAgentChats() }); } catch { /* keep current view */ } },
+      openChat: async (id) => {
+        const chat = await fetchAgentChat(id);
+        set({ sessionId: chat.session_id, messages: chat.messages.map((m, index) => ({
+          id: `${chat.session_id}-${index}`, role: m.role, content: m.content,
+          timestamp: Date.parse(m.timestamp) || Date.now(), sources: m.sources ?? [],
+        })), error: null });
+      },
+      removeChat: async (id) => { await deleteAgentChat(id); set((s) => ({ chats: s.chats.filter((c) => c.session_id !== id), ...(s.sessionId === id ? { sessionId: null, messages: [] } : {}) })); },
 
       resetChat: () => set({ sessionId: null, messages: [], error: null }),
 
@@ -69,6 +84,7 @@ export const useAgentStore = create<AgentState>()(
             query: trimmed,
             session_id: sessionId,
             portfolio: portfolioBonds,
+            history: get().messages.slice(0, -1).map(({ role, content }) => ({ role, content })),
           });
 
           const content =
@@ -88,6 +104,7 @@ export const useAgentStore = create<AgentState>()(
           };
 
           set((s) => ({ messages: [...s.messages, botMsg], isLoading: false }));
+          void get().loadChats();
         } catch (error) {
           const message =
             error instanceof Error ? error.message : 'Не удалось связаться с сервером.';

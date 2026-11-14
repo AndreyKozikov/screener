@@ -28,6 +28,9 @@ export interface AgentChatResponse {
   filters?: Record<string, unknown> | null;
 }
 
+export interface AgentChatSummary { session_id: string; title: string; updated_at: string; preview?: string | null }
+export interface AgentStoredChat extends AgentChatSummary { messages: Array<{ role: 'user' | 'assistant'; content: string; timestamp: string; intent?: string | null; sources?: AgentSource[] }> }
+
 /**
  * Отправляет сообщение ИИ-агенту подбора облигаций.
  */
@@ -37,3 +40,7 @@ export const sendAgentQuery = async (
   const response = await apiClient.post<AgentChatResponse>('/agent/chat', payload);
   return response.data;
 };
+
+export const listAgentChats = async (): Promise<AgentChatSummary[]> => (await apiClient.get<AgentChatSummary[]>('/agent/chats')).data;
+export const fetchAgentChat = async (id: string): Promise<AgentStoredChat> => (await apiClient.get<AgentStoredChat>(`/agent/chats/${encodeURIComponent(id)}`)).data;
+export const deleteAgentChat = async (id: string): Promise<void> => { await apiClient.delete(`/agent/chats/${encodeURIComponent(id)}`); };

@@ -35,6 +35,7 @@ from app.agent.skill_loader import (
     validate_skill_selection,
 )
 from app.agent.session import AgentSessionStore, new_session_id
+from app.agent.chat_repository import repository as chat_repository
 from app.agent.session_logger import get_session_logger
 from app.agent.tools import TOOL_HANDLERS, ToolOutput
 
@@ -55,7 +56,7 @@ class AgentService:
     """
 
     def __init__(self) -> None:
-        self._sessions = AgentSessionStore()
+        self._sessions = AgentSessionStore(max_turns=1000)
         self._llm = AgentLlmClient()
         self._llm.set_listener(self._on_llm_event)
         self._finalizer_system_prompt = build_finalizer_system_prompt()
@@ -71,7 +72,45 @@ class AgentService:
                 {"type": event.get("type") or "llm", **event},
             )
 
-    async def chat(self, request: AgentChatRequest) -> AgentChatResponse:
+    async def chat(self, request: AgentChatRequest, user_id: str) -> AgentChatResponse:
+        session_id = request.session_id or new_session_id()
+        is_new = chat_repository.get_chat(user_id, session_id) is None
+        if not chat_repository.ensure_chat(user_id, session_id):
+            raise ValueError("Чат не найден")
+        saved = chat_repository.get_chat(user_id, session_id)
+        if saved and not self._sessions.get_history(session_id):
+            stored_turns = saved["messages"]
+            history = ([AgentTurn(role=m["role"], content=m["content"], intent=m.get("intent"))
+                       for m in stored_turns] if stored_turns else request.history)
+            request = request.model_copy(update={"session_id": session_id, "history": history})
+            for turn in history:
+                self._sessions.append_turn(session_id, {"role": turn.role, "content": turn.content, "intent": turn.intent})
+            try:
+                self._sessions.set_state(session_id, "pending_large", json.loads(saved.get("state_json") or "{}").get("pending_large"))
+            except (ValueError, TypeError):
+                pass
+        else:
+            request = request.model_copy(update={"session_id": session_id})
+        response = await self._chat(request)
+        history = self._sessions.get_history(session_id, limit=10000)
+        pending = self._sessions.get_state(session_id, "pending_large")
+        chat_repository.save_snapshot(user_id, session_id, history, {"pending_large": pending})
+        if is_new:
+            title = request.query.strip().replace("\n", " ")[:60]
+            try:
+                generated = await self._llm.generate_text(
+                    "Ты создаёшь короткие темы диалогов на русском. Верни только тему длиной до 8 слов, без кавычек и точки.",
+                    f"Первый запрос пользователя: {json.dumps(request.query, ensure_ascii=False)}",
+                    session_id=session_id,
+                )
+                if generated and generated.strip():
+                    title = generated.strip().strip('"')[:80]
+            except Exception:
+                pass
+            chat_repository.set_title(user_id, session_id, title or "Новый чат")
+        return response
+
+    async def _chat(self, request: AgentChatRequest) -> AgentChatResponse:
         session_id = request.session_id or new_session_id()
         self._sessions.get_or_create(session_id)
         if not self._sessions.get_state(session_id, "meta_written"):

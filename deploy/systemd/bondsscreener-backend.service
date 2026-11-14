@@ -1,7 +1,7 @@
 [Unit]
 Description=Bonds Screener Backend API Service (Gunicorn + Uvicorn)
-After=network.target bondsscreener-db.service
-Wants=bondsscreener-db.service
+After=network.target bondsscreener-db.service redis-server.service
+Wants=bondsscreener-db.service redis-server.service
 
 [Service]
 Type=simple

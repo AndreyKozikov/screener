@@ -16,6 +16,7 @@ orjson==3.10.12
 aiofiles==24.1.0
 python-multipart==0.0.19
 cachetools==5.5.0
+redis==5.2.1
 
 # Archives (e.g-disclosure ZIP with correct encoding handling)
 patool==4.0.4  # распаковка архивов, корректное определение кодировок

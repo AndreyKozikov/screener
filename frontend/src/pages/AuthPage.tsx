@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { Link as RouterLink, useLocation, useNavigate } from 'react-router-dom';
 import { Alert, Box, Button, Container, Link, Paper, TextField, Typography } from '@mui/material';
 import { apiClient } from '../api/client';
-import { saveAuthSession } from '../utils/auth';
+import { AUTH_EMAIL_STORAGE_KEY, saveAuthSession } from '../utils/auth';
+import { useAgentStore } from '../stores/agentStore';
 import { resolveSiteNavigationTarget, writeSavedHomePageView } from '../utils/siteNavigation';
 
 type AuthResult = {
@@ -18,6 +19,7 @@ export function AuthPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const redirectToPortfolio = (location.state as { from?: string } | null)?.from === 'portfolio';
+  const redirectToAgent = (location.state as { from?: string } | null)?.from === 'agent';
   const [isRegister, setIsRegister] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -30,11 +32,13 @@ export function AuthPage() {
     setBusy(true);
     try {
       const { data } = await apiClient.post<AuthResult>(`/auth/${isRegister ? 'register' : 'login'}`, { email, password });
+      const previousEmail = localStorage.getItem(AUTH_EMAIL_STORAGE_KEY);
+      if (previousEmail && previousEmail.toLowerCase() !== data.user.email.toLowerCase()) useAgentStore.getState().resetChat();
       saveAuthSession(data.access_token, data.user.email, data.user.capabilities);
       if (redirectToPortfolio) {
         writeSavedHomePageView(resolveSiteNavigationTarget('portfolio'));
       }
-      navigate('/', { replace: true });
+      navigate(redirectToAgent ? '/agent' : '/', { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось выполнить вход');
     } finally {
@@ -48,6 +52,7 @@ export function AuthPage() {
         <Typography variant="h4" fontWeight={700} gutterBottom>{isRegister ? 'Создать аккаунт' : 'Вход в аккаунт'}</Typography>
         <Typography color="text.secondary" sx={{ mb: 3 }}>Аккаунт доступен с любого устройства после входа по email и паролю.</Typography>
         {redirectToPortfolio && <Alert severity="info" sx={{ mb: 2 }}>Раздел «Мой портфель» доступен только после входа в аккаунт.</Alert>}
+        {redirectToAgent && <Alert severity="info" sx={{ mb: 2 }}>История чатов сохраняется в вашем аккаунте. Войдите, чтобы продолжить.</Alert>}
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
         <Box component="form" onSubmit={submit} sx={{ display: 'grid', gap: 2 }}>
           <TextField label="Email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required />

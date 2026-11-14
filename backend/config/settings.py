@@ -104,6 +104,7 @@ class Settings(BaseSettings):
     # папку с запросами/уточнениями пользователя и JSON-ответами модели.
     AGENT_LOG_ENABLED: bool = True
     AGENT_LOG_DIR: str = "logs/agent_sessions"
+    AGENT_REDIS_URL: str = "redis://127.0.0.1:6379/1"
 
     def model_post_init(self, __context: Any) -> None:
         self._load_llm_config()

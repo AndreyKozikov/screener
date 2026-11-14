@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AppBar, Box, IconButton, Toolbar, Tooltip, Typography } from '@mui/material';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
@@ -21,6 +21,9 @@ import { isAuthenticated, PORTFOLIO_AUTH_REDIRECT_STATE } from '../utils/auth';
  */
 export const AgentChatPage: React.FC = () => {
   const navigate = useNavigate();
+  useEffect(() => {
+    if (!isAuthenticated()) navigate('/login', { state: { from: 'agent' }, replace: true });
+  }, [navigate]);
 
   const handleSiteNavigationSelect = (id: string) => {
     if (id === 'chat') {

@@ -29,12 +29,15 @@ apt-get install -y \
     python3-dev \
     build-essential \
     nginx \
+    redis-server \
     git \
     curl \
     rsync \
     tar \
     sqlite3 \
     libsqlite3-dev
+
+systemctl enable --now redis-server
 
 echo "=== [3/7] Создание необходимых каталогов данных ==="
 mkdir -p "${APP_DIR}/db_repository/data/db"
@@ -98,6 +101,9 @@ if [ ! -f "${APP_DIR}/backend/.env" ]; then
 DB_REPOSITORY_API_KEY=${GEN_DB_KEY}
 AUTH_SECRET_KEY=${GEN_AUTH_KEY}
 EOF
+fi
+if ! grep -q '^AGENT_REDIS_URL=' "${APP_DIR}/backend/.env"; then
+    printf '\nAGENT_REDIS_URL=redis://127.0.0.1:6379/1\n' >> "${APP_DIR}/backend/.env"
 fi
 
 # conversion_service

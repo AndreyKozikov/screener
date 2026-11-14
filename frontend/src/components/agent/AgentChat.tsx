@@ -9,6 +9,7 @@ import {
   Paper,
   Tooltip,
   Typography,
+  List, ListItemButton, ListItemText, Divider,
 } from '@mui/material';
 import {
   ContentCopy as CopyIcon,
@@ -16,6 +17,7 @@ import {
   Refresh as ResetIcon,
   Send as SendIcon,
   SmartToy as BotIcon,
+  MenuOpen as CollapseIcon, Menu as ExpandIcon, DeleteOutline as DeleteIcon, Add as AddIcon,
 } from '@mui/icons-material';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -145,8 +147,9 @@ const MessageBubble: React.FC<{ msg: AgentMessage }> = ({ msg }) => {
  * и выдержан в стеклянном стиле главной страницы BondsScreener.
  */
 export const AgentChat: React.FC = () => {
-  const { messages, isLoading, resetChat, send, error, sessionId } = useAgentStore();
+  const { messages, isLoading, resetChat, send, error, sessionId, chats, loadChats, openChat, removeChat } = useAgentStore();
   const [inputValue, setInputValue] = useState('');
+  const [historyOpen, setHistoryOpen] = useState(true);
   const [copied, setCopied] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
@@ -169,6 +172,7 @@ export const AgentChat: React.FC = () => {
   useEffect(() => {
     scrollToBottom();
   }, [messages, isLoading]);
+  useEffect(() => { void loadChats(); }, [loadChats]);
 
   const handleSend = () => {
     const value = inputValue.trim();
@@ -187,6 +191,26 @@ export const AgentChat: React.FC = () => {
   const visibleMessages = messages.length > 0 ? messages : [];
 
   return (
+    <Box sx={{ display: 'flex', flexDirection: 'row-reverse', gap: 1, width: '100%', height: '100%', minWidth: 0 }}>
+    <Box
+      sx={{ width: historyOpen ? { xs: 220, md: 270 } : 48, flexShrink: 0, display: 'flex', flexDirection: 'column', minHeight: 0, borderRadius: 3, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.82)', bgcolor: 'rgba(255,255,255,0.52)', backdropFilter: 'blur(18px)', transition: 'width 180ms ease' }}
+    >
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: historyOpen ? 'space-between' : 'center', p: 0.75 }}>
+        {historyOpen && <Typography sx={{ pl: 1, fontWeight: 650, color: '#17345B', fontSize: '.9rem' }}>Мои чаты</Typography>}
+        <Tooltip title={historyOpen ? 'Свернуть историю' : 'Показать историю'}><IconButton size="small" onClick={() => setHistoryOpen((v) => !v)} aria-label={historyOpen ? 'Свернуть историю чатов' : 'Показать историю чатов'}>{historyOpen ? <CollapseIcon /> : <ExpandIcon />}</IconButton></Tooltip>
+      </Box>
+      {historyOpen && <>
+        <Box sx={{ px: 1, pb: 1 }}><IconButton size="small" onClick={resetChat} aria-label="Новый чат"><AddIcon /><Typography sx={{ ml: .5, fontSize: '.82rem' }}>Новый чат</Typography></IconButton></Box>
+        <Divider />
+        <List dense sx={{ overflowY: 'auto', flex: 1, p: .75 }}>
+          {chats.map((chat) => <ListItemButton key={chat.session_id} selected={sessionId === chat.session_id} onClick={() => void openChat(chat.session_id)} sx={{ borderRadius: 1.5, pr: .5, mb: .4 }}>
+            <ListItemText primary={chat.title || 'Новый чат'} secondary={chat.preview || ''} primaryTypographyProps={{ noWrap: true, fontSize: '.82rem', fontWeight: 600 }} secondaryTypographyProps={{ noWrap: true, fontSize: '.7rem' }} />
+            <IconButton size="small" aria-label="Удалить чат" onClick={(event) => { event.stopPropagation(); void removeChat(chat.session_id); }}><DeleteIcon sx={{ fontSize: 17 }} /></IconButton>
+          </ListItemButton>)}
+          {chats.length === 0 && <Typography sx={{ p: 1, color: '#587092', fontSize: '.78rem' }}>Сохранённых чатов пока нет</Typography>}
+        </List>
+      </>}
+    </Box>
     <Box
       sx={{
         flexGrow: 1,
@@ -298,7 +322,7 @@ export const AgentChat: React.FC = () => {
         <Tooltip title="Начать новый диалог">
           <IconButton
             size="small"
-            onClick={resetChat}
+          onClick={resetChat}
             aria-label="Начать новый диалог"
             sx={{
               flexShrink: 0,
@@ -473,6 +497,7 @@ export const AgentChat: React.FC = () => {
           </Tooltip>
         </Box>
       </Box>
+    </Box>
     </Box>
   );
 };

@@ -81,5 +81,6 @@ export const saveAuthSession = (
 export const clearAuthSession = (): void => {
   window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
   window.localStorage.removeItem(AUTH_EMAIL_STORAGE_KEY);
+  window.localStorage.removeItem('bonds-screener:agent');
   saveAdminCapabilities(NO_ADMIN_CAPABILITIES);
 };
