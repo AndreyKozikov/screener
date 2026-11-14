@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { Card, CardContent, Box, Typography, Button, Divider, Collapse, IconButton } from '@mui/material';
+import { Card, CardContent, Box, Typography, Button, Divider, Collapse, IconButton, Accordion, AccordionSummary, AccordionDetails, Stack } from '@mui/material';
 import FilterAltIcon from '@mui/icons-material/FilterAlt';
 import ClearIcon from '@mui/icons-material/Clear';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
 import { useFiltersStore } from '../../stores/filtersStore';
 import {
   CouponRangeFilter,
@@ -103,30 +104,27 @@ export const FiltersPanel: React.FC = () => {
           <Divider sx={{ my: 2 }} />
           {/* Filters - Horizontal Layout */}
           <Box sx={{ display: 'flex', flexDirection: 'row', gap: 2, flexWrap: 'wrap', width: '100%', justifyContent: 'flex-start' }}>
-            <Box sx={{ width: '250px', flexShrink: 0 }}>
-              <Box sx={{ mb: 0.5 }}>
-                <Typography variant="subtitle2" color="text.secondary" sx={{ fontSize: '0.875rem' }}>
-                  Доходность купона относительно номинала
-                </Typography>
-              </Box>
-              <CouponRangeFilter />
-            </Box>
-            <Box sx={{ width: '250px', flexShrink: 0 }}>
-              <Box sx={{ mb: 0.5 }}>
-                <Typography variant="subtitle2" color="text.secondary" sx={{ fontSize: '0.875rem' }}>
-                  Доходность к погашению
-                </Typography>
-              </Box>
-              <YieldRangeFilter />
-            </Box>
-            <Box sx={{ width: '250px', flexShrink: 0 }}>
-              <Box sx={{ mb: 0.5 }}>
-                <Typography variant="subtitle2" color="text.secondary" sx={{ fontSize: '0.875rem' }}>
-                  Доходность купона к текущей цене
-                </Typography>
-              </Box>
-              <CouponYieldRangeFilter />
-            </Box>
+            <Accordion disableGutters sx={{ width: '100%', boxShadow: 'none', border: '1px solid', borderColor: 'divider', '&:before': { display: 'none' } }}>
+              <AccordionSummary expandIcon={<ExpandMoreRoundedIcon />} aria-controls="yield-filters-content" id="yield-filters-header">
+                <Typography variant="subtitle1" fontWeight={600}>Доходность</Typography>
+              </AccordionSummary>
+              <AccordionDetails id="yield-filters-content">
+                <Stack spacing={2}>
+                  <Box sx={{ width: '250px', maxWidth: '100%' }}>
+                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontSize: '0.875rem', mb: 0.5 }}>Купонная доходность к номиналу</Typography>
+                    <CouponRangeFilter />
+                  </Box>
+                  <Box sx={{ width: '250px', maxWidth: '100%' }}>
+                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontSize: '0.875rem', mb: 0.5 }}>Купонная доходность к текущей цене</Typography>
+                    <CouponYieldRangeFilter />
+                  </Box>
+                  <Box sx={{ width: '250px', maxWidth: '100%' }}>
+                    <Typography variant="subtitle2" color="text.secondary" sx={{ fontSize: '0.875rem', mb: 0.5 }}>Доходность к погашению (YTM)</Typography>
+                    <YieldRangeFilter />
+                  </Box>
+                </Stack>
+              </AccordionDetails>
+            </Accordion>
             <Box sx={{ width: '400px', flexShrink: 0 }}>
               <MaturityDateFilter />
             </Box>
