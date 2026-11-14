@@ -3,6 +3,7 @@ import logging
 import os
 import threading
 from typing import Optional, List, Any
+from urllib.parse import quote
 from urllib.request import Request, urlopen
 import orjson
 import requests
@@ -12,6 +13,15 @@ logger = logging.getLogger(__name__)
 # Ограничение параллельных запросов к MOEX ISS и шаг логирования прогресса.
 _MAX_WORKERS = 16
 _PROGRESS_STEP = 200
+_BOND_DESCRIPTION_IGNORED_FIELDS = {
+    "SECID",
+    "NAME",
+    "SHORTNAME",
+    "ISIN",
+    "LISTLEVEL",
+    "COUPONFREQUENCY",
+    "COUPONDATE",
+}
 
 
 class MoexLoader:
@@ -204,9 +214,119 @@ class MoexLoader:
 
         return {
             "emitents": emitents,
-            "secid_to_inn": secid_to_inn,
             "inn_to_ratings": inn_to_ratings,
         }
+
+    def bond_descriptions_load(self, secids: list[str]) -> dict[str, dict[str, Any]]:
+        """Loads MOEX descriptions for the supplied bonds."""
+        return self._load_bond_descriptions(secids)
+
+    def _bond_description_load_one(self, secid: str) -> Optional[dict[str, Any]]:
+        """Loads and filters one security's MOEX description block."""
+        url = (
+            "https://iss.moex.com/iss/securities/"
+            f"{quote(secid, safe='')}.json?iss.meta=on&iss.json=extended"
+        )
+        try:
+            response = self._get_session().get(url, timeout=self.timeout)
+            response.raise_for_status()
+            payload = response.json()
+        except (requests.RequestException, ValueError):
+            logger.warning("[BOND_DESCRIPTION] Не удалось загрузить description для %s", secid)
+            return None
+
+        entries = self._extract_description_entries(payload)
+        if not entries:
+            logger.warning("[BOND_DESCRIPTION] В ответе MOEX нет description для %s", secid)
+            return None
+
+        result: dict[str, Any] = {}
+        for entry in entries:
+            name = entry.get("name")
+            if not isinstance(name, str) or name in _BOND_DESCRIPTION_IGNORED_FIELDS:
+                continue
+            if "value" in entry:
+                result[name] = entry["value"]
+        return result
+
+    @staticmethod
+    def _extract_description_entries(payload: Any) -> list[dict[str, Any]]:
+        """Supports both ISS extended blocks and the columns/data representation."""
+        description = None
+        if isinstance(payload, dict):
+            description = payload.get("description")
+        elif isinstance(payload, list):
+            for block in payload:
+                if isinstance(block, dict) and "description" in block:
+                    description = block["description"]
+                    break
+        if isinstance(description, dict):
+            data = description.get("data", [])
+            if data and isinstance(data[0], dict):
+                return [row for row in data if isinstance(row, dict)]
+            columns = description.get("columns", [])
+            if columns and data:
+                return [
+                    dict(zip(columns, row))
+                    for row in data
+                    if isinstance(row, (list, tuple)) and len(row) == len(columns)
+                ]
+            return []
+
+        if isinstance(description, list):
+            direct_entries = [
+                row for row in description
+                if isinstance(row, dict) and "name" in row and "value" in row
+            ]
+            if direct_entries:
+                return direct_entries
+            for block in description:
+                if isinstance(block, list):
+                    rows = [
+                        row for row in block
+                        if isinstance(row, dict) and "name" in row and "value" in row
+                    ]
+                    if rows:
+                        return rows
+        return []
+
+    def _load_bond_descriptions(self, secids: list[str]) -> dict[str, dict[str, Any]]:
+        total = len(secids)
+        descriptions: dict[str, dict[str, Any]] = {}
+        if total == 0:
+            return descriptions
+
+        workers = self._worker_count(total)
+        logger.info(
+            "[BOND_DESCRIPTION] Загрузка description MOEX: %s бумаг, потоков: %s",
+            total,
+            workers,
+        )
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {
+                executor.submit(self._bond_description_load_one, secid): secid
+                for secid in secids
+            }
+            for processed, future in enumerate(as_completed(futures), 1):
+                secid = futures[future]
+                try:
+                    data = future.result()
+                except Exception as exc:
+                    logger.warning(
+                        "[BOND_DESCRIPTION] Ошибка загрузки description для %s: %s",
+                        secid,
+                        exc,
+                    )
+                    data = None
+                if data is not None:
+                    descriptions[secid] = data
+                if processed % _PROGRESS_STEP == 0 or processed == total:
+                    logger.info(
+                        "[BOND_DESCRIPTION] Обработано %s/%s бумаг",
+                        processed,
+                        total,
+                    )
+        return descriptions
 
     def emitent_ratings_load(self, emitent_id: int) -> Optional[list[dict[str, Any]]]:
         url = f"https://iss.moex.com/iss/cci/rating/companies/ecbd_{emitent_id}.json?iss.json=extended&iss.meta=off"

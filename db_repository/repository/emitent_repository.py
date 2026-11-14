@@ -3,7 +3,6 @@ from typing import Optional
 from sqlalchemy.dialects.sqlite import insert
 from sqlmodel import select, delete
 from db_repository.models.emitent import Emitent
-from db_repository.models.bond_emitent import BondEmitent
 
 class EmitentRepository:
 
@@ -19,6 +18,7 @@ class EmitentRepository:
             index_elements=[Emitent.moex_id],
             set_={
                 "moex_id": stmt.excluded.moex_id,
+                "inn": stmt.excluded.inn,
                 "okpo": stmt.excluded.okpo,
                 "title": stmt.excluded.title,
                 "type": stmt.excluded.type,
@@ -43,23 +43,6 @@ class EmitentRepository:
         with get_session() as session:
             result = session.exec(stmt).all()
             return result
-
-    def update_emitent_ids_to_bond(self, data: dict[str, int]):
-        stmt = insert(BondEmitent).values(data)
-
-        stmt = stmt.on_conflict_do_update(
-            index_elements=[BondEmitent.secid],
-            set_={
-                "emitent_id": stmt.excluded.emitent_id,
-            },
-        )
-        try:
-            with get_session() as session:
-                result = session.exec(stmt)
-                session.commit()
-                return result
-        except:
-            raise
 
     def delete_emitents(self):
         with get_session() as session:

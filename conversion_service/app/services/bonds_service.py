@@ -142,7 +142,32 @@ class BondsUpdateService:
             json=bonds_data_dto.model_dump(by_alias=False),
         )
         response.raise_for_status()
-        return response.json()
+        result = response.json()
+
+        try:
+            bond_descriptions = await asyncio.to_thread(
+                self.moex.bond_descriptions_load,
+                secids,
+            )
+            if bond_descriptions:
+                description_response = await asyncio.to_thread(
+                    client.post,
+                    "/api/bond_descriptions/update",
+                    json=bond_descriptions,
+                )
+                description_response.raise_for_status()
+                description_result = description_response.json()
+                logger.info(
+                    "Обновлены описания MOEX: записей=%s, SECID без облигаций=%s, ошибок валидации=%s",
+                    description_result.get("updated", 0),
+                    len(description_result.get("unmatched_secids", [])),
+                    len(description_result.get("invalid_secids", [])),
+                )
+        except Exception:
+            logger.exception("Не удалось обновить описания облигаций из MOEX")
+            raise
+
+        return result
 
     async def _load_current_coupons(self, secids: List[str]):
 

@@ -43,8 +43,8 @@ class EmitentsRepository:
         stmt = text("""
             SELECT e.id, e.moex_id, e.inn, e.okpo, e.title, e.type
             FROM bonds b
-            JOIN bond_emitents be ON be.secid = b.secid
-            JOIN emitents e ON be.emitent_id = e.id
+            JOIN bond_description bd ON bd.bond_id = b.id
+            JOIN emitents e ON bd.emitter_id = e.moex_id
             WHERE b.secid = :secid
         """)
         try:
@@ -161,10 +161,10 @@ class EmitentsRepository:
     def get_secid_to_emitent_title_index(self) -> Dict[str, str]:
         """Возвращает маппинг SECID облигации -> название эмитента из БД."""
         stmt = text("""
-            SELECT b.secid, e.title
+            SELECT DISTINCT b.secid, e.title
             FROM bonds b
-            JOIN bond_emitents be ON be.secid = b.secid
-            JOIN emitents e ON be.emitent_id = e.id
+            JOIN bond_description bd ON bd.bond_id = b.id
+            JOIN emitents e ON bd.emitter_id = e.moex_id
             WHERE e.title IS NOT NULL AND trim(e.title) != ''
         """)
         try:

@@ -31,7 +31,7 @@ if config.config_file_name is not None:
 # Для upgrade достаточно метаданных; для autogenerate модели должны быть
 # зарегистрированы в SQLModel.metadata — импортируем модели с table=True.
 from db_repository.models.bond import Bond, BondMarketData, BondMarketDataYield, BondSecurity  # noqa: F401
-from db_repository.models.bond_emitent import BondEmitent  # noqa: F401
+from db_repository.models.bond_description import BondDescription  # noqa: F401
 from db_repository.models.emitent import Emitent  # noqa: F401
 from db_repository.models.inflations import InflationData, InflationExpectations  # noqa: F401
 from db_repository.models.ipc import Ipc, IpcWeekly  # noqa: F401

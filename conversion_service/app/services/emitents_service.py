@@ -38,8 +38,8 @@ class Emitents:
             secids
         )
         logger.info(
-            "[EMITENTS] С MOEX загружено эмитентов: %s, связей secid->inn: %s",
-            len(data["emitents"]), len(data["secid_to_inn"]),
+            "[EMITENTS] С MOEX загружено эмитентов: %s",
+            len(data["emitents"]),
         )
         data["reset"] = reset
 
@@ -56,8 +56,9 @@ class Emitents:
         except Exception:
             logger.exception("[EMITENTS] Не удалось сохранить эмитентов в db_repository")
             raise
+
         logger.info("[EMITENTS] Обновление эмитентов завершено")
-        return result
+        return {"emitents": result}
 
 
 emitent_service: Optional[Emitents] = None

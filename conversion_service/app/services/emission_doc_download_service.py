@@ -723,7 +723,7 @@ class EmissionDocDownloadService:
         if not inn or not reg_number:
             pl_logger.warning(
                 "[SKIP] secid=%s: metadata missing (inn=%r, reg_number=%r). "
-                "Проверьте bonds/bond_emitents/bondsecurity: эмитент не найден, "
+                "Проверьте bonds/bond_description/bondsecurity: эмитент не найден, "
                 "нет ИНН/регномера или у бумаги boardid=PACT.",
                 secid,
                 inn,

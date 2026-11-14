@@ -127,7 +127,7 @@ class BondDetailDTO(BaseModel):
             None при отсутствии рыночных данных.
         marketdata_yields: Список словарей с расчётами доходности или None.
             Каждый элемент — Record с полями EFFECTIVEYIELD, DURATION и т.д.
-        emitent_inn: ИНН эмитента из emitents через связь SECID в bond_emitents.
+        emitent_inn: ИНН эмитента через bond_description.emitter_id -> emitents.moex_id.
             None или пустая строка при отсутствии данных об эмитенте.
     """
 

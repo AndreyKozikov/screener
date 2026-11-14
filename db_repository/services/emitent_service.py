@@ -15,7 +15,6 @@ class EmitentService:
             self.emitent_repository.delete_emitents()
             print("Данные об эмитентах удалены")
 
-        secid_to_inn = data["secid_to_inn"]
         inn_to_ratings = data["inn_to_ratings"]
         inns = {item["emitent_inn"] for item in data["emitents"]}
         emitents = [
@@ -35,16 +34,6 @@ class EmitentService:
             inn: emitent_id
             for inn, emitent_id in data
         }
-
-        secid_to_emitent_id = [
-            {
-                "secid": secid,
-                "emitent_id": inn_to_id[inn],
-            }
-            for secid, inn in secid_to_inn.items()
-        ]
-
-        result = self.emitent_repository.update_emitent_ids_to_bond(secid_to_emitent_id)
 
         emitent_id_to_ratings = [
             {

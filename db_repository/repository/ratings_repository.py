@@ -3,7 +3,7 @@ from typing import Optional, Any
 from typing import List
 from sqlmodel import select
 from db_repository.models.ratings import BondRating, EmitentRating, RatingAgency
-from db_repository.models.bond_emitent import BondEmitent
+from db_repository.models.bond_description import BondDescription
 from db_repository.models.bond import Bond
 from db_repository.models.emitent import Emitent
 from db_repository.utils.rating_utils import standardize_rating
@@ -64,8 +64,8 @@ class RatingRepository:
                 RatingAgency.agency_name_short_ru,
                 EmitentRating.rating_level_name,
             )
-            .join(BondEmitent, BondEmitent.secid == Bond.secid)
-            .join(Emitent, BondEmitent.emitent_id == Emitent.id)
+            .join(BondDescription, BondDescription.bond_id == Bond.id)
+            .join(Emitent, BondDescription.emitter_id == Emitent.moex_id)
             .join(EmitentRating, EmitentRating.emitent_id == Emitent.id)
             .join(RatingAgency, EmitentRating.agency_id == RatingAgency.id)
         )

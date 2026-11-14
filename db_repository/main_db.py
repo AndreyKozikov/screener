@@ -117,6 +117,7 @@ async def readiness_check():
 
 
 from db_repository.routers.bond_router import bond_router
+from db_repository.routers.bond_description_router import bond_description_router
 from db_repository.routers.ratings_router import ratings_router
 from db_repository.routers.coupon_router import coupon_router
 from db_repository.routers.emitent_router import emitent_router
@@ -125,6 +126,7 @@ from db_repository.routers.ipc_router import ipc_router
 from db_repository.routers.repository_rpc_router import repository_rpc_router
 
 app.include_router(bond_router)
+app.include_router(bond_description_router)
 app.include_router(ratings_router)
 app.include_router(coupon_router)
 app.include_router(emitent_router)

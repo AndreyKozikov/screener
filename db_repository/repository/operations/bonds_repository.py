@@ -270,7 +270,7 @@ class BondsRepository:
         (get_all_bond_secids) тоже их обрабатывает, поэтому одиночный запрос
         по secid должен вести себя так же. Исключаются только PACT.
 
-        Связь: bond.secid -> bond_emitents.emitent_id -> emitents.id -> emitents.inn.
+        Связь: bonds.id -> bond_description.emitter_id -> emitents.moex_id -> emitents.inn.
 
         Args:
             secid: Идентификатор ценной бумаги (SECID).
@@ -281,8 +281,8 @@ class BondsRepository:
         stmt = text("""
             SELECT e.inn
             FROM bonds b
-            JOIN bond_emitents be ON be.secid = b.secid
-            JOIN emitents e ON be.emitent_id = e.id
+            JOIN bond_description bd ON bd.bond_id = b.id
+            JOIN emitents e ON bd.emitter_id = e.moex_id
             WHERE b.secid = :secid 
                 AND e.inn IS NOT NULL AND trim(e.inn) != ''
                 AND (b.boardid IS NULL OR UPPER(TRIM(b.boardid)) != 'PACT')
@@ -392,18 +392,17 @@ class BondsRepository:
     ) -> List[Tuple[int, str, Optional[int]]]:
         """Возвращает список облигаций для пайплайна рейтингов.
 
-        Извлекает id, secid и moex_emitent_id (emitents.moex_id) для каждой
+        Извлекает id, secid и emitter_id из bond_description для каждой
         облигации. Пропускает записи без secid.
 
         Returns:
-            Список кортежей (bond_id, secid, moex_emitent_id).
-            moex_emitent_id — MOEX ID эмитента (EMITTER_ID) или None.
+            Список кортежей (bond_id, secid, emitter_id).
+            emitter_id — MOEX ID эмитента (EMITTER_ID) или None.
         """
         stmt = text(f"""
-            SELECT b.id, b.secid, e.moex_id
+            SELECT b.id, b.secid, bd.emitter_id
             FROM bonds b
-            LEFT JOIN bond_emitents be ON be.secid = b.secid
-            LEFT JOIN emitents e ON e.id = be.emitent_id
+            LEFT JOIN bond_description bd ON bd.bond_id = b.id
             WHERE b.secid IS NOT NULL AND TRIM(b.secid) != ''
                 AND (b.boardid IS NULL OR UPPER(TRIM(b.boardid)) != 'PACT')
                 AND {self._not_matured_sql("b")}
@@ -541,8 +540,8 @@ class BondsRepository:
             SELECT DISTINCT b.secid, trim(e.inn), trim(bs.reg_number)
             FROM bonds b
             JOIN bondsecurity bs ON bs.bond_id = b.id
-            JOIN bond_emitents be ON be.secid = b.secid
-            JOIN emitents e ON be.emitent_id = e.id
+            JOIN bond_description bd ON bd.bond_id = b.id
+            JOIN emitents e ON bd.emitter_id = e.moex_id
             WHERE bs.reg_number IS NOT NULL AND trim(bs.reg_number) != ''
               AND (b.boardid IS NULL OR UPPER(TRIM(b.boardid)) != 'PACT')
               {"AND UPPER(TRIM(b.rating)) = :rating" if rating and rating.strip() else ""}

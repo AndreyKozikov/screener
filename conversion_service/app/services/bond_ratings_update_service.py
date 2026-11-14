@@ -8,15 +8,13 @@ import logging
 from typing import Any, Dict, List, Optional
 
 import requests
-import logging
 
 from conversion_service.app.repository.db.remote_repository import BondRatingsRepository
 from conversion_service.app.repository.db.remote_repository import BondsRepository
 from conversion_service.app.utils.rating_utils import standardize_rating
 
-MOEX_SECURITIES_URL = "https://iss.moex.com/iss/securities/{secid}.json?iss.json=extended&iss.meta=off"
 MOEX_RATINGS_URL = (
-    "https://iss.moex.com/iss/cci/rating/companies/ecbd_{emitent_id}/"
+    "https://iss.moex.com/iss/cci/rating/companies/ecbd_{emitter_id}/"
     "securities/isin_{secid}.json?iss.json=extended&iss.meta=off"
 )
 MOEX_HEADERS = {
@@ -54,7 +52,7 @@ class BondRatingsPipelineService:
 
         Процесс включает:
         1. Получение списка облигаций, требующих обновления.
-        2. Определение MOEX Emitter ID для каждой бумаги.
+        2. Получение MOEX Emitter ID из таблицы bond_description.
         3. Запрос данных о рейтингах через API MOEX.
         4. Сохранение полученных данных или фиксация отсутствия рейтинга.
 
@@ -69,24 +67,22 @@ class BondRatingsPipelineService:
         errors = 0
         skipped = 0
 
-        for idx, (bond_id, secid, moex_emitent_id) in enumerate(bonds):
+        for idx, (bond_id, secid, moex_emitter_id) in enumerate(bonds):
             if (idx + 1) % 100 == 0:
                 self.logger.info(
                     "Обработано %s/%s: secid=%s", idx + 1, total, secid
                 )
             try:
-                emitent_id = moex_emitent_id
-                if emitent_id is None:
-                    emitent_id = self._fetch_emitent_id_from_moex(secid)
-                if emitent_id is None:
+                emitter_id = moex_emitter_id
+                if emitter_id is None:
                     self._save_empty_rating(bond_id)
                     skipped += 1
                     continue
-                if emitent_id == MOEX_EMITENT_OFZ:
+                if emitter_id == MOEX_EMITENT_OFZ:
                     self._save_ofz_aaa_rating(bond_id)
                     updated += 1
                     continue
-                ratings = self._fetch_ratings_from_moex(secid, emitent_id)
+                ratings = self._fetch_ratings_from_moex(secid, emitter_id)
                 if ratings:
                     self._ratings_repo.upsert_ratings_for_bond(bond_id, ratings)
                     updated += 1
@@ -115,63 +111,22 @@ class BondRatingsPipelineService:
             "skipped": skipped,
         }
 
-    def _fetch_emitent_id_from_moex(self, secid: str) -> Optional[int]:
-        """Запрашивает внутренний идентификатор эмитента (EMITTER_ID) через API MOEX.
-
-        Args:
-            secid (str): Идентификатор ценной бумаги (SECID).
-
-        Returns:
-            Optional[int]: Идентификатор эмитента MOEX или None, если данные не удалось получить
-                или они отсутствуют в ответе API.
-        """
-        url = MOEX_SECURITIES_URL.format(secid=secid)
-        try:
-            resp = requests.get(
-                url,
-                headers=MOEX_HEADERS,
-                timeout=MOEX_TIMEOUT,
-            )
-            resp.raise_for_status()
-        except requests.RequestException as e:
-            self.logger.warning("MOEX API (securities) для %s: %s", secid, e)
-            return None
-
-        data = resp.json()
-        if not isinstance(data, list) or len(data) < 2:
-            return None
-        for item in data:
-            if isinstance(item, dict) and "description" in item:
-                desc = item["description"]
-                if not isinstance(desc, list):
-                    continue
-                for d in desc:
-                    if isinstance(d, dict) and d.get("name") == "EMITTER_ID":
-                        val = d.get("value")
-                        if val is not None:
-                            try:
-                                return int(val)
-                            except (TypeError, ValueError):
-                                pass
-                        return None
-        return None
-
     def _fetch_ratings_from_moex(
         self,
         secid: str,
-        emitent_id: int,
+        emitter_id: int,
     ) -> List[Dict[str, Any]]:
         """Запрашивает детальную информацию о рейтингах конкретной облигации.
 
         Args:
             secid (str): Идентификатор ценной бумаги (SECID).
-            emitent_id (int): Внутренний идентификатор эмитента на Московской Бирже.
+            emitter_id (int): Идентификатор эмитента MOEX из bond_description.
 
         Returns:
             List[Dict[str, Any]]: Список словарей с данными о рейтингах, включая ID агентства,
                 уровень рейтинга и дату присвоения.
         """
-        url = MOEX_RATINGS_URL.format(secid=secid, emitent_id=emitent_id)
+        url = MOEX_RATINGS_URL.format(secid=secid, emitter_id=emitter_id)
         try:
             resp = requests.get(
                 url,
