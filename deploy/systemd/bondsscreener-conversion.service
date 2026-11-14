@@ -1,0 +1,21 @@
+[Unit]
+Description=Bonds Screener Conversion Service
+After=network.target bondsscreener-db.service
+Wants=bondsscreener-db.service
+
+[Service]
+Type=simple
+User={{DEPLOY_USER}}
+Group={{DEPLOY_USER}}
+WorkingDirectory={{APP_DIR}}
+Environment="PATH={{APP_DIR}}/.venv/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="PYTHONPATH={{APP_DIR}}"
+ExecStart={{APP_DIR}}/.venv/bin/python -m conversion_service.run_conv_service
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+

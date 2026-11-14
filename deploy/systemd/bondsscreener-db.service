@@ -1,0 +1,20 @@
+[Unit]
+Description=Bonds Screener DB Repository Service
+After=network.target
+
+[Service]
+Type=simple
+User={{DEPLOY_USER}}
+Group={{DEPLOY_USER}}
+WorkingDirectory={{APP_DIR}}
+Environment="PATH={{APP_DIR}}/.venv/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="PYTHONPATH={{APP_DIR}}"
+ExecStart={{APP_DIR}}/.venv/bin/python -m db_repository.run_db_service
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+
