@@ -60,6 +60,9 @@ export class ErrorBoundary extends Component<Props, State> {
 
   render() {
     if (this.state.hasError) {
+      const errorMessage = this.state.error?.message || '';
+      const isChunkLoadError = /failed to fetch dynamically imported module|importing a module script failed|error loading dynamically imported module|unable to preload css/i.test(errorMessage);
+
       // Custom fallback UI
       if (this.props.fallback) {
         return this.props.fallback;
@@ -79,9 +82,11 @@ export class ErrorBoundary extends Component<Props, State> {
           }}
         >
           <Alert severity="error" sx={{ maxWidth: 600, width: '100%', mb: 2 }}>
-            <AlertTitle>Произошла ошибка</AlertTitle>
+            <AlertTitle>{isChunkLoadError ? 'Обновляем приложение' : 'Произошла ошибка'}</AlertTitle>
             <Typography variant="body2" sx={{ mb: 2 }}>
-              {this.state.error?.message || 'Неизвестная ошибка'}
+              {isChunkLoadError
+                ? 'Не удалось загрузить обновлённую страницу. Перезагрузите её, чтобы продолжить работу.'
+                : errorMessage || 'Неизвестная ошибка'}
             </Typography>
             {import.meta.env.DEV && this.state.errorInfo && (
               <Box sx={{ mt: 2 }}>
@@ -101,10 +106,10 @@ export class ErrorBoundary extends Component<Props, State> {
           <Button
             variant="contained"
             startIcon={<RefreshIcon />}
-            onClick={this.handleReset}
+            onClick={isChunkLoadError ? () => window.location.reload() : this.handleReset}
             sx={{ mt: 2 }}
           >
-            Попробовать снова
+            {isChunkLoadError ? 'Перезагрузить страницу' : 'Попробовать снова'}
           </Button>
         </Box>
       );

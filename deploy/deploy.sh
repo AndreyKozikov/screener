@@ -29,16 +29,35 @@ else
 fi
 
 echo "=== [4/5] Развертывание фронтенда ==="
+publish_frontend() {
+    local release_dir="$1"
+    local live_dir="${APP_DIR}/frontend/dist"
+
+    mkdir -p "${live_dir}/assets"
+    # Hashed assets are immutable and safe to keep from prior releases. Copy
+    # them first, then publish index.html last so it never references missing files.
+    if [ -d "${release_dir}/assets" ]; then
+        cp -a "${release_dir}/assets/." "${live_dir}/assets/"
+    fi
+    install -m 0644 "${release_dir}/index.html" "${live_dir}/.index.html.new"
+    mv -f "${live_dir}/.index.html.new" "${live_dir}/index.html"
+}
+
 if [ -f "${APP_DIR}/dist.tar.gz" ]; then
     echo "Распаковка собранного в GitHub Actions фронтенда..."
-    mkdir -p "${APP_DIR}/frontend/dist"
-    tar -xzf "${APP_DIR}/dist.tar.gz" -C "${APP_DIR}/frontend"
+    RELEASE_TMP="$(mktemp -d "${APP_DIR}/.frontend-release.XXXXXX")"
+    tar -xzf "${APP_DIR}/dist.tar.gz" -C "${RELEASE_TMP}"
+    publish_frontend "${RELEASE_TMP}/dist"
+    rm -rf "${RELEASE_TMP}"
     rm -f "${APP_DIR}/dist.tar.gz"
 elif command -v npm >/dev/null 2>&1; then
     echo "Сборка фронтенда на сервере..."
     cd "${APP_DIR}/frontend"
     npm ci
-    VITE_API_BASE_URL="/api" npm run build
+    rm -rf .dist-release
+    VITE_API_BASE_URL="/api" npm run build -- --outDir .dist-release
+    publish_frontend "${APP_DIR}/frontend/.dist-release"
+    rm -rf .dist-release
     cd "${APP_DIR}"
 fi
 
