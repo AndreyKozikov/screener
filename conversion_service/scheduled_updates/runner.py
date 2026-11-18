@@ -8,6 +8,28 @@ import json
 import logging
 from typing import Any, Callable
 
+_MAX_LOG_KEYS = 30
+_MAX_LOG_STRING = 300
+
+
+def _summarize(value: Any, depth: int = 0) -> Any:
+    """Keep scheduler logs useful without dumping market-data payloads."""
+    if isinstance(value, dict):
+        summary = {
+            str(key): _summarize(item, depth + 1)
+            for key, item in list(value.items())[:_MAX_LOG_KEYS]
+        }
+        if len(value) > _MAX_LOG_KEYS:
+            summary["_omitted_keys"] = len(value) - _MAX_LOG_KEYS
+        return summary
+    if isinstance(value, (list, tuple)):
+        if depth >= 2 or len(value) > 5:
+            return f"<{len(value)} items>"
+        return [_summarize(item, depth + 1) for item in value]
+    if isinstance(value, str) and len(value) > _MAX_LOG_STRING:
+        return value[:_MAX_LOG_STRING] + f"… <{len(value) - _MAX_LOG_STRING} chars omitted>"
+    return value
+
 
 def _run(task: str) -> Any:
     if task == "bonds":
@@ -43,7 +65,12 @@ def _ensure_success(task: str, result: Any) -> None:
         if str(result.get("status", "")).lower() == "error":
             raise RuntimeError(result.get("error") or result.get("message") or "Service reported an error")
         if task == "trading_history" and (result.get("failed", 0) or result.get("errors")):
-            raise RuntimeError(f"Trading history partially failed: {result}")
+            failed = result.get("failed", len(result.get("errors") or []))
+            sample = _summarize((result.get("errors") or [])[:5])
+            raise RuntimeError(
+                f"Trading history partially failed: failed={failed}, "
+                f"total={result.get('total')}, sample_errors={sample}"
+            )
 
 
 def run_task(task: str, runner: Callable[[str], Any] = _run) -> Any:
@@ -59,7 +86,8 @@ def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     try:
         result = run_task(args.task)
-        logging.getLogger(__name__).info("Task %s completed: %s", args.task, json.dumps(result, ensure_ascii=False, default=str))
+        summary = json.dumps(_summarize(result), ensure_ascii=False, default=str)
+        logging.getLogger(__name__).info("Task %s completed: %s", args.task, summary)
         return 0
     except Exception:
         logging.getLogger(__name__).exception("Scheduled task %s failed", args.task)
