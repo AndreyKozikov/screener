@@ -95,12 +95,19 @@ elif command -v npm >/dev/null 2>&1; then
 fi
 
 echo "=== [6/6] Установка расписания и перезапуск системных служб ==="
-for unit in bondsscreener-data-update@.service bondsscreener-data-update-*.timer; do
+for unit_source in \
+    "${APP_DIR}/deploy/systemd/bondsscreener-data-update@.service" \
+    "${APP_DIR}"/deploy/systemd/bondsscreener-data-update-*.timer; do
+    if [ ! -f "${unit_source}" ]; then
+        echo "Ошибка: не найден systemd unit: ${unit_source}" >&2
+        exit 1
+    fi
+    unit="${unit_source##*/}"
     rendered="${APP_DIR}/deploy/systemd/${unit}.rendered.$$"
     RENDERED_UNITS+=("${rendered}")
     sed -e "s|{{APP_DIR}}|${APP_DIR}|g" \
         -e "s|{{DEPLOY_USER}}|${DEPLOY_USER}|g" \
-        "${APP_DIR}/deploy/systemd/${unit}" > "${rendered}"
+        "${unit_source}" > "${rendered}"
     sudo install -m 0644 "${rendered}" "/etc/systemd/system/${unit}"
     rm -f "${rendered}"
 done

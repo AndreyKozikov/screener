@@ -136,10 +136,17 @@ for svc in bondsscreener-db bondsscreener-backend bondsscreener-conversion; do
 done
 
 # Scheduled data updates use one templated oneshot service and six calendar timers.
-for unit in bondsscreener-data-update@.service bondsscreener-data-update-*.timer; do
+for unit_source in \
+    "${SCRIPT_DIR}/systemd/bondsscreener-data-update@.service" \
+    "${SCRIPT_DIR}"/systemd/bondsscreener-data-update-*.timer; do
+    if [ ! -f "${unit_source}" ]; then
+        echo "Ошибка: не найден systemd unit: ${unit_source}" >&2
+        exit 1
+    fi
+    unit="${unit_source##*/}"
     sed -e "s|{{APP_DIR}}|${APP_DIR}|g" \
         -e "s|{{DEPLOY_USER}}|${DEPLOY_USER}|g" \
-        "${SCRIPT_DIR}/systemd/${unit}" > "/etc/systemd/system/${unit}"
+        "${unit_source}" > "/etc/systemd/system/${unit}"
     chmod 644 "/etc/systemd/system/${unit}"
 done
 
