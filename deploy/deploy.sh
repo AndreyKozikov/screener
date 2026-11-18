@@ -7,6 +7,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+DEPLOY_USER="$(id -un)"
 
 echo "=== [1/5] Переход в каталог проекта: ${APP_DIR} ==="
 cd "${APP_DIR}"
@@ -21,11 +22,18 @@ UPDATE_TIMERS=(
     bondsscreener-data-update-ruonia.timer
 )
 UPDATE_TASKS=(bonds trading_history currency keyrate zerocupon ruonia)
+RENDERED_UNITS=()
+cleanup_rendered_units() {
+    for rendered in "${RENDERED_UNITS[@]}"; do
+        rm -f "${rendered}"
+    done
+}
 restart_update_timers() {
     for timer in "${UPDATE_TIMERS[@]}"; do
         sudo systemctl enable "${timer}" >/dev/null 2>&1 || true
         sudo systemctl start "${timer}" >/dev/null 2>&1 || true
     done
+    cleanup_rendered_units
 }
 trap restart_update_timers EXIT
 # Stop timers first to prevent new runs, then stop any active oneshot task.
@@ -88,7 +96,13 @@ fi
 
 echo "=== [6/6] Установка расписания и перезапуск системных служб ==="
 for unit in bondsscreener-data-update@.service bondsscreener-data-update-*.timer; do
-    sudo install -m 0644 "${APP_DIR}/deploy/systemd/${unit}" "/etc/systemd/system/${unit}"
+    rendered="${APP_DIR}/deploy/systemd/${unit}.rendered.$$"
+    RENDERED_UNITS+=("${rendered}")
+    sed -e "s|{{APP_DIR}}|${APP_DIR}|g" \
+        -e "s|{{DEPLOY_USER}}|${DEPLOY_USER}|g" \
+        "${APP_DIR}/deploy/systemd/${unit}" > "${rendered}"
+    sudo install -m 0644 "${rendered}" "/etc/systemd/system/${unit}"
+    rm -f "${rendered}"
 done
 sudo systemctl daemon-reload
 sudo systemctl restart bondsscreener-db
