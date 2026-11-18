@@ -1,0 +1,9 @@
+[Unit]
+Description=Update Bonds Screener RUONIA daily at 05:00 Moscow time
+
+[Timer]
+OnCalendar=*-*-* 05:00:00 Europe/Moscow
+Unit=bondsscreener-data-update@ruonia.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,17 @@
+[Unit]
+Description=Bonds Screener scheduled data update (%i)
+After=network-online.target bondsscreener-db.service
+Wants=network-online.target bondsscreener-db.service
+
+[Service]
+Type=oneshot
+User={{DEPLOY_USER}}
+Group={{DEPLOY_USER}}
+WorkingDirectory={{APP_DIR}}
+Environment="PATH={{APP_DIR}}/.venv/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="PYTHONPATH={{APP_DIR}}"
+EnvironmentFile=-{{APP_DIR}}/conversion_service/.env
+ExecStart={{APP_DIR}}/.venv/bin/python -m conversion_service.scheduled_updates.runner %i
+TimeoutStartSec=6h
+StandardOutput=journal
+StandardError=journal

@@ -123,7 +123,7 @@ echo "=== [6/7] Установка Systemd служб и прав sudo ==="
 # Настройка sudo без пароля для перезапуска служб (нужно для GitHub Actions CI/CD)
 SUDOERS_FILE="/etc/sudoers.d/bondsscreener"
 cat <<EOF > "${SUDOERS_FILE}"
-${DEPLOY_USER} ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart bondsscreener-*, /usr/bin/systemctl reload nginx, /usr/bin/systemctl status bondsscreener-*, /usr/bin/systemctl start bondsscreener-*, /usr/bin/systemctl stop bondsscreener-*
+${DEPLOY_USER} ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart bondsscreener-*, /usr/bin/systemctl reload nginx, /usr/bin/systemctl status bondsscreener-*, /usr/bin/systemctl start bondsscreener-*, /usr/bin/systemctl stop bondsscreener-*, /usr/bin/systemctl enable bondsscreener-*, /usr/bin/systemctl daemon-reload, /usr/bin/install -m 0644 ${APP_DIR}/deploy/systemd/bondsscreener-data-update* /etc/systemd/system/bondsscreener-data-update*
 EOF
 chmod 0440 "${SUDOERS_FILE}"
 
@@ -135,8 +135,17 @@ for svc in bondsscreener-db bondsscreener-backend bondsscreener-conversion; do
     chmod 644 "/etc/systemd/system/${svc}.service"
 done
 
+# Scheduled data updates use one templated oneshot service and six calendar timers.
+for unit in bondsscreener-data-update@.service bondsscreener-data-update-*.timer; do
+    sed -e "s|{{APP_DIR}}|${APP_DIR}|g" \
+        -e "s|{{DEPLOY_USER}}|${DEPLOY_USER}|g" \
+        "${SCRIPT_DIR}/systemd/${unit}" > "/etc/systemd/system/${unit}"
+    chmod 644 "/etc/systemd/system/${unit}"
+done
+
 systemctl daemon-reload
 systemctl enable bondsscreener-db bondsscreener-backend bondsscreener-conversion
+systemctl enable bondsscreener-data-update-bonds.timer bondsscreener-data-update-trading-history.timer bondsscreener-data-update-currency.timer bondsscreener-data-update-keyrate.timer bondsscreener-data-update-zerocupon.timer bondsscreener-data-update-ruonia.timer
 
 echo "=== [7/7] Настройка Nginx ==="
 sed "s|{{APP_DIR}}|${APP_DIR}|g" "${SCRIPT_DIR}/nginx/bondsscreener.conf" > /etc/nginx/sites-available/bondsscreener.conf
@@ -155,6 +164,7 @@ systemctl restart bondsscreener-db
 sleep 2
 systemctl restart bondsscreener-backend
 systemctl restart bondsscreener-conversion
+systemctl start bondsscreener-data-update-bonds.timer bondsscreener-data-update-trading-history.timer bondsscreener-data-update-currency.timer bondsscreener-data-update-keyrate.timer bondsscreener-data-update-zerocupon.timer bondsscreener-data-update-ruonia.timer
 
 echo "=== Первичная настройка успешно завершена! ==="
 echo "Статус служб:"

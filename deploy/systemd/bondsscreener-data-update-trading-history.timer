@@ -1,0 +1,9 @@
+[Unit]
+Description=Update Bonds Screener trading history daily at 03:00 Moscow time
+
+[Timer]
+OnCalendar=*-*-* 03:00:00 Europe/Moscow
+Unit=bondsscreener-data-update@trading_history.service
+
+[Install]
+WantedBy=timers.target

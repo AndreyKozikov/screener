@@ -1,0 +1,9 @@
+[Unit]
+Description=Update Bonds Screener bond data every two hours
+
+[Timer]
+OnCalendar=*-*-* 00/2:00:00
+Unit=bondsscreener-data-update@bonds.service
+
+[Install]
+WantedBy=timers.target

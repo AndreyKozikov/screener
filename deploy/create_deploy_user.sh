@@ -47,7 +47,7 @@ echo "=== [3/5] Настройка ограниченных прав sudo без
 SUDOERS_FILE="/etc/sudoers.d/bondsscreener-deploy"
 cat <<EOF > "${SUDOERS_FILE}"
 # Разрешаем пользователю deploy перезапускать только нужные службы и проверять nginx
-${DEPLOY_USER} ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart bondsscreener-*, /usr/bin/systemctl reload nginx, /usr/bin/systemctl status bondsscreener-*, /usr/bin/systemctl start bondsscreener-*, /usr/bin/systemctl stop bondsscreener-*, /usr/sbin/nginx -t
+${DEPLOY_USER} ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart bondsscreener-*, /usr/bin/systemctl reload nginx, /usr/bin/systemctl status bondsscreener-*, /usr/bin/systemctl start bondsscreener-*, /usr/bin/systemctl stop bondsscreener-*, /usr/bin/systemctl enable bondsscreener-*, /usr/bin/systemctl daemon-reload, /usr/bin/install -m 0644 ${APP_DIR}/deploy/systemd/bondsscreener-data-update* /etc/systemd/system/bondsscreener-data-update*, /usr/sbin/nginx -t
 EOF
 chmod 0440 "${SUDOERS_FILE}"
 

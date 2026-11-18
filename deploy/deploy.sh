@@ -11,12 +11,37 @@ APP_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 echo "=== [1/5] Переход в каталог проекта: ${APP_DIR} ==="
 cd "${APP_DIR}"
 
-echo "=== [2/5] Получение свежего кода из Git ==="
+echo "=== [2/6] Приостановка расписания обновления данных ==="
+UPDATE_TIMERS=(
+    bondsscreener-data-update-bonds.timer
+    bondsscreener-data-update-trading-history.timer
+    bondsscreener-data-update-currency.timer
+    bondsscreener-data-update-keyrate.timer
+    bondsscreener-data-update-zerocupon.timer
+    bondsscreener-data-update-ruonia.timer
+)
+UPDATE_TASKS=(bonds trading_history currency keyrate zerocupon ruonia)
+restart_update_timers() {
+    for timer in "${UPDATE_TIMERS[@]}"; do
+        sudo systemctl enable "${timer}" >/dev/null 2>&1 || true
+        sudo systemctl start "${timer}" >/dev/null 2>&1 || true
+    done
+}
+trap restart_update_timers EXIT
+# Stop timers first to prevent new runs, then stop any active oneshot task.
+for timer in "${UPDATE_TIMERS[@]}"; do
+    sudo systemctl stop "${timer}" 2>/dev/null || true
+done
+for task in "${UPDATE_TASKS[@]}"; do
+    sudo systemctl stop "bondsscreener-data-update@${task}.service" 2>/dev/null || true
+done
+
+echo "=== [3/6] Получение свежего кода из Git ==="
 BRANCH="${DEPLOY_BRANCH:-main}"
 git fetch origin "${BRANCH}"
 git reset --hard "origin/${BRANCH}"
 
-echo "=== [3/5] Обновление зависимостей Python ==="
+echo "=== [4/6] Обновление зависимостей Python ==="
 if [ -d "${APP_DIR}/.venv" ]; then
     "${APP_DIR}/.venv/bin/pip" install --upgrade pip
     "${APP_DIR}/.venv/bin/pip" install gunicorn
@@ -28,7 +53,7 @@ else
     exit 1
 fi
 
-echo "=== [4/5] Развертывание фронтенда ==="
+echo "=== [5/6] Развертывание фронтенда ==="
 publish_frontend() {
     local release_dir="$1"
     local live_dir="${APP_DIR}/frontend/dist"
@@ -61,12 +86,23 @@ elif command -v npm >/dev/null 2>&1; then
     cd "${APP_DIR}"
 fi
 
-echo "=== [5/5] Перезапуск системных служб ==="
+echo "=== [6/6] Установка расписания и перезапуск системных служб ==="
+for unit in bondsscreener-data-update@.service bondsscreener-data-update-*.timer; do
+    sudo install -m 0644 "${APP_DIR}/deploy/systemd/${unit}" "/etc/systemd/system/${unit}"
+done
+sudo systemctl daemon-reload
 sudo systemctl restart bondsscreener-db
 sleep 2
 sudo systemctl restart bondsscreener-backend
 sudo systemctl restart bondsscreener-conversion
 sudo systemctl reload nginx
+
+# Starting timers activates only the schedules; it does not start the oneshot jobs.
+for timer in "${UPDATE_TIMERS[@]}"; do
+    sudo systemctl enable "${timer}"
+    sudo systemctl start "${timer}"
+done
+trap - EXIT
 
 echo "Проверка доступности Backend API..."
 for i in {1..15}; do

@@ -1,0 +1,70 @@
+"""Run one of the conversion service's existing data refresh operations."""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+import logging
+from typing import Any, Callable
+
+
+def _run(task: str) -> Any:
+    if task == "bonds":
+        from conversion_service.app.services.bonds_service import get_bonds_update_service
+
+        return asyncio.run(get_bonds_update_service().update_bonds_data())
+    if task == "trading_history":
+        from conversion_service.app.services.trading_history_update_service import get_trading_history_service
+
+        return get_trading_history_service().download_history_all()
+    if task == "zerocupon":
+        from conversion_service.app.services.zerocupon_update_service import get_zerocupon_update_service
+
+        return get_zerocupon_update_service().refresh()
+    if task == "currency":
+        from conversion_service.app.services.currency_update_service import get_currency_service
+
+        return get_currency_service().refresh_rates()
+    if task == "ruonia":
+        from conversion_service.app.services.ruonia_update_service import get_ruonia_service
+
+        return get_ruonia_service().update_ruonia_data()
+    if task == "keyrate":
+        from conversion_service.app.services.keyrate_update_service import get_keyrate_service
+
+        return get_keyrate_service().load_keyrate_data()
+    raise ValueError(f"Unknown update task: {task}")
+
+
+def _ensure_success(task: str, result: Any) -> None:
+    """Treat explicit service error results and partial history failures as failures."""
+    if isinstance(result, dict):
+        if str(result.get("status", "")).lower() == "error":
+            raise RuntimeError(result.get("error") or result.get("message") or "Service reported an error")
+        if task == "trading_history" and (result.get("failed", 0) or result.get("errors")):
+            raise RuntimeError(f"Trading history partially failed: {result}")
+
+
+def run_task(task: str, runner: Callable[[str], Any] = _run) -> Any:
+    result = runner(task)
+    _ensure_success(task, result)
+    return result
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("task", choices=("bonds", "trading_history", "zerocupon", "currency", "ruonia", "keyrate"))
+    args = parser.parse_args()
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    try:
+        result = run_task(args.task)
+        logging.getLogger(__name__).info("Task %s completed: %s", args.task, json.dumps(result, ensure_ascii=False, default=str))
+        return 0
+    except Exception:
+        logging.getLogger(__name__).exception("Scheduled task %s failed", args.task)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
