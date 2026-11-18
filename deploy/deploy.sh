@@ -95,14 +95,21 @@ elif command -v npm >/dev/null 2>&1; then
 fi
 
 echo "=== [6/6] Установка расписания и перезапуск системных служб ==="
-for unit_source in \
-    "${APP_DIR}/deploy/systemd/bondsscreener-data-update@.service" \
-    "${APP_DIR}"/deploy/systemd/bondsscreener-data-update-*.timer; do
+UPDATE_UNIT_FILES=(
+    bondsscreener-data-update@.service
+    bondsscreener-data-update-bonds.timer
+    bondsscreener-data-update-trading-history.timer
+    bondsscreener-data-update-currency.timer
+    bondsscreener-data-update-keyrate.timer
+    bondsscreener-data-update-zerocupon.timer
+    bondsscreener-data-update-ruonia.timer
+)
+for unit in "${UPDATE_UNIT_FILES[@]}"; do
+    unit_source="${APP_DIR}/deploy/systemd/${unit}"
     if [ ! -f "${unit_source}" ]; then
         echo "Ошибка: не найден systemd unit: ${unit_source}" >&2
         exit 1
     fi
-    unit="${unit_source##*/}"
     rendered="${APP_DIR}/deploy/systemd/${unit}.rendered.$$"
     RENDERED_UNITS+=("${rendered}")
     sed -e "s|{{APP_DIR}}|${APP_DIR}|g" \
