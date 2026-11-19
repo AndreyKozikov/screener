@@ -18,7 +18,6 @@ from app.models import BondFilters, BondsListResponse
 from app.services.bonds_service import get_bond_detail, get_bonds_list
 from app.services.coupon_service import get_coupon_service
 from app.services.keyrate_service import get_keyrate_service
-from app.services import get_llm_analysis_service
 
 MAX_BONDS_TO_LLM: int = 15
 MAX_COUPONS_TO_LLM: int = 12
@@ -285,52 +284,11 @@ async def _run_get_coupons(args: Dict[str, Any]) -> ToolOutput:
     )
 
 
-async def _run_bond_rag_query(args: Dict[str, Any]) -> ToolOutput:
-    """Ответ по документам/событиям конкретной облигации (RAG-пайплайн)."""
-    secid = str(args.get("secid") or "").strip()
-    query = str(args.get("query") or "").strip()
-    if not secid or not query:
-        return ToolOutput(
-            error="missing_args",
-            question="Укажите SECID облигации и ваш вопрос по её документам.",
-        )
-    from config.settings import settings
-
-    try:
-        service = get_llm_analysis_service()
-        result = await asyncio.to_thread(
-            service.answer_question,
-            secid=secid,
-            query=query,
-            provider=settings.AGENT_PROVIDER or None,
-        )
-    except Exception as exc:
-        return ToolOutput(
-            error=str(exc),
-            question="Не удалось проанализировать документы по этой облигации.",
-        )
-
-    answer = str((result or {}).get("answer") or "").strip()
-    if not answer:
-        return ToolOutput(
-            error="empty_answer",
-            question="По документам этой облигации ответ не найден. Задайте вопрос иначе.",
-        )
-    shortname = ""
-    return ToolOutput(
-        data={"answer": answer, "secid": secid},
-        sources=[AgentSource(secid=secid, shortname=shortname)],
-        summary=f"RAG-ответ по документам {secid}",
-        final_answer=answer,
-    )
-
-
 TOOL_HANDLERS: Dict[str, Callable[[Dict[str, Any]], Any]] = {
     "search_bonds": _run_search_bonds,
     "get_bond_detail": _run_get_bond_detail,
     "get_key_rate": _run_get_key_rate,
     "get_coupons": _run_get_coupons,
-    "bond_rag_query": _run_bond_rag_query,
 }
 
 TOOL_SCHEMAS: Dict[str, Dict[str, str]] = {
@@ -366,17 +324,6 @@ TOOL_SCHEMAS: Dict[str, Dict[str, str]] = {
             "График ближайших купонных выплат по облигации. Требует точный SECID."
         ),
         "args_text": "- `secid` (string): код ценной бумаги на Мосбирже",
-    },
-    "bond_rag_query": {
-        "description": (
-            "Ответ по эмиссионным документам и событиям раскрытия конкретной "
-            "облигации (например, условия оферты, формула купона). Дорогой и "
-            "медленный инструмент — используйте только по явному запросу."
-        ),
-        "args_text": (
-            "- `secid` (string): код ценной бумаги\n"
-            "- `query` (string): вопрос по документам облигации"
-        ),
     },
 }
 

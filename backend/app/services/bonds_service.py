@@ -513,10 +513,12 @@ def get_bond_detail(
     )
 
     emitent_inn: Optional[str] = get_emitent_inn_by_secid(secid)
+    bond_description = repo.get_bond_description_by_secid(secid)
 
     return BondDetailDTO(
         securities=securities,
         marketdata=marketdata,
         marketdata_yields=marketdata_yields,
         emitent_inn=emitent_inn,
+        bond_description=bond_description,
     )

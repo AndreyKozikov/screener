@@ -682,6 +682,7 @@ export const BondDetails: React.FC = () => {
                   <Tab label="Параметры выпуска" />
                   <Tab label="Расширенные метрики" />
                   <Tab label="Служебные данные" />
+                  <Tab label="Описание выпуска" />
                 </Tabs>
               </Box>
 
@@ -840,6 +841,39 @@ export const BondDetails: React.FC = () => {
                     ])}
                   </Box>
                 )}
+
+                {activeTab === 8 && (() => {
+                  const d = bondDetail.bond_description;
+                  const fields: Array<[string, string]> = [
+                    ['hasdefault', 'Был дефолт'], ['hastechnicaldefault', 'Был технический дефолт'],
+                    ['isqualifiedinvestors', 'Только для квалифицированных инвесторов'],
+                    ['bond_type', 'Тип облигации'], ['bond_subtype', 'Опцион / подтип'],
+                    ['facevalue_type', 'Тип номинала'], ['issuedate', 'Дата выпуска'], ['matdate', 'Дата погашения'],
+                    ['daystoredemption', 'Дней до погашения (данные MOEX)'], ['facevalue', 'Текущий номинал'],
+                    ['initialfacevalue', 'Первоначальный номинал'], ['faceunit', 'Валюта номинала'],
+                    ['coupon_benchmark', 'Бенчмарк купона'], ['coupon_benchmark_spread', 'Надбавка к бенчмарку, п.п.'],
+                    ['coupon_details', 'Условия купона'], ['issuename', 'Полное название выпуска'],
+                    ['regnumber', 'Регистрационный номер'], ['programregistrynumber', 'Номер программы'],
+                    ['issuesize', 'Размер выпуска, бумаг'], ['hasprospectus', 'Есть проспект'],
+                    ['decisiondate', 'Дата решения о выпуске'], ['registry_date', 'Дата регистрации'],
+                  ];
+                  const format = (key: string, value: string | number | boolean | null | undefined) => {
+                    if (value === null || value === undefined || value === '') return 'Нет данных';
+                    if (typeof value === 'boolean') return value ? 'Да' : 'Нет';
+                    if (key.endsWith('date') || key === 'issuedate' || key === 'matdate') return formatDate(String(value));
+                    return String(value);
+                  };
+                  return <Box>
+                    {d?.hasdefault === true || d?.hasdefault === 1 || d?.hastechnicaldefault === true || d?.hastechnicaldefault === 1
+                      ? <Paper sx={{ p: 1.5, mb: 2, bgcolor: 'error.lighter' }}><Typography color="error.main" fontWeight={700}>Внимание: в данных MOEX отмечен дефолт или технический дефолт</Typography></Paper> : null}
+                    <Grid container spacing={2}>
+                      {fields.map(([key, label]) => <Grid size={{ xs: 12, sm: 6 }} key={key}>
+                        <Typography variant="caption" color="text.secondary" display="block">{label}</Typography>
+                        <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>{format(key, d?.[key])}</Typography>
+                      </Grid>)}
+                    </Grid>
+                  </Box>;
+                })()}
 
                 {/* Вкладка 7: Служебные данные (скрыта по умолчанию) */}
                 {activeTab === 7 && (

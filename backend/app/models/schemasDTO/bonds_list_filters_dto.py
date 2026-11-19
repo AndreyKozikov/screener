@@ -132,6 +132,11 @@ class BondsListFiltersDTO(BaseModel):
         )
     )
 
+    exclude_nonqualified_investors: bool = Field(False, description="Исключить облигации, доступные неквалифицированным инвесторам")
+    exclude_qualified_investors: bool = Field(False, description="Исключить облигации, предназначенные только квалифицированным инвесторам")
+    exclude_defaults: bool = Field(False, description="Исключить облигации с простым дефолтом")
+    exclude_technical_defaults: bool = Field(False, description="Исключить облигации с техническим дефолтом")
+
     skip: int = Field(
         default=0,
         description="Смещение для пагинации (всегда 0)"

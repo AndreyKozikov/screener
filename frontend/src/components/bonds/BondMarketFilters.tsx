@@ -28,7 +28,7 @@ import ViewWeekIcon from '@mui/icons-material/ViewWeek';
 import { useFiltersStore } from '../../stores/filtersStore';
 import type { BondFilters } from '../../types/filters';
 
-type FilterId = 'maturity' | 'yield' | 'coupon' | 'couponYield' | 'rating' | 'couponMonths' | 'currency' | 'bondType' | 'bondKind' | 'listing';
+type FilterId = 'maturity' | 'yield' | 'coupon' | 'couponYield' | 'rating' | 'couponMonths' | 'currency' | 'bondType' | 'bondKind' | 'listing' | 'investorAccess' | 'defaults';
 type NumericFilterKey = 'yieldMin' | 'yieldMax' | 'couponMin' | 'couponMax' | 'couponYieldMin' | 'couponYieldMax';
 type FilterOption = { label: string; value: string | number };
 type FilterChip = { key: string; label: string; onDelete: () => void };
@@ -73,12 +73,15 @@ const FILTER_BUTTONS: Array<{ id: FilterId; label: string; icon: React.ReactNode
   { id: 'bondType', label: 'Тип облигации', icon: <ArticleOutlinedIcon /> },
   { id: 'bondKind', label: 'Вид облигации', icon: <AccountBalanceIcon /> },
   { id: 'listing', label: 'Уровень листинга', icon: <BarChartIcon /> },
+  { id: 'investorAccess', label: 'Доступ инвесторам', icon: <AccountBalanceIcon /> },
+  { id: 'defaults', label: 'Дефолты', icon: <ArticleOutlinedIcon /> },
 ];
 
 const FILTER_KEYS: Array<keyof BondFilters> = [
   'search', 'matdateFrom', 'matdateTo', 'yieldMin', 'yieldMax', 'couponMin', 'couponMax',
   'couponYieldMin', 'couponYieldMax', 'ratingMin', 'ratingMax', 'couponMonths', 'faceunit',
   'bondtype', 'bondtype43', 'listlevel',
+    'excludeNonqualifiedInvestors', 'excludeQualifiedInvestors', 'excludeDefaults', 'excludeTechnicalDefaults',
 ];
 
 const numberLabel = (value: number): string => value.toLocaleString('ru-RU', { maximumFractionDigits: 2 });
@@ -501,6 +504,8 @@ const BondMarketFilters: React.FC = () => {
       case 'bondType': setDraftFilter('bondtype', []); break;
       case 'bondKind': setDraftFilter('bondtype43', []); break;
       case 'listing': setDraftFilter('listlevel', []); break;
+      case 'investorAccess': setDraftFilter('excludeNonqualifiedInvestors', false); setDraftFilter('excludeQualifiedInvestors', false); break;
+      case 'defaults': setDraftFilter('excludeDefaults', false); setDraftFilter('excludeTechnicalDefaults', false); break;
     }
   }, [setDraftFilter]);
 
@@ -533,6 +538,8 @@ const BondMarketFilters: React.FC = () => {
         onDelete: () => clearFilter('rating'),
       });
     }
+    if (draftFilters.excludeNonqualifiedInvestors || draftFilters.excludeQualifiedInvestors) result.push({ key: 'investorAccess', label: `Исключить доступ: ${[draftFilters.excludeNonqualifiedInvestors && 'неквалифицированным', draftFilters.excludeQualifiedInvestors && 'квалифицированным'].filter(Boolean).join(', ')}`, onDelete: () => clearFilter('investorAccess') });
+    if (draftFilters.excludeDefaults || draftFilters.excludeTechnicalDefaults) result.push({ key: 'defaults', label: `Исключить: ${[draftFilters.excludeDefaults && 'дефолт', draftFilters.excludeTechnicalDefaults && 'технический дефолт'].filter(Boolean).join(', ')}`, onDelete: () => clearFilter('defaults') });
 
     const groupLabels: Array<[Extract<FilterId, 'couponMonths' | 'currency' | 'bondType' | 'bondKind' | 'listing'>, string]> = [
       ['couponMonths', 'Месяцы купона'], ['currency', 'Валюта'], ['bondType', 'Тип'], ['bondKind', 'Вид'], ['listing', 'Листинг'],
@@ -557,6 +564,16 @@ const BondMarketFilters: React.FC = () => {
       case 'coupon': return <NumericRangeEditor title="Ставка купона" minKey="couponMin" maxKey="couponMax" max={30} step={0.5} />;
       case 'couponYield': return <NumericRangeEditor title="Купонная доходность к текущей цене" minKey="couponYieldMin" maxKey="couponYieldMax" max={100} step={0.1} />;
       case 'rating': return <RatingEditor />;
+      case 'investorAccess':
+      case 'defaults': {
+        const choices: Array<[keyof BondFilters, string]> = id === 'investorAccess'
+          ? [['excludeNonqualifiedInvestors', 'Для неквалифицированных инвесторов'], ['excludeQualifiedInvestors', 'Для квалифицированных инвесторов']]
+          : [['excludeDefaults', 'Был дефолт'], ['excludeTechnicalDefaults', 'Был технический дефолт']];
+        return <Stack sx={{ p: 1.5, minWidth: 280 }} spacing={0.5}>
+          <Typography variant="subtitle2" fontWeight={700}>Исключить из поиска</Typography>
+          {choices.map(([key, label]) => <FormControlLabel key={key} control={<Checkbox checked={Boolean(draftFilters[key])} onChange={(_, checked) => setDraftFilter(key, checked)} />} label={label} />)}
+        </Stack>;
+      }
       case 'couponMonths':
       case 'currency':
       case 'bondType':

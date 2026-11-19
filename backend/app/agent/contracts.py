@@ -71,16 +71,11 @@ class SecidArgs(ToolArgs):
     secid: NonEmptyText
 
 
-class RagArgs(SecidArgs):
-    query: NonEmptyText
-
-
 TOOL_ARG_MODELS = {
     "search_bonds": SearchBondsArgs,
     "get_bond_detail": SecidArgs,
     "get_key_rate": ToolArgs,
     "get_coupons": SecidArgs,
-    "bond_rag_query": RagArgs,
 }
 
 
@@ -125,7 +120,7 @@ class AskDecision(ToolArgs):
 
 class ToolDecision(ToolArgs):
     intent: Literal["tool"]
-    tool: Literal["search_bonds", "get_bond_detail", "get_key_rate", "get_coupons", "bond_rag_query"]
+    tool: Literal["search_bonds", "get_bond_detail", "get_key_rate", "get_coupons"]
     args: Dict[str, Any]
 
 

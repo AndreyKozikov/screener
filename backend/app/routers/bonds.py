@@ -205,4 +205,5 @@ async def get_bond_details(secid: str):
         marketdata=dto.marketdata,
         marketdata_yields=dto.marketdata_yields,
         emitent_inn=dto.emitent_inn,
+        bond_description=dto.bond_description,
     )

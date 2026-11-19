@@ -201,6 +201,10 @@ const loadBondsBySecids = async (secids: string[]): Promise<BondListItem[]> => {
     bondtype43: [],
     ratingMin: null,
     ratingMax: null,
+    excludeNonqualifiedInvestors: false,
+    excludeQualifiedInvestors: false,
+    excludeDefaults: false,
+    excludeTechnicalDefaults: false,
     search: '',
     skip: 0,
     limit: 10000, // Large limit to get all bonds

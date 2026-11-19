@@ -10,10 +10,9 @@
    missing_filters — массив строк с именами недостающих аргументов/фильтров
    каталога; [] допустим для уточнения смысла, приоритета или упрощения.
 2) {"intent": "tool", "tool": "имя из каталога", "args": {}}
-   tool — только search_bonds, get_bond_detail, get_coupons, get_key_rate,
-   bond_rag_query. args для search_bonds — только фильтры каталога с верными
+   tool — только search_bonds, get_bond_detail, get_coupons, get_key_rate. args для search_bonds — только фильтры каталога с верными
    типами, без skip/limit; неизвестные ключи отклоняются. detail/coupons требуют
-   ровно secid (непустая строка), RAG — secid и query (непустые строки),
+   ровно secid (непустая строка),
    get_key_rate — строго {}. Синонимы имён полей/инструментов не допускаются.
 3) {"intent": "answer", "answer_markdown": "Непустой ответ", "sources": []}
    Только отказ/словесный ответ без рыночных фактов, sources всегда [].

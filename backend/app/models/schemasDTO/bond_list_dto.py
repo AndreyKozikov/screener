@@ -59,3 +59,4 @@ class BondDetail(BaseModel):
     marketdata: Optional[Dict[str, Any]] = None
     marketdata_yields: Optional[List[Dict[str, Any]]] = None
     emitent_inn: Optional[str] = None
+    bond_description: Optional[Dict[str, Any]] = None

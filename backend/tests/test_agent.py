@@ -81,7 +81,6 @@ class ContractTests(OfflineMixin, unittest.TestCase):
             "get_bond_detail": {"secid": " RU000TEST "},
             "get_coupons": {"secid": "RU000TEST"},
             "get_key_rate": {},
-            "bond_rag_query": {"secid": "RU000TEST", "query": "Offer terms?"},
         }
         for tool, args in cases.items():
             with self.subTest(tool=tool):
@@ -137,8 +136,6 @@ class ContractTests(OfflineMixin, unittest.TestCase):
             ("get_coupons", {"secid": 123}),
             ("get_coupons", {"secid": "RU000TEST", "extra": 1}),
             ("get_key_rate", {"secid": "CBR"}),
-            ("bond_rag_query", {"secid": "RU000TEST"}),
-            ("bond_rag_query", {"secid": "RU000TEST", "query": " "}),
         ):
             with self.subTest(tool=tool, args=args), self.assertRaises((ValueError, TypeError)):
                 validate_tool_args(tool, args)
@@ -487,16 +484,6 @@ class AsyncOfflineTests(OfflineMixin, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(builder.call_args.kwargs["context"]["task"],
                          ["Только данные сервиса", "Какая ключевая ставка?"])
 
-    async def test_tool_final_answer_bypasses_model_finalization(self):
-        handler = AsyncMock(return_value=tools.ToolOutput(final_answer="Document answer"))
-        with patch.dict("app.agent.service.TOOL_HANDLERS", {"bond_rag_query": handler}):
-            result = await self.make_service()._handle_tool("sid", {
-                "tool": "bond_rag_query", "args": {"secid": "RU000TEST", "query": "Offer?"},
-            }, "Offer?")
-        self.assertEqual(result.answer, "Document answer")
-        self.assertEqual(result.state, "done")
-        self.generate.assert_not_called()
-
     async def test_search_sorts_truncates_and_exposes_applied_filter_metadata(self):
         fields = ("SECID SHORTNAME SECNAME ISIN COUPONPERCENT COUPONVALUE YIELDATPREVWAPRICE "
                   "MATDATE NEXTCOUPON DURATION_YEARS RATING_LEVEL RATING_AGENCY CURRENCYID "
@@ -622,13 +609,6 @@ class AsyncOfflineTests(OfflineMixin, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(output.data["coupons"], [])
         self.assertFalse(output.data["truncated"])
 
-    async def test_rag_service_is_mocked_and_returns_document_answer(self):
-        self.rag.side_effect = None
-        self.rag.return_value.answer_question.return_value = {"answer": "  Document terms  "}
-        output = await tools._run_bond_rag_query({"secid": "RU000TEST", "query": "Offer?"})
-        self.assertEqual(output.final_answer, "Document terms")
-        self.assertEqual(output.sources[0].secid, "RU000TEST")
-        self.generate.assert_not_called()
 
 
 if __name__ == "__main__":

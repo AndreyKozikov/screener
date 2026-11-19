@@ -18,6 +18,10 @@ export interface BondFilters {
   bondtype43: number[];  // ID видов облигаций из bond_type43_mapping
   ratingMin: string | null;
   ratingMax: string | null;
+  excludeNonqualifiedInvestors: boolean;
+  excludeQualifiedInvestors: boolean;
+  excludeDefaults: boolean;
+  excludeTechnicalDefaults: boolean;
   search: string;
   skip: number;
   limit: number;

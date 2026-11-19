@@ -14,6 +14,7 @@ from sqlalchemy import func, or_, and_, text
 from sqlmodel import Session, create_engine, select
 
 from db_repository.models.bond import Bond, BondMarketData, BondMarketDataYield, BondSecurity
+from db_repository.models.bond_description import BondDescription
 from db_repository.config.paths import DB_PATH
 
 
@@ -163,6 +164,22 @@ class BondsRepository:
                 e,
                 exc_info=True,
             )
+            return None
+
+    def get_bond_description_by_secid(self, secid: str) -> Optional[dict[str, Any]]:
+        """Return investor-facing MOEX issue description fields for a bond."""
+        try:
+            with Session(self._engine) as session:
+                stmt = (select(BondDescription)
+                        .join(Bond, Bond.id == BondDescription.bond_id)
+                        .where(Bond.secid == secid))
+                description = session.exec(stmt).first()
+                if description is None:
+                    return None
+                return {key: value for key, value in description.model_dump().items()
+                        if key != "bond_id"}
+        except Exception as exc:
+            self.logger.error("Ошибка при получении описания облигации %s: %s", secid, exc, exc_info=True)
             return None
 
     def get_bond_detail_by_isin(

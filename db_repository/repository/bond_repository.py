@@ -9,6 +9,7 @@ from db_repository.models.bond import (
     BondMarketDataYield,
 )
 from db_repository.models.coupon import Coupon
+from db_repository.models.bond_description import BondDescription
 from sqlalchemy import (func, or_, and_, text, extract, exists)
 from sqlalchemy.orm import selectinload, joinedload
 from datetime import date
@@ -191,6 +192,25 @@ class BondRepository:
                     self._date_is_null(Bond.offer_date),
                 )
             )
+        for flag, value in (
+            (filters.exclude_nonqualified_investors, False),
+            (filters.exclude_qualified_investors, True),
+        ):
+            if flag:
+                conditions.append(~exists().where(
+                    BondDescription.bond_id == Bond.id,
+                    BondDescription.isqualifiedinvestors.is_(value),
+                ))
+        if filters.exclude_defaults:
+            conditions.append(~exists().where(
+                BondDescription.bond_id == Bond.id,
+                BondDescription.hasdefault.is_(True),
+            ))
+        if filters.exclude_technical_defaults:
+            conditions.append(~exists().where(
+                BondDescription.bond_id == Bond.id,
+                BondDescription.hastechnicaldefault.is_(True),
+            ))
         ratings_in_range = self._rating_range_list(filters.rating_min, filters.rating_max)
         if ratings_in_range:
             conditions.append(Bond.rating.isnot(None))

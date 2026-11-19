@@ -3,24 +3,23 @@ import { Box, Chip, IconButton, InputBase, Tooltip } from '@mui/material';
 import { keyframes } from '@emotion/react';
 import SendRoundedIcon from '@mui/icons-material/SendRounded';
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
-import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 
 /**
  * Примеры запросов, которые «печатаются» в строке ввода до начала ввода пользователем
  * и показываются в виде подсказок-чипов под строкой.
  */
 const HUB_QUERY_EXAMPLES: string[] = [
-  'Подбери рублёвые облигации с доходностью от 15%',
+  'Подбери рублёвые облигации с доходностью к погашению от 15%',
   'Покажи последнее значение ключевой ставки с датой',
   'Расскажи об облигации RU000A10D9J2',
   'Найди флоатеры с рейтингом не ниже AA-',
   'Покажи график купонов RU000A10D9J2',
-  'Найди формулу купона RU000A10D9J2 в документах',
+  'Покажи доходность и рейтинг облигации RU000A10D9J2',
   'Какие облигации погашаются в ближайшие 6 месяцев?',
   'Подбери ОФЗ с погашением до 3 лет',
   'Найди облигации без амортизации и оферт',
-  'Найди облигации с будущими выплатами в ноябре',
-  'Найди облигации со ставкой купона от 16% годовых',
+  'Найди ОФЗ с погашением в ближайшие 3 года',
+  'Найди облигации с купоном от 16% годовых',
   'Подбери долларовые облигации с фиксированным купоном',
 ];
 
@@ -29,6 +28,7 @@ const TYPE_DELAY_MS = 42;
 const DELETE_DELAY_MS = 18;
 const HOLD_FULL_MS = 2200;
 const HOLD_EMPTY_MS = 450;
+const CHIP_ROTATION_INTERVAL_MS = 60_000;
 
 const caretBlink = keyframes`
   0%, 45% { opacity: 1; }
@@ -112,7 +112,6 @@ export const HubQueryBar: React.FC<HubQueryBarProps> = ({ onSubmit }) => {
   const [value, setValue] = useState('');
   const [focused, setFocused] = useState(false);
   const [chipOffset, setChipOffset] = useState(0);
-  const [spinning, setSpinning] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const isEmpty = value.trim().length === 0;
@@ -136,10 +135,11 @@ export const HubQueryBar: React.FC<HubQueryBarProps> = ({ onSubmit }) => {
     inputRef.current?.focus();
   }, []);
 
-  const handleShuffle = useCallback(() => {
-    setChipOffset((offset) => (offset + CHIPS_VISIBLE) % HUB_QUERY_EXAMPLES.length);
-    setSpinning(true);
-    window.setTimeout(() => setSpinning(false), 500);
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setChipOffset((offset) => (offset + CHIPS_VISIBLE) % HUB_QUERY_EXAMPLES.length);
+    }, CHIP_ROTATION_INTERVAL_MS);
+    return () => window.clearInterval(intervalId);
   }, []);
 
   const showTypewriter = value.length === 0 && typed.length > 0;
@@ -329,29 +329,6 @@ export const HubQueryBar: React.FC<HubQueryBarProps> = ({ onSubmit }) => {
           pl: { xs: 0, md: 0 },
         }}
       >
-        <Tooltip title="Другие примеры" placement="top">
-          <IconButton
-            aria-label="Показать другие примеры запросов"
-            size="small"
-            onClick={handleShuffle}
-            sx={{
-              width: 32,
-              height: 32,
-              color: '#4A5F85',
-              border: '1px solid rgba(255,255,255,0.8)',
-              bgcolor: 'rgba(255,255,255,0.5)',
-              backdropFilter: 'blur(14px)',
-              '&:hover': { bgcolor: 'rgba(255,255,255,0.75)', color: '#7C5CFF' },
-              '& svg': {
-                transition: 'transform 500ms cubic-bezier(0.4, 0, 0.2, 1)',
-                transform: spinning ? 'rotate(360deg)' : 'rotate(0deg)',
-              },
-            }}
-          >
-            <RefreshRoundedIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-
         {visibleChips.map((example, index) => {
           const highlighted = index === 0;
           return (

@@ -137,6 +137,7 @@ _ALLOWED_OPERATIONS: dict[str, frozenset[str]] = {
     "bonds": frozenset({
         "get_all_bond_secids", "get_all_bonds_metadata", "get_all_secids", "get_bond_detail_by_isin",
         "get_bond_detail_by_secid", "get_bond_id_by_secid", "get_bonds_for_ratings_pipeline",
+        "get_bond_description_by_secid",
         "get_emitent_inn_by_secid", "get_floater_secids", "get_id_secid_list",
         "get_reg_number_by_secid", "get_secids_by_ids", "get_secids_by_regnumber",
     }),
