@@ -20,7 +20,7 @@ class RepositoryCall(BaseModel):
         "create", "delete", "delete_event", "delete_for_user", "fetch_coupons_for_frontend",
         "fetch_coupons_raw", "get_agency_name_short_ru_by_agency_id",
         "get_all_bond_secids", "get_all_bonds_metadata", "get_all_dates", "get_all_documents_by_metadata",
-        "get_all_emitent_titles", "get_all_secids", "get_bond_detail_by_isin", "get_bond_detail_by_secid", "get_bond_id_by_secid",
+        "get_all_emitent_titles", "get_all_secids", "get_bond_detail_by_isin", "get_bond_detail_by_secid", "get_bond_description_by_secid", "get_bond_id_by_secid",
         "get_bond_ids_with_find", "get_bonds_for_ratings_pipeline", "get_by_bond_id", "get_by_date",
         "get_by_date_range", "get_by_guid_and_date", "get_by_inn_and_reg_number", "get_by_secid_date_range", "get_by_slug",
         "get_count", "get_descriptions_formatted", "get_edisclosure_id_by_emitent_id",
