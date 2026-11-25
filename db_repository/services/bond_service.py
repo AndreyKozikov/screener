@@ -23,17 +23,10 @@ class BondService:
 
         bond_filters_data = data.model_dump(exclude_none=True, exclude={'emitent_title', 'exclude_spob'})
         bond_filters = BondFilters(**bond_filters_data)
-        emitent_title = data.emitent_title
         exclude_spob = data.exclude_spob
 
         # Выборка через SQLModel API; возвращаются объекты Bond
-        try:
-            bond_rows, coupon_rows = self.db_repository.select(filters=bond_filters, exclude_spob=exclude_spob)
-        except Exception as e:
-            if "no such table" in str(e).lower():
-                bond_rows = []
-            else:
-                raise
+        bond_rows, coupon_rows, terms = self.db_repository.select(filters=bond_filters, exclude_spob=exclude_spob)
         coupons_map = defaultdict(list)
 
         for coupon in coupon_rows:
@@ -42,6 +35,7 @@ class BondService:
         result = [
             BondResponseDTO.model_validate({
                 **bond.model_dump(),
+                **terms[bond.id],
                 "coupons": [
                     CouponResponseDTO.model_validate(coupon, from_attributes=True)
                     for coupon in coupons_map.get(bond.id, [])
@@ -51,6 +45,10 @@ class BondService:
         ]
 
         return result
+
+    def list_coupon_benchmarks(self, data: BondsListFiltersDTO) -> List[str]:
+        filters = BondFilters.model_validate(data.model_dump())
+        return self.db_repository.list_coupon_benchmarks(filters, data.exclude_spob, data.emitent_title)
 
     async def bond_counts(self, exclude_spob: bool = False) -> int:
         try:

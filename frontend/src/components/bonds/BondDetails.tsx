@@ -271,7 +271,6 @@ function Details({id,onClose}:{id:string;onClose:()=>void}) {
       'Идентификаторы': [
         ['Наименование', securities?.SECNAME, 'SECNAME'],
         ['Краткое название', securities?.SHORTNAME, 'SHORTNAME'],
-        ['ISIN', securities?.ISIN, 'ISIN'],
         ['Регистрационный номер', securities.REGNUMBER ?? description.regnumber, 'REGNUMBER'],
         ['Тип бумаги', securities?.SECTYPE, 'SECTYPE'],
         ['Вид облигации', securities?.BONDTYPE43, 'BONDTYPE43'],

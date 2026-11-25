@@ -10,10 +10,15 @@ import { fetchBondCoupons, fetchBondDetail } from '../../api/bonds';
 import type { BondDetail, BondFieldValue } from '../../types/bond';
 import { formatDate, formatNumber, formatPercent } from '../../utils/formatters';
 
-const typeLabels: Record<string, string> = {
-  exchange_bond: 'Биржевая', ofz_bond: 'ОФЗ', corporate_bond: 'Корпоративная',
-  municipal_bond: 'Муниципальная', subfederal_bond: 'Региональная',
-};
+function offerType(detail: BondDetail) {
+  const { PUTOPTIONDATE, CALLOPTIONDATE, OFFERDATE } = detail.securities;
+  const subtype = String(detail.bond_description?.bond_subtype ?? '');
+  const types = [];
+  if (PUTOPTIONDATE || /\bput\b|пут[- ]опцион/i.test(subtype)) types.push('PUT');
+  if (CALLOPTIONDATE || /\bcall\b|колл?[- ]опцион/i.test(subtype)) types.push('CALL');
+  if (types.length) return types.join(' / ');
+  return OFFERDATE ? 'Тип не указан' : '—';
+}
 
 function display(value: BondFieldValue | undefined) {
   return value == null || value === '' ? 'Нет данных' : String(value);
@@ -33,21 +38,18 @@ function Indicators({ detail }: { detail: BondDetail }) {
   const terms = useCouponTerms(detail);
   const yesNo = (flag: unknown) => flag === true || flag === 1 ? 'Да' : flag === false || flag === 0 ? 'Нет' : 'Нет данных';
   const rows = [
-    ['Тип облигации', typeLabels[String(s.BONDTYPE)] ?? display(desc?.bond_type ?? s.BONDTYPE)],
     ['Тип купона', display(couponType)],
     ['Ставка купона', percentage(s.COUPONPERCENT)],
     ...(terms.hasFloatingRate ? [
-      ['От какой ставки или индекса зависит купон', display(terms.base)],
+      ['Базовый актив', display(terms.base)],
       ['Надбавка к базовой ставке', display(terms.spread)],
     ] : []),
     ['Купонный период, дней', display(terms.period)],
     ['Накопленный купонный доход на бумагу', typeof s.ACCRUEDINT === 'number' ? formatNumber(s.ACCRUEDINT, 2) + ' ' + currency : 'Нет данных'],
     ['Ближайший купон', formatDate(typeof s.NEXTCOUPON === 'string' ? s.NEXTCOUPON : null)],
-    ['Выплата на бумагу', typeof s.COUPONVALUE === 'number' ? formatNumber(s.COUPONVALUE, 2) + ' ' + currency : 'Нет данных'],
+    ['Купон', typeof s.COUPONVALUE === 'number' ? formatNumber(s.COUPONVALUE, 2) + ' ' + currency : 'Нет данных'],
     ['Погашение', formatDate(typeof s.MATDATE === 'string' ? s.MATDATE : null)],
-    ['Оферта', formatDate(typeof s.OFFERDATE === 'string' ? s.OFFERDATE : null)],
-    ['Право эмитента на досрочное погашение', formatDate(typeof s.CALLOPTIONDATE === 'string' ? s.CALLOPTIONDATE : null)],
-    ['Право инвестора на досрочный выкуп', formatDate(typeof s.PUTOPTIONDATE === 'string' ? s.PUTOPTIONDATE : null)],
+    ['Оферта', offerType(detail)],
     ['Погашение номинала частями', yesNo(amortization(detail))],
     ['Был дефолт', yesNo(desc?.hasdefault)],
     ['Был технический дефолт', yesNo(desc?.hastechnicaldefault)],
@@ -80,7 +82,8 @@ function Preview({ id }: { id:string }) {
   const [detail,setDetail] = useState<BondDetail | null>(null);
   const [issuer, setIssuer] = useState<EmitentInfo | null>(null);
   const [error,setError] = useState(false);
-  const [months,setMonths] = useState<number[] | null>(null);
+  const [schedule, setSchedule] = useState<Record<string, Set<number>> | null>(null);
+  const [year, setYear] = useState('');
   const [calendarError,setCalendarError] = useState(false);
   useEffect(() => {
     let active = true;
@@ -92,11 +95,16 @@ function Preview({ id }: { id:string }) {
     fetchBondDetail(id).then(value => { if(active) setDetail(value); })
       .catch(() => { if(active) setError(true); });
     fetchBondCoupons(id).then(({coupons}) => {
-      const numbers = coupons.flatMap(coupon => {
-        const match = coupon.coupondate?.match(/^\d{4}-(0[1-9]|1[0-2])-\d{2}(?:$|T)/);
-        return match ? [Number(match[1])] : [];
-      });
-      if (active) setMonths([...new Set(numbers)].sort((a, b) => a - b));
+      if (!active) return;
+      const byYear: Record<string, Set<number>> = {};
+      for (const coupon of coupons) {
+        const date = coupon.coupondate?.match(/^(\d{4})-(0[1-9]|1[0-2])-\d{2}(?:$|T)/);
+        if (date) (byYear[date[1]] ??= new Set()).add(Number(date[2]));
+      }
+      const years = Object.keys(byYear).sort();
+      const current = String(new Date().getFullYear());
+      setYear(years.find(y => y >= current) ?? years.at(-1) ?? '');
+      setSchedule(byYear);
     }).catch(() => { if(active) setCalendarError(true); });
     return () => { active=false; };
   },[id]);
@@ -111,9 +119,26 @@ function Preview({ id }: { id:string }) {
       </Box>
       {detail ? <Indicators detail={detail}/> : <Typography role="status">{error?'Не удалось загрузить параметры выпуска':'Загрузка параметров…'}</Typography>}
       <Box><Typography variant="subtitle1" fontWeight={700}>Месяцы купонных выплат</Typography>
-        {months?.length ? <Stack direction="row" useFlexGap flexWrap="wrap" gap={0.75} mt={1}>{months.map(n=>
-          <Chip key={n} label={new Date(2000,n-1,1).toLocaleDateString('ru-RU',{month:'long'})} size="small"/>)}</Stack>
-          : <Typography color="text.secondary">{calendarError?'Не удалось загрузить график':months?'В графике нет дат купонов':'Загрузка графика…'}</Typography>}
+        {schedule && year ? <>
+          <Box component="label" sx={{ display: 'flex', alignItems: 'center', gap: 1, my: 1 }}>
+            Год выплат
+            <Box component="select" value={year} onChange={event => setYear(event.target.value)}
+              sx={{ font: 'inherit', border: '1px solid #c6d6e8', borderRadius: 1, px: 1, bgcolor: 'white' }}>
+              {Object.keys(schedule).sort().map(y => <option key={y}>{y}</option>)}
+            </Box>
+          </Box>
+          <Box component="ul" aria-label={`Купоны за ${year} год`}
+            sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 0.75, listStyle: 'none', p: 0, m: 0 }}>
+            {Array.from({ length: 12 }, (_, i) => {
+              const month = new Date(2000, i, 1).toLocaleDateString('ru-RU', { month: 'short' });
+              const pays = schedule[year].has(i + 1);
+              return <Chip component="li" key={i} size="small" variant={pays ? 'filled' : 'outlined'}
+                color={pays ? 'primary' : 'default'} label={pays ? '✓ ' + month : month}
+                aria-label={month + (pays ? ' — предусмотрена выплата' : ' — выплаты в графике нет')} />;
+            })}
+          </Box>
+          <Typography variant="caption" color="text.secondary">✓ Месяц выплаты по графику</Typography>
+        </> : <Typography color="text.secondary">{calendarError ? 'Не удалось загрузить график' : schedule ? 'В графике нет дат купонов' : 'Загрузка графика…'}</Typography>}
       </Box>
     </Stack>
     <Stack spacing={1} sx={{p:2,borderTop:'1px solid #dbe6f2',bgcolor:'white'}}>

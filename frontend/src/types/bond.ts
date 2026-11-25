@@ -18,6 +18,9 @@ export interface BondListItem {
   FACEVALUE: number | null;
   PREVPRICE: number | null;
   YIELDATPREVWAPRICE: number | null;
+  MATCHED_COUPON_DATE?: string | null;
+  COUPON_BENCHMARK?: string | null;
+  COUPON_BENCHMARK_SPREAD?: number | null;
   NEXTCOUPON: string | null;  // ISO date string
   BOARDNAME: string | null;
   CALLOPTIONDATE: string | null;  // ISO date string

@@ -4,6 +4,12 @@ import type { BondDetail } from '../../types/bond';
 import type { BondFloatParamsDTO } from '../../types/bondFloatParams';
 
 export const indicatorNames: Record<string, string> = {
+  RREFKEYR: 'Ключевая ставка Банка России',
+  RUONIA_IND: 'Индекс RUONIA',
+  RUONIA3M: 'Срочная ставка RUONIA на 3 месяца',
+  RUONIA6M: 'Срочная ставка RUONIA на 6 месяцев',
+  ZR_YLD_CRV: 'Кривая бескупонной доходности (КБД)',
+  OTHER: 'Прочий индикатор',
   KEY_RATE: 'Ключевая ставка ЦБ РФ',
   RUONIA: 'Ставка RUONIA (межбанковские кредиты)',
   RUSFAR: 'Ставка RUSFAR (рынок репо)',
@@ -38,14 +44,18 @@ export function useCouponTerms(detail: BondDetail | null) {
     return () => { current = false; };
   }, [id, hasFloatingRate]);
   const fallback = params?.secid === id ? params : null;
-  const code = indicator || fallback?.base_indicator_code || '';
+  const base = [indicator, fallback?.base_indicator_code].reduce<string | null>((name, raw) => {
+    if (name || !raw) return name;
+    const value = raw.trim();
+    return /[а-яё]/i.test(value) ? value : indicatorNames[value.toUpperCase()] ?? null;
+  }, null);
   const rawSpread = desc?.coupon_benchmark_spread ?? fallback?.spread;
   const spread = typeof rawSpread === 'number' || (typeof rawSpread === 'string' && rawSpread.trim())
     ? Number(String(rawSpread).replace(',', '.')) : NaN;
   return {
     hasFloatingRate,
-    base: indicatorNames[code] ?? (code || null),
-    spread: Number.isFinite(spread) ? spread.toLocaleString('ru-RU', {maximumFractionDigits: 4}) + ' п. п.' : null,
+    base,
+    spread: Number.isFinite(spread) ? spread.toLocaleString('ru-RU', {maximumFractionDigits: 4}) + ' п.п.' : null,
     period: detail?.securities.COUPONPERIOD ?? fallback?.coupon_frequency_days,
   };
 }

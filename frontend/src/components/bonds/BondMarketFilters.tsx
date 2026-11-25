@@ -25,6 +25,7 @@ import LayersIcon from '@mui/icons-material/Layers';
 import PercentIcon from '@mui/icons-material/Percent';
 import SearchIcon from '@mui/icons-material/Search';
 import ViewWeekIcon from '@mui/icons-material/ViewWeek';
+import { indicatorNames } from './couponTerms';
 import { useFiltersStore } from '../../stores/filtersStore';
 import type { BondFilters } from '../../types/filters';
 
@@ -80,7 +81,7 @@ const FILTER_BUTTONS: Array<{ id: FilterId; label: string; icon: React.ReactNode
 const FILTER_KEYS: Array<keyof BondFilters> = [
   'search', 'matdateFrom', 'matdateTo', 'yieldMin', 'yieldMax', 'couponMin', 'couponMax',
   'couponYieldMin', 'couponYieldMax', 'ratingMin', 'ratingMax', 'couponMonths', 'faceunit',
-  'bondtype', 'bondtype43', 'listlevel',
+  'bondtype', 'bondtype43', 'listlevel', 'requireCouponBenchmark', 'couponBenchmark', 'spreadMin', 'spreadMax',
     'excludeNonqualifiedInvestors', 'excludeQualifiedInvestors', 'excludeDefaults', 'excludeTechnicalDefaults',
 ];
 
@@ -523,6 +524,26 @@ const BondMarketFilters: React.FC = () => {
       return FILTER_OPTIONS[id].filter((option) => selected.includes(option.value)).map((option) => option.label);
     };
 
+    if (draftFilters.requireCouponBenchmark || draftFilters.couponBenchmark?.length) {
+      const names = draftFilters.couponBenchmark?.map(code => indicatorNames[code] ?? code);
+      result.push({
+        key: 'benchmark', label: `База купона: ${names?.length ? names.join(', ') : 'любая известная'}`,
+        onDelete: () => {
+          setDraftFilter('couponBenchmark', undefined);
+          setDraftFilter('requireCouponBenchmark', undefined);
+        },
+      });
+    }
+    if (draftFilters.spreadMin != null || draftFilters.spreadMax != null) {
+      const bounds = [
+        draftFilters.spreadMin != null && `от ${numberLabel(draftFilters.spreadMin)}`,
+        draftFilters.spreadMax != null && `до ${numberLabel(draftFilters.spreadMax)}`,
+      ].filter(Boolean).join(' ');
+      result.push({ key: 'spread', label: `Премия ${bounds} п.п.`, onDelete: () => {
+        setDraftFilter('spreadMin', undefined);
+        setDraftFilter('spreadMax', undefined);
+      } });
+    }
     if (draftFilters.matdateFrom || draftFilters.matdateTo) {
       const from = draftFilters.matdateFrom ? displayDate(draftFilters.matdateFrom) : 'любая дата';
       const to = draftFilters.matdateTo ? displayDate(draftFilters.matdateTo) : 'без ограничения';
@@ -542,14 +563,14 @@ const BondMarketFilters: React.FC = () => {
     if (draftFilters.excludeDefaults || draftFilters.excludeTechnicalDefaults) result.push({ key: 'defaults', label: `Исключить: ${[draftFilters.excludeDefaults && 'дефолт', draftFilters.excludeTechnicalDefaults && 'технический дефолт'].filter(Boolean).join(', ')}`, onDelete: () => clearFilter('defaults') });
 
     const groupLabels: Array<[Extract<FilterId, 'couponMonths' | 'currency' | 'bondType' | 'bondKind' | 'listing'>, string]> = [
-      ['couponMonths', 'Месяцы купона'], ['currency', 'Валюта'], ['bondType', 'Тип'], ['bondKind', 'Вид'], ['listing', 'Листинг'],
+      ['couponMonths', 'Выплата в любом будущем году'], ['currency', 'Валюта'], ['bondType', 'Тип'], ['bondKind', 'Вид'], ['listing', 'Листинг'],
     ];
     groupLabels.forEach(([id, title]) => {
       const labels = labelsFor(id);
       if (labels.length > 0) result.push({ key: id, label: `${title}: ${compactLabels(labels)}`, onDelete: () => clearFilter(id) });
     });
     return result;
-  }, [clearFilter, draftFilters, selectedFor]);
+  }, [clearFilter, draftFilters, selectedFor, setDraftFilter]);
 
   const renderPopoverContent = (id: FilterId) => {
     switch (id) {

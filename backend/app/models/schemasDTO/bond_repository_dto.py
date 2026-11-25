@@ -16,6 +16,9 @@ class BondCouponRecordDTO(BaseModel):
 class BondRepositoryRowDTO(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
+    matched_coupon_date: Optional[date] = None
+    coupon_benchmark: Optional[str] = None
+    coupon_benchmark_spread: Optional[float] = None
     secid: str
     boardid: Optional[str] = None
     isin: Optional[str] = None

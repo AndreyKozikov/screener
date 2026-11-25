@@ -83,6 +83,9 @@ class BondScreenerDTO(BaseModel):
     FACEVALUE: Optional[float] = None
     PREVPRICE: Optional[float] = None
     YIELDATPREVWAPRICE: Optional[float] = None
+    MATCHED_COUPON_DATE: Optional[date] = None
+    COUPON_BENCHMARK: Optional[str] = None
+    COUPON_BENCHMARK_SPREAD: Optional[float] = None
     NEXTCOUPON: Optional[date] = None
     BOARDNAME: Optional[str] = None
     CALLOPTIONDATE: Optional[date] = None

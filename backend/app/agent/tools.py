@@ -15,14 +15,11 @@ from typing import Any, Callable, Dict, List, Optional
 from app.agent.dto import AgentSource
 from app.agent.contracts import tool_args_schema, validate_tool_args
 from app.models import BondFilters, BondsListResponse
-from app.services.bonds_service import get_bond_detail, get_bonds_list
+from app.services.bonds_service import get_bond_detail, get_bonds_list, list_coupon_benchmarks
 from app.services.coupon_service import get_coupon_service
 from app.services.keyrate_service import get_keyrate_service
 
-MAX_BONDS_TO_LLM: int = 15
 MAX_COUPONS_TO_LLM: int = 12
-# Если по запросу найдено больше бумаг — агент предложит пользователю сузить круг.
-REFINE_THRESHOLD: int = 20
 
 
 @dataclass
@@ -74,39 +71,14 @@ def _filters_args_text() -> str:
     return json.dumps(schema, ensure_ascii=False, indent=2)
 
 
-def _project_bond(bond: Any) -> Dict[str, Any]:
-    """Компактная проекция одной облигации для LLM (только ключевые поля)."""
-    return {
-        "SECID": bond.SECID,
-        "SHORTNAME": bond.SHORTNAME,
-        "SECNAME": bond.SECNAME,
-        "ISIN": bond.ISIN,
-        "COUPONPERCENT": bond.COUPONPERCENT,
-        "COUPONVALUE": bond.COUPONVALUE,
-        "YIELDATPREVWAPRICE": bond.YIELDATPREVWAPRICE,
-        "MATDATE": str(bond.MATDATE) if bond.MATDATE else None,
-        "NEXTCOUPON": str(bond.NEXTCOUPON) if bond.NEXTCOUPON else None,
-        "DURATION_YEARS": bond.DURATION_YEARS,
-        "RATING_LEVEL": bond.RATING_LEVEL,
-        "RATING_AGENCY": bond.RATING_AGENCY,
-        "CURRENCYID": bond.CURRENCYID,
-        "FACEUNIT": bond.FACEUNIT,
-        "FACEVALUE": bond.FACEVALUE,
-        "LISTLEVEL": bond.LISTLEVEL,
-        "BONDTYPE": bond.BONDTYPE,
-        "BONDTYPE43": bond.BONDTYPE43,
-    }
-
-
 async def _run_search_bonds(args: Dict[str, Any]) -> ToolOutput:
     """Поиск облигаций по фильтрам (аргументы = поля BondsListFiltersDTO)."""
     allowed = validate_tool_args("search_bonds", args)
     allowed.setdefault("skip", 0)
     allowed.setdefault("limit", 1000)
-    exclude_spob = allowed.get("exclude_spob", True)
+    allowed.setdefault("exclude_spob", True)
     filters = BondFilters(**allowed)
-    # Канонические параметры поиска: только явно заданные LLM поля (без skip/limit),
-    # в JSON-виде — пойдут во фронтенд для ссылки на таблицу рынка.
+    # Ссылка воспроизводит условия поиска независимо от текущего состояния таблицы.
     filter_args = filters.model_dump(
         exclude_unset=True, exclude={"skip", "limit"}, mode="json"
     )
@@ -115,7 +87,7 @@ async def _run_search_bonds(args: Dict[str, Any]) -> ToolOutput:
         response: BondsListResponse = await get_bonds_list(
             filters=filters,
             emitent_title=allowed.get("emitent_title"),
-            exclude_spob=exclude_spob,
+            exclude_spob=filters.exclude_spob,
         )
     except Exception as exc:
         return ToolOutput(
@@ -123,38 +95,42 @@ async def _run_search_bonds(args: Dict[str, Any]) -> ToolOutput:
             question="Не удалось получить список облигаций. Попробуйте уточнить условия поиска.",
         )
 
-    compact = [_project_bond(bond) for bond in (response.bonds or [])]
-    compact.sort(
-        key=lambda b: (
-            b["YIELDATPREVWAPRICE"] is not None,
-            b["YIELDATPREVWAPRICE"] or 0.0,
-        ),
-        reverse=True,
-    )
-    total_found = len(compact)
-    truncated = total_found > MAX_BONDS_TO_LLM
-    too_many = total_found > REFINE_THRESHOLD
-    compact = compact[:MAX_BONDS_TO_LLM]
-
+    total = len(response.bonds or [])
     return ToolOutput(
-        data={
-            "bonds": compact,
-            "total_found": total_found,
-            "shown_count": len(compact),
-            "truncated": truncated,
-            "too_many": too_many,
-            "selection": "До 15 бумаг из полученной выборки, по убыванию доходности к погашению; не оценка надёжности",
-            "applied_filters": filter_args,
-            "retrieved_on": date.today().isoformat(),
-            "coupon_months_semantics": "Хотя бы одна будущая выплата в одном из выбранных месяцев любого года; не гарантия выплат в конкретном году или каждом месяце",
-        },
-        sources=[
-            AgentSource(secid=b["SECID"], shortname=b.get("SHORTNAME") or "")
-            for b in compact
-        ],
-        summary=f"Найдено бумаг: {total_found} (в ответе показано top-{len(compact)})",
-        filters=filter_args or None,
+        data={"total_found": total, "applied_filters": filter_args},
+        filters=filter_args,
+        summary=f"Найдено выпусков: {total}",
     )
+
+
+BENCHMARK_NAMES = {
+    "RREFKEYR": "Ключевая ставка Банка России",
+    "RUONIA": "Ставка RUONIA",
+    "RUONIA_IND": "Индекс RUONIA",
+    "RUONIA3M": "Срочная ставка RUONIA на 3 месяца",
+    "RUONIA6M": "Срочная ставка RUONIA на 6 месяцев",
+    "ZR_YLD_CRV": "Кривая бескупонной доходности (КБД)",
+    "CPI": "Индекс потребительских цен (ИПЦ)",
+    "OTHER": "Прочий индикатор",
+}
+
+
+async def _run_list_coupon_benchmarks(args: Dict[str, Any]) -> ToolOutput:
+    """Запрашивает доступные индикаторы в пределах выбранных условий."""
+    codes = await asyncio.to_thread(list_coupon_benchmarks, BondFilters(**args.get("filters", {})))
+    answer = "По заданным условиям флоатеров с известной базой купона нет."
+    if codes:
+        entries = [f"- {BENCHMARK_NAMES.get(code, 'Название пока не расшифровано')} (`{code}`)" for code in codes]
+        answer = "Базовые индикаторы купона в выбранной группе флоатеров:\n\n" + "\n".join(entries)
+    selection = args.get("selection")
+    if selection is not None:
+        result = await _run_search_bonds({**selection, "require_coupon_benchmark": True})
+        if result.is_error:
+            return result
+        if not result.data["total_found"]:
+            answer += "\n\nПо условиям отдельной подборки облигаций не найдено."
+        selection = result.filters
+    return ToolOutput(data={"benchmarks": codes}, final_answer=answer, filters=selection)
 
 
 async def _run_get_bond_detail(args: Dict[str, Any]) -> ToolOutput:
@@ -286,12 +262,17 @@ async def _run_get_coupons(args: Dict[str, Any]) -> ToolOutput:
 
 TOOL_HANDLERS: Dict[str, Callable[[Dict[str, Any]], Any]] = {
     "search_bonds": _run_search_bonds,
+    "list_coupon_benchmarks": _run_list_coupon_benchmarks,
     "get_bond_detail": _run_get_bond_detail,
     "get_key_rate": _run_get_key_rate,
     "get_coupons": _run_get_coupons,
 }
 
 TOOL_SCHEMAS: Dict[str, Dict[str, str]] = {
+    "list_coupon_benchmarks": {
+        "description": "Доступные базы купона по данным таблицы описаний флоатеров.",
+        "args_text": "filters — условия справки; selection — необязательная дополнительная подборка.",
+    },
     "search_bonds": {
         "description": (
             "Поиск облигаций на Мосбирже по финансовым фильтрам. "

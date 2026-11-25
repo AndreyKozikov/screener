@@ -22,6 +22,20 @@ const KEY_TO_FILTER: Record<string, keyof BondFilters> = {
   matdate_from: 'matdateFrom',
   matdate_to: 'matdateTo',
   coupon_months: 'couponMonths',
+  coupon_benchmark: 'couponBenchmark',
+  require_coupon_benchmark: 'requireCouponBenchmark',
+  spread_min: 'spreadMin',
+  spread_max: 'spreadMax',
+  emitent_title: 'emitentTitle',
+  exclude_spob: 'excludeSpob',
+  exclude_amortized: 'excludeAmortized',
+  exclude_options: 'excludeOptions',
+  exclude_defaults: 'excludeDefaults',
+  exclude_technical_defaults: 'excludeTechnicalDefaults',
+  exclude_qualified_investors: 'excludeQualifiedInvestors',
+  exclude_nonqualified_investors: 'excludeNonqualifiedInvestors',
+  secids: 'secids',
+  isins: 'isins',
   listlevel: 'listlevel',
   faceunit: 'faceunit',
   bondtype: 'bondtype',
@@ -32,6 +46,7 @@ const KEY_TO_FILTER: Record<string, keyof BondFilters> = {
 };
 
 const NUMBER_KEYS = new Set([
+  'spread_min', 'spread_max',
   'coupon_min',
   'coupon_max',
   'yield_min',
@@ -40,7 +55,7 @@ const NUMBER_KEYS = new Set([
   'coupon_yield_max',
 ]);
 const NUMBER_ARRAY_KEYS = new Set(['coupon_months', 'listlevel', 'bondtype', 'bondtype43']);
-const STRING_ARRAY_KEYS = new Set(['faceunit']);
+const STRING_ARRAY_KEYS = new Set(['faceunit', 'coupon_benchmark', 'secids', 'isins']);
 
 /**
  * Разбирает location.search на фильтры рынка облигаций.
@@ -63,7 +78,9 @@ export const parseMarketFiltersUrl = (search: string): Partial<BondFilters> | nu
     if (values.length === 0) continue;
     const raw = values.join(',');
     const filterKey = KEY_TO_FILTER[key];
-    if (NUMBER_KEYS.has(key)) {
+    if (key.startsWith('exclude_') || key === 'require_coupon_benchmark') {
+      if (/^(true|false)$/i.test(raw)) partial[filterKey] = raw.toLowerCase() === 'true';
+    } else if (NUMBER_KEYS.has(key)) {
       const num = Number(raw);
       if (Number.isFinite(num)) partial[filterKey] = num;
     } else if (NUMBER_ARRAY_KEYS.has(key)) {

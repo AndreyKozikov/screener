@@ -13,6 +13,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import ShowChartIcon from '@mui/icons-material/ShowChart';
 
 import { useBondsStore } from '../../stores/bondsStore';
+import { indicatorNames } from './couponTerms';
 import { useFiltersStore } from '../../stores/filtersStore';
 import { useUiStore } from '../../stores/uiStore';
 import { usePortfolioStore } from '../../stores/portfolioStore';
@@ -299,57 +300,23 @@ export const BondsTable: React.FC = () => {
     };
   }, []);
 
-  // Load bonds data
-  const loadBonds = useCallback(async () => {
-    try {
+  useEffect(() => {
+    let active = true;
+    const loadBonds = async () => {
       setLoading(true);
       setError(null);
-      const response = await fetchBonds(filters);
-      setBonds(response);
-    } catch (error) {
-      console.error('Error loading bonds:', error);
-      if (error instanceof Error) {
-        setError(error.message);
-      } else {
-        setError('Failed to load bonds');
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [filters, setBonds, setLoading, setError]);
-
-  // Load on mount and filter changes
-  useEffect(() => {
-    let isMounted = true;
-    let isLoading = false;
-    
-    const loadData = async () => {
-      // Prevent duplicate loads
-      if (isLoading) {
-        return;
-      }
-      
       try {
-        isLoading = true;
-        await loadBonds();
+        const response = await fetchBonds(filters);
+        if (active) setBonds(response);
       } catch (error) {
-        if (isMounted) {
-          console.error('Error in loadBonds effect:', error);
-        }
+        if (active) setError(error instanceof Error ? error.message : 'Не удалось загрузить облигации');
       } finally {
-        if (isMounted) {
-          isLoading = false;
-        }
+        if (active) setLoading(false);
       }
     };
-    
-    loadData();
-    
-    return () => {
-      isMounted = false;
-      isLoading = false;
-    };
-  }, [loadBonds, dataRefreshVersion]);
+    void loadBonds();
+    return () => { active = false; };
+  }, [filters, setBonds, setLoading, setError, dataRefreshVersion]);
 
   // Get field description helper
   const getFieldDescription = useCallback((field: string): string | undefined => {
@@ -766,6 +733,15 @@ export const BondsTable: React.FC = () => {
       headerTooltip: getFieldDescription('SHORTNAME'),
       autoHeaderHeight: true,
     }),
+    ...(filters.couponMonths.length ? [createColumnDef('MATCHED_COUPON_DATE', 'Выплата в выбранном месяце (любой год)', {
+      valueFormatter: ({ value }) => typeof value === 'string' ? value.split('-').reverse().join('.') : '—',
+    })] : []),
+    ...(filters.requireCouponBenchmark || filters.couponBenchmark?.length || filters.spreadMin != null || filters.spreadMax != null ? [
+      createColumnDef('COUPON_BENCHMARK', 'База купона', {
+        valueFormatter: ({ value }) => indicatorNames[value] ?? value ?? '—',
+      }),
+      createColumnDef('COUPON_BENCHMARK_SPREAD', 'Премия, п.п.'),
+    ] : []),
     createColumnDef('RATING_LEVEL', 'Рейтинг', {
       minWidth: 100,
       valueGetter: (params) => {
@@ -957,7 +933,7 @@ export const BondsTable: React.FC = () => {
       suppressSizeToFit: true, // Prevent auto-sizing to avoid layout shifts
     },
     ];
-  }, [getFieldDescription, floaterSecids, handleFloaterNameClick, handleOpenPriceHistory]);
+  }, [filters.couponMonths.length, filters.requireCouponBenchmark, filters.couponBenchmark, filters.spreadMin, filters.spreadMax, getFieldDescription, floaterSecids, handleFloaterNameClick, handleOpenPriceHistory]);
 
   // Default column properties
   const defaultColDef: ColDef = useMemo(() => ({
@@ -1242,7 +1218,7 @@ export const BondsTable: React.FC = () => {
       <Box sx={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
         <BondMarketFilters />
         <Card sx={{ flex: 1, minHeight: { xs: 220, sm: 280 }, display: 'grid', placeItems: 'center', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.88)', bgcolor: 'rgba(255,255,255,0.7)' }}>
-          <ErrorMessage message={error} onRetry={loadBonds} />
+          <ErrorMessage message={error} onRetry={() => useUiStore.getState().triggerDataRefresh()} />
         </Card>
       </Box>
     );

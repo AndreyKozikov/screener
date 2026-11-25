@@ -16,12 +16,11 @@ export function BondIdentity({ secid, detail, issuer }: BondIdentityProps) {
     ['Рег. номер выпуска', detail?.bond_description?.regnumber],
     ['', issuer?.emitent_title],
     ['ИНН эмитента', detail?.emitent_inn || issuer?.emitent_inn],
-    ['ISIN', securities?.ISIN],
   ] as const;
 
   return <Box sx={{ my: 1, overflowWrap: 'anywhere' }}>
     {rows.map(([label, value]) => (
-      <Typography key={label} component="div" variant="body2" fontWeight={label ? 400 : 600}>
+      <Typography key={label} component="div" variant="body2" fontWeight={label ? 400 : 600} sx={{ mt: label ? 0 : '1lh' }}>
         {label && <Box component="span" color="text.secondary">{label}: </Box>}
         {value == null || value === '' ? '—' : String(value)}
       </Typography>

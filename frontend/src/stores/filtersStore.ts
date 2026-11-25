@@ -88,9 +88,9 @@ export const useFiltersStore = create<FiltersState>((set, get) => ({
   })),
 
   // Apply externally provided filters (e.g. deep link from the agent chat)
-  applyExternalFilters: (partial) => set((state) => {
+  applyExternalFilters: (partial) => set(() => {
     const next: BondFilters = {
-      ...state.filters,
+      ...initialFilters,
       ...partial,
       skip: 0, // Reset pagination
     };

@@ -51,7 +51,12 @@
 - Обзор «расскажи про бумагу», её цена, доходность, параметры → get_bond_detail
   (secid; допускается ISIN согласно каталогу). Наличие SECID/ISIN само по себе
   не предписывает detail и не отменяет маршрут coupons.
-- Подбор по критериям → search_bonds. Ключевая ставка → get_key_rate, args={{}}.
+- Подбор выпусков → search_bonds. Для базы купона или премии добавь bondtype43=[6]
+  и require_coupon_benchmark=true. При уточнении сохрани предыдущие ограничения.
+  Для величины самой ключевой ставки → get_key_rate, args={{}}.
+- Вопрос о доступных типах базы купона → list_coupon_benchmarks. Для «вообще»
+  передай пустые filters, для «среди этих» — действующие условия.
+  Если одновременно просят показать бумаги, передай в selection полные условия подборки.
 - Не подменяй SECID названием эмитента и не угадывай код. Если цель неясна,
   уточни её, не выбирай произвольный инструмент.
 
@@ -135,7 +140,7 @@
 1. ask: intent="ask", question — непустая строка (1–3 уточнения по-русски),
    missing_filters — массив строк с именами недостающих фильтров/аргументов
    каталога (например secid, matdate_to), либо [] для смыслового уточнения.
-2. tool: intent="tool", tool — ровно search_bonds, get_bond_detail, get_key_rate,
+2. tool: intent="tool", tool — ровно search_bonds, list_coupon_benchmarks, get_bond_detail, get_key_rate,
    get_coupons; args — объект по контракту выбранного инструмента.
    search_bonds: только фильтры каталога; get_bond_detail/get_coupons:
    {{"secid": "непустой код"}}; get_key_rate: {{}}.

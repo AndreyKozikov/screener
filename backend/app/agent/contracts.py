@@ -33,6 +33,9 @@ class SearchBondsArgs(BondFilters):
         description="Будущая выплата хотя бы в одном месяце (1-12), любого года; не все месяцы и не конкретный год",
         min_length=1,
     )
+    coupon_benchmark: Optional[List[Annotated[str, StringConstraints(pattern=r"^[A-Z0-9_]+$")]]] = Field(
+        default=None, min_length=1, description="Биржевые коды баз купона, например RREFKEYR, ZR_YLD_CRV; условие ИЛИ"
+    )
     bondtype: Optional[List[Annotated[int, Field(ge=1, le=5)]]] = Field(default=None, min_length=1)
     bondtype43: Optional[List[Annotated[int, Field(ge=1, le=9)]]] = Field(default=None, min_length=1)
     listlevel: Optional[List[Annotated[int, Field(ge=1, le=3)]]] = Field(default=None, min_length=1)
@@ -52,6 +55,7 @@ class SearchBondsArgs(BondFilters):
     @model_validator(mode="after")
     def check_ranges(self) -> "SearchBondsArgs":
         for low, high in (
+            (self.spread_min, self.spread_max),
             (self.coupon_min, self.coupon_max),
             (self.yield_min, self.yield_max),
             (self.coupon_yield_min, self.coupon_yield_max),
@@ -64,7 +68,17 @@ class SearchBondsArgs(BondFilters):
                 raise ValueError("Rating bounds describe an empty range")
         if self.exclude_amortized and self.bondtype43 and 1 in self.bondtype43:
             raise ValueError("Amortized bonds cannot be requested and excluded together")
+        if self.require_coupon_benchmark or self.coupon_benchmark or self.spread_min is not None or self.spread_max is not None:
+            if self.bondtype43 and 6 not in self.bondtype43:
+                raise ValueError("База и премия купона применимы только к флоатерам")
+            self.bondtype43 = [6]
+            self.require_coupon_benchmark = True
         return self
+
+
+class BenchmarkCatalogArgs(ToolArgs):
+    filters: SearchBondsArgs = Field(default_factory=SearchBondsArgs, description="Область справки, пустой объект для всех флоатеров")
+    selection: Optional[SearchBondsArgs] = Field(None, description="Полные условия отдельной подборки, только если запрошена также ссылка")
 
 
 class SecidArgs(ToolArgs):
@@ -73,6 +87,7 @@ class SecidArgs(ToolArgs):
 
 TOOL_ARG_MODELS = {
     "search_bonds": SearchBondsArgs,
+    "list_coupon_benchmarks": BenchmarkCatalogArgs,
     "get_bond_detail": SecidArgs,
     "get_key_rate": ToolArgs,
     "get_coupons": SecidArgs,
@@ -81,6 +96,8 @@ TOOL_ARG_MODELS = {
 
 def tool_args_schema(tool: str) -> Dict[str, Any]:
     schema = TOOL_ARG_MODELS[tool].model_json_schema()
+    if tool == "list_coupon_benchmarks":
+        schema["$defs"]["SearchBondsArgs"] = tool_args_schema("search_bonds")
     if tool == "search_bonds":
         for name in ("skip", "limit"):
             schema["properties"].pop(name, None)
@@ -109,6 +126,10 @@ def validate_tool_args(tool: str, args: Dict[str, Any]) -> Dict[str, Any]:
     validated = TOOL_ARG_MODELS[tool].model_validate_json(
         json.dumps(args, ensure_ascii=False, allow_nan=False), strict=True
     )
+    if isinstance(validated, BenchmarkCatalogArgs):
+        for key in ("filters", "selection"):
+            if key in args:
+                validate_tool_args("search_bonds", args[key])
     return validated.model_dump(mode="json", exclude_unset=True)
 
 
@@ -120,7 +141,7 @@ class AskDecision(ToolArgs):
 
 class ToolDecision(ToolArgs):
     intent: Literal["tool"]
-    tool: Literal["search_bonds", "get_bond_detail", "get_key_rate", "get_coupons"]
+    tool: Literal["list_coupon_benchmarks", "search_bonds", "get_bond_detail", "get_key_rate", "get_coupons"]
     args: Dict[str, Any]
 
 

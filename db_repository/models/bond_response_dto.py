@@ -1,3 +1,4 @@
+from datetime import date
 from sqlmodel import Field
 
 from typing import Optional
@@ -5,6 +6,9 @@ from db_repository.models.bond_base import BondBase, BondSecurityBase, BondMarke
 from db_repository.models.coupon_response_dto import CouponResponseDTO
 
 class BondResponseDTO(BondBase):
+    matched_coupon_date: Optional[date] = None
+    coupon_benchmark: Optional[str] = None
+    coupon_benchmark_spread: Optional[float] = None
     id: int
     coupons: list[CouponResponseDTO] = Field(default_factory=list)
     security: Optional[BondSecurityBase] = None

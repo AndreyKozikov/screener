@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import asyncio
 
 import orjson
+from pydantic import TypeAdapter
 
 from config.paths import DATA_DIR
 
@@ -151,6 +152,9 @@ def _bond_to_screener_dto(
         FACEVALUE=round_float_for_api(bond.face_value),
         PREVPRICE=round_float_for_api(bond.current_price),
         YIELDATPREVWAPRICE=round_float_for_api(bond.yield_to_maturity),
+        MATCHED_COUPON_DATE=bond.matched_coupon_date,
+        COUPON_BENCHMARK=bond.coupon_benchmark,
+        COUPON_BENCHMARK_SPREAD=bond.coupon_benchmark_spread,
         NEXTCOUPON=next_coupon_date,
         BOARDNAME=getattr(bond, "board_name", None),
         CALLOPTIONDATE=call_option_date,
@@ -172,6 +176,13 @@ def _bond_to_screener_dto(
         COUPON_FREQUENCY=int(bond.coupon_frequency) if bond.coupon_frequency is not None else None,
         DURATION_YEARS=round_float_for_api(bond.duration_years),
     )
+
+
+def list_coupon_benchmarks(filters: BondFilters) -> List[str]:
+    """Получает список биржевых кодов базы купона для заданной выборки."""
+    response = get_db_repository_client().post("/api/coupon_benchmarks", json=filters.model_dump(mode="json", exclude_unset=True))
+    response.raise_for_status()
+    return TypeAdapter(List[str]).validate_python(response.json(), strict=True)
 
 
 async def get_bonds_list(

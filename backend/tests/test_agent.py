@@ -255,13 +255,14 @@ class AsyncOfflineTests(OfflineMixin, unittest.IsolatedAsyncioTestCase):
             "app.agent.llm_client.AgentLlmClient._generate", new_callable=AsyncMock,
             side_effect=AssertionError("Unconfigured LLM call"),
         )
+        self.start_patch("app.agent.service.chat_repository").get_chat.return_value = {"messages": []}
         self.logger = self.start_patch("app.agent.service.get_session_logger", return_value=Mock()).return_value
         self.bonds = self.start_patch("app.agent.tools.get_bonds_list", new_callable=AsyncMock)
         self.detail = self.start_patch("app.agent.tools.get_bond_detail")
         self.keyrate = self.start_patch("app.agent.tools.get_keyrate_service")
         self.coupons = self.start_patch("app.agent.tools.get_coupon_service")
-        self.rag = self.start_patch("app.agent.tools.get_llm_analysis_service")
-        for service in (self.bonds, self.detail, self.keyrate, self.coupons, self.rag):
+        self.start_patch("app.agent.service.discover_skills", return_value=[])
+        for service in (self.bonds, self.detail, self.keyrate, self.coupons):
             service.side_effect = AssertionError("Unconfigured tool service")
 
     def start_patch(self, target, **kwargs):
@@ -414,9 +415,9 @@ class AsyncOfflineTests(OfflineMixin, unittest.IsolatedAsyncioTestCase):
     async def test_empty_finalizer_is_reported_as_error_not_success(self):
         service = self.make_service()
         self.set_llm_responses("   ")
-        handler = AsyncMock(return_value=tools.ToolOutput(data={"bonds": []}))
-        with patch.dict("app.agent.service.TOOL_HANDLERS", {"search_bonds": handler}):
-            response = await service._handle_tool("sid", {"tool": "search_bonds", "args": {"bondtype": [2]}}, "q")
+        handler = AsyncMock(return_value=tools.ToolOutput(data={"coupons": []}))
+        with patch.dict("app.agent.service.TOOL_HANDLERS", {"get_coupons": handler}):
+            response = await service._handle_tool("sid", {"tool": "get_coupons", "args": {"secid": "TEST"}}, "q")
         self.assertEqual(response.state, "error")
         self.assertTrue(response.answer)
         self.generate.assert_awaited_once()
@@ -431,43 +432,27 @@ class AsyncOfflineTests(OfflineMixin, unittest.IsolatedAsyncioTestCase):
             with self.subTest(query=query):
                 self.assertFalse(AgentService._is_refine_decline(query))
 
-    async def test_multistep_dialogue_refinement_and_decline_preserve_criteria(self):
+    async def test_floater_refinement_returns_only_filtered_market_link(self):
         service = self.make_service()
-        original = "Подбери ОФЗ с доходностью от 15%"
-        refinement = "Не ниже BBB, погашение до 2029-12-31"
-        args = {"bondtype": [2], "yield_min": 15.0, "rating_min": "BBB", "matdate_to": "2029-12-31"}
-        output = tools.ToolOutput(
-            data={"bonds": [{"SECID": "RU000TEST"}], "too_many": True, "total_found": 25},
-            filters=args, sources=[AgentSource(secid="RU000TEST")],
-        )
-        self.set_llm_responses(
-            json.dumps({"intent": "ask", "question": "Уточните рейтинг и срок", "missing_filters": ["rating_min", "matdate_to"]}),
-            json.dumps({"intent": "tool", "tool": "search_bonds", "args": args}),
-            "Found RU000TEST",
-        )
-        handler = AsyncMock(return_value=output)
-        with patch.dict("app.agent.service.TOOL_HANDLERS", {"search_bonds": handler}):
-            first = await service.chat(AgentChatRequest(query=original, session_id="sid"))
-            self.assertEqual(first.state, "needs_info")
-            second = await service.chat(AgentChatRequest(query=refinement, session_id="sid"))
-            self.assertEqual(second.state, "needs_info")
-            pending = service._sessions.get_state("sid", "pending_large")
-            self.assertEqual((pending["query"], pending["tool"], pending["args"]), (refinement, "search_bonds", args))
-            router_data = next(value for value in json_lines(self.generate.await_args_list[1].args[1]) if isinstance(value, dict))
-            self.assertIn(original, router_data["conversation"])
-            self.assertEqual(router_data["query"], refinement)
-            with patch("app.agent.service.build_finalizer_prompt", wraps=build_finalizer_prompt) as builder:
-                final = await service.chat(AgentChatRequest(query="покажи список", session_id="sid"))
-        handler.assert_awaited_once_with(args)
+        filters = {"bondtype43": [6], "rating_min": "AA", "coupon_months": [11]}
+        dated = {**filters, "matdate_from": "2028-11-25"}
+        benchmark = {**dated, "coupon_benchmark": ["RREFKEYR"]}
+        queries = ["Флоатеры с выплатами в ноябре и рейтингом не ниже АА",
+                   "До погашения не менее двух лет", "Покажи бумаги со ставкой ЦБ"]
+        self.set_llm_responses(*(json.dumps({"intent": "tool", "tool": "search_bonds", "args": args})
+                                 for args in (filters, dated, benchmark)))
+        self.bonds.side_effect = None
+        self.bonds.return_value = SimpleNamespace(bonds=[object()] * 25)
+        with patch("app.agent.service.date", wraps=date) as clock:
+            clock.today.return_value = date(2026, 11, 25)
+            for query in queries:
+                result = await service.chat(AgentChatRequest(query=query, session_id="sid"), user_id="test")
+                self.assertEqual(result.state, "done")
+                self.assertEqual(result.sources, [])
+                self.assertRegex(result.answer, r"^\[Открыть подборку в таблице облигаций\]\(/\?view=bonds&[^)]+\)$")
+        self.assertEqual(result.filters, {**benchmark, "require_coupon_benchmark": True, "exclude_spob": True})
         self.assertEqual(self.generate.await_count, 3)
-        self.assertEqual(final.state, "done")
-        self.assertEqual(final.filters, args)
-        self.assertEqual([source.secid for source in final.sources], ["RU000TEST"])
-        self.assertEqual(builder.call_args.args[0], refinement)
-        context = builder.call_args.kwargs["context"]
-        self.assertEqual(context["args"], args)
-        self.assertEqual(context["task"], [original, refinement, "покажи список"])
-        self.assertIsNone(service._sessions.get_state("sid", "pending_large"))
+        self.assertIn(queries[0], self.generate.await_args.args[1])
 
     async def test_seeded_history_finalizer_task_excludes_assistant_claims(self):
         service = self.make_service()
@@ -479,56 +464,24 @@ class AsyncOfflineTests(OfflineMixin, unittest.IsolatedAsyncioTestCase):
                     query="Какая ключевая ставка?", session_id="seed",
                     history=[AgentTurn(role="user", content="Только данные сервиса"),
                              AgentTurn(role="assistant", content="Invented rate 99%")],
-                ))
+                ), user_id="test")
         self.assertEqual(result.state, "done")
         self.assertEqual(builder.call_args.kwargs["context"]["task"],
                          ["Только данные сервиса", "Какая ключевая ставка?"])
 
-    async def test_search_sorts_truncates_and_exposes_applied_filter_metadata(self):
-        fields = ("SECID SHORTNAME SECNAME ISIN COUPONPERCENT COUPONVALUE YIELDATPREVWAPRICE "
-                  "MATDATE NEXTCOUPON DURATION_YEARS RATING_LEVEL RATING_AGENCY CURRENCYID "
-                  "FACEUNIT FACEVALUE LISTLEVEL BONDTYPE BONDTYPE43").split()
-        bonds = []
-        for index in range(23):
-            values = dict.fromkeys(fields)
-            values.update(SECID=f"TEST{index:02}", SHORTNAME=f"Bond {index}",
-                          YIELDATPREVWAPRICE=None if index == 22 else float(index),
-                          MATDATE=date(2029, 1, 1))
-            bonds.append(SimpleNamespace(**values))
-        self.bonds.side_effect = None
-        self.bonds.return_value = SimpleNamespace(bonds=bonds)
-        args = {"coupon_months": [11], "bondtype": [2], "yield_min": 15.0}
-        output = await tools._run_search_bonds(args)
-        self.assertEqual(args, {"coupon_months": [11], "bondtype": [2], "yield_min": 15.0})
-        self.assertEqual(output.filters, args)
-        self.assertEqual(output.data["applied_filters"], args)
-        self.assertEqual(output.data["total_found"], 23)
-        self.assertEqual(output.data["shown_count"], tools.MAX_BONDS_TO_LLM)
-        self.assertTrue(output.data["truncated"])
-        self.assertTrue(output.data["too_many"])
-        self.assertEqual([bond["YIELDATPREVWAPRICE"] for bond in output.data["bonds"]],
-                         [float(value) for value in range(21, 21 - tools.MAX_BONDS_TO_LLM, -1)])
-        self.assertEqual([source.secid for source in output.sources],
-                         [bond["SECID"] for bond in output.data["bonds"]])
-        self.assertEqual(output.data["bonds"][0]["MATDATE"], "2029-01-01")
-        self.assertTrue(output.data["selection"])
-        self.assertTrue(output.data["coupon_months_semantics"])
-        self.assertEqual(date.fromisoformat(output.data["retrieved_on"]), date.today())
-        filters = self.bonds.await_args.kwargs["filters"]
-        self.assertEqual((filters.skip, filters.limit), (0, 1000))
-
-    async def test_search_sort_keeps_zero_and_negative_yields_before_missing(self):
-        fields = ("SECID SHORTNAME SECNAME ISIN COUPONPERCENT COUPONVALUE MATDATE NEXTCOUPON "
-                  "DURATION_YEARS RATING_LEVEL RATING_AGENCY CURRENCYID FACEUNIT FACEVALUE "
-                  "LISTLEVEL BONDTYPE BONDTYPE43").split()
-        bonds = [SimpleNamespace(**dict.fromkeys(fields), YIELDATPREVWAPRICE=value) for value in (None, -1.0, 0.0, 2.0)]
-        for index, bond in enumerate(bonds):
-            bond.SECID = f"TEST{index}"
-        self.bonds.side_effect = None
-        self.bonds.return_value = SimpleNamespace(bonds=bonds)
-        output = await tools._run_search_bonds({"bondtype": [2]})
-        self.assertEqual([bond["YIELDATPREVWAPRICE"] for bond in output.data["bonds"]], [2.0, 0.0, -1.0, None])
-        self.assertFalse(output.data["truncated"])
+    async def test_catalog_uses_only_returned_codes_and_separate_selection(self):
+        with patch("app.services.bonds_service.get_db_repository_client") as client:
+            client.return_value.post.return_value.json.return_value = ["RREFKEYR", "FUTURE_CODE"]
+            self.bonds.side_effect = None
+            self.bonds.return_value = SimpleNamespace(bonds=[])
+            args = {"filters": {"rating_min": "AA"}, "selection": {"coupon_benchmark": ["ZR_YLD_CRV"]}}
+            output = await tools._run_list_coupon_benchmarks(args)
+            client.return_value.post.assert_called_once_with("/api/coupon_benchmarks", json=args["filters"])
+            self.assertIn("Ключевая ставка", output.final_answer)
+            self.assertIn("FUTURE_CODE", output.final_answer)
+            self.assertNotIn("RUONIA", output.final_answer)
+            self.assertIn("не найдено", output.final_answer)
+            self.assertEqual(output.filters["bondtype43"], [6])
 
     async def test_search_invalid_args_never_call_service(self):
         with self.assertRaises(ValueError):
@@ -539,7 +492,7 @@ class AsyncOfflineTests(OfflineMixin, unittest.IsolatedAsyncioTestCase):
         self.bonds.side_effect = None
         self.bonds.return_value = SimpleNamespace(bonds=[])
         output = await tools._run_search_bonds({"bondtype": [2]})
-        self.assertEqual(output.data["bonds"], [])
+        self.assertNotIn("bonds", output.data)
         self.assertEqual(output.sources, [])
         self.assertEqual(output.data["total_found"], 0)
         self.bonds.side_effect = RuntimeError("offline database error")

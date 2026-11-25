@@ -11,6 +11,16 @@ export interface BondFilters {
   couponYieldMax: number | null;
   matdateFrom: string | null;
   matdateTo: string | null;
+  couponBenchmark?: string[];
+  requireCouponBenchmark?: boolean;
+  spreadMin?: number;
+  spreadMax?: number;
+  emitentTitle?: string;
+  excludeSpob?: boolean;
+  excludeAmortized?: boolean;
+  excludeOptions?: boolean;
+  secids?: string[];
+  isins?: string[];
   couponMonths: number[];
   listlevel: number[];
   faceunit: string[];

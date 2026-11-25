@@ -14,7 +14,7 @@ from sqlalchemy import (func, or_, and_, text, extract, exists)
 from sqlalchemy.orm import selectinload, joinedload
 from datetime import date
 from db_repository.config.constants import RATINGS_ORDER
-from sqlalchemy import func
+from db_repository.models.emitent import Emitent
 
 
 class BondRepository:
@@ -161,6 +161,17 @@ class BondRepository:
             conditions.append(Bond.maturity_date >= filters.matdate_from.isoformat())
         if filters.matdate_to is not None:
             conditions.append(Bond.maturity_date <= filters.matdate_to.isoformat())
+        if (filters.require_coupon_benchmark or filters.coupon_benchmark
+                or filters.spread_min is not None or filters.spread_max is not None):
+            description = BondDescription
+            terms = [func.trim(description.coupon_benchmark) != ""]
+            if filters.coupon_benchmark:
+                terms.append(description.coupon_benchmark.in_(filters.coupon_benchmark))
+            if filters.spread_min is not None:
+                terms.append(description.coupon_benchmark_spread >= filters.spread_min)
+            if filters.spread_max is not None:
+                terms.append(description.coupon_benchmark_spread <= filters.spread_max)
+            conditions.extend([Bond.bond_kind == 6, Bond.id.in_(select(description.bond_id).where(*terms))])
         if filters.coupon_months:
             matching_coupon = exists().where(
                 Coupon.bond_id == Bond.id,
@@ -197,17 +208,17 @@ class BondRepository:
             (filters.exclude_qualified_investors, True),
         ):
             if flag:
-                conditions.append(~exists().where(
+                conditions.append(~exists().correlate(Bond).where(
                     BondDescription.bond_id == Bond.id,
                     BondDescription.isqualifiedinvestors.is_(value),
                 ))
         if filters.exclude_defaults:
-            conditions.append(~exists().where(
+            conditions.append(~exists().correlate(Bond).where(
                 BondDescription.bond_id == Bond.id,
                 BondDescription.hasdefault.is_(True),
             ))
         if filters.exclude_technical_defaults:
-            conditions.append(~exists().where(
+            conditions.append(~exists().correlate(Bond).where(
                 BondDescription.bond_id == Bond.id,
                 BondDescription.hastechnicaldefault.is_(True),
             ))
@@ -218,64 +229,72 @@ class BondRepository:
             conditions.append(func.upper(func.trim(Bond.rating)).in_([r.upper() for r in ratings_in_range]))
         return and_(*conditions)
 
+    def list_coupon_benchmarks(self, filters: BondFilters, exclude_spob: bool, emitent_title: Optional[str]) -> List[str]:
+        """Возвращает базы купона среди флоатеров, удовлетворяющих рыночным фильтрам."""
+        filters = filters.model_copy(update={"require_coupon_benchmark": True})
+        where = self._build_where_conditions(filters, exclude_spob=exclude_spob)
+        stmt = (select(BondDescription.coupon_benchmark)
+                .join(Bond, Bond.id == BondDescription.bond_id)
+                .where(where).distinct().order_by(BondDescription.coupon_benchmark))
+        if emitent_title:
+            stmt = stmt.join(Emitent, Emitent.moex_id == BondDescription.emitter_id).where(
+                func.trim(Emitent.title) == emitent_title.strip())
+        with get_session() as session:
+            return list(session.exec(stmt).all())
+
     def select(
             self,
             filters: BondFilters,
             exclude_spob: bool = False,
     ):
-        """Выборка облигаций с динамическими фильтрами через SQLModel API.
-
-        Условия формируются через _build_where_conditions; запрос выполняется
-        через select(Bond).where(...). Возвращает список объектов Bond.
-
-        Args:
-            filters: Объект BondFilters.
-
-        Returns:
-            Список объектов Bond, удовлетворяющих фильтрам.
-
-        Raises:
-            Exception: При ошибке работы с БД.
-        """
+        """Возвращает выпуски, ближайшие купоны и условия, отображаемые в таблице."""
         where = self._build_where_conditions(
             filters=filters,
             exclude_spob=exclude_spob,
         )
 
-        try:
-            with get_session() as session:
-                stmt = select(Bond).where(where)
-                bonds = session.exec(stmt).all()
-                bond_ids = [bond.id for bond in bonds]
-                subquery = (
-                    select(
-                        Coupon.bond_id,
-                        func.min(Coupon.coupondate).label("coupondate")
-                    )
-                    .where(
-                        Coupon.bond_id.in_(bond_ids),
-                        Coupon.coupondate >= date.today()
-                    )
-                    .group_by(Coupon.bond_id)
-                    .subquery()
+        with get_session() as session:
+            matched_date = None
+            if filters.coupon_months:
+                matched_date = (select(func.min(Coupon.coupondate))
+                                .where(Coupon.bond_id == Bond.id, Coupon.coupondate >= date.today(),
+                                       extract("month", Coupon.coupondate).in_(filters.coupon_months))
+                                .scalar_subquery())
+            stmt = (select(Bond, BondDescription.coupon_benchmark, BondDescription.coupon_benchmark_spread)
+                    .outerjoin(BondDescription, BondDescription.bond_id == Bond.id).where(where))
+            if matched_date is not None:
+                stmt = stmt.add_columns(matched_date)
+            rows = session.exec(stmt).all()
+            bonds = [row[0] for row in rows]
+            terms = {row[0].id: {"coupon_benchmark": row[1], "coupon_benchmark_spread": row[2],
+                                 "matched_coupon_date": row[3] if matched_date is not None else None}
+                     for row in rows}
+            bond_ids = [bond.id for bond in bonds]
+            subquery = (
+                select(
+                    Coupon.bond_id,
+                    func.min(Coupon.coupondate).label("coupondate")
                 )
-
-                stmt = (
-                    select(Coupon)
-                    .join(
-                        subquery,
-                        (Coupon.bond_id == subquery.columns.bond_id)
-                        & (Coupon.coupondate == subquery.columns.coupondate)
-                    )
+                .where(
+                    Coupon.bond_id.in_(bond_ids),
+                    Coupon.coupondate >= date.today()
                 )
+                .group_by(Coupon.bond_id)
+                .subquery()
+            )
 
-                next_coupons = session.exec(stmt).all()
+            stmt = (
+                select(Coupon)
+                .join(
+                    subquery,
+                    (Coupon.bond_id == subquery.columns.bond_id)
+                    & (Coupon.coupondate == subquery.columns.coupondate)
+                )
+            )
 
-            # self.logger.debug("Выбрано %s записей из таблицы bonds с применением фильтров", len(result))
-            return bonds, next_coupons
-        except Exception as e:
-            # self.logger.error("Ошибка при select: %s", e, exc_info=True)
-            raise
+            next_coupons = session.exec(stmt).all()
+
+        return bonds, next_coupons, terms
 
     async def bond_details(self, secid):
         try:

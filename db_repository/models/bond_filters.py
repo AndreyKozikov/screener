@@ -76,6 +76,11 @@ class BondFilters(BaseModel):
         description="Конечная дата погашения облигации в формате YYYY-MM-DD"
     )
 
+    require_coupon_benchmark: bool = Field(False, description="Только флоатеры с известной базой купона")
+    coupon_benchmark: Optional[List[str]] = Field(None, min_length=1, description="Биржевые коды баз купона, условие ИЛИ")
+    spread_min: Optional[float] = Field(None, allow_inf_nan=False, description="Минимальная премия к базе в п.п., включительно")
+    spread_max: Optional[float] = Field(None, allow_inf_nan=False, description="Максимальная премия к базе в п.п., включительно")
+
     coupon_months: Optional[List[int]] = Field(
         None,
         description="Месяцы выплаты купона (1–12)"

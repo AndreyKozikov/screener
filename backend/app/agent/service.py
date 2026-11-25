@@ -368,8 +368,11 @@ class AgentService:
             },
         )
 
-        if output.final_answer:
-            answer = self._append_market_link(output.final_answer, output.filters)
+        if tool == "search_bonds" or output.final_answer:
+            message = output.final_answer or ""
+            if tool == "search_bonds" and not output.data.get("total_found"):
+                message = "По заданным условиям облигаций не найдено."
+            answer = self._append_market_link(message, output.filters)
             self._log(
                 session_id,
                 {
@@ -390,9 +393,6 @@ class AgentService:
                 sources=output.sources,
                 filters=output.filters,
             )
-
-        if output.data.get("too_many"):
-            return await self._handle_too_many(session_id, output, query=query, tool=tool, args=args)
 
         answer = await self._finalize(query, output, session_id, tool=tool, args=args)
         if not answer:
@@ -450,47 +450,6 @@ class AgentService:
             sources=sources,
         )
 
-    async def _handle_too_many(
-        self, session_id: str, output: ToolOutput, *, query: str, tool: str, args: Dict[str, Any]
-    ) -> AgentChatResponse:
-        """Большой список бумаг: предлагает пользователю сузить условия поиска."""
-        self._sessions.set_state(
-            session_id,
-            "pending_large",
-            {
-                "data": output.data,
-                "sources": [s.model_dump() for s in output.sources],
-                "summary": output.summary,
-                "filters": output.filters,
-                "query": query,
-                "tool": tool,
-                "args": args,
-            },
-        )
-        total = output.data.get("total_found", 0)
-        question = (
-            f"По вашему запросу найдено {total} подходящих облигаций — это довольно "
-            "большой список. Хотите сузить круг поиска? Могу учесть дополнительные "
-            "условия: рейтинг, срок до погашения, тип бумаг (ОФЗ / корпоративные / "
-            "флоатеры), минимальную доходность, отсутствие амортизации или "
-            "встроенных опционов, или конкретного эмитента. "
-            "Для просмотра первых 15 бумаг напишите «покажи список»; "
-            "полную выборку можно открыть в таблице рынка по ссылке."
-        )
-        question = self._append_market_link(question, output.filters)
-        self._log(
-            session_id,
-            {"type": "refine_offer", "total_found": total, "question": question},
-        )
-        self._sessions.append_turn(
-            session_id, {"role": "assistant", "content": question, "intent": "ask"}
-        )
-        return AgentChatResponse(
-            session_id=session_id,
-            state="needs_info",
-            question=question,
-        )
-
     async def _handle_refine_decline(
         self, session_id: str, query: str
     ) -> AgentChatResponse:
@@ -501,21 +460,8 @@ class AgentService:
             return self._error_response(
                 session_id, "Контекст уточнения устарел. Задайте запрос заново."
             )
-        output = ToolOutput(
-            data=pending.get("data") or {},
-            sources=[AgentSource(**s) for s in (pending.get("sources") or [])],
-            summary=pending.get("summary") or "",
-            filters=pending.get("filters"),
-        )
-        answer = await self._finalize(
-            pending.get("query") or query, output, session_id,
-            tool=pending.get("tool") or "search_bonds", args=pending.get("args") or output.filters or {},
-        )
-        if not answer:
-            return self._error_response(
-                session_id, "Не удалось сформулировать ответ по найденным данным."
-            )
-        answer = self._append_market_link(answer, output.filters)
+        filters = pending.get("filters") or {}
+        answer = self._append_market_link("", filters)
         self._log(
             session_id,
             {
@@ -523,8 +469,8 @@ class AgentService:
                 "tool": "search_bonds",
                 "refine_declined": True,
                 "answer": answer,
-                "filters": output.filters,
-                "sources": [s.model_dump() for s in output.sources],
+                "filters": filters,
+                "sources": [],
             },
         )
         self._sessions.append_turn(
@@ -534,8 +480,8 @@ class AgentService:
             session_id=session_id,
             state="done",
             answer=answer,
-            sources=output.sources,
-            filters=output.filters,
+            sources=[],
+            filters=filters,
         )
 
     @staticmethod
@@ -546,10 +492,11 @@ class AgentService:
         модель её не генерирует, чтобы исключить выдуманные параметры.
         Формат URL согласован с фронтендом: /?view=bonds&<query>.
         """
-        if not answer or not filters:
+        if filters is None:
             return answer
         query = urlencode(filters, doseq=True)
-        return f"{answer}\n\n[Открыть список в таблице рынка →](/?view=bonds&{query})"
+        link = "[Открыть подборку в таблице облигаций](/?view=bonds" + (f"&{query}" if query else "") + ")"
+        return f"{answer}\n\n{link}" if answer else link
 
     @staticmethod
     def _is_refine_decline(query: str) -> bool:

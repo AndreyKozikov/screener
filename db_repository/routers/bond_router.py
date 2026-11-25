@@ -16,6 +16,11 @@ async def list_bonds(filters: BondsListFiltersDTO):
     result = await service.get_bonds_list(data=filters)
     return result
 
+@bond_router.post("/coupon_benchmarks", response_model=List[str])
+def list_coupon_benchmarks(filters: BondsListFiltersDTO):
+    return get_bond_service().list_coupon_benchmarks(filters)
+
+
 @bond_router.get("/bond_counts")
 async def bond_counts(exclude_spob: bool = Query(None)):
     service = get_bond_service()
