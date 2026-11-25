@@ -1,6 +1,6 @@
 import React from 'react';
 import { ThemeProvider, CssBaseline, Box, Typography } from '@mui/material';
-import { BrowserRouter, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { theme } from './theme/theme';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { AdminCapabilitiesProvider } from './contexts/AdminCapabilitiesProvider';
@@ -12,6 +12,31 @@ const BlogAdminPage = React.lazy(() => import('./pages/BlogAdminPage').then(({ B
 const SettingsPage = React.lazy(() => import('./pages/SettingsPage').then(({ SettingsPage: page }) => ({ default: page })));
 const AdminPage = React.lazy(() => import('./pages/AdminPage').then(({ AdminPage: page }) => ({ default: page })));
 const AgentLogsAdminPage = React.lazy(() => import('./pages/AgentLogsAdminPage').then(({ AgentLogsAdminPage: page }) => ({ default: page })));
+const BondDetails = React.lazy(() => import('./components/bonds/BondDetails').then(m => ({default: m.BondDetails})));
+const BondPreview = React.lazy(() => import('./components/bonds/BondPreview'));
+
+function AppRoutes() {
+  const location = useLocation();
+  const background = location.pathname.startsWith('/bonds/') && location.state?.tableLocation;
+  return <>
+    <Routes location={background || location}>
+                <Route path="/" element={<HomePage />} />
+                <Route path="/bonds/:id" element={<BondDetails />} />
+                <Route path="/bonds/:id/preview" element={<BondPreview />} />
+                <Route path="/login" element={<AuthPage />} />
+                <Route path="/agent" element={<AgentChatPage />} />
+                <Route path="/blog-admin" element={<BlogAdminPage />} />
+                <Route path="/settings" element={<SettingsPage />} />
+                <Route path="/admin" element={<AdminPage />} />
+                <Route path="/admin/agent-logs" element={<AgentLogsAdminPage />} />
+              </Routes>
+    {background && <React.Suspense fallback={null}><Routes>
+      <Route path="/bonds/:id/preview" element={<BondPreview />} />
+      <Route path="/bonds/:id" element={<BondDetails />} />
+    </Routes></React.Suspense>}
+  </>;
+}
+
 // import { TestPage } from './TestPage';
 
 /**
@@ -31,15 +56,7 @@ function App() {
         }>
           <BrowserRouter>
             <AdminCapabilitiesProvider>
-              <Routes>
-                <Route path="/" element={<HomePage />} />
-                <Route path="/login" element={<AuthPage />} />
-                <Route path="/agent" element={<AgentChatPage />} />
-                <Route path="/blog-admin" element={<BlogAdminPage />} />
-                <Route path="/settings" element={<SettingsPage />} />
-                <Route path="/admin" element={<AdminPage />} />
-                <Route path="/admin/agent-logs" element={<AgentLogsAdminPage />} />
-              </Routes>
+              <AppRoutes />
             </AdminCapabilitiesProvider>
           </BrowserRouter>
         </React.Suspense>

@@ -1,3 +1,4 @@
+import { useLocation, useNavigate } from 'react-router-dom';
 import React, { useEffect, useMemo, useCallback, useState, useRef } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import type { ColDef, RowClickedEvent, CellClickedEvent, ICellRendererParams, IHeaderParams } from 'ag-grid-community';
@@ -226,7 +227,8 @@ const flattenDescriptions = (descriptions: DescriptionsResponse): FieldDescripti
 export const BondsTable: React.FC = () => {
   const { bonds, isLoading, error, setBonds, setLoading, setError } = useBondsStore();
   const { filters } = useFiltersStore();
-  const setSelectedBond = useUiStore((state) => state.setSelectedBond);
+  const navigate = useNavigate();
+  const tableLocation = useLocation();
   const dataRefreshVersion = useUiStore((state) => state.dataRefreshVersion);
   const triggerDataRefresh = useUiStore((state) => state.triggerDataRefresh);
   const portfolioBonds = usePortfolioStore((state) => state.portfolioBonds);
@@ -1077,8 +1079,8 @@ export const BondsTable: React.FC = () => {
     }
     
     // If all checks passed, open bond details
-    setSelectedBond(event.data.SECID);
-  }, [setSelectedBond]);
+    navigate(`/bonds/${encodeURIComponent(event.data.SECID)}/preview`, { state: { tableLocation } });
+  }, [navigate, tableLocation]);
 
 
   // Calculate dynamic header height based on content

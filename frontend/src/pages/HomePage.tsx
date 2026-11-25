@@ -12,7 +12,6 @@ import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
 import TimelineIcon from '@mui/icons-material/Timeline';
 import AnalyticsIcon from '@mui/icons-material/Analytics';
 import ArticleIcon from '@mui/icons-material/Article';
-import { BondDetails } from '../components/bonds/BondDetails';
 import type { WorkbenchModule } from '../components/portfolio/Workbench';
 import { HubCard } from '../components/portfolio/HubCard';
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
@@ -165,11 +164,11 @@ export const HomePage: React.FC = () => {
       return;
     }
     const partialFilters = parseMarketFiltersUrl(window.location.search);
-    if (!partialFilters) {
+    if (!partialFilters && new URLSearchParams(window.location.search).get('view') !== 'bonds') {
       return;
     }
     marketFiltersHandledRef.current = true;
-    useFiltersStore.getState().applyExternalFilters(partialFilters);
+    if (partialFilters) useFiltersStore.getState().applyExternalFilters(partialFilters);
     setViewMode('TABLE');
     setCurrentTab(0);
     setBlogMode('list');
@@ -1122,7 +1121,7 @@ export const HomePage: React.FC = () => {
       </Box>
 
       {/* Bond Details Drawer */}
-      <BondDetails />
+
 
       {/* Refresh Data Dialog */}
       <RefreshDataDialog

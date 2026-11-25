@@ -1,3 +1,4 @@
+import { useLocation, useNavigate } from 'react-router-dom';
 import React, { useEffect, useMemo, useCallback, useState, useRef } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import type { ColDef, RowClickedEvent, CellClickedEvent, ICellRendererParams, IHeaderParams } from 'ag-grid-community';
@@ -9,7 +10,6 @@ import { Box, Card, CardContent, Button, Tooltip, IconButton, Alert, Toolbar, Fo
 import DeleteIcon from '@mui/icons-material/Delete';
 import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
 
-import { useUiStore } from '../../stores/uiStore';
 import { fetchDescriptions } from '../../api/metadata';
 import type { DescriptionsResponse } from '../../api/metadata';
 import { 
@@ -51,7 +51,8 @@ const flattenDescriptions = (descriptions: DescriptionsResponse): FieldDescripti
  */
 export const PortfolioTable: React.FC = () => {
   const [portfolioBonds, setPortfolioBonds] = useState<PortfolioBond[]>([]);
-  const setSelectedBond = useUiStore((state) => state.setSelectedBond);
+  const navigate = useNavigate();
+  const tableLocation = useLocation();
   const [fieldDescriptions, setFieldDescriptions] = useState<FieldDescriptionMap>({});
   const metadataLoadedRef = useRef(false);
   const gridRef = useRef<AgGridReact<PortfolioBond>>(null);
@@ -667,8 +668,8 @@ export const PortfolioTable: React.FC = () => {
     }
     
     // If all checks passed, open bond details
-    setSelectedBond(event.data.SECID);
-  }, [setSelectedBond]);
+    navigate(`/bonds/${encodeURIComponent(event.data.SECID)}/preview`, { state: { tableLocation } });
+  }, [navigate, tableLocation]);
 
 
   // Calculate dynamic header height

@@ -1,8 +1,6 @@
 import { create } from 'zustand';
 
 interface UiState {
-  // Selected bond for details view
-  selectedBondId: string | null;
   
   // Drawer state (for mobile/responsive)
   isDrawerOpen: boolean;
@@ -15,7 +13,6 @@ interface UiState {
   refreshDialogRequested: boolean;
   
   // Actions
-  setSelectedBond: (secid: string | null) => void;
   toggleDrawer: () => void;
   setDrawerOpen: (open: boolean) => void;
   setInitializing: (loading: boolean) => void;
@@ -26,14 +23,12 @@ interface UiState {
 
 export const useUiStore = create<UiState>((set) => ({
   // Initial state
-  selectedBondId: null,
   isDrawerOpen: false,
   isInitializing: true,
   dataRefreshVersion: 0,
   refreshDialogRequested: false,
   
   // Actions
-  setSelectedBond: (secid) => set({ selectedBondId: secid }),
   
   toggleDrawer: () => set((state) => ({ 
     isDrawerOpen: !state.isDrawerOpen 

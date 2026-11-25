@@ -1,3 +1,4 @@
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import React, { useEffect, useState } from 'react';
 import { Dialog, Tooltip } from '@mui/material';
 import { ShowChart, Percent, Payments, Event, AccountBalance, Layers, Verified } from '@mui/icons-material';
@@ -114,10 +115,12 @@ const tones = ['#1769bd','#147468','#80539b','#445fa5','#226c87','#675c95','#447
 const icons = [ShowChart, Percent, Payments, Event, AccountBalance, Layers, Verified];
 
 export function BondDetails() {
-  const id = useUiStore(state => state.selectedBondId);
-  const close = useUiStore(state => state.setSelectedBond);
-  return <Dialog fullScreen open={Boolean(id)} onClose={() => close(null)} aria-labelledby="bond-title">
-    {id && <Details key={id} id={id} onClose={() => close(null)} />}
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const close = () => location.state?.tableLocation ? navigate(-1) : navigate('/?view=bonds', { replace: true });
+  return <Dialog fullScreen open onClose={close} aria-labelledby="bond-title">
+    {id && <Details key={id} id={id} onClose={close} />}
   </Dialog>;
 }
 
