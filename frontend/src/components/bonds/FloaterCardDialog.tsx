@@ -1,3 +1,4 @@
+import { indicatorNames } from './couponTerms';
 import React, { useCallback, useState } from 'react';
 import {
   Dialog,
@@ -26,15 +27,6 @@ export interface FloaterCardDialogProps {
   onClose: () => void;
   data: BondFloatParamsDTO | null;
 }
-
-const indicatorNames: Record<string, string> = {
-  KEY_RATE: 'Ключевая ставка ЦБ РФ',
-  RUONIA: 'Ставка RUONIA (межбанковские кредиты)',
-  RUSFAR: 'Ставка RUSFAR (рынок репо)',
-  CPI: 'Индекс потребительских цен (инфляция)',
-  GCURVE: 'Доходность гособлигаций (ОФЗ)',
-  CUSTOM: 'Индивидуальный индикатор',
-};
 
 const indicatorHints: Record<string, string> = {
   KEY_RATE: 'Основной инструмент денежно-кредитной политики Банка России.',

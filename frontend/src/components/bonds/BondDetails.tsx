@@ -1,3 +1,5 @@
+import { BondIdentity } from './BondIdentity';
+import { amortization, useCouponTerms } from './couponTerms';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import React, { useEffect, useState } from 'react';
 import { Dialog, Tooltip } from '@mui/material';
@@ -132,7 +134,6 @@ function Details({id,onClose}:{id:string;onClose:()=>void}) {
   const [tips,setTips] = useState<FieldDescriptionMap>({});
   const [coupons,setCoupons] = useState<Coupon[] | null>(null);
   const [couponError,setCouponError] = useState('');
-  const [year,setYear] = useState('');
   const refresh = useUiStore(state => state.triggerDataRefresh);
   useEffect(() => {
     let current = true;
@@ -152,6 +153,7 @@ function Details({id,onClose}:{id:string;onClose:()=>void}) {
     }).catch(() => {if(current) setCouponError('Не удалось загрузить купоны')});
     return () => {current=false};
   },[id,section,coupons,couponError,refresh]);
+  const terms = useCouponTerms(detail);
   const header=<header><button onClick={onClose} aria-label="Закрыть карточку и вернуться">← Назад</button><span>Центр управления</span></header>;
   if(!detail) return <div className="bond-page">{header}<h1 id="bond-title">Карточка облигации</h1>{error?<ErrorMessage message={error}/>:<LoadingSpinner message="Загрузка выпуска…"/>}</div>;
   const securities=detail.securities, market=detail.marketdata, yields=detail.marketdata_yields?.[0] ?? {}, description=detail.bond_description ?? {};
@@ -185,8 +187,8 @@ function Details({id,onClose}:{id:string;onClose:()=>void}) {
         ['Сумма на бумагу', securities?.COUPONVALUE, 'COUPONVALUE'],
         ['НКД', securities?.ACCRUEDINT, 'ACCRUEDINT'],
         ['Следующий купон', securities?.NEXTCOUPON, 'NEXTCOUPON'],
-        ['Бенчмарк купона', description.coupon_benchmark, 'coupon_benchmark'],
-        ['Надбавка к бенчмарку, п.п.', description.coupon_benchmark_spread, 'coupon_benchmark_spread'],
+        ['От какой ставки или индекса зависит купон', terms.base, 'coupon_benchmark'],
+        ['Сколько добавляют к базовой ставке', terms.spread, 'coupon_benchmark_spread'],
         ['Условия купона', description.coupon_details, 'coupon_details'],
       ],
       'Погашение и досрочный выкуп': [
@@ -195,7 +197,7 @@ function Details({id,onClose}:{id:string;onClose:()=>void}) {
         ['Пут-опцион', securities?.PUTOPTIONDATE, 'PUTOPTIONDATE'],
         ['Колл-опцион', securities?.CALLOPTIONDATE, 'CALLOPTIONDATE'],
         ['Дней до погашения (данные MOEX)', description.daystoredemption, 'daystoredemption'],
-        ['Амортизация', securities.BONDTYPE43 == null ? null : String(securities.BONDTYPE43) === '1', ''],
+        ['Амортизация', amortization(detail), ''],
         ['Цена выкупа', securities?.BUYBACKPRICE, 'BUYBACKPRICE'],
       ],
     },
@@ -314,21 +316,21 @@ function Details({id,onClose}:{id:string;onClose:()=>void}) {
   const income=securities.YIELDATPREVWAPRICE ?? market?.YIELD;
   const money=(v:BondFieldValue|undefined)=>v==null?'—':formatFieldValue('VALUE',v)+' '+String(securities.FACEUNIT ?? '');
   const metrics=[['Цена, % номинала',formatFieldValue('PRICE',price ?? null)],['Доходность',formatFieldValue('YIELD',income ?? null)],['НКД',money(securities.ACCRUEDINT)],['Погашение',formatFieldValue('MATDATE',securities.MATDATE)],['Номинал',money(securities.FACEVALUE)],['Лот',money(lot)],['Рейтинг',bondRating || issuerGrade || '—']];
-  const years=Array.from(new Set(coupons?.map(c=>c.coupondate?.slice(0,4)).filter(Boolean))).sort();
   const next=typeof securities.NEXTCOUPON==='string'?Date.parse(securities.NEXTCOUPON):NaN;
   const days=Math.max(0,Math.ceil((next-Date.now())/86400000));
   return <div className="bond-page">{header}<main>
     <section className="hero"><small>Рынок облигаций / Карточка облигации</small>
-      <h1 id="bond-title">{String(securities.SHORTNAME || securities.SECNAME || id)}</h1><span className="chip">{status}</span>
-      <p>{String(securities.SECNAME || '')}</p><small>{[issuer?.emitent_title,detail.emitent_inn && 'ИНН '+detail.emitent_inn,securities.ISIN && 'ISIN '+securities.ISIN,securities.REGNUMBER && 'Рег. № '+securities.REGNUMBER].filter(Boolean).join(' · ')}</small>
+      <h1 id="bond-title">{String(securities.SHORTNAME || securities.SECNAME || id)}</h1>
+      <BondIdentity secid={id} detail={detail} issuer={issuer} />
+      <span className="chip">{status}</span>
       <div><a href={'https://www.moex.com/ru/issue.aspx?board='+encodeURIComponent(String(securities.BOARDID || 'TQCB'))+'&code='+encodeURIComponent(id)} target="_blank" rel="noreferrer">Выпуск на MOEX ↗</a></div>
       <div className="metrics">{metrics.map(([label,value],i)=>{const Icon=icons[i];return <div key={label} className="metric" style={{'--tone':tones[i]} as React.CSSProperties}><span className="kpi-icon"><Icon/></span><small>{label}</small><b>{value}</b></div>})}</div>
-      <div className="risks">{[securities.OFFERDATE && 'Оферта', (securities.CALLOPTIONDATE || securities.PUTOPTIONDATE) && 'Досрочное погашение',String(securities.BONDTYPE43)==='1' && 'Амортизация',[true,1].includes(description.hasdefault as boolean|number) && 'Отмечен дефолт',[true,1].includes(description.hastechnicaldefault as boolean|number) && 'Отмечен технический дефолт'].filter(Boolean).map(label=><span key={String(label)}>{String(label)}</span>)}</div>
+      <div className="risks">{[securities.OFFERDATE && 'Оферта', (securities.CALLOPTIONDATE || securities.PUTOPTIONDATE) && 'Досрочное погашение',amortization(detail) && 'Амортизация',[true,1].includes(description.hasdefault as boolean|number) && 'Отмечен дефолт',[true,1].includes(description.hastechnicaldefault as boolean|number) && 'Отмечен технический дефолт'].filter(Boolean).map(label=><span key={String(label)}>{String(label)}</span>)}</div>
     </section>
     <section className="work"><div className="bar"><h2>{section}</h2></div>
     <div className="layout"><aside>{sections.map(n=><button key={n} aria-current={n===section} onClick={()=>setSection(n)}>{n}</button>)}</aside>
     <div className="cards" style={{'--tone':tones[[6,3,1,0,4,5][sections.findIndex(n=>n===section)]]} as React.CSSProperties}>
-    {Object.entries(groups[section]).map(([title,fields])=><article key={title}><h3>{title}</h3><dl>{fields.map(([label,value,key])=><div className="row" key={label+key}><dt>{tips[key]?<Tooltip title={tips[key]}><span tabIndex={0}>{label} ⓘ</span></Tooltip>:label}</dt><dd>{formatFieldValue(key,value ?? null)}</dd></div>)}</dl>{title==='Купон' && Number.isFinite(days) && typeof securities.COUPONPERIOD==='number' && securities.COUPONPERIOD>0 && <><small>Дней до купона: {days}</small><progress aria-label="Купонный период" max={securities.COUPONPERIOD} value={Math.max(0,securities.COUPONPERIOD-days)}/></>}</article>)}
-    {section===sections[1] && <article className="calendar"><h3>Календарь выплат</h3><label>Год <select value={year} onChange={e=>setYear(e.target.value)}><option value="">Все годы</option>{years.map(y=><option key={y}>{y}</option>)}</select></label><CouponsTable coupons={(coupons ?? []).filter(c=>!year || c.coupondate?.startsWith(year))} isLoading={!coupons && !couponError} error={couponError || null}/></article>}
+    {Object.entries(groups[section]).map(([title,fields])=><article key={title}><h3>{title}</h3><dl>{fields.map(([label,value,key])=><div className="row" key={label+key}><dt>{tips[key]?<Tooltip title={tips[key]}><span tabIndex={0}>{label} ⓘ</span></Tooltip>:label}</dt><dd>{formatFieldValue(key,value ?? null)}</dd></div>)}</dl>{title==='Купон' && terms.hasFloatingRate && <p><small>Пример: при базовой ставке 10 % и надбавке 2 процентных пункта купонная ставка по простой формуле составит 12 % годовых.</small></p>}{title==='Купон' && Number.isFinite(days) && typeof securities.COUPONPERIOD==='number' && securities.COUPONPERIOD>0 && <><small>Дней до купона: {days}</small><progress aria-label="Купонный период" max={securities.COUPONPERIOD} value={Math.max(0,securities.COUPONPERIOD-days)}/></>}</article>)}
+    {section===sections[1] && <article className="calendar"><h3>Календарь выплат</h3><CouponsTable coupons={coupons ?? []} isLoading={!coupons && !couponError} error={couponError || null}/></article>}
     </div></div></section></main></div>;
 }
