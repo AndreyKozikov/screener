@@ -233,3 +233,6 @@ Docs/
 .cursorrules
 .gitignore
 .cursor/
+
+# Local-only instructions for coding agents
+/AGENTS.md

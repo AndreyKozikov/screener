@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Концепция интерфейса BondsScreener для подбора и сравнения облигаций.">
+<title>Рынок облигаций · BondsScreener</title>
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+</head>
+<body>
+<header class="top"><div class="bar"><a class="brand" href="#market"><span class="mark">▥</span> BondsScreener</a><nav aria-label="Разделы"><a href="#market">Скринер</a><a href="#review">Разбор интерфейса</a></nav><span class="demo">Демонстрационные данные</span></div></header>
+<main>
+<section id="market" aria-labelledby="title">
+<div class="hero"><div><p class="eyebrow">BONDSSCREENER / КОНЦЕПЦИЯ</p><h1 id="title">Рынок облигаций</h1><p>Подберите выпуски по сроку и доходности, затем сравните их в одном окне.</p></div><div class="hero-art" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
+<div class="workspace">
+<aside class="filters" aria-label="Фильтры рынка">
+<div class="section-head"><h2>Фильтры</h2><button class="quiet" id="reset" type="button">Сбросить</button></div>
+<p class="field-title">Тип выпуска</p>
+<div id="types" class="chips"><button type="button" data-type="all" aria-pressed="true">Все</button><button type="button" data-type="ОФЗ" aria-pressed="false">ОФЗ</button><button type="button" data-type="Корпоративная" aria-pressed="false">Корпоративные</button></div>
+<label>До погашения<select id="term"><option value="">Любой срок</option><option value="2">До 2 лет</option><option value="4">До 4 лет</option></select></label>
+<label>Доходность от, %<input id="yield" type="number" min="0" step="0.1" placeholder="Например, 14"></label>
+</aside>
+<section class="results" aria-labelledby="results-title">
+<div class="results-head"><div><h2 id="results-title">Выпуски</h2><p id="count" role="status"></p></div><label class="search"><span class="sr-only">Поиск выпуска</span><input id="search" type="search" placeholder="Название или код выпуска"></label></div>
+<div class="toolbar"><div id="active" class="chips" aria-label="Активные условия"></div><label class="sort">Сортировка<select id="sort"><option value="yield">По доходности</option><option value="term">По сроку</option></select></label></div>
+<div class="table-wrap"><table><thead><tr><th scope="col"><span class="sr-only">Выбор для сравнения</span></th><th scope="col">Выпуск</th><th scope="col">Рейтинг</th><th scope="col">Доходность</th><th scope="col">До погашения</th></tr></thead><tbody id="rows"></tbody></table></div>
+<div class="selection"><div><strong id="selected" aria-live="polite"></strong><p>Выберите два или больше выпусков для сравнения.</p></div><button id="compare" class="primary" type="button" disabled>Сравнить</button></div>
+</section>
+</div>
+</section>
+<section id="review" aria-labelledby="review-title">
+<p class="eyebrow">АНАЛИЗ ТЕКУЩЕГО ФРОНТЕНДА</p><h2 id="review-title">Что улучшить в BondsScreener</h2>
+<div class="review-grid">
+<article><h3>Условия рядом с результатами</h3><p>В рынке уже есть поиск, пресеты дат и расширенные фильтры. Покажите применённые условия над таблицей и дайте убрать каждое одним действием. Так проще понять, почему выдача сократилась.</p><p class="priority">Первый шаг · фильтры рынка</p></article>
+<article><h3>Сравнение начинается в таблице</h3><p>Выпуски уже можно добавлять в сравнение из таблицы. Панель с количеством выбранных бумаг и кнопкой перехода сделает следующий шаг видимым во время подбора.</p><p class="priority">Первый шаг · переход к сравнению</p></article>
+<article><h3>Короткий обзор выпуска</h3><p>Карточка выпуска уже использует боковую панель и загружает купоны. В первом экране стоит оставить доходность, рейтинг и срок, а график и купоны сделать доступны по вкладкам.</p><p class="priority">Следующий шаг · карточка выпуска</p></article>
+<article><h3>Ссылка на рабочий экран</h3><p>Главная сохраняет выбранный экран в sessionStorage, а рынок уже принимает фильтры из URL. Расширьте ссылки на вложенные разделы и настройки выдачи, чтобы их можно было открыть в другой вкладке или отправить коллегам.</p><p class="priority">Следующий шаг · навигация</p></article>
+</div></section>
+</main>
+<footer>Концепция интерфейса BondsScreener</footer>
+<dialog id="dialog" aria-labelledby="dialog-title"><div class="dialog-head"><h2 id="dialog-title"></h2><form method="dialog"><button type="submit" aria-label="Закрыть">Закрыть</button></form></div><div id="dialog-content" class="table-wrap"></div></dialog>
+</body>
+</html>

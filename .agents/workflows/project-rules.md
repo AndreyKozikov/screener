@@ -1,161 +1,107 @@
 ---
-description: Project coding rules and conventions for BondsScreener. These rules MUST be followed on every code change in this project.
+description: Current BondsScreener development rules: service architecture, coding conventions, and verification.
 ---
 
-# BondsScreener — Project Coding Rules
+# BondsScreener Development Rules
 
-These rules are always active for the `BondsScreener` workspace. Follow them on **every** code change — no exceptions.
+These rules apply to development of the BondsScreener application. They do not define behavior for user-facing features embedded in the application.
 
----
+## 1. User Communication and Code Comments
 
-## 1. Project Stack Overview
+- Communicate with the user only in Russian: questions, explanations, progress reports, and final responses.
+- Write all new source-code comments and all new or rewritten docstrings in Russian.
+- When modifying code, translate any English comment or docstring that is directly affected, when appropriate. Do not make unrelated bulk edits solely to translate existing comments.
+- Keep variable, function, class, module, and API-field names in English unless an existing interface or project convention requires otherwise.
+- Do not translate library, protocol, command, external API, or technical identifier names.
+- Write documentation in the language of its intended audience and existing document. This does not change the language requirement for comments and docstrings.
 
-| Layer | Technology | Path |
-|-------|-----------|------|
-| **Backend** | Python 3, FastAPI, SQLModel, Alembic, SQLite | `backend/` |
-| **Frontend** | React 19, TypeScript, Vite, MUI 7, AG Grid, Zustand, TailwindCSS 3, Recharts | `frontend/` |
-| **Entry point** | `backend/main.py` | — |
+## 2. Architecture and Stack
 
----
+The project has four parts. Before making a change, identify its owner and trace the relevant API boundaries.
 
-## 2. General Architectural Principles
+| Part | Responsibility | Main paths |
+|---|---|---|
+| `backend/` | Main HTTP API, application services, authentication, portfolios, and request proxying | `backend/main.py`, `backend/app/`, `backend/config/` |
+| `conversion_service/` | External data ingestion, parsing, transformation, scheduled updates, file processing, and imports | `conversion_service/run_conv_service.py`, `conversion_service/app/`, `conversion_service/config/` |
+| `db_repository/` | Separate HTTP service for SQLite access, models, repositories, and migrations | `db_repository/main_db.py`, `db_repository/models/`, `db_repository/repository/`, `db_repository/services/`, `db_repository/config/` |
+| `frontend/` | React 19, TypeScript, Vite, MUI, AG Grid, Zustand, and charts | `frontend/src/` |
 
-**SOLID Compliance:** All code must strictly adhere to Single Responsibility, Open/Closed, Liskov Substitution, Interface Segregation, and Dependency Inversion principles.
+The Python services use FastAPI and Pydantic. Services access data across boundaries through HTTP clients and repository API contracts. Do not connect `backend/` or `conversion_service/` directly to SQLite files or bypass `db_repository` without an established contract.
 
-**Layered Architecture (Backend):** Mixing responsibilities between layers is strictly prohibited.
+### Responsibility Boundaries
 
-| Layer | Responsibility | Location |
-|-------|---------------|----------|
-| **API (Routers)** | Incoming requests, schema validation, service calls only | `backend/app/routers/` |
-| **Service** | Business logic, coordinating repository operations | `backend/app/services/` |
-| **Repository** | Direct database interaction (SQLModel) only | `backend/app/repository/` |
-| **Schema / DTO** | Pydantic models for request/response data validation | `backend/app/data/` |
-| **Data Models** | SQLModel entities representing database tables | `backend/app/models/` |
-| **Core** | Config, exceptions, shared utilities | `backend/app/core/` |
-| **Parsers** | External data source parsers | `backend/app/parsers/` |
-| **Utils** | Shared utilities | `backend/app/utils/` |
+- Routers handle HTTP input, validation, calls to application logic, and HTTP responses. Put complex domain rules in the appropriate service.
+- In `backend/app/repository/` and `conversion_service/app/repository/`, use the existing adapters for the remote repository and file storage. Do not duplicate their transport logic in routers or services.
+- Only `db_repository/` is responsible for direct SQLite access. Follow its existing separation between models, repository operations, services, and RPC/API.
+- In `conversion_service/`, keep external data retrieval, format parsing, DTO transformation, and persistence distinct. Avoid mixing source-specific behavior into shared models without a clear need.
+- In the frontend, place server requests in `frontend/src/api/`, shared types in `frontend/src/types/`, global state in `frontend/src/stores/`, reusable UI in `frontend/src/components/`, and pages in `frontend/src/pages/`.
+- Do not create a parallel abstraction when a suitable client, service, repository, DTO, or component already exists nearby.
 
-**Frontend Architecture:**
+## 3. API and Model Changes
 
-| Layer | Responsibility | Location |
-|-------|---------------|----------|
-| **Pages** | Top-level route components | `frontend/src/pages/` |
-| **Components** | Reusable UI components | `frontend/src/components/` |
-| **API** | Backend API call functions (Axios) | `frontend/src/api/` |
-| **Stores** | Global state management (Zustand) | `frontend/src/stores/` |
-| **Types** | TypeScript type/interface definitions | `frontend/src/types/` |
-| **Theme** | MUI theme customization | `frontend/src/theme/` |
-| **Utils** | Helper/utility functions | `frontend/src/utils/` |
-| **Lib** | Third-party library wrappers/configs | `frontend/src/lib/` |
+- Preserve compatibility between HTTP and RPC contracts across services and the frontend. When changing a contract, find and update all its consumers.
+- Use Pydantic DTOs to validate input and shape responses. Do not return ORM/SQLModel entities directly when the project API uses DTOs.
+- Follow the naming, structure, and style of comparable endpoints. Do not move code between services as part of a small feature change.
+- Use the settings and `config/` directory belonging to the relevant service. Do not hardcode secrets or environment-specific values in source code.
 
----
+## 4. Databases and Migrations
 
-## 3. Backend Coding Standards
+- Represent every persisted SQLite schema change with an Alembic migration; changing only the ORM model is insufficient.
+- First identify the affected database and migration directory. `db_repository/` has separate migration trees: `alembic/`, `blog_alembic/`, `history_alembic/`, and `portfolio_alembic/`. Do not mix them.
+- Inspect neighboring migrations and the service's database initialization path. Account for SQLite limitations and use a migration approach compatible with this project.
+- Update DTOs, RPC allowlists/routing, and consumers when a public repository operation changes.
+- Do not delete data or run migrations against a production database without an explicit user request.
 
-### Type Hinting
-- **Mandatory** type annotations for all function arguments and return values.
-- Use `Optional`, `Union`, `List`, `Dict` from the `typing` module.
-- Every function **must** have a return type hint (`-> ReturnType`).
+## 5. Financial Calculations and Market Data
 
-### Naming Conventions
-- **Routers:** `backend/app/routers/*.py`
-- **Services:** `ClassNameService` in `backend/app/services/*.py`
-- **Repositories:** `ClassNameRepository` in `backend/app/repository/*.py`
-- **DB Models:** `ClassName` (SQLModel) in `backend/app/models/*.py`
-- **Schemas:** `ClassNameCreate`, `ClassNameRead`, `ClassNameUpdate` (Pydantic) in `backend/app/data/*.py`
+- Before changing a calculation, study the existing implementation and project conventions. Check `backend/app/portfolio/calculators/` and `frontend/src/utils/` for the relevant calculation.
+- Do not change rounding, calendar, day-count, offer, coupon, accrued-interest, or date-handling rules without checking all affected callers.
+- In loaders and parsers, preserve handling of missing, malformed, and partially available data. An external-source failure must not silently become a plausible but incorrect value.
+- Preserve update idempotency and error traceability. Do not add retries or fallback values that can hide corrupted data.
+- For calculation changes, add or update targeted boundary-case checks using the test style already used in the relevant module.
 
-### Data Handling (SQLModel & SQLite)
-- **Repository Pattern:** All database access must go through repository classes exclusively.
-- **Unit of Work:** Manage database sessions (`Session`) using FastAPI `Depends`. Pass the session directly into the repository.
-- **Model Separation:** NEVER use the same SQLModel class for both DB persistence and API responses. Always use separate Schemas (DTOs).
-- **Migrations:** All database schema changes must be handled via Alembic. Generate a migration for every new model or field modification.
+## 6. Frontend Rules
 
-### Dependency Injection (DI)
-- Use FastAPI's native DI system (`Depends`).
-- Inject repositories into services, and services into routers.
-- Dependencies must be resolved via DI (abstract or concrete classes) rather than direct instantiation inside functions.
+- Use TypeScript and API types. Avoid `any`; if unavoidable, keep it at the integration boundary and explain why in a Russian comment.
+- Use Axios through the project's API modules. Do not call `fetch` or Axios directly from React components when a suitable API module exists.
+- Follow the existing Zustand stores for global state. Keep component state local unless it must be shared across screens.
+- Use the installed MUI, AG Grid, Tailwind, and chart libraries. Do not add a dependency for a task that the existing stack can handle.
+- Preserve the existing theme, number/date formatting, navigation, and responsive behavior.
 
-### Error Handling
-- **Custom Exceptions:** Define domain-specific exceptions in `backend/app/core/exceptions.py`.
-- **HTTP Exceptions:** Convert domain exceptions to `HTTPException` at the router level or via global `exception_handlers`.
-- **No Silent Fails:** Empty `except: pass` blocks are strictly forbidden.
+## 7. Configuration, Security, and Errors
 
-### Configuration
-- All settings, paths, and environment-specific values must live in `backend/app/core/config.py` or `backend/.env`.
-- No hardcoded strings for paths or settings.
+- Each service has its own configuration: `backend/config/`, `conversion_service/config/`, and `db_repository/config/`; example files use the `.example` suffix. Keep secrets in local `.env` files or environment variables, not in the repository.
+- Do not print secret values in logs, responses, documentation, or reports. Do not weaken API-key, request-signature, or authentication checks to simplify a test.
+- Catch only expected exceptions and retain diagnostic information. Do not use empty `except` blocks, `except: pass`, or broad error suppression.
+- Before changing public error behavior, check how calling services and the frontend handle it.
 
----
+## 8. Checks and Project Commands
 
-## 4. Frontend Coding Standards
+Choose checks based on the affected part. Never claim a command passed unless it was run.
 
-### TypeScript
-- Strict mode enabled. All variables, props, and return types must be properly typed.
-- Prefer interfaces over type aliases for object shapes.
-- No `any` type unless absolutely unavoidable (and commented why).
+- Frontend: `npm run lint` and `npm run build` are available from `frontend/`.
+- Python: tests use `unittest` and are located in `backend/tests/`, `conversion_service/tests/`, `conversion_service/scheduled_updates/tests/`, and `db_repository/tests/`. Run relevant tests from the repository or service root with the correct `PYTHONPATH`.
+- For parsers, calculations, DTOs, RPC, and migrations, check the relevant module and its tests first. Do not treat a build of an unrelated service as verification.
+- Do not run production deployments, systemd management commands, or operations on production databases as part of routine verification.
+- If a check cannot be run, state the exact reason and what remains unverified.
 
-### React Conventions
-- Functional components only.
-- Use hooks (`useState`, `useEffect`, `useMemo`, `useCallback`) appropriately.
-- Keep components small and focused — extract reusable logic into custom hooks.
+## 9. Deployment and Repository Hygiene
 
-### State Management
-- Use **Zustand** stores in `frontend/src/stores/` for global state.
-- Avoid prop-drilling deeper than 2 levels — lift state to a store instead.
+- Production deployment is documented in `deploy/README.md`. Services run under systemd, external traffic passes through Nginx, and deployment is configured in `.github/workflows/deploy.yml`.
+- Do not assume Docker is available; the documented deployment runs without it.
+- Before changing deployment behavior, trace the path from GitHub Actions through `deploy/deploy.sh`, then inspect related systemd and Nginx configuration.
+- Do not edit generated files, local data, logs, `.venv`, `node_modules`, or configuration files containing secrets.
+- Preserve the user's existing work. Do not revert or reformat unrelated files.
 
-### Styling
-- Use **TailwindCSS 3** and **MUI 7** components.
-- Theme customization via `frontend/src/theme/`.
+## 10. Workflow
 
-### API Calls
-- All backend API interactions go through functions in `frontend/src/api/`.
-- Use **Axios** for HTTP requests.
-- Never call `fetch()` or `axios` directly from components — always through the API layer.
+1. Identify the service and layer responsible for the change.
+2. Study a comparable implementation, its DTOs/contracts, and its direct consumers.
+3. Make the smallest coherent change across all affected layers.
+4. Update targeted tests and migrations when needed.
+5. Run appropriate checks when the task and environment allow it, and report their results accurately.
+6. In the final response, use Russian to summarize the changes, checks performed, and any remaining limitations.
 
----
+### Systematic Debugging Skill
 
-## 5. Critical Prohibitions (STRICT)
-
-These are **absolute rules** — violation is never acceptable.
-
-### Backend
-- ❌ **PROHIBITED:** Writing business logic inside routers (endpoints).
-- ❌ **PROHIBITED:** Direct database calls (`engine.execute`, `session.query`, etc.) inside services or routers — must go through repository.
-- ❌ **PROHIBITED:** Using hardcoded strings for paths or settings (use `backend/app/core/config.py`).
-- ❌ **PROHIBITED:** Returning SQLModel objects (DB entities) directly in API responses without converting to a Pydantic schema.
-- ❌ **PROHIBITED:** Defining functions without a return type hint (`-> ReturnType`).
-- ❌ **PROHIBITED:** Empty `except: pass` blocks.
-
-### Frontend
-- ❌ **PROHIBITED:** Using `any` type without an explanatory comment.
-- ❌ **PROHIBITED:** Direct `axios`/`fetch` calls from React components (use the API layer).
-- ❌ **PROHIBITED:** Inline styles when TailwindCSS classes or MUI `sx` prop can be used.
-
----
-
-## 6. Workflow Guidelines
-
-### Before Making Changes
-1. Understand which layer(s) the change affects.
-2. Check existing patterns in the codebase — follow established conventions.
-3. For DB changes: always create an Alembic migration.
-
-### When Creating New Endpoints
-1. Define the Pydantic schema (DTO) in `backend/app/data/`.
-2. Create or update the repository in `backend/app/repository/`.
-3. Create or update the service in `backend/app/services/`.
-4. Create the router endpoint in `backend/app/routers/`.
-5. Register the router in `backend/main.py` if it's a new router.
-
-### When Creating New Frontend Features
-1. Define TypeScript types in `frontend/src/types/`.
-2. Create API functions in `frontend/src/api/`.
-3. Create/update Zustand store if global state is needed in `frontend/src/stores/`.
-4. Build UI components in `frontend/src/components/`.
-5. Wire everything together in a page component in `frontend/src/pages/`.
-
----
-
-## 7. Language
-
-- All code comments, variable names, and documentation should be in **English**.
-- Communication with the user: respond in the **same language the user uses** (Russian or English).
+Use the `systematic-debugging` skill only when analyzing a stack trace or error output supplied by the user, or when the user asks to fix an application runtime error or a failure that occurred during testing. Do not invoke it for ordinary feature work, refactoring, code review without a reported error, documentation, or speculative error prevention.
