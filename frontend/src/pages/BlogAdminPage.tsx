@@ -20,9 +20,7 @@ import UploadIcon from '@mui/icons-material/Upload';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import rehypeRaw from 'rehype-raw';
+import { BlogArticleBody } from '../components/blog/BlogArticleBody';
 
 import {
   createArticle,
@@ -163,7 +161,7 @@ export const BlogAdminPage: React.FC = () => {
       setForm((prev) => ({
         ...prev,
         cover_image_url: prev.cover_image_url || result.url,
-        content_markdown: `${prev.content_markdown}${imageMarkdown}`,
+        content_markdown: prev.cover_image_url ? `${prev.content_markdown}${imageMarkdown}` : prev.content_markdown,
       }));
       setMessage(`Изображение загружено: ${result.url}`);
     } catch (err) {
@@ -292,7 +290,7 @@ export const BlogAdminPage: React.FC = () => {
                 fullWidth
               />
               <Button component="label" variant="outlined" startIcon={<UploadIcon />} sx={{ textTransform: 'none' }}>
-                Загрузить картинку
+                {form.cover_image_url ? 'Добавить иллюстрацию в текст' : 'Загрузить обложку'}
                 <input
                   hidden
                   type="file"
@@ -356,17 +354,10 @@ export const BlogAdminPage: React.FC = () => {
                   sx={{ width: '100%', height: 'auto', mb: 2 }}
                 />
               )}
-              <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
-                {(() => {
-                  const content = form.content_markdown;
-                  const cover = form.cover_image_url;
-                  if (!content) return 'Начните писать Markdown...';
-                  if (!cover) return content;
-                  const escapedUrl = cover.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-                  const regex = new RegExp(`\\s*!\\[[^\\]]*\\]\\(${escapedUrl}\\)\\s*`, 'g');
-                  return content.replace(regex, '\n\n').trim();
-                })()}
-              </ReactMarkdown>
+              <BlogArticleBody
+                markdown={form.content_markdown || 'Начните писать Markdown...'}
+                cover={form.cover_image_url}
+              />
             </Box>
           </Paper>
         </Box>

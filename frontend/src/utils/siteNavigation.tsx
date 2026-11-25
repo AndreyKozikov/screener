@@ -5,6 +5,7 @@ import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
 import ArticleIcon from '@mui/icons-material/Article';
+import SchoolIcon from '@mui/icons-material/School';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 
 /**
@@ -16,7 +17,6 @@ import SmartToyIcon from '@mui/icons-material/SmartToy';
 export const HOME_PAGE_VIEW_STORAGE_KEY = 'bonds-screener:home-page-view';
 
 export type SiteViewMode = 'HUB' | 'TABLE';
-export type SiteBlogMode = 'list' | 'guide';
 export type SiteForecastSubView =
   | 'macro-dashboard'
   | 'zerocupon'
@@ -32,7 +32,7 @@ export type SitePortfolioModule = 'HUB' | 'PORTFOLIO' | 'CALENDAR' | 'ANALYTICS'
 export type SavedHomePageView = {
   viewMode: SiteViewMode;
   currentTab: number;
-  blogMode: SiteBlogMode;
+  articleSlug: string | null;
   forecastSubView: SiteForecastSubView | null;
   comparisonSubView: SiteComparisonSubView | null;
   portfolioModule: SitePortfolioModule;
@@ -41,7 +41,7 @@ export type SavedHomePageView = {
 export const DEFAULT_HOME_PAGE_VIEW: SavedHomePageView = {
   viewMode: 'HUB',
   currentTab: 0,
-  blogMode: 'list',
+  articleSlug: null,
   forecastSubView: null,
   comparisonSubView: null,
   portfolioModule: 'HUB',
@@ -60,14 +60,14 @@ export const readSavedHomePageView = (): SavedHomePageView => {
     const serializedView = window.sessionStorage.getItem(HOME_PAGE_VIEW_STORAGE_KEY);
     if (!serializedView) return DEFAULT_HOME_PAGE_VIEW;
 
-    const savedView = JSON.parse(serializedView) as Partial<SavedHomePageView>;
-    const currentTab = Number(savedView.currentTab);
+    const savedView = JSON.parse(serializedView) as Partial<SavedHomePageView> & { blogMode?: string };
+    const storedTab = Number(savedView.currentTab);
+    const currentTab = storedTab === 5 && savedView.blogMode === 'guide' ? 6 : storedTab;
 
     return {
       viewMode: savedView.viewMode === 'TABLE' ? 'TABLE' : 'HUB',
-      currentTab: Number.isInteger(currentTab) && currentTab >= 0 && currentTab <= 5 ? currentTab : 0,
-      // BlogPage keeps the selected article in memory, so restore the list after a reload.
-      blogMode: savedView.blogMode === 'guide' ? 'guide' : 'list',
+      currentTab: Number.isInteger(currentTab) && currentTab >= 0 && currentTab <= 6 ? currentTab : 0,
+      articleSlug: currentTab === 5 && typeof savedView.articleSlug === 'string' ? savedView.articleSlug : null,
       forecastSubView: FORECAST_SUB_VIEWS.includes(savedView.forecastSubView as SiteForecastSubView)
         ? savedView.forecastSubView as SiteForecastSubView
         : null,
@@ -142,9 +142,11 @@ export const siteNavigationItems: SiteNavigationItem[] = [
     id: 'blog',
     label: 'Блог',
     icon: <ArticleIcon />,
-    children: [
-      { id: 'blog:guide', label: 'Гид по выбору облигаций' },
-    ],
+  },
+  {
+    id: 'guide',
+    label: 'Гид по выбору облигаций',
+    icon: <SchoolIcon />,
   },
   {
     id: 'chat',
@@ -168,7 +170,7 @@ export const resolveSiteNavigationTarget = (id: string): SavedHomePageView => {
   const tab = (currentTab: number, overrides: Partial<SavedHomePageView> = {}): SavedHomePageView => ({
     viewMode: 'TABLE',
     currentTab,
-    blogMode: currentTab === 5 ? 'guide' : 'list',
+    articleSlug: null,
     forecastSubView: null,
     comparisonSubView: null,
     portfolioModule: 'HUB',
@@ -215,9 +217,9 @@ export const resolveSiteNavigationTarget = (id: string): SavedHomePageView => {
     case 'comparison:spread-analysis':
       return tab(4, { comparisonSubView: 'spread-analysis' });
     case 'blog':
-      return tab(5, { blogMode: 'list' });
-    case 'blog:guide':
-      return tab(5, { blogMode: 'guide' });
+      return tab(5);
+    case 'guide':
+      return tab(6);
     default:
       return DEFAULT_HOME_PAGE_VIEW;
   }

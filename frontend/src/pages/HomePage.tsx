@@ -23,7 +23,6 @@ import { SiteNavigationDrawer } from '../components/common/SiteNavigationDrawer'
 import { HubCardIllustration, type HubCardIllustrationVariant } from '../components/common/HubCardIllustration';
 import { HubQueryBar } from '../components/common/HubQueryBar';
 import { useAgentStore } from '../stores/agentStore';
-import type { BlogMode } from './BlogPage';
 import {
   getSiteNavigationItems,
   isPortfolioNavigationId,
@@ -80,6 +79,7 @@ const InflationExpectationsChart = React.lazy(() => import('../components/inflat
 const IpcPage = React.lazy(() => import('../components/ipc/IpcPage').then(({ IpcPage: component }) => ({ default: component })));
 const SustainableInflationPage = React.lazy(() => import('../components/inflation/SustainableInflationPage').then(({ SustainableInflationPage: component }) => ({ default: component })));
 const MacroDashboard = React.lazy(() => import('../components/forecast/MacroDashboard').then(({ MacroDashboard: component }) => ({ default: component })));
+const BondSelectionGuidePage = React.lazy(() => import('./BondSelectionGuidePage'));
 const BlogPage = React.lazy(() => import('./BlogPage').then(({ BlogPage: component }) => ({ default: component })));
 
 export const HomePage: React.FC = () => {
@@ -99,7 +99,7 @@ export const HomePage: React.FC = () => {
   const [currentTab, setCurrentTab] = useState(() =>
     portfolioLocked && savedPageView.currentTab === 3 ? 0 : savedPageView.currentTab,
   );
-  const [blogMode, setBlogMode] = useState<BlogMode>(savedPageView.blogMode);
+  const [articleSlug, setArticleSlug] = useState(savedPageView.articleSlug);
   const [forecastSubView, setForecastSubView] = useState<ForecastSubView | null>(savedPageView.forecastSubView);
   const [comparisonSubView, setComparisonSubView] = useState<ComparisonSubView | null>(savedPageView.comparisonSubView);
   const [portfolioModule, setPortfolioModule] = useState<WorkbenchModule>(
@@ -141,12 +141,12 @@ export const HomePage: React.FC = () => {
     writeSavedHomePageView({
       viewMode,
       currentTab,
-      blogMode: blogMode === 'guide' ? 'guide' : 'list',
+      articleSlug,
       forecastSubView,
       comparisonSubView,
       portfolioModule,
     } satisfies SavedHomePageView);
-  }, [viewMode, currentTab, blogMode, forecastSubView, comparisonSubView, portfolioModule]);
+  }, [viewMode, currentTab, articleSlug, forecastSubView, comparisonSubView, portfolioModule]);
 
   useEffect(() => {
     if (authenticated || currentTab !== 3) return;
@@ -171,7 +171,7 @@ export const HomePage: React.FC = () => {
     if (partialFilters) useFiltersStore.getState().applyExternalFilters(partialFilters);
     setViewMode('TABLE');
     setCurrentTab(0);
-    setBlogMode('list');
+    setArticleSlug(null);
     setForecastSubView(null);
     setComparisonSubView(null);
     setPortfolioModule('HUB');
@@ -410,9 +410,7 @@ export const HomePage: React.FC = () => {
     }
     setCurrentTab(tabIndex);
     setViewMode('TABLE');
-    if (tabIndex !== 5) {
-      setBlogMode('list');
-    }
+    setArticleSlug(null);
     // Если выбрана карточка "Прогнозы", сбросить подраздел
     if (tabIndex === 2) {
       setForecastSubView(null);
@@ -428,7 +426,7 @@ export const HomePage: React.FC = () => {
 
   const handleBackToHub = () => {
     setViewMode('HUB');
-    setBlogMode('list');
+    setArticleSlug(null);
   };
 
   const handleSiteNavigationSelect = (id: string) => {
@@ -447,7 +445,7 @@ export const HomePage: React.FC = () => {
     }
     setViewMode(target.viewMode);
     setCurrentTab(target.currentTab);
-    setBlogMode(target.blogMode);
+    setArticleSlug(target.articleSlug);
     setForecastSubView(target.forecastSubView);
     setComparisonSubView(target.comparisonSubView);
     setPortfolioModule(target.portfolioModule);
@@ -542,7 +540,7 @@ export const HomePage: React.FC = () => {
     },
     {
       title: 'Блог',
-      description: 'Статьи и интерактивный гид по облигациям',
+      description: 'Статьи об облигациях, ставках и портфельных решениях',
       icon: <ArticleIcon sx={{ fontSize: 32 }} />,
       color: '#00acc1',
       illustration: 'blog',
@@ -561,8 +559,8 @@ export const HomePage: React.FC = () => {
   const isForecastOverview = viewMode === 'TABLE' && currentTab === 2 && (forecastSubView === null || forecastSubView === 'macro-dashboard');
   const isCbrForecastSection = viewMode === 'TABLE' && currentTab === 2 && forecastSubView === 'forecast';
   const isBondMarketSection = viewMode === 'TABLE' && currentTab === 0;
-  const isBlogSection = viewMode === 'TABLE' && currentTab === 5;
-  const usesGlassSurface = viewMode === 'HUB' || isBondMarketSection || isForecastOverview || isCbrForecastSection || isBlogSection;
+  const isReadingSection = viewMode === 'TABLE' && (currentTab === 5 || currentTab === 6);
+  const usesGlassSurface = viewMode === 'HUB' || isBondMarketSection || isForecastOverview || isCbrForecastSection || isReadingSection;
   const activeNavigationId = (() => {
     if (viewMode === 'HUB') return 'home';
     if (currentTab === 0) return 'market';
@@ -576,7 +574,8 @@ export const HomePage: React.FC = () => {
       return 'portfolio';
     }
     if (currentTab === 4) return comparisonSubView ? `comparison:${comparisonSubView}` : 'comparison';
-    if (currentTab === 5) return blogMode === 'guide' ? 'blog:guide' : 'blog';
+    if (currentTab === 5) return 'blog';
+    if (currentTab === 6) return 'guide';
     return 'home';
   })();
 
@@ -711,7 +710,7 @@ export const HomePage: React.FC = () => {
         flexDirection: 'column', 
         width: '100%', 
         ...(viewMode === 'TABLE'
-          ? isBlogSection
+          ? isReadingSection
             ? { minHeight: 'calc(100dvh - 62px)' }
             : { height: 'calc(100vh - 62px)' }
           : {})
@@ -972,8 +971,8 @@ export const HomePage: React.FC = () => {
           <Container 
             maxWidth={false} 
             sx={{ 
-              px: isForecastOverview || isBlogSection ? 0 : isCbrForecastSection ? { xs: 2, md: 3.5, xl: 4.5 } : 2,
-              py: isForecastOverview ? { xs: 3, md: 6 } : isBlogSection ? { xs: 2, md: 3 } : isBondMarketSection || isCbrForecastSection ? { xs: 1.5, md: 2 } : 3,
+              px: isForecastOverview || isReadingSection ? 0 : isCbrForecastSection ? { xs: 2, md: 3.5, xl: 4.5 } : 2,
+              py: isForecastOverview ? { xs: 3, md: 6 } : isReadingSection ? { xs: 2, md: 3 } : isBondMarketSection || isCbrForecastSection ? { xs: 1.5, md: 2 } : 3,
               flexGrow: 1, 
               display: 'flex', 
               flexDirection: 'column', 
@@ -1110,9 +1109,10 @@ export const HomePage: React.FC = () => {
               </>
             )}
 
+            {currentTab === 6 && <BondSelectionGuidePage />}
             {currentTab === 5 && (
               <Box sx={{ flexGrow: 1, minHeight: 0 }}>
-                <BlogPage mode={blogMode} onModeChange={setBlogMode} />
+                <BlogPage key={articleSlug} slug={articleSlug} onSelect={setArticleSlug} />
               </Box>
             )}
           </Container>
