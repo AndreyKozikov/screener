@@ -30,16 +30,6 @@ export const uploadAndParseIpcByUrl = async (url: string): Promise<IpcLoadRespon
 };
 
 /**
- * Запуск парсинга локального файла ИПЦ на сервере.
- */
-export const parseLocalIpcFile = async (filePath?: string): Promise<IpcLoadResponse> => {
-  const params = filePath ? { file_path: filePath } : {};
-
-  const response = await conversionClient.post<IpcLoadResponse>('/ipc/parse-local', null, { params });
-  return response.data;
-};
-
-/**
  * Получение сохранённых данных ИПЦ из JSON-файла.
  */
 export const fetchSavedIpcData = async (): Promise<IpcData> => {

@@ -50,7 +50,7 @@ import { refreshTradingHistory } from '../api/tradingHistory';
 import { getDashboardRates, type MacroRatesResponse } from '../api/dashboard';
 import { refreshCurrencyRates } from '../api/currency';
 import { loadKeyRateData } from '../api/keyrate';
-import { uploadAndParseIpcFile, uploadAndParseIpcByUrl, parseLocalIpcFile, uploadIpcWeekly } from '../api/ipc';
+import { uploadAndParseIpcFile, uploadAndParseIpcByUrl, uploadIpcWeekly } from '../api/ipc';
 import { uploadAndParseInflationExpectationsFile, uploadAndParseInflationExpectationsByUrl } from '../api/inflationExpectations';
 import { uploadAndParseInflationFile, uploadAndParseInflationByUrl } from '../api/inflation';
 import { useUiStore } from '../stores/uiStore';
@@ -313,7 +313,7 @@ export const HomePage: React.FC = () => {
         } else if (ipcUrlRef) {
           await uploadAndParseIpcByUrl(ipcUrlRef);
         } else {
-          await parseLocalIpcFile();
+          throw new Error('Не выбран файл и не указана ссылка для обновления ИПЦ');
         }
       },
       'ipc-weekly': async () => {
