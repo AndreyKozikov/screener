@@ -3,9 +3,8 @@
 import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
-from fastapi import APIRouter, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
-from conversion_service.app.models.ipc_dto import IpcLoadRequest, IpcLoadResponse
 from conversion_service.app.repository.files.file_storage import FileStorage
 from conversion_service.app.services.ipc_service import DEFAULT_EXCEL_PATH, get_ipc_service
 
@@ -16,13 +15,42 @@ router = APIRouter(prefix="/ipc", tags=["ipc_inflation"])
 
 @router.post(
     "/upload",
-    summary="Загрузка Excel-файла с клиента, парсинг и сохранение в JSON",
+    summary="Загрузка Excel-файла ИПЦ по ссылке или с клиента, парсинг и сохранение в БД",
 )
 async def upload_and_parse_ipc(
-    file: UploadFile = File(..., description="Excel-файл (.xlsx) с данными ИПЦ"),
+    file: Optional[UploadFile] = File(
+        default=None,
+        description="Excel-файл (.xlsx) с данными ИПЦ",
+    ),
+    url: Optional[str] = Form(
+        default=None,
+        description="Прямая ссылка на Excel-файл ИПЦ",
+    ),
 ) -> Dict[str, Any]:
-    """Принимает Excel-файл от клиента, сохраняет его, парсит и записывает результат в JSON."""
+    """Принимает ссылку или Excel-файл, парсит данные и записывает их в БД."""
     service = get_ipc_service()
+
+    if url and url.strip():
+        logger.info("[IPC ROUTER] Загрузка файла по ссылке: %s", url.strip())
+        try:
+            return await service.download_parse_and_save(url=url.strip())
+        except Exception as exc:
+            logger.error(
+                "[IPC ROUTER] Ошибка при загрузке файла по ссылке: %s",
+                exc,
+                exc_info=True,
+            )
+            raise HTTPException(
+                status_code=500,
+                detail=f"Ошибка загрузки файла по ссылке: {exc}",
+            ) from exc
+
+    if file is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Не передан файл или ссылка на Excel-файл ИПЦ",
+        )
+
     try:
         content = await file.read()
         target_excel_path = DEFAULT_EXCEL_PATH

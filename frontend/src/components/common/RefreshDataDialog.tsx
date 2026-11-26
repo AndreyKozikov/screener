@@ -41,6 +41,7 @@ interface RefreshDataDialogProps {
     inflationFile?: File | null,
     inflationExpectationsUrl?: string,
     inflationUrl?: string,
+    ipcUrl?: string,
   ) => Promise<void>;
   tasks: RefreshTask[];
   isRefreshing: boolean;
@@ -72,6 +73,8 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
   const [floatersProvider, setFloatersProvider] = useState<string>('gemini');
   const [ipcFile, setIpcFile] = useState<File | null>(null);
   const [ipcFileError, setIpcFileError] = useState<string | null>(null);
+  const [ipcUrl, setIpcUrl] = useState('');
+  const [ipcUrlError, setIpcUrlError] = useState<string | null>(null);
   const ipcFileInputRef = useRef<HTMLInputElement>(null);
   const [inflationExpectationsFile, setInflationExpectationsFile] = useState<File | null>(null);
   const [inflationExpectationsFileError, setInflationExpectationsFileError] = useState<string | null>(null);
@@ -97,6 +100,8 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
       setFloatersProvider('gemini');
       setIpcFile(null);
       setIpcFileError(null);
+      setIpcUrl('');
+      setIpcUrlError(null);
       if (ipcFileInputRef.current) {
         ipcFileInputRef.current.value = '';
       }
@@ -193,6 +198,11 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
     setInflationExpectationsUrl(value);
   };
 
+  const handleIpcUrlChange = (value: string) => {
+    setIpcUrlError(null);
+    setIpcUrl(value);
+  };
+
   const handleInflationUrlChange = (value: string) => {
     setInflationUrlError(null);
     setInflationUrl(value);
@@ -213,6 +223,9 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
     const inflationUrlErrorValue = selectedTasks['inflation']
       ? validateUrl(inflationUrl)
       : null;
+    const ipcUrlErrorValue = selectedTasks['ipc']
+      ? validateUrl(ipcUrl)
+      : null;
     if (inflationExpectationsUrlErrorValue) {
       setInflationExpectationsUrlError(inflationExpectationsUrlErrorValue);
       return;
@@ -221,17 +234,23 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
       setInflationUrlError(inflationUrlErrorValue);
       return;
     }
+    if (ipcUrlErrorValue) {
+      setIpcUrlError(ipcUrlErrorValue);
+      return;
+    }
 
     // Close dialog immediately without waiting for server response
     onClose();
     // Start refresh in background (fire and forget)
-    void onConfirm(selected, forceUpdateRatings, forceRefreshCoupons, floatersProvider, ipcFile, inflationExpectationsFile, inflationFile, inflationExpectationsUrl.trim(), inflationUrl.trim());
+    void onConfirm(selected, forceUpdateRatings, forceRefreshCoupons, floatersProvider, ipcFile, inflationExpectationsFile, inflationFile, inflationExpectationsUrl.trim(), inflationUrl.trim(), ipcUrl.trim());
   };
 
   const handleClose = () => {
     if (!isRefreshing) {
       setIpcFile(null);
       setIpcFileError(null);
+      setIpcUrl('');
+      setIpcUrlError(null);
       if (ipcFileInputRef.current) {
         ipcFileInputRef.current.value = '';
       }
@@ -380,7 +399,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                       Файл данных Росстата (.xlsx):
                     </Typography>
                     <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-                      Выберите файл с индексами ИПЦ или оставьте поле пустым для использования файла по умолчанию на сервере.
+                      Выберите Excel-файл с индексами ИПЦ либо укажите прямую ссылку на файл. Ссылку на актуальный файл можно взять на странице Росстата «Цены, инфляция» (https://rosstat.gov.ru/statistics/price) в подразделе «Индексы потребительских цен» → пункт «Индексы потребительских цен на товары и услуги по Российской Федерации, федеральным округам и субъектам Российской Федерации (с 2022 г.)». Сервис сам скачает файл по ссылке и удалит его после обработки. Если ничего не выбрано, будет использован файл по умолчанию на сервере.
                     </Typography>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
                       <input
@@ -423,6 +442,24 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                           (файл не выбран — парсинг серверного файла по умолчанию)
                         </Typography>
                       )}
+                    </Box>
+                    <Divider sx={{ my: 1.5 }}>
+                      <Typography variant="caption" color="text.secondary">или</Typography>
+                    </Divider>
+                    <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+                      <TextField
+                        size="small"
+                        fullWidth
+                        placeholder="https://rosstat.gov.ru/storage/mediabank/ipc_RF_fo_sub_10-2026.xlsx"
+                        value={ipcUrl}
+                        onChange={(e) => handleIpcUrlChange(e.target.value)}
+                        disabled={isRefreshing || !!ipcFile}
+                        error={!!ipcUrlError}
+                        helperText={ipcUrlError}
+                        InputProps={{
+                          startAdornment: <LinkIcon sx={{ mr: 1, color: 'text.secondary', fontSize: 18 }} />,
+                        }}
+                      />
                     </Box>
                     {ipcFileError && (
                       <Typography variant="caption" color="error" sx={{ display: 'block', mt: 0.5 }}>

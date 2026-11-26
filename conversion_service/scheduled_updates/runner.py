@@ -62,6 +62,10 @@ def _run(task: str) -> Any:
         )
 
         return asyncio.run(get_inflation_expectations_update_service().run())
+    if task == "ipc":
+        from conversion_service.app.services.ipc_update_service import get_ipc_update_service
+
+        return asyncio.run(get_ipc_update_service().run())
     raise ValueError(f"Unknown update task: {task}")
 
 
@@ -97,6 +101,7 @@ def main() -> int:
             "ruonia",
             "keyrate",
             "inflation_expectations",
+            "ipc",
         ),
     )
     args = parser.parse_args()

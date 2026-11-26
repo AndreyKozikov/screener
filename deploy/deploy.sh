@@ -21,8 +21,9 @@ UPDATE_TIMERS=(
     bondsscreener-data-update-zerocupon.timer
     bondsscreener-data-update-ruonia.timer
     bondsscreener-data-update-inflation-expectations.timer
+    bondsscreener-data-update-ipc.timer
 )
-UPDATE_TASKS=(bonds trading_history currency keyrate zerocupon ruonia inflation_expectations)
+UPDATE_TASKS=(bonds trading_history currency keyrate zerocupon ruonia inflation_expectations ipc)
 RENDERED_UNITS=()
 cleanup_rendered_units() {
     for rendered in "${RENDERED_UNITS[@]}"; do
@@ -105,6 +106,7 @@ UPDATE_UNIT_FILES=(
     bondsscreener-data-update-zerocupon.timer
     bondsscreener-data-update-ruonia.timer
     bondsscreener-data-update-inflation-expectations.timer
+    bondsscreener-data-update-ipc.timer
 )
 for unit in "${UPDATE_UNIT_FILES[@]}"; do
     unit_source="${APP_DIR}/deploy/systemd/${unit}"

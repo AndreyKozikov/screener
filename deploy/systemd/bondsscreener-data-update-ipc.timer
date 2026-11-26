@@ -1,0 +1,9 @@
+[Unit]
+Description=Update Bonds Screener monthly Rosstat CPI daily on 20-30 at 19:00 Moscow time
+
+[Timer]
+OnCalendar=*-*-20..30 19:00:00 Europe/Moscow
+Unit=bondsscreener-data-update@ipc.service
+
+[Install]
+WantedBy=timers.target

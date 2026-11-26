@@ -76,6 +76,9 @@ class Settings(BaseSettings):
         "https://cbr.ru/statistics/ddkp/inflationary_expectations/"
     )
     INFLATION_EXPECTATIONS_HTTP_TIMEOUT_SECONDS: int = 30
+    IPC_PAGE_URL: str = "https://rosstat.gov.ru/statistics/price"
+    IPC_HTTP_TIMEOUT_SECONDS: int = 30
+    IPC_VERIFY_SSL: bool = False
 
     model_config = SettingsConfigDict(
         env_file=_env_file_path,
@@ -90,6 +93,7 @@ class Settings(BaseSettings):
         db_repository = config.get("db_repository", {})
         paths = config.get("paths", {})
         inflation_expectations = config.get("inflation_expectations", {})
+        ipc = config.get("ipc", {})
 
         defaults = {
             "DB_REPOSITORY_URL": db_repository.get("url"),
@@ -102,6 +106,9 @@ class Settings(BaseSettings):
             "EMITENT_EVENTS_JSON_DIR": paths.get("emitent_events_json_dir"),
             "INFLATION_EXPECTATIONS_PAGE_URL": inflation_expectations.get("page_url"),
             "INFLATION_EXPECTATIONS_HTTP_TIMEOUT_SECONDS": inflation_expectations.get("timeout_seconds"),
+            "IPC_PAGE_URL": ipc.get("page_url"),
+            "IPC_HTTP_TIMEOUT_SECONDS": ipc.get("timeout_seconds"),
+            "IPC_VERIFY_SSL": ipc.get("verify_ssl"),
         }
         for field_name, value in defaults.items():
             if value is not None and not env_is_set(field_name):

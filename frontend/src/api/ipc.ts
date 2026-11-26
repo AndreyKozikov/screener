@@ -17,6 +17,19 @@ export const uploadAndParseIpcFile = async (file: File): Promise<IpcLoadResponse
 };
 
 /**
+ * Загрузка Excel-файла ИПЦ по прямой ссылке на сервер и запуск его парсинга.
+ */
+export const uploadAndParseIpcByUrl = async (url: string): Promise<IpcLoadResponse> => {
+  const formData = new FormData();
+  formData.append('url', url);
+
+  const response = await conversionClient.post<IpcLoadResponse>('/ipc/upload', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return response.data;
+};
+
+/**
  * Запуск парсинга локального файла ИПЦ на сервере.
  */
 export const parseLocalIpcFile = async (filePath?: string): Promise<IpcLoadResponse> => {

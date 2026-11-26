@@ -50,7 +50,7 @@ import { refreshTradingHistory } from '../api/tradingHistory';
 import { getDashboardRates, type MacroRatesResponse } from '../api/dashboard';
 import { refreshCurrencyRates } from '../api/currency';
 import { loadKeyRateData } from '../api/keyrate';
-import { uploadAndParseIpcFile, parseLocalIpcFile, uploadIpcWeekly } from '../api/ipc';
+import { uploadAndParseIpcFile, uploadAndParseIpcByUrl, parseLocalIpcFile, uploadIpcWeekly } from '../api/ipc';
 import { uploadAndParseInflationExpectationsFile, uploadAndParseInflationExpectationsByUrl } from '../api/inflationExpectations';
 import { uploadAndParseInflationFile, uploadAndParseInflationByUrl } from '../api/inflation';
 import { useUiStore } from '../stores/uiStore';
@@ -116,6 +116,7 @@ export const HomePage: React.FC = () => {
   const [pendingForceUpdateRatings, setPendingForceUpdateRatings] = useState(false);
   const [pendingForceRefreshCoupons, setPendingForceRefreshCoupons] = useState(false);
   const [pendingIpcFile, setPendingIpcFile] = useState<File | null>(null);
+  const [pendingIpcUrl, setPendingIpcUrl] = useState('');
   const [pendingInflationExpectationsFile, setPendingInflationExpectationsFile] = useState<File | null>(null);
   const [pendingInflationExpectationsUrl, setPendingInflationExpectationsUrl] = useState('');
   const [pendingInflationFile, setPendingInflationFile] = useState<File | null>(null);
@@ -228,6 +229,7 @@ export const HomePage: React.FC = () => {
     inflationFile?: File | null,
     inflationExpectationsUrl?: string,
     inflationUrl?: string,
+    ipcUrl?: string,
   ) => {
     if (selectedTasks.length === 0) {
       return;
@@ -239,6 +241,7 @@ export const HomePage: React.FC = () => {
       setPendingForceUpdateRatings(forceUpdateRatings ?? false);
       setPendingForceRefreshCoupons(forceRefreshCoupons ?? false);
       setPendingIpcFile(ipcFile ?? null);
+      setPendingIpcUrl(ipcUrl ?? '');
       setPendingInflationExpectationsFile(inflationExpectationsFile ?? null);
       setPendingInflationExpectationsUrl(inflationExpectationsUrl ?? '');
       setPendingInflationFile(inflationFile ?? null);
@@ -259,6 +262,7 @@ export const HomePage: React.FC = () => {
 
     const forecastFileRef = forecastFile ?? null;
     const ipcFileRef = ipcFile ?? null;
+    const ipcUrlRef = (ipcUrl ?? '').trim() || null;
     const inflationExpectationsFileRef = inflationExpectationsFile ?? null;
     const inflationFileRef = inflationFile ?? null;
     const inflationExpectationsUrlRef = (inflationExpectationsUrl ?? '').trim() || null;
@@ -306,6 +310,8 @@ export const HomePage: React.FC = () => {
       ipc: async () => {
         if (ipcFileRef) {
           await uploadAndParseIpcFile(ipcFileRef);
+        } else if (ipcUrlRef) {
+          await uploadAndParseIpcByUrl(ipcUrlRef);
         } else {
           await parseLocalIpcFile();
         }
@@ -1132,7 +1138,7 @@ export const HomePage: React.FC = () => {
             setRefreshStatus({});
           }
         }}
-        onConfirm={(tasks, forceRatings, forceCoupons, floatersProvider, ipcFile, inflationExpectationsFile, inflationFile, inflationExpectationsUrl, inflationUrl) => handleRefreshConfirm(tasks, forceRatings, forceCoupons, undefined, floatersProvider, ipcFile, inflationExpectationsFile, inflationFile, inflationExpectationsUrl, inflationUrl)}
+        onConfirm={(tasks, forceRatings, forceCoupons, floatersProvider, ipcFile, inflationExpectationsFile, inflationFile, inflationExpectationsUrl, inflationUrl, ipcUrl) => handleRefreshConfirm(tasks, forceRatings, forceCoupons, undefined, floatersProvider, ipcFile, inflationExpectationsFile, inflationFile, inflationExpectationsUrl, inflationUrl, ipcUrl)}
         tasks={[
           { id: 'bonds', label: 'Обновить данные облигаций', checked: false },
           { id: 'zerocupon', label: 'Обновить данные кривой бескупонной доходности', checked: false },
@@ -1161,6 +1167,7 @@ export const HomePage: React.FC = () => {
           setIsForecastFileDialogOpen(false);
           setPendingRefreshTasks([]);
           setPendingIpcFile(null);
+          setPendingIpcUrl('');
           setPendingInflationExpectationsFile(null);
           setPendingInflationExpectationsUrl('');
           setPendingInflationFile(null);
@@ -1170,17 +1177,19 @@ export const HomePage: React.FC = () => {
           setIsForecastFileDialogOpen(false);
           const tasks = pendingRefreshTasks;
           const savedIpcFile = pendingIpcFile;
+          const savedIpcUrl = pendingIpcUrl;
           const savedInflationExpectationsFile = pendingInflationExpectationsFile;
           const savedInflationExpectationsUrl = pendingInflationExpectationsUrl;
           const savedInflationFile = pendingInflationFile;
           const savedInflationUrl = pendingInflationUrl;
           setPendingRefreshTasks([]);
           setPendingIpcFile(null);
+          setPendingIpcUrl('');
           setPendingInflationExpectationsFile(null);
           setPendingInflationExpectationsUrl('');
           setPendingInflationFile(null);
           setPendingInflationUrl('');
-          void handleRefreshConfirm(tasks, pendingForceUpdateRatings, pendingForceRefreshCoupons, file, undefined, savedIpcFile, savedInflationExpectationsFile, savedInflationFile, savedInflationExpectationsUrl, savedInflationUrl);
+          void handleRefreshConfirm(tasks, pendingForceUpdateRatings, pendingForceRefreshCoupons, file, undefined, savedIpcFile, savedInflationExpectationsFile, savedInflationFile, savedInflationExpectationsUrl, savedInflationUrl, savedIpcUrl);
         }}
       />
 
