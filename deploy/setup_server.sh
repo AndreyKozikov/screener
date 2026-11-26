@@ -135,7 +135,7 @@ for svc in bondsscreener-db bondsscreener-backend bondsscreener-conversion; do
     chmod 644 "/etc/systemd/system/${svc}.service"
 done
 
-# Scheduled data updates use one templated oneshot service and six calendar timers.
+# Scheduled data updates use one templated oneshot service and seven calendar timers.
 UPDATE_UNIT_FILES=(
     bondsscreener-data-update@.service
     bondsscreener-data-update-bonds.timer
@@ -144,6 +144,7 @@ UPDATE_UNIT_FILES=(
     bondsscreener-data-update-keyrate.timer
     bondsscreener-data-update-zerocupon.timer
     bondsscreener-data-update-ruonia.timer
+    bondsscreener-data-update-inflation-expectations.timer
 )
 for unit in "${UPDATE_UNIT_FILES[@]}"; do
     unit_source="${SCRIPT_DIR}/systemd/${unit}"
@@ -159,7 +160,7 @@ done
 
 systemctl daemon-reload
 systemctl enable bondsscreener-db bondsscreener-backend bondsscreener-conversion
-systemctl enable bondsscreener-data-update-bonds.timer bondsscreener-data-update-trading-history.timer bondsscreener-data-update-currency.timer bondsscreener-data-update-keyrate.timer bondsscreener-data-update-zerocupon.timer bondsscreener-data-update-ruonia.timer
+systemctl enable bondsscreener-data-update-bonds.timer bondsscreener-data-update-trading-history.timer bondsscreener-data-update-currency.timer bondsscreener-data-update-keyrate.timer bondsscreener-data-update-zerocupon.timer bondsscreener-data-update-ruonia.timer bondsscreener-data-update-inflation-expectations.timer
 
 echo "=== [7/7] Настройка Nginx ==="
 sed "s|{{APP_DIR}}|${APP_DIR}|g" "${SCRIPT_DIR}/nginx/bondsscreener.conf" > /etc/nginx/sites-available/bondsscreener.conf
@@ -178,7 +179,7 @@ systemctl restart bondsscreener-db
 sleep 2
 systemctl restart bondsscreener-backend
 systemctl restart bondsscreener-conversion
-systemctl start bondsscreener-data-update-bonds.timer bondsscreener-data-update-trading-history.timer bondsscreener-data-update-currency.timer bondsscreener-data-update-keyrate.timer bondsscreener-data-update-zerocupon.timer bondsscreener-data-update-ruonia.timer
+systemctl start bondsscreener-data-update-bonds.timer bondsscreener-data-update-trading-history.timer bondsscreener-data-update-currency.timer bondsscreener-data-update-keyrate.timer bondsscreener-data-update-zerocupon.timer bondsscreener-data-update-ruonia.timer bondsscreener-data-update-inflation-expectations.timer
 
 echo "=== Первичная настройка успешно завершена! ==="
 echo "Статус служб:"

@@ -72,6 +72,10 @@ class Settings(BaseSettings):
     LOCAL_LLM_ANALYSIS_MAX_NEW_TOKENS: int = 1024
     LOCAL_LLM_ANALYSIS_TEMPERATURE: float = 0.1
     LOCAL_LLM_ANALYSIS_TOP_P: float = 0.9
+    INFLATION_EXPECTATIONS_PAGE_URL: str = (
+        "https://cbr.ru/statistics/ddkp/inflationary_expectations/"
+    )
+    INFLATION_EXPECTATIONS_HTTP_TIMEOUT_SECONDS: int = 30
 
     model_config = SettingsConfigDict(
         env_file=_env_file_path,
@@ -85,6 +89,7 @@ class Settings(BaseSettings):
         config = load_config()
         db_repository = config.get("db_repository", {})
         paths = config.get("paths", {})
+        inflation_expectations = config.get("inflation_expectations", {})
 
         defaults = {
             "DB_REPOSITORY_URL": db_repository.get("url"),
@@ -95,6 +100,8 @@ class Settings(BaseSettings):
             "DB_REPOSITORY_MAX_RETRIES": db_repository.get("max_retries"),
             "DATA_DIR": paths.get("data_dir"),
             "EMITENT_EVENTS_JSON_DIR": paths.get("emitent_events_json_dir"),
+            "INFLATION_EXPECTATIONS_PAGE_URL": inflation_expectations.get("page_url"),
+            "INFLATION_EXPECTATIONS_HTTP_TIMEOUT_SECONDS": inflation_expectations.get("timeout_seconds"),
         }
         for field_name, value in defaults.items():
             if value is not None and not env_is_set(field_name):

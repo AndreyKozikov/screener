@@ -13,3 +13,7 @@ max_retries = 0
 [paths]
 data_dir = "../backend/app/data"
 emitent_events_json_dir = "../backend/app/data/events"
+
+[inflation_expectations]
+page_url = "https://cbr.ru/statistics/ddkp/inflationary_expectations/"
+timeout_seconds = 30

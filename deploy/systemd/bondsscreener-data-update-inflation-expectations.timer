@@ -1,0 +1,9 @@
+[Unit]
+Description=Update Bonds Screener inflation expectations daily on 20-30 at 18:00 Moscow time
+
+[Timer]
+OnCalendar=*-*-20..30 18:00:00 Europe/Moscow
+Unit=bondsscreener-data-update@inflation_expectations.service
+
+[Install]
+WantedBy=timers.target

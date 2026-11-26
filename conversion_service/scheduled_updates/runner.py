@@ -56,6 +56,12 @@ def _run(task: str) -> Any:
         from conversion_service.app.services.keyrate_update_service import get_keyrate_service
 
         return get_keyrate_service().load_keyrate_data()
+    if task == "inflation_expectations":
+        from conversion_service.app.services.inflation_expectations_update_service import (
+            get_inflation_expectations_update_service,
+        )
+
+        return asyncio.run(get_inflation_expectations_update_service().run())
     raise ValueError(f"Unknown update task: {task}")
 
 
@@ -81,14 +87,31 @@ def run_task(task: str, runner: Callable[[str], Any] = _run) -> Any:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("task", choices=("bonds", "trading_history", "zerocupon", "currency", "ruonia", "keyrate"))
+    parser.add_argument(
+        "task",
+        choices=(
+            "bonds",
+            "trading_history",
+            "zerocupon",
+            "currency",
+            "ruonia",
+            "keyrate",
+            "inflation_expectations",
+        ),
+    )
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     try:
         result = run_task(args.task)
+        status = result.get("status") if isinstance(result, dict) else None
         summary = json.dumps(_summarize(result), ensure_ascii=False, default=str)
-        logging.getLogger(__name__).info("Task %s completed: %s", args.task, summary)
-        return 0
+        logging.getLogger(__name__).info(
+            "Task %s finished with status %s: %s",
+            args.task,
+            status or "ok",
+            summary,
+        )
+        return 3 if status == "not_completed" else 0
     except Exception:
         logging.getLogger(__name__).exception("Scheduled task %s failed", args.task)
         return 1

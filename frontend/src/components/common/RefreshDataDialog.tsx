@@ -446,7 +446,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                       Файл данных инфляционных ожиданий (.xlsx):
                     </Typography>
                     <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-                      Выберите Excel-файл с данными инфляционных ожиданий либо укажите прямую ссылку на файл. Сервис сам скачает файл по ссылке и удалит его после обработки.
+                      Выберите Excel-файл с данными инфляционных ожиданий либо укажите прямую ссылку на файл. Ссылку на актуальный файл можно взять на странице Банка России «Инфляционные ожидания» в разделе «Статистические данные»: https://cbr.ru/statistics/ddkp/inflationary_expectations/. Сервис сам скачает файл по ссылке и удалит его после обработки.
                     </Typography>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
                       <input
@@ -497,7 +497,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                       <TextField
                         size="small"
                         fullWidth
-                        placeholder="https://example.com/inflation_expectations.xlsx"
+                        placeholder="https://cbr.ru/Collection/Collection/File/64542/Infl_exp_26-11.xlsx"
                         value={inflationExpectationsUrl}
                         onChange={(e) => handleInflationExpectationsUrlChange(e.target.value)}
                         disabled={isRefreshing || !!inflationExpectationsFile}

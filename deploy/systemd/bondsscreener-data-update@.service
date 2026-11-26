@@ -12,6 +12,7 @@ Environment="PATH={{APP_DIR}}/.venv/bin:/usr/local/bin:/usr/bin:/bin"
 Environment="PYTHONPATH={{APP_DIR}}"
 EnvironmentFile=-{{APP_DIR}}/conversion_service/.env
 ExecStart={{APP_DIR}}/.venv/bin/python -m conversion_service.scheduled_updates.runner %i
+SuccessExitStatus=0 3
 TimeoutStartSec=6h
 StandardOutput=journal
 StandardError=journal

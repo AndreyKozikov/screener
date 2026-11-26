@@ -155,6 +155,10 @@ backend/app/data/
 backend/db/history_db.db
 tmp_files/
 conversion_service/.edisclosure_browser_profile/
+conversion_service/scheduled_updates/state/
+/conversion_service/tests/test_cbr_inflation_expectations_links_parser.py
+/conversion_service/scheduled_updates/tests/test_inflation_expectations_update_service.py
+/conversion_service/scheduled_updates/tests/test_inflation_expectations_runner.py
 .kilo/
 
 # Service-local configuration and database files
