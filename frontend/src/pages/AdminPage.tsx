@@ -13,6 +13,7 @@ import {
 import AdminPanelSettingsOutlinedIcon from '@mui/icons-material/AdminPanelSettingsOutlined';
 import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
 import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
+import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined';
 import HomeOutlinedIcon from '@mui/icons-material/HomeOutlined';
 import ManageSearchOutlinedIcon from '@mui/icons-material/ManageSearchOutlined';
 import SettingsSuggestOutlinedIcon from '@mui/icons-material/SettingsSuggestOutlined';
@@ -168,6 +169,16 @@ export const AdminPage: React.FC = () => {
                 requestRefreshDialog();
                 navigate('/');
               }}
+            />
+          )}
+          {canRefreshData && (
+            <AdminActionCard
+              icon={<FactCheckOutlinedIcon />}
+              title="Результаты обновлений"
+              description="Смотрите, когда последний раз обновлялся каждый источник, какие обновления завершились ошибкой, и открывайте лог конкретного запуска."
+              actionLabel="Смотреть статусы"
+              accent="#2E7D32"
+              onClick={() => navigate('/admin/data-updates')}
             />
           )}
           {canManageSettings && (

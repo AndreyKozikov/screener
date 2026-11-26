@@ -6,10 +6,165 @@ import argparse
 import asyncio
 import json
 import logging
+import traceback
+from datetime import datetime, timezone
 from typing import Any, Callable
+from uuid import uuid4
 
+from conversion_service.app.repository.db.remote_repository import DataUpdateRunsRepository
+
+logger = logging.getLogger(__name__)
+
+_MAX_LOG_CHARS = 64_000
 _MAX_LOG_KEYS = 30
 _MAX_LOG_STRING = 300
+_TRIGGER_SCHEDULED = "scheduled"
+_STATUS_SUCCESS = "success"
+_STATUS_ERROR = "error"
+
+_SCHEDULED_TASK_IDS = {
+    "bonds": "bonds",
+    "trading_history": "trading-history",
+    "zerocupon": "zerocupon",
+    "currency": "currency",
+    "ruonia": "ruonia",
+    "keyrate": "keyrate",
+    "inflation_expectations": "inflation-expectations",
+    "ipc": "ipc",
+}
+
+
+def _utc_now() -> datetime:
+    """Вернуть текущее время UTC без tzinfo."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _format_ts(value: datetime) -> str:
+    return value.strftime("%Y-%m-%d %H:%M:%S UTC")
+
+
+def _build_journal_log(
+    *,
+    task_id: str,
+    run_id: str,
+    started_at: datetime,
+    finished_at: datetime,
+    status: str,
+    result: Any = None,
+    error_message: str | None = None,
+    exception_text: str | None = None,
+) -> str:
+    """Сформировать лог запуска по расписанию."""
+    lines = [
+        f"[{_format_ts(started_at)}] START task={task_id} trigger={_TRIGGER_SCHEDULED} run={run_id}",
+    ]
+    if error_message:
+        lines.append(f"[{_format_ts(finished_at)}] ERROR {error_message}")
+    if exception_text:
+        lines.append(f"[{_format_ts(finished_at)}] EXCEPTION {exception_text}")
+    if result is not None:
+        summary = json.dumps(_summarize(result), ensure_ascii=False, default=str)
+        lines.append(f"[{_format_ts(finished_at)}] RESULT {summary}")
+    lines.append(f"[{_format_ts(finished_at)}] FINISH {status}")
+    log_text = "\n".join(lines)
+    if len(log_text) > _MAX_LOG_CHARS:
+        log_text = log_text[:_MAX_LOG_CHARS] + "\n… лог обрезан"
+    return log_text
+
+
+def _safe_start_run(
+    *,
+    run_id: str,
+    task_id: str,
+    started_at: datetime,
+) -> None:
+    try:
+        DataUpdateRunsRepository().start_run(
+            run_id=run_id,
+            task_id=task_id,
+            trigger=_TRIGGER_SCHEDULED,
+            started_at=started_at,
+        )
+    except Exception as exc:
+        logger.warning("Не удалось записать начало обновления %s: %s", task_id, exc)
+
+
+def _safe_finish_run(
+    *,
+    run_id: str,
+    task_id: str,
+    started_at: datetime,
+    finished_at: datetime,
+    status: str,
+    log_text: str,
+    error_message: str | None = None,
+) -> None:
+    duration_ms = int(max(0.0, (finished_at - started_at).total_seconds() * 1000))
+    try:
+        DataUpdateRunsRepository().finish_run(
+            run_id=run_id,
+            task_id=task_id,
+            trigger=_TRIGGER_SCHEDULED,
+            started_at=started_at,
+            status=status,
+            finished_at=finished_at,
+            duration_ms=duration_ms,
+            error_message=error_message,
+            log_text=log_text,
+        )
+    except Exception as exc:
+        logger.warning("Не удалось записать завершение обновления %s: %s", task_id, exc)
+
+
+def run_task_with_journal(task: str, runner: Callable[[str], Any] | None = None) -> Any:
+    """Выполнить задачу планировщика и записать её результат в журнал."""
+    if runner is None:
+        runner = _run
+    task_id = _SCHEDULED_TASK_IDS.get(task, task)
+    run_id = str(uuid4())
+    started_at = _utc_now()
+    _safe_start_run(run_id=run_id, task_id=task_id, started_at=started_at)
+
+    try:
+        result = run_task(task, runner)
+    except Exception as exc:
+        finished_at = _utc_now()
+        _safe_finish_run(
+            run_id=run_id,
+            task_id=task_id,
+            started_at=started_at,
+            finished_at=finished_at,
+            status=_STATUS_ERROR,
+            error_message=str(exc),
+            log_text=_build_journal_log(
+                task_id=task_id,
+                run_id=run_id,
+                started_at=started_at,
+                finished_at=finished_at,
+                status=_STATUS_ERROR,
+                error_message=str(exc),
+                exception_text=traceback.format_exc(),
+            ),
+        )
+        raise
+
+    finished_at = _utc_now()
+    _safe_finish_run(
+        run_id=run_id,
+        task_id=task_id,
+        started_at=started_at,
+        finished_at=finished_at,
+        status=_STATUS_SUCCESS,
+        log_text=_build_journal_log(
+            task_id=task_id,
+            run_id=run_id,
+            started_at=started_at,
+            finished_at=finished_at,
+            status=_STATUS_SUCCESS,
+            result=result,
+        ),
+    )
+    return result
 
 
 def _summarize(value: Any, depth: int = 0) -> Any:
@@ -107,7 +262,7 @@ def main() -> int:
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     try:
-        result = run_task(args.task)
+        result = run_task_with_journal(args.task)
         status = result.get("status") if isinstance(result, dict) else None
         summary = json.dumps(_summarize(result), ensure_ascii=False, default=str)
         logging.getLogger(__name__).info(

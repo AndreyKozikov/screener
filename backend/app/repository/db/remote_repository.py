@@ -228,6 +228,10 @@ class TradingHistoryRepository(RemoteRepository):
     repository = "trading_history"
 
 
+class DataUpdateRunsRepository(RemoteRepository):
+    repository = "data_update_runs"
+
+
 def _error_detail(response: httpx.Response) -> str:
     try:
         body = response.json()
@@ -244,6 +248,7 @@ __all__ = [
     "BondsRepository",
     "CurrencyrateRepository",
     "DBCoupon",
+    "DataUpdateRunsRepository",
     "DescribeRepository",
     "EmissionDocumentRepository",
     "EmitentEdisclosureRepository",

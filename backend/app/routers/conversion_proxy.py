@@ -8,12 +8,22 @@
 
 from __future__ import annotations
 
+import asyncio
+import traceback
+
 import httpx
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import Response
 
 from app.routers.auth import require_admin
 from app.services.conversion_proxy_auth import make_conversion_proxy_headers
+from app.services.data_update_journal import (
+    STATUS_ERROR,
+    begin_manual_run,
+    classify_response,
+    finish_manual_run,
+    resolve_update_task,
+)
 from config.settings import settings
 
 router = APIRouter(prefix="/api/conversion", tags=["conversion-proxy"])
@@ -44,12 +54,65 @@ async def _proxy(request: Request, method: str) -> Response:
         make_conversion_proxy_headers(method, upstream_url.raw_path.decode("ascii"))
     )
 
-    async with httpx.AsyncClient(timeout=settings.CONVERSION_SERVICE_TIMEOUT_SECONDS) as client:
-        response = await client.request(
-            method,
-            upstream_url,
-            content=body,
-            headers=headers,
+    task_id = resolve_update_task(method, suffix)
+    run_id = None
+    started_at = None
+    if task_id:
+        run_id, started_at = await begin_manual_run(task_id, suffix, request.url.query)
+
+    try:
+        async with httpx.AsyncClient(timeout=settings.CONVERSION_SERVICE_TIMEOUT_SECONDS) as client:
+            response = await client.request(
+                method,
+                upstream_url,
+                content=body,
+                headers=headers,
+            )
+    except asyncio.CancelledError:
+        if task_id and run_id and started_at:
+            await asyncio.shield(
+                finish_manual_run(
+                    run_id=run_id,
+                    task_id=task_id,
+                    request_path=suffix,
+                    request_query=request.url.query,
+                    started_at=started_at,
+                    status=STATUS_ERROR,
+                    error_message="Запрос обновления прерван",
+                )
+            )
+        raise
+    except Exception as exc:
+        if task_id and run_id and started_at:
+            await finish_manual_run(
+                run_id=run_id,
+                task_id=task_id,
+                request_path=suffix,
+                request_query=request.url.query,
+                started_at=started_at,
+                status=STATUS_ERROR,
+                error_message=str(exc),
+                exception_text=traceback.format_exc(),
+            )
+        raise
+
+    if task_id and run_id and started_at:
+        status, error_message, payload = classify_response(
+            task_id,
+            response.status_code,
+            response.headers.get("content-type", ""),
+            response.content,
+        )
+        await finish_manual_run(
+            run_id=run_id,
+            task_id=task_id,
+            request_path=suffix,
+            request_query=request.url.query,
+            started_at=started_at,
+            status=status,
+            http_status=response.status_code,
+            error_message=error_message,
+            payload=payload,
         )
 
     response_headers = {

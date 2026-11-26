@@ -6,6 +6,7 @@ from db_repository.models.ratings import BondRating, EmitentRating, RatingAgency
 from db_repository.models.orm.blog import BlogArticle
 from db_repository.models.orm.bond_float_params import BondFloatParams
 from db_repository.models.orm.currencyrate import DBcurrencyrate
+from db_repository.models.orm.data_update_run import DataUpdateRun
 from db_repository.models.orm.describe import DescribeField
 from db_repository.models.orm.emission_document import EmissionDocument
 from db_repository.models.orm.emitent_edisclosure import EmitentEdisclosure
@@ -33,6 +34,7 @@ __all__ = [
     "DBkbd",
     "DBkeyrate",
     "DBruonia",
+    "DataUpdateRun",
     "DescribeField",
     "Emitent",
     "EmitentEdisclosure",

@@ -9,6 +9,7 @@ from app.repository.db.remote_repository import (
     BondsRepository,
     CurrencyrateRepository,
     DBCoupon,
+    DataUpdateRunsRepository,
     DescribeRepository,
     EmissionDocumentRepository,
     EmitentEdisclosureRepository,
@@ -54,7 +55,7 @@ def get_bond_float_repository() -> BondFloatParamsRepository:
 
 __all__ = [
     "BlogRepository", "BondFloatParamsRepository", "BondRatingsRepository", "BondsRepository",
-    "CurrencyrateRepository", "DBCoupon", "DescribeRepository", "EmissionDocumentRepository",
+    "CurrencyrateRepository", "DBCoupon", "DataUpdateRunsRepository", "DescribeRepository", "EmissionDocumentRepository",
     "EmitentEdisclosureRepository", "EmitentsRepository", "EventDetailRepository",
     "ForecastRepository", "KbdRepository", "KeyrateRepository", "RuoniaRepository",
     "TradingHistoryRepository", "get_bond_float_repository", "get_bonds_repository",

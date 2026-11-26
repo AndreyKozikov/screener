@@ -12,13 +12,13 @@ class RepositoryCall(BaseModel):
 
     repository: Literal[
         "blog", "bond_float_params", "bond_ratings", "bonds", "currency_rates",
-        "coupons", "kbd", "descriptions", "emission_documents",
+        "data_update_runs", "coupons", "kbd", "descriptions", "emission_documents",
         "emitent_edisclosure", "emitents", "events", "forecasts", "keyrates",
         "ruonia", "trading_history", "users", "portfolios",
     ]
     method: Literal[
         "create", "delete", "delete_event", "delete_for_user", "fetch_coupons_for_frontend",
-        "fetch_coupons_raw", "get_agency_name_short_ru_by_agency_id",
+        "fetch_coupons_raw", "finish_run", "get_agency_name_short_ru_by_agency_id",
         "get_all_bond_secids", "get_all_bonds_metadata", "get_all_dates", "get_all_documents_by_metadata",
         "get_all_emitent_titles", "get_all_secids", "get_bond_detail_by_isin", "get_bond_detail_by_secid", "get_bond_description_by_secid", "get_bonds_by_emitent_inn", "get_bond_id_by_secid",
         "get_bond_ids_with_find", "get_bonds_for_ratings_pipeline", "get_by_bond_id", "get_by_date",
@@ -30,11 +30,11 @@ class RepositoryCall(BaseModel):
         "get_existing_bond_ids", "get_existing_emitent_ids", "get_existing_types", "get_first_tradedate",
         "get_first_unedited_id", "get_floater_secids", "get_forecast_by_date", "get_id_secid_list",
         "get_kbd_data", "get_last_kbd_date", "get_last_tradedate", "get_latest_on_or_before",
-        "get_max_date", "get_navigation_ids", "get_processed_events_keys", "get_ratings_by_secid",
-        "get_reg_number_by_secid", "get_secid_to_emitent_title_index", "get_secids_by_ids",
+        "get_latest_runs", "get_max_date", "get_navigation_ids", "get_processed_events_keys", "get_ratings_by_secid",
+        "get_reg_number_by_secid", "get_run", "get_secid_to_emitent_title_index", "get_secids_by_ids",
         "get_secids_by_regnumber", "get_stats", "has_coupons_for_secid", "insert_batch",
-        "list_articles", "save", "save_event_changes", "save_forecast", "save_kbd_records",
-        "save_many", "save_moex_coupons", "save_records", "update",
+        "list_articles", "prune", "save", "save_event_changes", "save_forecast", "save_kbd_records",
+        "save_many", "save_moex_coupons", "save_records", "start_run", "update",
         "upsert", "upsert_mapping", "upsert_ratings_for_bond", "get_by_email", "get_by_id",
         "find_duplicate", "get_current_positions_for_user", "get_current_position_trades_for_user", "get_for_user", "list_for_user", "save_report_import",
     ]

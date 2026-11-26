@@ -21,6 +21,7 @@ from db_repository.repository.operations.bond_float_params_repository import Bon
 from db_repository.repository.operations.bond_ratings_repository import BondRatingsRepository
 from db_repository.repository.operations.bonds_repository import BondsRepository
 from db_repository.repository.operations.currencyrate_repository import CurrencyrateRepository
+from db_repository.repository.operations.data_update_runs_repository import DataUpdateRunsRepository
 from db_repository.repository.operations.db_coupon import DBCoupon
 from db_repository.repository.operations.db_kbd import KbdRepository
 from db_repository.repository.operations.describe_repository import DescribeRepository
@@ -112,6 +113,7 @@ def _repository_factories() -> dict[str, Any]:
         "bond_ratings": lambda: BondRatingsRepository(db_path=DB_PATH),
         "bonds": lambda: BondsRepository(db_path=DB_PATH),
         "currency_rates": lambda: CurrencyrateRepository(db_path=DB_PATH),
+        "data_update_runs": lambda: DataUpdateRunsRepository(db_path=DB_PATH),
         "coupons": lambda: DBCoupon(db_path=str(DB_PATH)),
         "kbd": lambda: KbdRepository(db_path=DB_PATH),
         "descriptions": lambda: DescribeRepository(db_path=DB_PATH),
@@ -142,6 +144,7 @@ _ALLOWED_OPERATIONS: dict[str, frozenset[str]] = {
         "get_reg_number_by_secid", "get_secids_by_ids", "get_secids_by_regnumber",
     }),
     "currency_rates": frozenset({"get_by_date", "get_latest_on_or_before", "get_max_date", "save_many"}),
+    "data_update_runs": frozenset({"finish_run", "get_latest_runs", "get_run", "prune", "start_run"}),
     "coupons": frozenset({"fetch_coupons_for_frontend", "fetch_coupons_raw", "has_coupons_for_secid", "save_moex_coupons"}),
     "kbd": frozenset({"get_kbd_data", "get_last_kbd_date", "save_kbd_records"}),
     "descriptions": frozenset({"get_descriptions_formatted"}),

@@ -12,6 +12,7 @@ const BlogAdminPage = React.lazy(() => import('./pages/BlogAdminPage').then(({ B
 const SettingsPage = React.lazy(() => import('./pages/SettingsPage').then(({ SettingsPage: page }) => ({ default: page })));
 const AdminPage = React.lazy(() => import('./pages/AdminPage').then(({ AdminPage: page }) => ({ default: page })));
 const AgentLogsAdminPage = React.lazy(() => import('./pages/AgentLogsAdminPage').then(({ AgentLogsAdminPage: page }) => ({ default: page })));
+const DataUpdatesAdminPage = React.lazy(() => import('./pages/DataUpdatesAdminPage').then(({ DataUpdatesAdminPage: page }) => ({ default: page })));
 const BondDetails = React.lazy(() => import('./components/bonds/BondDetails').then(m => ({default: m.BondDetails})));
 const BondPreview = React.lazy(() => import('./components/bonds/BondPreview'));
 
@@ -29,6 +30,7 @@ function AppRoutes() {
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/admin" element={<AdminPage />} />
                 <Route path="/admin/agent-logs" element={<AgentLogsAdminPage />} />
+          <Route path="/admin/data-updates" element={<DataUpdatesAdminPage />} />
               </Routes>
     {background && <React.Suspense fallback={null}><Routes>
       <Route path="/bonds/:id/preview" element={<BondPreview />} />

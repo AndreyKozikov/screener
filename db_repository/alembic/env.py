@@ -38,6 +38,7 @@ from db_repository.models.ipc import Ipc, IpcWeekly  # noqa: F401
 from db_repository.models.ratings import BondRating, EmitentRating, RatingAgency  # noqa: F401
 from db_repository.models.orm.bond_float_params import BondFloatParams  # noqa: F401
 from db_repository.models.orm.currencyrate import DBcurrencyrate  # noqa: F401
+from db_repository.models.orm.data_update_run import DataUpdateRun  # noqa: F401
 from db_repository.models.orm.describe import DescribeField  # noqa: F401
 from db_repository.models.orm.emission_document import EmissionDocument  # noqa: F401
 from db_repository.models.orm.emitent_edisclosure import EmitentEdisclosure  # noqa: F401

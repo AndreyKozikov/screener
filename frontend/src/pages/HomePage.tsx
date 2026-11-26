@@ -16,6 +16,7 @@ import type { WorkbenchModule } from '../components/portfolio/Workbench';
 import { HubCard } from '../components/portfolio/HubCard';
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
 import { RefreshDataDialog } from '../components/common/RefreshDataDialog';
+import { DATA_REFRESH_TASKS } from '../config/dataRefreshTasks';
 import { ForecastFileDialog } from '../components/common/ForecastFileDialog';
 import { FeedbackDialog } from '../components/common/FeedbackDialog';
 import { HelpDialog, type HelpSection } from '../components/common/HelpDialog';
@@ -1139,23 +1140,11 @@ export const HomePage: React.FC = () => {
           }
         }}
         onConfirm={(tasks, forceRatings, forceCoupons, floatersProvider, ipcFile, inflationExpectationsFile, inflationFile, inflationExpectationsUrl, inflationUrl, ipcUrl) => handleRefreshConfirm(tasks, forceRatings, forceCoupons, undefined, floatersProvider, ipcFile, inflationExpectationsFile, inflationFile, inflationExpectationsUrl, inflationUrl, ipcUrl)}
-        tasks={[
-          { id: 'bonds', label: 'Обновить данные облигаций', checked: false },
-          { id: 'zerocupon', label: 'Обновить данные кривой бескупонной доходности', checked: false },
-          { id: 'ratings', label: 'Обновить рейтинги', checked: false },
-          { id: 'emitents', label: 'Обновить эмитентов', checked: false },
-          { id: 'coupons', label: 'Обновить купоны', checked: false },
-          { id: 'currency', label: 'Обновить курсы валют', checked: false },
-          { id: 'ruonia', label: 'Обновить данные ставки RUONIA', checked: false },
-          { id: 'keyrate', label: 'Обновить ключевую ставку ЦБ', checked: false },
-          { id: 'trading-history', label: 'Обновить историю торгов', checked: false },
-          { id: 'forecast', label: 'Обновить среднесрочный прогноз Банка России', checked: false },
-          { id: 'floaters', label: 'Обновить данные по флоатерам', checked: false },
-          { id: 'ipc', label: 'Обновить индексы потребительских цен (ИПЦ Росстата)', checked: false },
-          { id: 'ipc-weekly', label: 'Обновить еженедельный ИПЦ', checked: false },
-          { id: 'inflation-expectations', label: 'Обновить инфляционные ожидания', checked: false },
-          { id: 'inflation', label: 'Обновление данных по инфляции', checked: false },
-        ]}
+        tasks={DATA_REFRESH_TASKS.map(({ id, dialogLabel }) => ({
+          id,
+          label: dialogLabel,
+          checked: false,
+        }))}
         isRefreshing={isRefreshing}
         refreshStatus={refreshStatus}
       />
