@@ -1,0 +1,5 @@
+[vector]
+embedding_dim = 1024
+model_id = "baai/bge-m3"
+sparse_source = "bge-m3-service"
+gc_timeout = 300

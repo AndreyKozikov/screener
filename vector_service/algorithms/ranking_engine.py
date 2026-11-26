@@ -1,0 +1,149 @@
+import logging
+import re
+import numpy as np
+from datetime import datetime, date
+from typing import List
+from .models import ScoredChunk
+
+logger = logging.getLogger(__name__)
+
+class RankingEngine:
+    def __init__(self, length_threshold: int = 1500):
+        self.length_threshold = length_threshold
+
+    def rerank(self, chunks: List[ScoredChunk]) -> List[ScoredChunk]:
+        """
+        Улучшает precision без потери recall с помощью эвристик.
+        """
+        for sc in chunks:
+            text = sc.chunk.text
+            heuristic_score = 0.0
+            
+            # Числа (ищем группы цифр)
+            if re.search(r'\d+', text):
+                heuristic_score += 1.0
+                
+            # Процентные ставки
+            if '%' in text or 'процент' in text.lower():
+                heuristic_score += 2.0
+                
+            # Формулы (=, +, -, *, /)
+
+            if re.search(r'[=+\-*/]', text):
+
+                if re.search(r'\d+\s*[+\-*/=]', text) or re.search(r'[+\-*/=]\s*\d+', text):
+                    heuristic_score += 2.0
+                
+            # Длина > threshold
+            if len(text) > self.length_threshold:
+                heuristic_score += 1.0
+                
+            # Бонус за свежесть для событий (Recency Boosting)
+            if sc.chunk.source_type == "event":
+                try:
+                    # Извлекаем дату из source_id (формат event_YYYY-MM-DD)
+                    date_str = sc.chunk.source_id.replace("event_", "")
+                    event_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+                    
+                    current_date = date.today()
+                    days_diff = (current_date - event_date).days
+                    
+                    if days_diff >= 0:
+                        # Экспоненциальное затухание: бонус плавно уменьшается со временем.
+                        # Используем полупериод около 1000 дней (~3 года), чтобы поддерживать события за 3-4 года.
+                        # decay_rate = ln(2) / 1000 ≈ 0.0007
+                        # max_bonus = 3.0 (сопоставимо с другими эвристиками)
+                        decay_rate = 0.0007
+                        recency_bonus = 3.0 * np.exp(-decay_rate * days_diff)
+                        heuristic_score += recency_bonus
+                except ValueError as exc:
+                    logger.warning("Некорректная дата события %s: %s", sc.chunk.source_id, exc)
+
+            sc.score += heuristic_score
+
+        chunks.sort(key=lambda x: x.score, reverse=True)
+        
+        # Разделяем чанки на документы и события
+        markdown_chunks = [sc for sc in chunks if sc.chunk.source_type == "markdown"]
+        event_chunks = [sc for sc in chunks if sc.chunk.source_type == "event"]
+        
+        # Применяем MMR только к документам
+        ranked_markdown = self._apply_mmr(markdown_chunks)
+        
+        # События оставляем без MMR (они уже отсортированы по score)
+        ranked_events = event_chunks
+        
+        # Объединяем результаты слиянием, сохраняющим относительный порядок
+        return self._merge_preserving_order(ranked_markdown, ranked_events)
+
+    def _merge_preserving_order(self, list1: List[ScoredChunk], list2: List[ScoredChunk]) -> List[ScoredChunk]:
+        """
+        Сливает два списка ScoredChunk, сохраняя относительный порядок элементов в каждом из них.
+        Сравнение идет по score.
+        """
+        merged = []
+        i, j = 0, 0
+        while i < len(list1) and j < len(list2):
+            if list1[i].score >= list2[j].score:
+                merged.append(list1[i])
+                i += 1
+            else:
+                merged.append(list2[j])
+                j += 1
+        
+        # Добавляем оставшиеся элементы
+        if i < len(list1):
+            merged.extend(list1[i:])
+        if j < len(list2):
+            merged.extend(list2[j:])
+            
+        return merged
+
+    def _apply_mmr(self, chunks: List[ScoredChunk], lambda_param: float = 0.5, top_k: int = 15) -> List[ScoredChunk]:
+        """
+        Алгоритм Maximal Marginal Relevance для переранжирования с учетом разнообразия.
+        """
+        if not chunks:
+            return []
+            
+        # Проверяем наличие эмбеддингов
+        if any(c.embedding is None for c in chunks[:top_k]):
+            return chunks
+
+        logger.info("[VECTOR] Applying MMR ranking (diversity filter) for %d chunks...", len(chunks))
+
+        selected = [chunks[0]]
+        remaining = chunks[1:]
+        
+        selected_embs = [np.array(chunks[0].embedding)]
+        
+        # Мы хотим отобрать top_k наиболее релевантных и разнообразных чанков
+        target_count = min(top_k, len(chunks))
+        
+        while len(selected) < target_count:
+            mmr_scores = []
+            for candidate in remaining:
+                cand_emb = np.array(candidate.embedding)
+                
+                # Релевантность (score уже включает эмбеддинги и эвристики)
+                # Нормализуем score для MMR (приблизительно, так как точный диапазон неизвестен)
+                rel_score = candidate.score
+                
+                # Сходство с уже выбранными (максимальное из всех)
+                if selected_embs:
+                    # Косинусное сходство (эмбеддинги уже нормализованы в retrieval_engine)
+                    sim_to_selected = max([np.dot(cand_emb, s_emb) for s_emb in selected_embs])
+                else:
+                    sim_to_selected = 0.0
+                
+                # Формула MMR: lambda * Relevance - (1 - lambda) * Similarity
+                mmr_score = lambda_param * rel_score - (1 - lambda_param) * sim_to_selected
+                mmr_scores.append(mmr_score)
+            
+            best_idx = np.argmax(mmr_scores)
+            selected.append(remaining[best_idx])
+            selected_embs.append(np.array(remaining[best_idx].embedding))
+            remaining.pop(best_idx)
+            
+        # Возвращаем отобранные чанки + остальные в исходном порядке (для полноты списка)
+        return selected + remaining

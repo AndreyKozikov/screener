@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+httpx
+numpy
+openai
+filelock
+lancedb==0.41.0
+pyarrow>=16
+FlagEmbedding
+pydantic-settings

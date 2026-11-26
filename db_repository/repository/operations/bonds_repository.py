@@ -280,6 +280,20 @@ class BondsRepository:
             )
             return None
 
+    def get_bonds_by_emitent_inn(self, inn: str) -> List[Dict[str, Any]]:
+        """Возвращает реквизиты всех бумаг эмитента для индексации событий."""
+        query = text("""
+            SELECT DISTINCT b.secid, b.isin, b.secname, bs.reg_number
+            FROM bonds b
+            JOIN bond_emitents be ON be.secid = b.secid
+            JOIN emitents e ON e.id = be.emitent_id
+            LEFT JOIN bondsecurity bs ON bs.bond_id = b.id
+            WHERE trim(e.inn) = :inn
+              AND (b.boardid IS NULL OR upper(trim(b.boardid)) != 'PACT')
+        """)
+        with self._engine.connect() as connection:
+            return [dict(row) for row in connection.execute(query, {"inn": inn.strip()}).mappings()]
+
     def get_emitent_inn_by_secid(self, secid: str) -> Optional[str]:
         """Получает ИНН эмитента по SECID облигации из таблицы emitents.
 

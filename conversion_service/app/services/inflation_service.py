@@ -5,6 +5,9 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
 from uuid import uuid4
+
+import httpx
+
 from conversion_service.app.repository.db.client import get_db_repository_client
 from conversion_service.app.utils.inflation_expectations_parser import (
     parse_inflation_expectations_excel,
