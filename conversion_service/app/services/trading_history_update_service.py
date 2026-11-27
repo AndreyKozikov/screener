@@ -148,7 +148,11 @@ class TradingHistoryService:
         self.logger = logging.getLogger(__name__)
 
     def _load_all_secids(self) -> List[str]:
-        """Загружает из таблицы bonds все уникальные SECID облигаций."""
+        """Загружает SECID непогашенных облигаций из таблицы bonds.
+
+        Отбор выполняет db_repository: погашенные бумаги и режим PACT
+        исключаются, поэтому история торгов по ним повторно не запрашивается.
+        """
         repo = BondsRepository()
         return repo.get_all_secids()
 

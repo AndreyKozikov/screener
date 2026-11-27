@@ -28,6 +28,10 @@ class DataUpdateRun(SQLModel, table=True):
     finished_at: Optional[datetime] = Field(default=None, description="Время завершения запуска (UTC, без tzinfo)")
     duration_ms: Optional[int] = Field(default=None, description="Длительность запуска в миллисекундах")
     error_message: Optional[str] = Field(default=None, description="Текст ошибки для неуспешного запуска")
+    warning_message: Optional[str] = Field(
+        default=None,
+        description="Предупреждение для успешного запуска (например, часть инструментов не обновилась)",
+    )
     request_path: Optional[str] = Field(default=None, max_length=500, description="Путь запроса обновления")
     request_query: Optional[str] = Field(default=None, description="Безопасные query-параметры запроса")
     log_text: Optional[str] = Field(default=None, description="Текст лога запуска")

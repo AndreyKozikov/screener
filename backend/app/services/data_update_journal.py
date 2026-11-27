@@ -114,28 +114,65 @@ def _extract_error_message(payload: Any, status_code: int) -> str:
     return f"HTTP {status_code}"
 
 
+def _int_or_zero(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _trading_history_outcome(
+    payload: dict[str, Any],
+) -> Optional[tuple[str, Optional[str], Optional[str]]]:
+    """Оценить частичный сбой истории торгов.
+
+    Обновление считается успешным, если хотя бы часть инструментов обработана:
+    неудачные инструменты попадают в предупреждение. Полный провал (ничего не
+    обновлено или упали все инструменты) остаётся ошибкой.
+    """
+    failed = _int_or_zero(payload.get("failed"))
+    errors = payload.get("errors") or []
+    if isinstance(errors, list):
+        failed = max(failed, len(errors))
+    if failed <= 0:
+        return None
+
+    total = _int_or_zero(payload.get("total"))
+    updated = _int_or_zero(payload.get("updated"))
+    detail = f"{failed} из {total} инструментов" if total else f"{failed} инструментов"
+    message = f"Не обновлены данные по {detail} (обновлено {updated})"
+    sample = "; ".join(
+        f"{item.get('secid')}: {item.get('error')}"
+        for item in (errors[:3] if isinstance(errors, list) else [])
+        if isinstance(item, dict)
+    )
+    if sample:
+        message += f". Примеры: {sample}"
+
+    if updated <= 0 or (total and failed >= total):
+        return STATUS_ERROR, message, None
+    return STATUS_SUCCESS, None, message
+
+
 def classify_payload(
     task_id: str,
     payload: Any,
     status_code: int = 200,
-) -> tuple[str, Optional[str]]:
-    """Определить статус запуска по HTTP-коду и телу ответа."""
+) -> tuple[str, Optional[str], Optional[str]]:
+    """Определить статус, ошибку и предупреждение по HTTP-коду и телу ответа."""
     if status_code >= 400:
-        return STATUS_ERROR, _extract_error_message(payload, status_code)
+        return STATUS_ERROR, _extract_error_message(payload, status_code), None
     if isinstance(payload, dict):
         status_value = str(payload.get("status") or "").strip().lower()
         if status_value in {"error", "failed"}:
-            return STATUS_ERROR, _extract_error_message(payload, status_code)
+            return STATUS_ERROR, _extract_error_message(payload, status_code), None
         if payload.get("success") is False:
-            return STATUS_ERROR, _extract_error_message(payload, status_code)
+            return STATUS_ERROR, _extract_error_message(payload, status_code), None
         if task_id == "trading-history":
-            try:
-                failed = int(payload.get("failed") or 0)
-            except (TypeError, ValueError):
-                failed = 0
-            if failed > 0:
-                return STATUS_ERROR, f"Не удалось обновить инструментов: {failed}"
-    return STATUS_SUCCESS, None
+            outcome = _trading_history_outcome(payload)
+            if outcome is not None:
+                return outcome
+    return STATUS_SUCCESS, None, None
 
 
 def classify_response(
@@ -143,8 +180,8 @@ def classify_response(
     status_code: int,
     content_type: str,
     body: bytes,
-) -> tuple[str, Optional[str], Any]:
-    """Разобрать ответ и вернуть статус, ошибку и полезную нагрузку."""
+) -> tuple[str, Optional[str], Optional[str], Any]:
+    """Разобрать ответ и вернуть статус, ошибку, предупреждение и нагрузку."""
     payload: Any = None
     if body:
         text = body.decode("utf-8", errors="replace")
@@ -155,8 +192,8 @@ def classify_response(
                 payload = text
         else:
             payload = text[:_MAX_STRING_CHARS]
-    status, error_message = classify_payload(task_id, payload, status_code)
-    return status, error_message, payload
+    status, error_message, warning_message = classify_payload(task_id, payload, status_code)
+    return status, error_message, warning_message, payload
 
 
 def extract_exception_text(payload: Any) -> Optional[str]:
@@ -180,6 +217,7 @@ def build_update_log(
     status: str,
     http_status: Optional[int] = None,
     error_message: Optional[str] = None,
+    warning_message: Optional[str] = None,
     payload: Any = None,
     exception_text: Optional[str] = None,
 ) -> str:
@@ -196,6 +234,8 @@ def build_update_log(
         )
     if error_message:
         lines.append(f"[{_format_ts(finished_at)}] ERROR {error_message}")
+    if warning_message:
+        lines.append(f"[{_format_ts(finished_at)}] WARNING {warning_message}")
     if exception_text:
         lines.append(f"[{_format_ts(finished_at)}] EXCEPTION {exception_text}")
     if payload is not None:
@@ -255,6 +295,7 @@ async def finish_manual_run(
     status: str,
     http_status: Optional[int] = None,
     error_message: Optional[str] = None,
+    warning_message: Optional[str] = None,
     payload: Any = None,
     exception_text: Optional[str] = None,
 ) -> None:
@@ -272,6 +313,7 @@ async def finish_manual_run(
         status=status,
         http_status=http_status,
         error_message=error_message,
+        warning_message=warning_message,
         payload=payload,
         exception_text=exception_text,
     )
@@ -287,6 +329,7 @@ async def finish_manual_run(
             finished_at=finished_at,
             duration_ms=duration_ms,
             error_message=error_message,
+            warning_message=warning_message,
             log_text=log_text,
             request_path=request_path,
             request_query=safe_query(request_query or ""),

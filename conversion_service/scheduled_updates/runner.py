@@ -55,6 +55,7 @@ def _build_journal_log(
     status: str,
     result: Any = None,
     error_message: str | None = None,
+    warning_message: str | None = None,
     exception_text: str | None = None,
 ) -> str:
     """Сформировать лог запуска по расписанию."""
@@ -63,6 +64,8 @@ def _build_journal_log(
     ]
     if error_message:
         lines.append(f"[{_format_ts(finished_at)}] ERROR {error_message}")
+    if warning_message:
+        lines.append(f"[{_format_ts(finished_at)}] WARNING {warning_message}")
     if exception_text:
         lines.append(f"[{_format_ts(finished_at)}] EXCEPTION {exception_text}")
     if result is not None:
@@ -101,6 +104,7 @@ def _safe_finish_run(
     status: str,
     log_text: str,
     error_message: str | None = None,
+    warning_message: str | None = None,
 ) -> None:
     duration_ms = int(max(0.0, (finished_at - started_at).total_seconds() * 1000))
     try:
@@ -113,6 +117,7 @@ def _safe_finish_run(
             finished_at=finished_at,
             duration_ms=duration_ms,
             error_message=error_message,
+            warning_message=warning_message,
             log_text=log_text,
         )
     except Exception as exc:
@@ -152,18 +157,21 @@ def run_task_with_journal(task: str, runner: Callable[[str], Any] | None = None)
         raise
 
     finished_at = _utc_now()
+    status, _, warning_message = _evaluate_result(task, result)
     _safe_finish_run(
         run_id=run_id,
         task_id=task_id,
         started_at=started_at,
         finished_at=finished_at,
-        status=_STATUS_SUCCESS,
+        status=status,
+        warning_message=warning_message,
         log_text=_build_journal_log(
             task_id=task_id,
             run_id=run_id,
             started_at=started_at,
             finished_at=finished_at,
-            status=_STATUS_SUCCESS,
+            status=status,
+            warning_message=warning_message,
             result=result,
         ),
     )
@@ -239,23 +247,43 @@ def _run(task: str) -> Any:
     raise ValueError(f"Unknown update task: {task}")
 
 
-def _ensure_success(task: str, result: Any) -> None:
-    """Treat explicit service error results and partial history failures as failures."""
+def _int_or_zero(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _evaluate_result(task: str, result: Any) -> tuple[str, str | None, str | None]:
+    """Вернуть статус, ошибку и предупреждение по ответу сервиса.
+
+    Частичный сбой истории торгов считается успешным запуском с предупреждением
+    о необновлённых инструментах. Ошибкой остаётся только полный провал.
+    """
     if isinstance(result, dict):
         if str(result.get("status", "")).lower() == "error":
             raise RuntimeError(result.get("error") or result.get("message") or "Service reported an error")
-        if task == "trading_history" and (result.get("failed", 0) or result.get("errors")):
-            failed = result.get("failed", len(result.get("errors") or []))
-            sample = _summarize((result.get("errors") or [])[:5])
-            raise RuntimeError(
-                f"Trading history partially failed: failed={failed}, "
-                f"total={result.get('total')}, sample_errors={sample}"
-            )
+        if task == "trading_history":
+            failed = _int_or_zero(result.get("failed"))
+            errors = result.get("errors") or []
+            if isinstance(errors, list):
+                failed = max(failed, len(errors))
+            if failed > 0:
+                total = _int_or_zero(result.get("total"))
+                updated = _int_or_zero(result.get("updated"))
+                detail = f"{failed} из {total} инструментов" if total else f"{failed} инструментов"
+                message = f"Не обновлены данные по {detail} (обновлено {updated})"
+                if updated <= 0 or (total and failed >= total):
+                    return _STATUS_ERROR, message, None
+                return _STATUS_SUCCESS, None, message
+    return _STATUS_SUCCESS, None, None
 
 
 def run_task(task: str, runner: Callable[[str], Any] = _run) -> Any:
     result = runner(task)
-    _ensure_success(task, result)
+    status, error_message, _ = _evaluate_result(task, result)
+    if status == _STATUS_ERROR:
+        raise RuntimeError(error_message or "Service reported an error")
     return result
 
 

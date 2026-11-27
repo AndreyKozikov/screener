@@ -98,7 +98,7 @@ async def _proxy(request: Request, method: str) -> Response:
         raise
 
     if task_id and run_id and started_at:
-        status, error_message, payload = classify_response(
+        status, error_message, warning_message, payload = classify_response(
             task_id,
             response.status_code,
             response.headers.get("content-type", ""),
@@ -113,6 +113,7 @@ async def _proxy(request: Request, method: str) -> Response:
             status=status,
             http_status=response.status_code,
             error_message=error_message,
+            warning_message=warning_message,
             payload=payload,
             exception_text=extract_exception_text(payload),
         )

@@ -38,17 +38,23 @@ class DataUpdateJournalTests(unittest.TestCase):
     def test_classifies_success_and_error_payloads(self) -> None:
         self.assertEqual(
             journal.classify_payload("bonds", {"status": "ok"}),
-            ("success", None),
+            ("success", None, None),
         )
-        status, error = journal.classify_payload("bonds", {"status": "error", "error": "boom"})
+        status, error, warning = journal.classify_payload(
+            "bonds", {"status": "error", "error": "boom"}
+        )
         self.assertEqual(status, "error")
         self.assertIn("boom", error or "")
-        status, error = journal.classify_payload("bonds", {"success": False, "message": "denied"})
+        self.assertIsNone(warning)
+        status, error, warning = journal.classify_payload(
+            "bonds", {"success": False, "message": "denied"}
+        )
         self.assertEqual(status, "error")
         self.assertIn("denied", error or "")
+        self.assertIsNone(warning)
 
     def test_classifies_http_error(self) -> None:
-        status, error, payload = journal.classify_response(
+        status, error, warning, payload = journal.classify_response(
             "bonds",
             500,
             "application/json",
@@ -56,6 +62,7 @@ class DataUpdateJournalTests(unittest.TestCase):
         )
         self.assertEqual(status, "error")
         self.assertIn("source unavailable", error or "")
+        self.assertIsNone(warning)
         self.assertEqual(payload, {"detail": "source unavailable"})
 
     def test_extracts_traceback_from_conversion_error(self) -> None:
@@ -66,10 +73,38 @@ class DataUpdateJournalTests(unittest.TestCase):
         self.assertIn("RuntimeError: boom", journal.extract_exception_text(payload) or "")
         self.assertIsNone(journal.extract_exception_text({"detail": "boom"}))
 
-    def test_partial_trading_history_is_error(self) -> None:
-        status, error = journal.classify_payload("trading-history", {"updated": 3, "failed": 1})
+    def test_partial_trading_history_is_success_with_warning(self) -> None:
+        status, error, warning = journal.classify_payload(
+            "trading-history",
+            {
+                "updated": 3281,
+                "failed": 2,
+                "total": 3283,
+                "errors": [{"secid": "RU000A108FG3", "error": "Connection reset by peer"}],
+            },
+        )
+        self.assertEqual(status, "success")
+        self.assertIsNone(error)
+        self.assertIn("2 из 3283", warning or "")
+        self.assertIn("обновлено 3281", warning or "")
+        self.assertIn("RU000A108FG3", warning or "")
+
+    def test_trading_history_without_updated_is_error(self) -> None:
+        status, error, warning = journal.classify_payload(
+            "trading-history",
+            {"updated": 0, "failed": 3283, "total": 3283, "errors": []},
+        )
         self.assertEqual(status, "error")
-        self.assertIn("1", error or "")
+        self.assertIn("3283", error or "")
+        self.assertIsNone(warning)
+
+    def test_trading_history_errors_without_failed_counter(self) -> None:
+        status, _, warning = journal.classify_payload(
+            "trading-history",
+            {"updated": 5, "total": 6, "errors": [{"secid": "X", "error": "boom"}]},
+        )
+        self.assertEqual(status, "success")
+        self.assertIn("1 из 6", warning or "")
 
     def test_build_log_contains_key_fields(self) -> None:
         started = datetime(2026, 11, 26, 12, 0, 0)
@@ -91,6 +126,25 @@ class DataUpdateJournalTests(unittest.TestCase):
         self.assertIn("RESPONSE HTTP 500", log_text)
         self.assertIn("ERROR boom", log_text)
         self.assertIn("FINISH error", log_text)
+
+    def test_build_log_contains_warning_for_success(self) -> None:
+        started = datetime(2026, 11, 27, 3, 46, 16)
+        log_text = journal.build_update_log(
+            task_id="trading-history",
+            trigger=journal.TRIGGER_MANUAL,
+            run_id="run-2",
+            request_path="/trading-history/download",
+            request_query=None,
+            started_at=started,
+            finished_at=datetime(2026, 11, 27, 3, 48, 5),
+            status="success",
+            http_status=200,
+            warning_message="Не обновлены данные по 2 из 3283 инструментов (обновлено 3281)",
+            payload={"updated": 3281, "failed": 2, "total": 3283},
+        )
+        self.assertIn("WARNING Не обновлены данные по 2 из 3283", log_text)
+        self.assertNotIn("ERROR", log_text)
+        self.assertIn("FINISH success", log_text)
 
     def test_safe_query_truncates_long_values(self) -> None:
         value = "a" * (journal.MAX_QUERY_CHARS + 50)

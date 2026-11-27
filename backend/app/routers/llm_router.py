@@ -61,7 +61,7 @@ async def run_float_bonds_analize(payload: FloatParamsAnalizeLLM) -> Dict[str, A
         )
         raise
 
-    status, error_message = classify_payload(_FLOATERS_TASK_ID, result)
+    status, error_message, warning_message = classify_payload(_FLOATERS_TASK_ID, result)
     await finish_manual_run(
         run_id=run_id,
         task_id=_FLOATERS_TASK_ID,
@@ -71,6 +71,7 @@ async def run_float_bonds_analize(payload: FloatParamsAnalizeLLM) -> Dict[str, A
         status=status,
         http_status=200,
         error_message=error_message,
+        warning_message=warning_message,
         payload=result,
     )
     return result

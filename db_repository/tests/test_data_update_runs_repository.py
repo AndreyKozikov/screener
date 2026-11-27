@@ -92,6 +92,28 @@ class DataUpdateRunsRepositoryTests(unittest.TestCase):
         self.assertEqual(finished["status"], "error")
         self.assertEqual(finished["trigger"], "scheduled")
 
+    def test_finish_run_stores_warning_for_success(self) -> None:
+        started_at = datetime(2026, 11, 27, 3, 46, 16)
+        self.repo.start_run(
+            run_id="run-warning",
+            task_id="trading-history",
+            trigger="manual",
+            started_at=started_at,
+        )
+        finished = self.repo.finish_run(
+            run_id="run-warning",
+            status="success",
+            finished_at=started_at + timedelta(seconds=30),
+            warning_message="Не обновлены данные по 2 из 3283 инструментов",
+            log_text="warning log",
+        )
+        self.assertEqual(finished["status"], "success")
+        self.assertEqual(
+            finished["warning_message"],
+            "Не обновлены данные по 2 из 3283 инструментов",
+        )
+        self.assertIsNone(finished["error_message"])
+
     def test_get_latest_runs_returns_one_row_per_task(self) -> None:
         self._run("a-1", "bonds", datetime(2026, 11, 26, 10, 0, 0))
         self._run("a-2", "bonds", datetime(2026, 11, 26, 11, 0, 0), "error")

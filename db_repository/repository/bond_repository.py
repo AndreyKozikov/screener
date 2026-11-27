@@ -376,8 +376,10 @@ class BondRepository:
             # self.logger.error("Ошибка при count_bonds: %s", e, exc_info=True)
 
     async def get_all_secids(self):
+        """Вернуть SECID только непогашенных облигаций для обновлений данных."""
         stmt = (
             select(Bond.secid)
+            .where(and_(*self._base_bond_conditions()))
         )
         try:
             with get_session() as session:

@@ -11,6 +11,7 @@ export interface DataUpdateStatusItem {
   finished_at: string | null;
   duration_ms: number | null;
   error_message: string | null;
+  warning_message: string | null;
   run_id: string | null;
   log_available: boolean;
 }

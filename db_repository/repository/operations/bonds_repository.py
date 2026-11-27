@@ -407,7 +407,7 @@ class BondsRepository:
             return []
 
     def get_all_secids(self) -> List[str]:
-        """Return the sorted unique SECIDs used for history refreshes."""
+        """Return the sorted unique SECIDs of active (not matured) bonds used for history refreshes."""
         stmt = select(Bond.secid).where(and_(*self._base_bond_conditions()))
         try:
             with Session(self._engine) as session:

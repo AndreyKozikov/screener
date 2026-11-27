@@ -38,6 +38,7 @@ class DataUpdateStatusItem(BaseModel):
     finished_at: Optional[str] = None
     duration_ms: Optional[int] = None
     error_message: Optional[str] = None
+    warning_message: Optional[str] = None
     run_id: Optional[str] = None
     log_available: bool = False
 
@@ -98,6 +99,7 @@ def _to_status_item(row: dict[str, Any]) -> DataUpdateStatusItem:
         finished_at=_iso(normalized.get("finished_at")),
         duration_ms=normalized.get("duration_ms"),
         error_message=normalized.get("error_message"),
+        warning_message=normalized.get("warning_message"),
         run_id=normalized.get("run_id"),
         log_available=bool(normalized.get("log_text")),
     )

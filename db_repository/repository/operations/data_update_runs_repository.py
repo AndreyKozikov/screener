@@ -94,6 +94,7 @@ class DataUpdateRunsRepository:
         finished_at: datetime,
         duration_ms: Optional[int] = None,
         error_message: Optional[str] = None,
+        warning_message: Optional[str] = None,
         log_text: Optional[str] = None,
         *,
         task_id: Optional[str] = None,
@@ -126,6 +127,7 @@ class DataUpdateRunsRepository:
             row.finished_at = finished_at
             row.duration_ms = duration_ms
             row.error_message = error_message
+            row.warning_message = warning_message
             row.log_text = log_text
             if task_id is not None:
                 row.task_id = task_id

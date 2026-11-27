@@ -93,6 +93,7 @@ const DataUpdateRow: FC<{
   const trigger = triggerLabel(item?.trigger);
   const hasLog = Boolean(item?.log_available && item?.run_id);
   const isRunning = kind === 'running';
+  const warning = kind === 'success' ? item?.warning_message ?? null : null;
 
   return (
     <Box
@@ -139,20 +140,28 @@ const DataUpdateRow: FC<{
         <Typography variant="body2" fontWeight={600} sx={{ color: meta.textColor }}>
           {statusText(item)}
         </Typography>
-        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.2 }}>
-          {item?.status === 'error'
-            ? item.error_message
-              ? item.error_message.length > 120
-                ? `${item.error_message.slice(0, 120)}…`
-                : item.error_message
+        <Typography
+          variant="caption"
+          color={warning ? '#8A5200' : 'text.secondary'}
+          sx={{ display: 'block', mt: 0.2 }}
+        >
+          {warning
+            ? warning.length > 160
+              ? `${warning.slice(0, 160)}…`
+              : warning
+            : item?.status === 'error'
+              ? item.error_message
+                ? item.error_message.length > 120
+                  ? `${item.error_message.slice(0, 120)}…`
+                  : item.error_message
+                : duration
+                  ? `Длительность: ${duration}`
+                  : 'Подробности в логе'
               : duration
                 ? `Длительность: ${duration}`
-                : 'Подробности в логе'
-            : duration
-              ? `Длительность: ${duration}`
-              : kind === 'unknown'
-                ? 'Обновление ещё не запускалось'
-                : ''}
+                : kind === 'unknown'
+                  ? 'Обновление ещё не запускалось'
+                  : ''}
         </Typography>
       </Box>
 
@@ -232,17 +241,20 @@ export const DataUpdatesAdminPage: FC = () => {
 
   const counts = useMemo(() => {
     let success = 0;
+    let warnings = 0;
     let failure = 0;
     let running = 0;
     let empty = 0;
     for (const task of DATA_REFRESH_TASKS) {
       const kind = statusKind(statuses[task.id]);
-      if (kind === 'success') success += 1;
-      else if (kind === 'error') failure += 1;
+      if (kind === 'success') {
+        success += 1;
+        if (statuses[task.id]?.warning_message) warnings += 1;
+      } else if (kind === 'error') failure += 1;
       else if (kind === 'running') running += 1;
       else empty += 1;
     }
-    return { success, failure, running, empty };
+    return { success, warnings, failure, running, empty };
   }, [statuses]);
 
   const hasAnyRun = useMemo(
@@ -349,6 +361,9 @@ export const DataUpdatesAdminPage: FC = () => {
 
           <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ mt: 2 }}>
             <Chip size="small" label={`Успешно: ${counts.success}`} sx={{ bgcolor: '#EFFAF4', color: '#2E7D32', fontWeight: 650 }} />
+            {counts.warnings > 0 && (
+              <Chip size="small" label={`С замечаниями: ${counts.warnings}`} sx={{ bgcolor: '#FFF7E8', color: '#8A5200', fontWeight: 650 }} />
+            )}
             <Chip size="small" label={`С ошибкой: ${counts.failure}`} sx={{ bgcolor: '#FFF1F0', color: '#B42318', fontWeight: 650 }} />
             {counts.running > 0 && (
               <Chip size="small" label={`Выполняется: ${counts.running}`} sx={{ bgcolor: '#FFF7E8', color: '#8A5200', fontWeight: 650 }} />
@@ -440,6 +455,11 @@ export const DataUpdatesAdminPage: FC = () => {
           {!logLoading && !logError && logRun?.error_message && (
             <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>
               {logRun.error_message}
+            </Alert>
+          )}
+          {!logLoading && !logError && logRun?.warning_message && (
+            <Alert severity="warning" sx={{ mb: 2, borderRadius: 2 }}>
+              {logRun.warning_message}
             </Alert>
           )}
           {!logLoading && !logError && logRun?.log && (

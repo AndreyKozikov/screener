@@ -16,9 +16,21 @@ class ScheduledUpdateRunnerTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "write failed"):
             run_task("ruonia", Mock(return_value={"status": "error", "error": "write failed"}))
 
-    def test_partial_trading_history_failure_fails_task(self):
-        with self.assertRaisesRegex(RuntimeError, "partially failed"):
-            run_task("trading_history", Mock(return_value={"updated": 4, "failed": 1, "errors": [{"secid": "X"}]}))
+    def test_partial_trading_history_passes(self):
+        result = {
+            "updated": 4,
+            "failed": 1,
+            "total": 5,
+            "errors": [{"secid": "X", "error": "boom"}],
+        }
+        self.assertEqual(run_task("trading_history", Mock(return_value=result)), result)
+
+    def test_total_trading_history_failure_raises(self):
+        with self.assertRaisesRegex(RuntimeError, "Не обновлены"):
+            run_task(
+                "trading_history",
+                Mock(return_value={"updated": 0, "failed": 5, "total": 5, "errors": []}),
+            )
 
     def test_successful_trading_history_passes(self):
         result = {"updated": 5, "failed": 0, "total": 5, "errors": []}
@@ -77,6 +89,24 @@ class ScheduledUpdateRunnerTests(unittest.TestCase):
         self.assertEqual(kwargs["status"], "error")
         self.assertIn("write failed", kwargs["error_message"])
         self.assertIn("EXCEPTION", kwargs["log_text"])
+
+    @patch("conversion_service.scheduled_updates.runner.DataUpdateRunsRepository")
+    def test_journal_records_warning_for_partial_history(self, repository_cls):
+        repository = repository_cls.return_value
+        result = {
+            "updated": 4,
+            "failed": 1,
+            "total": 5,
+            "errors": [{"secid": "X", "error": "boom"}],
+        }
+
+        self.assertEqual(run_task_with_journal("trading_history", Mock(return_value=result)), result)
+
+        kwargs = repository.finish_run.call_args.kwargs
+        self.assertEqual(kwargs["status"], "success")
+        self.assertIn("1 из 5", kwargs["warning_message"])
+        self.assertIn("WARNING", kwargs["log_text"])
+        self.assertIn("FINISH success", kwargs["log_text"])
 
     @patch("conversion_service.scheduled_updates.runner.DataUpdateRunsRepository")
     def test_journal_uses_canonical_task_id(self, repository_cls):
