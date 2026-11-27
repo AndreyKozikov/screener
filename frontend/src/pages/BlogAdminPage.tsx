@@ -21,6 +21,12 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
 import { BlogArticleBody } from '../components/blog/BlogArticleBody';
+import {
+  extractMarkdownImages,
+  extractMarkdownImageUrls,
+  prependMissingImages,
+  stripMarkdownImages,
+} from '../utils/blogMarkdown';
 
 import {
   createArticle,
@@ -88,17 +94,21 @@ export const BlogAdminPage: React.FC = () => {
   }, []);
 
   const selectArticle = (article: BlogArticle) => {
+    const movedImages = [
+      ...extractMarkdownImages(article.title),
+      ...extractMarkdownImages(article.summary),
+    ];
     setSelectedId(article.id);
     setForm({
       slug: article.slug,
-      title: article.title,
-      summary: article.summary,
-      content_markdown: article.content_markdown,
+      title: stripMarkdownImages(article.title),
+      summary: stripMarkdownImages(article.summary),
+      content_markdown: prependMissingImages(article.content_markdown, movedImages),
       category: article.category,
-      cover_image_url: article.cover_image_url ?? '',
+      cover_image_url: article.cover_image_url ?? extractMarkdownImageUrls(article.title)[0] ?? '',
       status: article.status,
     });
-    setMessage(null);
+    setMessage(movedImages.length ? 'Markdown-картинка перенесена из заголовка в текст статьи' : null);
     setError(null);
   };
 
@@ -110,14 +120,36 @@ export const BlogAdminPage: React.FC = () => {
   };
 
   const saveArticle = async () => {
+    const movedImages = [
+      ...extractMarkdownImages(form.title),
+      ...extractMarkdownImages(form.summary),
+    ];
+    const title = stripMarkdownImages(form.title);
+    const summary = stripMarkdownImages(form.summary);
+    const contentMarkdown = prependMissingImages(form.content_markdown, movedImages);
+
+    if (!title) {
+      setError('Укажите название статьи. Markdown-картинки нужно вставлять в поле Markdown.');
+      return;
+    }
+
+    setForm((prev) => ({
+      ...prev,
+      title,
+      summary,
+      content_markdown: contentMarkdown,
+    }));
     setIsSaving(true);
     setError(null);
     setMessage(null);
     try {
       const payload = {
         ...form,
-        slug: form.slug || makeSlug(form.title),
-        cover_image_url: form.cover_image_url || null,
+        title,
+        summary,
+        content_markdown: contentMarkdown,
+        slug: form.slug || makeSlug(title),
+        cover_image_url: form.cover_image_url || extractMarkdownImageUrls(form.title)[0] || null,
       };
       const saved = selectedArticle
         ? await updateArticle(selectedArticle.id, payload)
@@ -195,6 +227,29 @@ export const BlogAdminPage: React.FC = () => {
     }
   };
 
+  const handleMarkdownImagePaste = (event: React.ClipboardEvent<HTMLElement>) => {
+    const images = extractMarkdownImages(event.clipboardData.getData('text'));
+    if (!images.length) {
+      return;
+    }
+    event.preventDefault();
+    insertMarkdownAtCursor(images.join('\n\n'));
+    setMessage('Markdown-картинка вставлена в текст статьи');
+  };
+
+  const handleCoverPaste = (event: React.ClipboardEvent<HTMLElement>) => {
+    const [url] = extractMarkdownImageUrls(event.clipboardData.getData('text'));
+    if (!url) {
+      return;
+    }
+    event.preventDefault();
+    setForm((prev) => ({ ...prev, cover_image_url: url }));
+  };
+
+  const previewTitle = stripMarkdownImages(form.title);
+  const previewSummary = stripMarkdownImages(form.summary);
+  const previewCover = extractMarkdownImageUrls(form.cover_image_url ?? '')[0] ?? form.cover_image_url ?? '';
+
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: '#F8FAFC', p: { xs: 2, md: 3 } }}>
       <Paper elevation={2} sx={{ p: 3, mb: 3, display: 'flex', alignItems: { xs: 'flex-start', sm: 'center' }, justifyContent: 'space-between', gap: 2 }}>
@@ -245,7 +300,7 @@ export const BlogAdminPage: React.FC = () => {
                 >
                   <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
                     <Typography variant="subtitle2" fontWeight={700}>
-                      {article.title}
+                      {stripMarkdownImages(article.title) || article.slug}
                     </Typography>
                     <Box sx={{ display: 'flex', gap: 0.5, mt: 1 }}>
                       <Chip label={article.status} size="small" color={article.status === 'published' ? 'success' : 'default'} />
@@ -273,6 +328,8 @@ export const BlogAdminPage: React.FC = () => {
                 label="Заголовок"
                 value={form.title}
                 onChange={(event) => setForm((prev) => ({ ...prev, title: event.target.value }))}
+                onPaste={handleMarkdownImagePaste}
+                helperText="Только название статьи. Картинки вставляйте в поле Markdown."
                 fullWidth
               />
               <TextField
@@ -286,6 +343,7 @@ export const BlogAdminPage: React.FC = () => {
                 label="Краткое описание"
                 value={form.summary}
                 onChange={(event) => setForm((prev) => ({ ...prev, summary: event.target.value }))}
+                onPaste={handleMarkdownImagePaste}
                 fullWidth
                 multiline
                 minRows={2}
@@ -311,6 +369,7 @@ export const BlogAdminPage: React.FC = () => {
                 label="URL обложки"
                 value={form.cover_image_url ?? ''}
                 onChange={(event) => setForm((prev) => ({ ...prev, cover_image_url: event.target.value }))}
+                onPaste={handleCoverPaste}
                 fullWidth
               />
               <Button component="label" variant="outlined" startIcon={<UploadIcon />} sx={{ textTransform: 'none' }}>
@@ -365,24 +424,24 @@ export const BlogAdminPage: React.FC = () => {
             </Typography>
             <Box sx={{ '& img': { maxWidth: '100%', borderRadius: 1 } }}>
               <Typography variant="h4" component="h2" fontWeight={700} gutterBottom>
-                {form.title || 'Заголовок статьи'}
+                {previewTitle || 'Заголовок статьи'}
               </Typography>
-              {form.summary && (
+              {previewSummary && (
                 <Typography color="text.secondary" sx={{ mb: 2 }}>
-                  {form.summary}
+                  {previewSummary}
                 </Typography>
               )}
-              {form.cover_image_url && (
+              {previewCover && (
                 <Box
                   component="img"
-                  src={form.cover_image_url}
-                  alt={form.title}
+                  src={previewCover}
+                  alt={previewTitle}
                   sx={{ width: '100%', height: 'auto', mb: 2 }}
                 />
               )}
               <BlogArticleBody
                 markdown={form.content_markdown || 'Начните писать Markdown...'}
-                cover={form.cover_image_url}
+                cover={previewCover}
               />
             </Box>
           </Paper>
