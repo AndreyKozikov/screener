@@ -26,6 +26,7 @@ import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import { fetchDataUpdateRun, fetchDataUpdateStatuses, type DataUpdateRunDetail, type DataUpdateStatusItem, type DataUpdateStatusValue } from '../api/dataUpdates';
 import { DATA_REFRESH_TASKS, type DataRefreshTaskDefinition } from '../config/dataRefreshTasks';
 import { useAdminCapabilities } from '../contexts/adminCapabilitiesContext';
+import { copyTextToClipboard } from '../utils/clipboard';
 
 type StatusKind = DataUpdateStatusValue | 'unknown';
 
@@ -287,13 +288,13 @@ export const DataUpdatesAdminPage: FC = () => {
 
   const copyLog = useCallback(async () => {
     if (!logRun?.log) return;
-    try {
-      await navigator.clipboard.writeText(logRun.log);
+    const copied = await copyTextToClipboard(logRun.log);
+    if (copied) {
       setCopyState('copied');
       window.setTimeout(() => setCopyState('idle'), 1800);
-    } catch {
-      setCopyState('failed');
+      return;
     }
+    setCopyState('failed');
   }, [logRun]);
 
   if (!isAdmin) {
@@ -423,6 +424,11 @@ export const DataUpdatesAdminPage: FC = () => {
           )}
         </DialogTitle>
         <DialogContent dividers>
+          {copyState === 'failed' && (
+            <Alert severity="warning" sx={{ mb: 2, borderRadius: 2 }}>
+              Браузер не разрешил доступ к буферу обмена. Выделите текст лога вручную и нажмите Ctrl+C.
+            </Alert>
+          )}
           {logLoading && (
             <Box sx={{ display: 'grid', placeItems: 'center', py: 5 }}>
               <CircularProgress size={28} />
@@ -461,11 +467,6 @@ export const DataUpdatesAdminPage: FC = () => {
             <Alert severity="info" sx={{ borderRadius: 2 }}>
               Лог для этого запуска недоступен.
             </Alert>
-          )}
-          {copyState === 'failed' && (
-            <Typography variant="caption" color="error" sx={{ display: 'block', mt: 1 }}>
-              Не удалось скопировать лог в буфер обмена.
-            </Typography>
           )}
         </DialogContent>
         <DialogActions sx={{ px: 3, py: 2 }}>

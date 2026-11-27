@@ -21,6 +21,7 @@ from app.services.data_update_journal import (
     STATUS_ERROR,
     begin_manual_run,
     classify_response,
+    extract_exception_text,
     finish_manual_run,
     resolve_update_task,
 )
@@ -113,6 +114,7 @@ async def _proxy(request: Request, method: str) -> Response:
             http_status=response.status_code,
             error_message=error_message,
             payload=payload,
+            exception_text=extract_exception_text(payload),
         )
 
     response_headers = {

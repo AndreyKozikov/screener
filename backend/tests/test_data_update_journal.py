@@ -58,6 +58,14 @@ class DataUpdateJournalTests(unittest.TestCase):
         self.assertIn("source unavailable", error or "")
         self.assertEqual(payload, {"detail": "source unavailable"})
 
+    def test_extracts_traceback_from_conversion_error(self) -> None:
+        payload = {
+            "detail": "RuntimeError: boom",
+            "traceback": "Traceback (most recent call last):\nRuntimeError: boom",
+        }
+        self.assertIn("RuntimeError: boom", journal.extract_exception_text(payload) or "")
+        self.assertIsNone(journal.extract_exception_text({"detail": "boom"}))
+
     def test_partial_trading_history_is_error(self) -> None:
         status, error = journal.classify_payload("trading-history", {"updated": 3, "failed": 1})
         self.assertEqual(status, "error")

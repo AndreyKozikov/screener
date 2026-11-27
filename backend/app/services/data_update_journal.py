@@ -103,7 +103,13 @@ def _extract_error_message(payload: Any, status_code: int) -> str:
         for key in ("detail", "error", "message"):
             value = payload.get(key)
             if value:
-                text = _json_text(value) if not isinstance(value, str) else value
+                if isinstance(value, str):
+                    text = value
+                else:
+                    try:
+                        text = json.dumps(value, ensure_ascii=False, default=str)
+                    except (TypeError, ValueError):
+                        text = str(value)
                 return text[:MAX_ERROR_CHARS]
     return f"HTTP {status_code}"
 
@@ -151,6 +157,15 @@ def classify_response(
             payload = text[:_MAX_STRING_CHARS]
     status, error_message = classify_payload(task_id, payload, status_code)
     return status, error_message, payload
+
+
+def extract_exception_text(payload: Any) -> Optional[str]:
+    """Извлечь traceback из ответа conversion_service, если он передан."""
+    if isinstance(payload, dict):
+        traceback_text = payload.get("traceback")
+        if isinstance(traceback_text, str) and traceback_text.strip():
+            return traceback_text[:MAX_LOG_CHARS]
+    return None
 
 
 def build_update_log(

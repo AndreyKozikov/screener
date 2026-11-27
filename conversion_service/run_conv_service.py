@@ -3,9 +3,12 @@ import hashlib
 import hmac
 import logging
 import time
+import traceback
 from contextlib import asynccontextmanager
 
 import uvicorn
+
+import httpx
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -85,6 +88,33 @@ def create_app() -> FastAPI:
             allow_credentials=True,
             allow_methods=["*"],
             allow_headers=["*"],
+        )
+
+    @app.exception_handler(Exception)
+    async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+        """Вернуть администратору причину и traceback необработанной ошибки."""
+        traceback_text = "".join(
+            traceback.format_exception(type(exc), exc, exc.__traceback__)
+        )
+        error_message = str(exc)
+        if isinstance(exc, httpx.HTTPStatusError):
+            # Для ошибок db_repository важно показать тело ответа с detail.
+            error_message = (
+                f"{error_message}\nResponse: {exc.response.text[:4000]}"
+            )
+        logger.exception(
+            "Необработанная ошибка conversion_service: %s %s",
+            request.method,
+            request.url.path,
+        )
+        return JSONResponse(
+            status_code=500,
+            content={
+                "detail": f"{type(exc).__name__}: {error_message}",
+                "error_type": type(exc).__name__,
+                "error_message": error_message,
+                "traceback": traceback_text[-32_000:],
+            },
         )
 
     @app.middleware("http")
