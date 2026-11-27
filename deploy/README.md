@@ -61,6 +61,32 @@ sudo bash deploy/setup_server.sh
 - Настроит Nginx на 80 порт и перезапустит его.
 - Настроит права `sudo` без пароля для рестарта служб при деплое.
 
+### 1.3. Установка сертификатов Минцифры
+
+Для TLS-проверки сервисов MOEX (`iss.moex.com`) на сервере должны быть установлены корневой и промежуточные сертификаты Russian Trusted CA (НУЦ Минцифры). Без них `conversion_service` получит ошибку проверки TLS-сертификата при обращении к MOEX.
+
+В корне проекта находится скрипт [install_russian_trusted_ca.sh](../install_russian_trusted_ca.sh). Он скачивает сертификаты с `gu-st.ru`, проверяет их формат, устанавливает в `/usr/local/share/ca-certificates`, обновляет системное хранилище, а затем проверяет TLS-цепочку MOEX и HTTPS-запрос из Python.
+
+Если скрипт нужно создать или обновить вручную на сервере:
+
+```bash
+nano install_russian_trusted_ca.sh
+# замените содержимое, сохраните: Ctrl+O, Enter, Ctrl+X
+```
+
+Запуск скрипта (только через `sudo`, скрипт устанавливает сертификаты в системное хранилище):
+
+```bash
+chmod +x install_russian_trusted_ca.sh
+sudo ./install_russian_trusted_ca.sh
+```
+
+После успешного выполнения скрипт выведет `OK: сертификат MOEX успешно проверен`. Затем перезапустите сервис конвертации:
+
+```bash
+sudo systemctl restart bondsscreener-conversion
+```
+
 ---
 
 ## Шаг 2. Настройка секретов в GitHub (для CI/CD)
