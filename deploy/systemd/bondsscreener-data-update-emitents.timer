@@ -1,0 +1,9 @@
+[Unit]
+Description=Update Bonds Screener emitents weekly on Sunday
+
+[Timer]
+OnCalendar=Sun 15:30:00 Europe/Moscow
+Unit=bondsscreener-data-update@emitents.service
+
+[Install]
+WantedBy=timers.target

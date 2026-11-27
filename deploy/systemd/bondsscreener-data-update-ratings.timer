@@ -1,0 +1,9 @@
+[Unit]
+Description=Update Bonds Screener ratings weekly on Saturday
+
+[Timer]
+OnCalendar=Sat 11:30:00 Europe/Moscow
+Unit=bondsscreener-data-update@ratings.service
+
+[Install]
+WantedBy=timers.target

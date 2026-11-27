@@ -135,10 +135,13 @@ for svc in bondsscreener-db bondsscreener-backend bondsscreener-conversion; do
     chmod 644 "/etc/systemd/system/${svc}.service"
 done
 
-# Scheduled data updates use one templated oneshot service and eight calendar timers.
+# Плановые обновления данных используют один шаблонный oneshot-сервис и одиннадцать календарных таймеров.
 UPDATE_UNIT_FILES=(
     bondsscreener-data-update@.service
     bondsscreener-data-update-bonds.timer
+    bondsscreener-data-update-coupons.timer
+    bondsscreener-data-update-ratings.timer
+    bondsscreener-data-update-emitents.timer
     bondsscreener-data-update-trading-history.timer
     bondsscreener-data-update-currency.timer
     bondsscreener-data-update-keyrate.timer
@@ -161,7 +164,7 @@ done
 
 systemctl daemon-reload
 systemctl enable bondsscreener-db bondsscreener-backend bondsscreener-conversion
-systemctl enable bondsscreener-data-update-bonds.timer bondsscreener-data-update-trading-history.timer bondsscreener-data-update-currency.timer bondsscreener-data-update-keyrate.timer bondsscreener-data-update-zerocupon.timer bondsscreener-data-update-ruonia.timer bondsscreener-data-update-inflation-expectations.timer bondsscreener-data-update-ipc.timer
+systemctl enable bondsscreener-data-update-bonds.timer bondsscreener-data-update-coupons.timer bondsscreener-data-update-ratings.timer bondsscreener-data-update-emitents.timer bondsscreener-data-update-trading-history.timer bondsscreener-data-update-currency.timer bondsscreener-data-update-keyrate.timer bondsscreener-data-update-zerocupon.timer bondsscreener-data-update-ruonia.timer bondsscreener-data-update-inflation-expectations.timer bondsscreener-data-update-ipc.timer
 
 echo "=== [7/7] Настройка Nginx ==="
 sed "s|{{APP_DIR}}|${APP_DIR}|g" "${SCRIPT_DIR}/nginx/bondsscreener.conf" > /etc/nginx/sites-available/bondsscreener.conf
@@ -180,7 +183,7 @@ systemctl restart bondsscreener-db
 sleep 2
 systemctl restart bondsscreener-backend
 systemctl restart bondsscreener-conversion
-systemctl start bondsscreener-data-update-bonds.timer bondsscreener-data-update-trading-history.timer bondsscreener-data-update-currency.timer bondsscreener-data-update-keyrate.timer bondsscreener-data-update-zerocupon.timer bondsscreener-data-update-ruonia.timer bondsscreener-data-update-inflation-expectations.timer bondsscreener-data-update-ipc.timer
+systemctl start bondsscreener-data-update-bonds.timer bondsscreener-data-update-coupons.timer bondsscreener-data-update-ratings.timer bondsscreener-data-update-emitents.timer bondsscreener-data-update-trading-history.timer bondsscreener-data-update-currency.timer bondsscreener-data-update-keyrate.timer bondsscreener-data-update-zerocupon.timer bondsscreener-data-update-ruonia.timer bondsscreener-data-update-inflation-expectations.timer bondsscreener-data-update-ipc.timer
 
 echo "=== Первичная настройка успешно завершена! ==="
 echo "Статус служб:"

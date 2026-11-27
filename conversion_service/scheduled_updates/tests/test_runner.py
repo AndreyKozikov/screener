@@ -1,7 +1,7 @@
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
-from conversion_service.scheduled_updates.runner import run_task, run_task_with_journal
+from conversion_service.scheduled_updates.runner import _run, run_task, run_task_with_journal
 
 
 class ScheduledUpdateRunnerTests(unittest.TestCase):
@@ -23,6 +23,30 @@ class ScheduledUpdateRunnerTests(unittest.TestCase):
     def test_successful_trading_history_passes(self):
         result = {"updated": 5, "failed": 0, "total": 5, "errors": []}
         self.assertEqual(run_task("trading_history", Mock(return_value=result)), result)
+
+    @patch("conversion_service.app.services.coupon_service.get_coupon_service")
+    def test_run_dispatches_coupons_refresh(self, get_service):
+        result = {"status": "ok", "updated": 1}
+        get_service.return_value.refresh_all = AsyncMock(return_value=result)
+
+        self.assertEqual(_run("coupons"), result)
+        get_service.return_value.refresh_all.assert_awaited_once_with()
+
+    @patch("conversion_service.app.services.bond_ratings_update_service.BondRatingsPipelineService")
+    def test_run_dispatches_ratings_pipeline(self, pipeline_cls):
+        result = {"total_bonds": 1, "updated": 1, "errors": 0, "skipped": 0}
+        pipeline_cls.return_value.run_pipeline.return_value = result
+
+        self.assertEqual(_run("ratings"), result)
+        pipeline_cls.return_value.run_pipeline.assert_called_once_with()
+
+    @patch("conversion_service.app.services.emitents_service.get_emitent_service")
+    def test_run_dispatches_emitents_update(self, get_service):
+        result = {"emitents": {"updated": 1}}
+        get_service.return_value.update_emitents_data = AsyncMock(return_value=result)
+
+        self.assertEqual(_run("emitents"), result)
+        get_service.return_value.update_emitents_data.assert_awaited_once_with(None)
 
     @patch("conversion_service.scheduled_updates.runner.DataUpdateRunsRepository")
     def test_journal_records_success(self, repository_cls):

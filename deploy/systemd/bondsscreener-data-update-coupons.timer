@@ -1,0 +1,9 @@
+[Unit]
+Description=Update Bonds Screener coupons twice a week on Tuesday and Friday
+
+[Timer]
+OnCalendar=Tue,Fri 07:30:00 Europe/Moscow
+Unit=bondsscreener-data-update@coupons.service
+
+[Install]
+WantedBy=timers.target

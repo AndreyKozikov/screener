@@ -15,6 +15,9 @@ cd "${APP_DIR}"
 echo "=== [2/6] Приостановка расписания обновления данных ==="
 UPDATE_TIMERS=(
     bondsscreener-data-update-bonds.timer
+    bondsscreener-data-update-coupons.timer
+    bondsscreener-data-update-ratings.timer
+    bondsscreener-data-update-emitents.timer
     bondsscreener-data-update-trading-history.timer
     bondsscreener-data-update-currency.timer
     bondsscreener-data-update-keyrate.timer
@@ -23,7 +26,7 @@ UPDATE_TIMERS=(
     bondsscreener-data-update-inflation-expectations.timer
     bondsscreener-data-update-ipc.timer
 )
-UPDATE_TASKS=(bonds trading_history currency keyrate zerocupon ruonia inflation_expectations ipc)
+UPDATE_TASKS=(bonds coupons ratings emitents trading_history currency keyrate zerocupon ruonia inflation_expectations ipc)
 RENDERED_UNITS=()
 cleanup_rendered_units() {
     for rendered in "${RENDERED_UNITS[@]}"; do
@@ -100,6 +103,9 @@ echo "=== [6/6] Установка расписания и перезапуск 
 UPDATE_UNIT_FILES=(
     bondsscreener-data-update@.service
     bondsscreener-data-update-bonds.timer
+    bondsscreener-data-update-coupons.timer
+    bondsscreener-data-update-ratings.timer
+    bondsscreener-data-update-emitents.timer
     bondsscreener-data-update-trading-history.timer
     bondsscreener-data-update-currency.timer
     bondsscreener-data-update-keyrate.timer

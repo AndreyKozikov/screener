@@ -24,6 +24,9 @@ _STATUS_ERROR = "error"
 
 _SCHEDULED_TASK_IDS = {
     "bonds": "bonds",
+    "coupons": "coupons",
+    "ratings": "ratings",
+    "emitents": "emitents",
     "trading_history": "trading-history",
     "zerocupon": "zerocupon",
     "currency": "currency",
@@ -191,6 +194,18 @@ def _run(task: str) -> Any:
         from conversion_service.app.services.bonds_service import get_bonds_update_service
 
         return asyncio.run(get_bonds_update_service().update_bonds_data())
+    if task == "coupons":
+        from conversion_service.app.services.coupon_service import get_coupon_service
+
+        return asyncio.run(get_coupon_service().refresh_all())
+    if task == "ratings":
+        from conversion_service.app.services.bond_ratings_update_service import BondRatingsPipelineService
+
+        return BondRatingsPipelineService().run_pipeline()
+    if task == "emitents":
+        from conversion_service.app.services.emitents_service import get_emitent_service
+
+        return asyncio.run(get_emitent_service().update_emitents_data(None))
     if task == "trading_history":
         from conversion_service.app.services.trading_history_update_service import get_trading_history_service
 
@@ -250,6 +265,9 @@ def main() -> int:
         "task",
         choices=(
             "bonds",
+            "coupons",
+            "ratings",
+            "emitents",
             "trading_history",
             "zerocupon",
             "currency",
