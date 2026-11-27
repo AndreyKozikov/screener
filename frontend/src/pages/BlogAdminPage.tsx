@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Alert,
@@ -64,6 +64,7 @@ export const BlogAdminPage: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const markdownRef = useRef<HTMLTextAreaElement | null>(null);
 
   const selectedArticle = useMemo(
     () => articles.find((article) => article.id === selectedId) ?? null,
@@ -149,6 +150,30 @@ export const BlogAdminPage: React.FC = () => {
     }
   };
 
+  const insertMarkdownAtCursor = (snippet: string) => {
+    const textarea = markdownRef.current;
+    const content = form.content_markdown;
+    const start = textarea ? textarea.selectionStart : 0;
+    const end = textarea ? textarea.selectionEnd : start;
+    const before = content.slice(0, start);
+    const after = content.slice(end);
+    const leadingBreak = before && !before.endsWith('\n\n') ? (before.endsWith('\n') ? '\n' : '\n\n') : '';
+    const trailingBreak = after && !after.startsWith('\n\n') ? (after.startsWith('\n') ? '\n' : '\n\n') : '';
+    const insertion = `${leadingBreak}${snippet}${trailingBreak}`;
+    const nextContent = `${before}${insertion}${after}`;
+    const caret = before.length + insertion.length;
+
+    setForm((prev) => ({ ...prev, content_markdown: nextContent }));
+    window.setTimeout(() => {
+      const element = markdownRef.current;
+      if (!element) {
+        return;
+      }
+      element.focus();
+      element.setSelectionRange(caret, caret);
+    }, 0);
+  };
+
   const uploadImage = async (file: File | null) => {
     if (!file) {
       return;
@@ -157,12 +182,11 @@ export const BlogAdminPage: React.FC = () => {
     setError(null);
     try {
       const result = await uploadBlogImage(file);
-      const imageMarkdown = `\n\n![${file.name}](${result.url})\n`;
-      setForm((prev) => ({
-        ...prev,
-        cover_image_url: prev.cover_image_url || result.url,
-        content_markdown: prev.cover_image_url ? `${prev.content_markdown}${imageMarkdown}` : prev.content_markdown,
-      }));
+      if (form.cover_image_url) {
+        insertMarkdownAtCursor(`![${file.name}](${result.url})`);
+      } else {
+        setForm((prev) => ({ ...prev, cover_image_url: result.url }));
+      }
       setMessage(`Изображение загружено: ${result.url}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось загрузить изображение');
@@ -302,6 +326,8 @@ export const BlogAdminPage: React.FC = () => {
                 label="Markdown"
                 value={form.content_markdown}
                 onChange={(event) => setForm((prev) => ({ ...prev, content_markdown: event.target.value }))}
+                helperText="Иллюстрация вставляется в позицию курсора. Без курсора — в начало текста."
+                inputRef={markdownRef}
                 fullWidth
                 multiline
                 minRows={16}

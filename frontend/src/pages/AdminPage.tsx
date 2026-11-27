@@ -14,6 +14,7 @@ import AdminPanelSettingsOutlinedIcon from '@mui/icons-material/AdminPanelSettin
 import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
 import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
 import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined';
+import EventRepeatOutlinedIcon from '@mui/icons-material/EventRepeatOutlined';
 import HomeOutlinedIcon from '@mui/icons-material/HomeOutlined';
 import ManageSearchOutlinedIcon from '@mui/icons-material/ManageSearchOutlined';
 import SettingsSuggestOutlinedIcon from '@mui/icons-material/SettingsSuggestOutlined';
@@ -179,6 +180,16 @@ export const AdminPage: React.FC = () => {
               actionLabel="Смотреть статусы"
               accent="#2E7D32"
               onClick={() => navigate('/admin/data-updates')}
+            />
+          )}
+          {canRefreshData && (
+            <AdminActionCard
+              icon={<EventRepeatOutlinedIcon />}
+              title="Расписание обновлений"
+              description="Смотрите, какие источники обновляются автоматически, по какому графику и когда запланирован следующий запуск."
+              actionLabel="Открыть расписание"
+              accent="#0F766E"
+              onClick={() => navigate('/admin/update-schedule')}
             />
           )}
           {canManageSettings && (

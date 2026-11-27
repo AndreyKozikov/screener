@@ -8,7 +8,8 @@ from app.routers import (
     bonds, metadata, zerocupon, forecast, emitent, rating, currency, ruonia, keyrate,
     feedback, dashboard,
     llm_router, blog, inflations, ipc, settings as settings_router,
-    portfolio, auth, portfolio_reports, conversion_proxy, data_updates
+    portfolio, auth, portfolio_reports, conversion_proxy, data_updates,
+    update_schedule
 )
 
 from app.services.data_loader import init_data_loader
@@ -125,6 +126,7 @@ app.include_router(portfolio_reports.router)
 app.include_router(auth.router)
 app.include_router(conversion_proxy.router)
 app.include_router(data_updates.router)
+app.include_router(update_schedule.router)
 
 # Root endpoint
 @app.get("/")
