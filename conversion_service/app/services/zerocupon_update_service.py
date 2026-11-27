@@ -6,9 +6,8 @@ import re
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
-import httpx
-
 from conversion_service.app.repository.db.remote_repository import KbdRepository
+from conversion_service.app.utils.moex_http import get_moex_http_client
 
 logger = logging.getLogger(__name__)
 
@@ -63,10 +62,9 @@ class ZerocuponUpdateService:
         )
         logger.info("[REFRESH ZEROCOUPON] Fetching data from API: %s", url)
         try:
-            with httpx.Client(timeout=30.0) as client:
-                response = client.get(url)
-                response.raise_for_status()
-                payload = _parse_jsonp_response(response.text)
+            payload = _parse_jsonp_response(
+                get_moex_http_client().get_text(url)
+            )
             if isinstance(payload, list) and len(payload) >= 2:
                 for item in payload:
                     if isinstance(item, dict) and "yearyields" in item:

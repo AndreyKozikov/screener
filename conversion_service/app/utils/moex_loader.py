@@ -1,12 +1,10 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import logging
 import os
-import threading
 from typing import Optional, List, Any
 from urllib.parse import quote
-from urllib.request import Request, urlopen
-import orjson
-import requests
+
+from conversion_service.app.utils.moex_http import MoexHttpClient, get_moex_http_client
 
 logger = logging.getLogger(__name__)
 
@@ -26,20 +24,8 @@ _BOND_DESCRIPTION_IGNORED_FIELDS = {
 
 class MoexLoader:
 
-    def __init__(self, url: Optional[str] = None, timeout: int = 30, user_agent: str = "Mozilla/5.0"):
-        self.url = url
-        self.timeout = timeout
-        self.user_agent = user_agent
-        self._session_local = threading.local()
-
-    def _get_session(self) -> requests.Session:
-        """Возвращает переиспользуемую HTTP-сессию для текущего потока."""
-        session = getattr(self._session_local, "session", None)
-        if session is None:
-            session = requests.Session()
-            session.headers.update({"User-Agent": self.user_agent})
-            self._session_local.session = session
-        return session
+    def __init__(self, http_client: Optional[MoexHttpClient] = None):
+        self._http = http_client or get_moex_http_client()
 
     @staticmethod
     def _worker_count(total: int) -> int:
@@ -49,33 +35,17 @@ class MoexLoader:
         return min(_MAX_WORKERS, max(4, cpu * 2), total)
 
     def bonds_data_load(self, url):
-        request = Request(url, headers={"User-Agent": self.user_agent})
         try:
-            with urlopen(request, timeout=self.timeout) as response:
-                raw_payload = response.read()
-            # self._logger.info(f"[MOEX] Загружено {len(raw_payload)} байт")
-        except Exception as exc:
-            # self._logger.error(f"[MOEX] Ошибка загрузки с {url}: {exc}")
+            return self._http.get_json(url)
+        except RuntimeError as exc:
             raise RuntimeError(f"Failed to download bonds data: {exc}") from exc
-
-        try:
-            payload = orjson.loads(raw_payload)
-            # self._logger.info("[MOEX] JSON успешно распарсен")
-            return payload
-        except orjson.JSONDecodeError as exc:
-            # self._logger.error(f"[MOEX] Некорректный JSON: {exc}")
-            raise RuntimeError(
-                "Received invalid JSON while refreshing bonds data"
-            ) from exc
 
     def _emitent_info_load_one(self, secid: str) -> Optional[dict[str, Any]]:
         """Загружает данные эмитента по одному SECID с MOEX ISS."""
         url = f"https://iss.moex.com/iss/securities.json?q={secid}"
         try:
-            response = self._get_session().get(url, timeout=self.timeout)
-            response.raise_for_status()
-            payload = response.json()
-        except (requests.RequestException, ValueError):
+            payload = self._http.get_json(url)
+        except RuntimeError:
             return None
 
         securities = payload.get("securities", {})
@@ -228,10 +198,8 @@ class MoexLoader:
             f"{quote(secid, safe='')}.json?iss.meta=on&iss.json=extended"
         )
         try:
-            response = self._get_session().get(url, timeout=self.timeout)
-            response.raise_for_status()
-            payload = response.json()
-        except (requests.RequestException, ValueError):
+            payload = self._http.get_json(url)
+        except RuntimeError:
             logger.warning("[BOND_DESCRIPTION] Не удалось загрузить description для %s", secid)
             return None
 
@@ -331,15 +299,13 @@ class MoexLoader:
     def emitent_ratings_load(self, emitent_id: int) -> Optional[list[dict[str, Any]]]:
         url = f"https://iss.moex.com/iss/cci/rating/companies/ecbd_{emitent_id}.json?iss.json=extended&iss.meta=off"
         try:
-            response = self._get_session().get(url, timeout=self.timeout)
-            response.raise_for_status()
-            json_data = response.json()
+            json_data = self._http.get_json(url)
 
             if not isinstance(json_data, list) or len(json_data) < 2:
                 return None
             return json_data[1]["cci_rating_companies"]
 
-        except requests.RequestException:
+        except RuntimeError:
             return None
 
         except (KeyError, TypeError, ValueError):

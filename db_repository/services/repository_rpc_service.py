@@ -144,7 +144,10 @@ _ALLOWED_OPERATIONS: dict[str, frozenset[str]] = {
         "get_reg_number_by_secid", "get_secids_by_ids", "get_secids_by_regnumber",
     }),
     "currency_rates": frozenset({"get_by_date", "get_latest_on_or_before", "get_max_date", "save_many"}),
-    "data_update_runs": frozenset({"finish_run", "get_latest_runs", "get_run", "prune", "start_run"}),
+    "data_update_runs": frozenset({
+        "finish_run", "get_latest_runs", "get_run", "prune", "start_run",
+        "try_start_run", "update_run_log",
+    }),
     "coupons": frozenset({"fetch_coupons_for_frontend", "fetch_coupons_raw", "has_coupons_for_secid", "save_moex_coupons"}),
     "kbd": frozenset({"get_kbd_data", "get_last_kbd_date", "save_kbd_records"}),
     "descriptions": frozenset({"get_descriptions_formatted"}),

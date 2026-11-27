@@ -11,14 +11,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-from urllib.error import URLError
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
-
-import orjson
 
 from conversion_service.app.repository.db.remote_repository import BondsRepository
 from conversion_service.app.repository.db.remote_repository import TradingHistoryRepository
+from conversion_service.app.utils.moex_http import get_moex_http_client
 
 from conversion_service.config.paths import MOEX_HISTORY_URL
 
@@ -278,10 +275,7 @@ class TradingHistoryService:
     ) -> Dict[str, Any]:
         """Выполняет один HTTP-запрос к API истории торгов Мосбиржи."""
         url = self._build_moex_url(secid, from_, till, start)
-        req = Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urlopen(req, timeout=60) as resp:
-            raw = resp.read()
-        return orjson.loads(raw)
+        return get_moex_http_client().get_json(url, timeout=60)
 
     def _parse_history_response(
         self, payload: Dict[str, Any]
@@ -346,12 +340,9 @@ class TradingHistoryService:
             )
             try:
                 payload = self._fetch_moex_page(secid, from_str, till_str, n)
-            except URLError as e:
+            except RuntimeError as e:
                 self.logger.error("[TRADING HISTORY] Ошибка запроса MOEX для %s: %s", secid, e)
                 raise RuntimeError(f"Ошибка запроса к MOEX: {e}") from e
-            except orjson.JSONDecodeError as e:
-                self.logger.error("[TRADING HISTORY] Ошибка разбора JSON для %s: %s", secid, e)
-                raise RuntimeError("Некорректный ответ MOEX") from e
 
             cols, data, index, total, pagesize = self._parse_history_response(payload)
             if cols:

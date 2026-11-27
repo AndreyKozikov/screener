@@ -1,5 +1,6 @@
 """Роутер API для загрузки, парсинга и получения данных ИПЦ Росстата."""
 
+import asyncio
 import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -58,7 +59,11 @@ async def upload_and_parse_ipc(
             clean_filename = Path(file.filename).name
             target_excel_path = DEFAULT_EXCEL_PATH.parent / clean_filename
 
-        FileStorage().save_binary_file(target_excel_path, content)
+        await asyncio.to_thread(
+            FileStorage().save_binary_file,
+            target_excel_path,
+            content,
+        )
         logger.info("[IPC ROUTER] Файл %s сохранён на диск, запуск парсинга", target_excel_path)
 
         result = await service.parse_and_save(

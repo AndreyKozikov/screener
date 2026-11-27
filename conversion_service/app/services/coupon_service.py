@@ -9,7 +9,7 @@ import asyncio
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime
-from typing import Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from conversion_service.app.repository.db.remote_repository import BondsRepository
 from conversion_service.app.repository.db.remote_repository import DBCoupon
@@ -20,6 +20,12 @@ logger = logging.getLogger(__name__)
 
 # Ограничение параллельных запросов купонов к MOEX ISS: не более 10 потоков.
 MAX_COUPON_WORKERS = 10
+# Размер чанка сохранения: ограничивает пик памяти и сохраняет прогресс при обрыве.
+COUPON_SAVE_CHUNK_SIZE = 300
+# Сколько примеров ошибок сохранять в результате запуска.
+MAX_ERROR_SAMPLES = 5
+
+ProgressCallback = Callable[..., None]
 
 
 class CouponService:
@@ -49,55 +55,113 @@ class CouponService:
         self._db_coupon = DBCoupon()
         self._bonds_repo = BondsRepository()
 
-    async def refresh_all(self, force_refresh: bool = False) -> Dict[str, int | str]:
-        """Refresh coupon schedules for all bonds and persist them in one batch.
+    async def refresh_all(
+        self,
+        force_refresh: bool = False,
+        progress: Optional[ProgressCallback] = None,
+    ) -> Dict[str, Any]:
+        """Обновить графики купонов всех облигаций и сохранить их чанками.
 
-        Загрузка купонов с MOEX выполняется параллельно, но не более чем
-        в MAX_COUPON_WORKERS потоков. Запись в БД остаётся единой пачкой
-        после сбора всех записей — алгоритм записи не изменился.
+        Вся блокирующая работа (сетевые запросы и запись в БД) выполняется в
+        отдельном потоке, чтобы не блокировать event loop conversion_service.
+        Результаты сохраняются чанками по COUPON_SAVE_CHUNK_SIZE облигаций:
+        это ограничивает пик памяти и сохраняет уже обработанные данные при
+        прерывании запуска.
         """
+        return await asyncio.to_thread(self._refresh_all_sync, force_refresh, progress)
+
+    def _refresh_all_sync(
+        self,
+        force_refresh: bool,
+        progress: Optional[ProgressCallback],
+    ) -> Dict[str, Any]:
         logger.info("[API /bonds/refresh-coupons] Starting refresh, force_refresh=%s", force_refresh)
-        id_secid_list = await asyncio.to_thread(self._bonds_repo.get_id_secid_list)
+        id_secid_list = self._bonds_repo.get_id_secid_list()
         pairs = [(bond_id, secid) for bond_id, secid in id_secid_list if secid]
         total = len(id_secid_list)
         updated = errors = 0
         skipped = total - len(pairs)
-        records: List[Dict] = []
+        error_samples: List[Dict[str, str]] = []
 
         workers = min(MAX_COUPON_WORKERS, len(pairs)) if pairs else 1
         logger.info(
-            "[API /bonds/refresh-coupons] Облигаций для обновления: %s, потоков: %s",
-            len(pairs), workers,
+            "[API /bonds/refresh-coupons] Облигаций для обновления: %s, потоков: %s, чанк: %s",
+            len(pairs), workers, COUPON_SAVE_CHUNK_SIZE,
         )
 
-        with ThreadPoolExecutor(max_workers=workers) as executor:
-            futures = {
-                executor.submit(self._fetch_bond_coupon_records, bond_id, secid): (bond_id, secid)
-                for bond_id, secid in pairs
+        if not pairs:
+            self._db_coupon.save_moex_coupons([])
+            if progress is not None:
+                progress(processed=0, total=0, updated=0, errors=0)
+            return {
+                "status": "ok",
+                "total_bonds": total,
+                "updated": updated,
+                "errors": errors,
+                "failed": errors,
+                "skipped": skipped,
+                "error_samples": error_samples,
             }
-            for processed, future in enumerate(as_completed(futures), start=1):
-                secid = futures[future][1]
-                try:
-                    bond_records = future.result()
-                except Exception as exc:
-                    logger.error("[API /bonds/refresh-coupons] ERROR for %s: %s", secid, exc)
-                    errors += 1
-                    continue
-                records.extend(bond_records)
-                updated += 1
-                if processed % 100 == 0 or processed == len(pairs):
-                    logger.info(
-                        "[API /bonds/refresh-coupons] Processing %s/%s: %s",
-                        processed, len(pairs), secid,
-                    )
 
-        await asyncio.to_thread(self._db_coupon.save_moex_coupons, records)
+        for chunk_start in range(0, len(pairs), COUPON_SAVE_CHUNK_SIZE):
+            chunk = pairs[chunk_start:chunk_start + COUPON_SAVE_CHUNK_SIZE]
+            records: List[Dict] = []
+
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                futures = {
+                    executor.submit(self._fetch_bond_coupon_records, bond_id, secid): (bond_id, secid)
+                    for bond_id, secid in chunk
+                }
+                for future in as_completed(futures):
+                    bond_id, secid = futures[future]
+                    try:
+                        bond_records = future.result()
+                    except Exception as exc:
+                        logger.error("[API /bonds/refresh-coupons] ERROR for %s: %s", secid, exc)
+                        errors += 1
+                        if len(error_samples) < MAX_ERROR_SAMPLES:
+                            error_samples.append({"secid": secid, "error": str(exc)})
+                        continue
+                    records.extend(bond_records)
+                    updated += 1
+                    processed = updated + errors
+                    if processed % 100 == 0:
+                        logger.info(
+                            "[API /bonds/refresh-coupons] Processing %s/%s: %s",
+                            processed, len(pairs), secid,
+                        )
+                        if progress is not None:
+                            progress(
+                                processed=processed,
+                                total=len(pairs),
+                                updated=updated,
+                                errors=errors,
+                            )
+
+            logger.info(
+                "[API /bonds/refresh-coupons] Сохранение чанка %s-%s (%s записей)",
+                chunk_start + 1,
+                chunk_start + len(chunk),
+                len(records),
+            )
+            self._db_coupon.save_moex_coupons(records)
+
+            if progress is not None:
+                progress(
+                    processed=updated + errors,
+                    total=len(pairs),
+                    updated=updated,
+                    errors=errors,
+                )
+
         return {
             "status": "ok",
             "total_bonds": total,
             "updated": updated,
             "errors": errors,
+            "failed": errors,
             "skipped": skipped,
+            "error_samples": error_samples,
         }
 
     def _fetch_bond_coupon_records(self, bond_id: int, secid: str) -> List[Dict]:

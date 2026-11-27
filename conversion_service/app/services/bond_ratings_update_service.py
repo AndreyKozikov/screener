@@ -7,20 +7,15 @@
 import logging
 from typing import Any, Dict, List, Optional
 
-import requests
-
 from conversion_service.app.repository.db.remote_repository import BondRatingsRepository
 from conversion_service.app.repository.db.remote_repository import BondsRepository
+from conversion_service.app.utils.moex_http import get_moex_http_client
 from conversion_service.app.utils.rating_utils import standardize_rating
 
 MOEX_RATINGS_URL = (
     "https://iss.moex.com/iss/cci/rating/companies/ecbd_{emitter_id}/"
     "securities/isin_{secid}.json?iss.json=extended&iss.meta=off"
 )
-MOEX_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-}
-MOEX_TIMEOUT = 30
 
 AGENCY_ID_NO_RATING = -1
 AGENCY_ID_AUTO = 0
@@ -128,17 +123,11 @@ class BondRatingsPipelineService:
         """
         url = MOEX_RATINGS_URL.format(secid=secid, emitter_id=emitter_id)
         try:
-            resp = requests.get(
-                url,
-                headers=MOEX_HEADERS,
-                timeout=MOEX_TIMEOUT,
-            )
-            resp.raise_for_status()
-        except requests.RequestException as e:
+            data = get_moex_http_client().get_json(url)
+        except RuntimeError as e:
             self.logger.warning("MOEX API (ratings) для %s: %s", secid, e)
             return []
 
-        data = resp.json()
         raw_list = self._extract_cci_rating_securities(data)
         if not raw_list:
             return []

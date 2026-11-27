@@ -42,7 +42,7 @@ class ScheduledUpdateRunnerTests(unittest.TestCase):
         get_service.return_value.refresh_all = AsyncMock(return_value=result)
 
         self.assertEqual(_run("coupons"), result)
-        get_service.return_value.refresh_all.assert_awaited_once_with()
+        get_service.return_value.refresh_all.assert_awaited_once_with(progress=None)
 
     @patch("conversion_service.app.services.bond_ratings_update_service.BondRatingsPipelineService")
     def test_run_dispatches_ratings_pipeline(self, pipeline_cls):
@@ -67,7 +67,7 @@ class ScheduledUpdateRunnerTests(unittest.TestCase):
 
         self.assertEqual(run_task_with_journal("currency", Mock(return_value=result)), result)
 
-        repository.start_run.assert_called_once()
+        repository.try_start_run.assert_called_once()
         kwargs = repository.finish_run.call_args.kwargs
         self.assertEqual(kwargs["task_id"], "currency")
         self.assertEqual(kwargs["trigger"], "scheduled")
@@ -118,6 +118,73 @@ class ScheduledUpdateRunnerTests(unittest.TestCase):
 
         kwargs = repository.finish_run.call_args.kwargs
         self.assertEqual(kwargs["task_id"], "trading-history")
+
+    @patch("conversion_service.scheduled_updates.runner.DataUpdateRunsRepository")
+    def test_waits_while_another_update_is_running(self, repository_cls):
+        repository = repository_cls.return_value
+        repository.try_start_run.side_effect = [False, False, True]
+        sleep_func = Mock()
+        runner = Mock(return_value={"status": "ok", "updated": 1})
+
+        result = run_task_with_journal(
+            "currency",
+            runner,
+            sleep_func=sleep_func,
+            wait_interval=900,
+            heartbeat_interval=None,
+        )
+
+        self.assertEqual(result, {"status": "ok", "updated": 1})
+        self.assertEqual(sleep_func.call_count, 2)
+        sleep_func.assert_called_with(900)
+        self.assertEqual(repository.try_start_run.call_count, 3)
+        runner.assert_called_once_with("currency")
+        self.assertEqual(repository.finish_run.call_args.kwargs["status"], "success")
+
+    def test_partial_coupons_is_success(self):
+        result = {
+            "status": "ok",
+            "total_bonds": 10,
+            "updated": 9,
+            "errors": 1,
+            "failed": 1,
+            "error_samples": [{"secid": "X", "error": "boom"}],
+        }
+        self.assertEqual(run_task("coupons", Mock(return_value=result)), result)
+
+    def test_total_coupons_failure_raises(self):
+        with self.assertRaisesRegex(RuntimeError, "Не обновлены"):
+            run_task(
+                "coupons",
+                Mock(
+                    return_value={
+                        "status": "ok",
+                        "total_bonds": 5,
+                        "updated": 0,
+                        "errors": 5,
+                        "failed": 5,
+                    }
+                ),
+            )
+
+    @patch("conversion_service.scheduled_updates.runner.DataUpdateRunsRepository")
+    def test_journal_records_warning_for_partial_coupons(self, repository_cls):
+        repository = repository_cls.return_value
+        result = {
+            "status": "ok",
+            "total_bonds": 10,
+            "updated": 9,
+            "errors": 1,
+            "failed": 1,
+            "error_samples": [{"secid": "X", "error": "boom"}],
+        }
+
+        self.assertEqual(run_task_with_journal("coupons", Mock(return_value=result)), result)
+
+        kwargs = repository.finish_run.call_args.kwargs
+        self.assertEqual(kwargs["status"], "success")
+        self.assertIn("1 из 10", kwargs["warning_message"])
+        self.assertIn("X: boom", kwargs["warning_message"])
 
 
 if __name__ == "__main__":

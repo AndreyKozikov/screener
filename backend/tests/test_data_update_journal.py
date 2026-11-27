@@ -2,6 +2,7 @@
 
 import unittest
 from datetime import datetime
+from unittest.mock import patch
 
 from app.services import data_update_journal as journal
 
@@ -106,6 +107,38 @@ class DataUpdateJournalTests(unittest.TestCase):
         self.assertEqual(status, "success")
         self.assertIn("1 из 6", warning or "")
 
+    def test_partial_coupons_is_success_with_warning(self) -> None:
+        status, error, warning = journal.classify_payload(
+            "coupons",
+            {
+                "status": "ok",
+                "total_bonds": 10,
+                "updated": 9,
+                "errors": 1,
+                "failed": 1,
+                "error_samples": [{"secid": "X", "error": "boom"}],
+            },
+        )
+        self.assertEqual(status, "success")
+        self.assertIsNone(error)
+        self.assertIn("1 из 10", warning or "")
+        self.assertIn("X: boom", warning or "")
+
+    def test_coupons_without_updated_is_error(self) -> None:
+        status, error, warning = journal.classify_payload(
+            "coupons",
+            {
+                "status": "ok",
+                "total_bonds": 5,
+                "updated": 0,
+                "errors": 5,
+                "failed": 5,
+            },
+        )
+        self.assertEqual(status, "error")
+        self.assertIn("5 из 5", error or "")
+        self.assertIsNone(warning)
+
     def test_build_log_contains_key_fields(self) -> None:
         started = datetime(2026, 11, 26, 12, 0, 0)
         log_text = journal.build_update_log(
@@ -150,6 +183,42 @@ class DataUpdateJournalTests(unittest.TestCase):
         value = "a" * (journal.MAX_QUERY_CHARS + 50)
         self.assertEqual(len(journal.safe_query(value) or ""), journal.MAX_QUERY_CHARS)
         self.assertIsNone(journal.safe_query(""))
+
+
+class ManualRunGuardTests(unittest.IsolatedAsyncioTestCase):
+    @patch("app.services.data_update_journal.DataUpdateRunsRepository")
+    async def test_busy_repository_returns_none(self, repository_cls) -> None:
+        repository_cls.return_value.try_start_run.return_value = False
+
+        result = await journal.try_begin_manual_run(
+            "coupons",
+            "/bonds/refresh-coupons",
+            None,
+        )
+
+        self.assertIsNone(result)
+        kwargs = repository_cls.return_value.try_start_run.call_args.kwargs
+        self.assertEqual(kwargs["task_id"], "coupons")
+        self.assertEqual(kwargs["trigger"], journal.TRIGGER_MANUAL)
+
+    @patch("app.services.data_update_journal.DataUpdateRunsRepository")
+    async def test_free_repository_creates_run(self, repository_cls) -> None:
+        repository_cls.return_value.try_start_run.return_value = True
+
+        result = await journal.try_begin_manual_run(
+            "coupons",
+            "/bonds/refresh-coupons",
+            "force_refresh=true",
+        )
+
+        self.assertIsNotNone(result)
+        run_id, started_at = result
+        self.assertTrue(run_id)
+        self.assertIsInstance(started_at, datetime)
+        self.assertEqual(
+            repository_cls.return_value.try_start_run.call_args.kwargs["request_query"],
+            "force_refresh=true",
+        )
 
 
 if __name__ == "__main__":

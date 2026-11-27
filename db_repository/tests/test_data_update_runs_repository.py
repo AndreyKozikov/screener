@@ -5,6 +5,7 @@ import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from sqlalchemy import text
 from sqlmodel import SQLModel, create_engine
 
 from db_repository.repository.operations.data_update_runs_repository import (
@@ -126,6 +127,137 @@ class DataUpdateRunsRepositoryTests(unittest.TestCase):
 
     def test_get_run_returns_none_for_unknown_id(self) -> None:
         self.assertIsNone(self.repo.get_run("missing"))
+
+    def test_try_start_run_blocks_second_update(self) -> None:
+        started_at = datetime(2026, 11, 27, 5, 0, 0)
+        self.assertTrue(
+            self.repo.try_start_run(
+                run_id="run-1",
+                task_id="coupons",
+                trigger="scheduled",
+                started_at=started_at,
+            )
+        )
+        self.assertFalse(
+            self.repo.try_start_run(
+                run_id="run-2",
+                task_id="bonds",
+                trigger="manual",
+                started_at=started_at + timedelta(seconds=1),
+                stale_before=started_at - timedelta(seconds=1),
+            )
+        )
+
+        self.repo.finish_run(
+            run_id="run-1",
+            status="success",
+            finished_at=started_at + timedelta(seconds=10),
+            log_text="ok",
+        )
+        self.assertTrue(
+            self.repo.try_start_run(
+                run_id="run-3",
+                task_id="bonds",
+                trigger="manual",
+                started_at=started_at + timedelta(seconds=20),
+            )
+        )
+
+    def test_try_start_run_ignores_stale_running(self) -> None:
+        started_at = datetime(2026, 11, 27, 0, 0, 0)
+        self.assertTrue(
+            self.repo.try_start_run(
+                run_id="run-old",
+                task_id="coupons",
+                trigger="scheduled",
+                started_at=started_at,
+            )
+        )
+        self.assertTrue(
+            self.repo.try_start_run(
+                run_id="run-new",
+                task_id="bonds",
+                trigger="scheduled",
+                started_at=started_at + timedelta(hours=7),
+                stale_before=started_at + timedelta(hours=7),
+            )
+        )
+
+    def test_try_start_run_ignores_old_heartbeat(self) -> None:
+        started_at = datetime(2026, 11, 27, 5, 0, 0)
+        self.repo.start_run(
+            run_id="run-stale-heartbeat",
+            task_id="coupons",
+            trigger="scheduled",
+            started_at=started_at,
+        )
+        with self.repo._engine.begin() as conn:
+            conn.execute(
+                text(
+                    "UPDATE data_update_runs SET heartbeat_at = :heartbeat "
+                    "WHERE run_id = :run_id"
+                ),
+                {
+                    "heartbeat": "2026-11-27 04:00:00.000000",
+                    "run_id": "run-stale-heartbeat",
+                },
+            )
+
+        self.assertTrue(
+            self.repo.try_start_run(
+                run_id="run-new",
+                task_id="bonds",
+                trigger="scheduled",
+                started_at=started_at,
+                stale_before=started_at - timedelta(minutes=1),
+            )
+        )
+
+    def test_update_run_log_keeps_status_running(self) -> None:
+        started_at = datetime(2026, 11, 27, 5, 0, 0)
+        self.repo.start_run(
+            run_id="run-progress",
+            task_id="coupons",
+            trigger="scheduled",
+            started_at=started_at,
+        )
+
+        updated = self.repo.update_run_log(
+            run_id="run-progress",
+            log_text="PROGRESS processed=100/300",
+        )
+
+        self.assertTrue(updated)
+        row = self.repo.get_run("run-progress")
+        assert row is not None
+        self.assertEqual(row["status"], "running")
+        self.assertIsNone(row["finished_at"])
+        self.assertEqual(row["log_text"], "PROGRESS processed=100/300")
+        heartbeat_at = row["heartbeat_at"]
+        self.assertIsNotNone(heartbeat_at)
+
+    def test_update_run_log_does_not_touch_finished_run(self) -> None:
+        started_at = datetime(2026, 11, 27, 5, 0, 0)
+        self.repo.start_run(
+            run_id="run-finished",
+            task_id="coupons",
+            trigger="scheduled",
+            started_at=started_at,
+        )
+        self.repo.finish_run(
+            run_id="run-finished",
+            status="success",
+            finished_at=started_at + timedelta(seconds=30),
+            log_text="FINAL",
+        )
+
+        updated = self.repo.update_run_log("run-finished", "LATE PROGRESS")
+
+        self.assertFalse(updated)
+        row = self.repo.get_run("run-finished")
+        assert row is not None
+        self.assertEqual(row["status"], "success")
+        self.assertEqual(row["log_text"], "FINAL")
 
     def test_prune_removes_old_finished_runs(self) -> None:
         old_started = datetime(2026, 1, 1, 10, 0, 0)

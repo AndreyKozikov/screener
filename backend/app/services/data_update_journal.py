@@ -22,6 +22,7 @@ MAX_LOG_CHARS = 64_000
 MAX_ERROR_CHARS = 2_000
 MAX_QUERY_CHARS = 2_000
 JOURNAL_WRITE_TIMEOUT_SECONDS = 3.0
+HEARTBEAT_INTERVAL_SECONDS = 30.0
 _MAX_STRING_CHARS = 500
 _MAX_KEYS = 30
 _MAX_LIST_ITEMS = 10
@@ -154,6 +155,40 @@ def _trading_history_outcome(
     return STATUS_SUCCESS, None, message
 
 
+def _coupons_outcome(
+    payload: dict[str, Any],
+) -> Optional[tuple[str, Optional[str], Optional[str]]]:
+    """Оценить частичный сбой обновления купонов.
+
+    Как и для истории торгов, успешный запуск с частью ошибок считается
+    предупреждением; полный провал (ничего не обновлено или упали все
+    облигации) остаётся ошибкой.
+
+    ВАЖНО: правило синхронизировано с _partial_failure_details в
+    conversion_service/scheduled_updates/runner.py. Изменения вносить в обе копии.
+    """
+    failed = _int_or_zero(payload.get("failed", payload.get("errors")))
+    if failed <= 0:
+        return None
+
+    total = _int_or_zero(payload.get("total_bonds", payload.get("total")))
+    updated = _int_or_zero(payload.get("updated"))
+    detail = f"{failed} из {total} облигаций" if total else f"{failed} облигаций"
+    message = f"Не обновлены данные по {detail} (обновлено {updated})"
+    samples_list = payload.get("error_samples") or []
+    sample = "; ".join(
+        f"{item.get('secid')}: {item.get('error')}"
+        for item in (samples_list[:3] if isinstance(samples_list, list) else [])
+        if isinstance(item, dict)
+    )
+    if sample:
+        message += f". Примеры: {sample}"
+
+    if updated <= 0 or (total and failed >= total):
+        return STATUS_ERROR, message, None
+    return STATUS_SUCCESS, None, message
+
+
 def classify_payload(
     task_id: str,
     payload: Any,
@@ -170,6 +205,10 @@ def classify_payload(
             return STATUS_ERROR, _extract_error_message(payload, status_code), None
         if task_id == "trading-history":
             outcome = _trading_history_outcome(payload)
+            if outcome is not None:
+                return outcome
+        if task_id == "coupons":
+            outcome = _coupons_outcome(payload)
             if outcome is not None:
                 return outcome
     return STATUS_SUCCESS, None, None
@@ -255,18 +294,23 @@ def safe_query(query: str) -> Optional[str]:
     return query[:MAX_QUERY_CHARS]
 
 
-async def begin_manual_run(
+async def try_begin_manual_run(
     task_id: str,
     request_path: str,
     request_query: Optional[str],
-) -> tuple[str, datetime]:
-    """Зафиксировать начало ручного обновления."""
+) -> Optional[tuple[str, datetime]]:
+    """Атомарно начать ручное обновление, если другие обновления не идут.
+
+    Returns:
+        (run_id, started_at), если запуск создан; None, если сейчас уже
+        выполняется другое обновление данных.
+    """
     run_id = str(uuid4())
     started_at = utc_now()
 
-    def _write() -> None:
+    def _write() -> bool:
         repository = DataUpdateRunsRepository()
-        repository.start_run(
+        return repository.try_start_run(
             run_id=run_id,
             task_id=task_id,
             trigger=TRIGGER_MANUAL,
@@ -276,13 +320,61 @@ async def begin_manual_run(
         )
 
     try:
+        # Не оборачиваем в wait_for: отмена ожидания не останавливает поток,
+        # и закоммиченная запись running осталась бы без владельца.
+        acquired = await asyncio.to_thread(_write)
+    except Exception as exc:
+        logger.warning("Не удалось проверить занятость обновлений для %s: %s", task_id, exc)
+        raise
+    if not acquired:
+        return None
+    return run_id, started_at
+
+
+async def heartbeat_manual_run(
+    *,
+    run_id: str,
+    task_id: str,
+    started_at: datetime,
+) -> None:
+    """Записать в журнал heartbeat выполняющегося ручного обновления."""
+    now = utc_now()
+    elapsed = int(max(0.0, (now - started_at).total_seconds()))
+    log_text = (
+        f"[{_format_ts(started_at)}] START task={task_id} trigger={TRIGGER_MANUAL} run={run_id}\n"
+        f"[{_format_ts(now)}] PROGRESS elapsed={elapsed}s phase=conversion"
+    )
+
+    def _write() -> bool:
+        return DataUpdateRunsRepository().update_run_log(
+            run_id=run_id,
+            log_text=log_text,
+        )
+
+    try:
         await asyncio.wait_for(
             asyncio.to_thread(_write),
             timeout=JOURNAL_WRITE_TIMEOUT_SECONDS,
         )
     except Exception as exc:
-        logger.warning("Не удалось записать начало обновления %s: %s", task_id, exc)
-    return run_id, started_at
+        logger.warning("Не удалось записать heartbeat обновления %s: %s", task_id, exc)
+
+
+async def run_manual_heartbeat(
+    *,
+    run_id: str,
+    task_id: str,
+    started_at: datetime,
+    interval: float = HEARTBEAT_INTERVAL_SECONDS,
+) -> None:
+    """Периодически обновлять лог ручного запуска до его завершения."""
+    while True:
+        await asyncio.sleep(interval)
+        await heartbeat_manual_run(
+            run_id=run_id,
+            task_id=task_id,
+            started_at=started_at,
+        )
 
 
 async def finish_manual_run(

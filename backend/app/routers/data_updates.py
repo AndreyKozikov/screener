@@ -25,7 +25,8 @@ router = APIRouter(
     dependencies=[Depends(require_admin)],
 )
 
-_STALE_RUN_AFTER = timedelta(hours=6)
+# Через сколько без heartbeat запуск считается прерванным.
+_STALE_RUN_AFTER = timedelta(minutes=10)
 
 
 class DataUpdateStatusItem(BaseModel):
@@ -41,6 +42,7 @@ class DataUpdateStatusItem(BaseModel):
     warning_message: Optional[str] = None
     run_id: Optional[str] = None
     log_available: bool = False
+    progress: Optional[str] = None
 
 
 class DataUpdateStatusesResponse(BaseModel):
@@ -74,14 +76,18 @@ def _iso(value: Optional[Any]) -> Optional[str]:
 
 
 def _normalize_row(row: dict[str, Any]) -> dict[str, Any]:
-    """Пометить зависшие запуски как прерванные."""
+    """Пометить зависшие запуски как прерванные.
+
+    Признак живости — последний heartbeat, а не время старта: долгий запуск,
+    который регулярно пишет прогресс, не считается зависшим.
+    """
     normalized = dict(row)
     if normalized.get("status") == "running":
-        started_at = normalized.get("started_at")
-        if isinstance(started_at, datetime):
-            if started_at.tzinfo is None:
-                started_at = started_at.replace(tzinfo=timezone.utc)
-            if _utc_now() - started_at > _STALE_RUN_AFTER:
+        last_seen = normalized.get("heartbeat_at") or normalized.get("started_at")
+        if isinstance(last_seen, datetime):
+            if last_seen.tzinfo is None:
+                last_seen = last_seen.replace(tzinfo=timezone.utc)
+            if _utc_now() - last_seen > _STALE_RUN_AFTER:
                 normalized["status"] = "error"
                 normalized["error_message"] = (
                     "Обновление не завершилось и было прервано"
@@ -89,8 +95,20 @@ def _normalize_row(row: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
+def _progress_from_log(log_text: Optional[str]) -> Optional[str]:
+    """Извлечь последнюю строку прогресса для отображения в панели."""
+    if not log_text:
+        return None
+    for line in reversed(log_text.splitlines()):
+        text = line.strip()
+        if text and "PROGRESS" in text:
+            return text[:300]
+    return None
+
+
 def _to_status_item(row: dict[str, Any]) -> DataUpdateStatusItem:
     normalized = _normalize_row(row)
+    log_text = normalized.get("log_text")
     return DataUpdateStatusItem(
         task_id=str(normalized.get("task_id") or ""),
         status=normalized.get("status"),
@@ -101,7 +119,12 @@ def _to_status_item(row: dict[str, Any]) -> DataUpdateStatusItem:
         error_message=normalized.get("error_message"),
         warning_message=normalized.get("warning_message"),
         run_id=normalized.get("run_id"),
-        log_available=bool(normalized.get("log_text")),
+        log_available=bool(log_text),
+        progress=(
+            _progress_from_log(log_text)
+            if normalized.get("status") == "running"
+            else None
+        ),
     )
 
 

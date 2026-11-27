@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-from sqlalchemy import and_, delete, or_, select
+from sqlalchemy import and_, delete, or_, select, update
 from sqlmodel import Session, create_engine
 
 from db_repository.config.paths import DB_PATH
@@ -25,10 +25,20 @@ _PRUNE_INTERVAL_SECONDS = 24 * 60 * 60
 _last_prune_at: float = 0.0
 _prune_lock = threading.Lock()
 
+# Через сколько без heartbeat запись со статусом running считается зависшей.
+_STALE_RUN_AFTER = timedelta(minutes=10)
+_STATUS_RUNNING = "running"
+_MAX_LOG_CHARS = 64_000
+
 
 def _utc_now() -> datetime:
     """Вернуть текущее время UTC без tzinfo для хранения в SQLite."""
     return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _format_db_datetime(value: datetime) -> str:
+    """Отформатировать дату в формате, который использует SQLAlchemy для SQLite."""
+    return value.strftime("%Y-%m-%d %H:%M:%S.%f")
 
 
 def _scalar_values(rows: list[Any]) -> list[Any]:
@@ -51,7 +61,7 @@ class DataUpdateRunsRepository:
         self.db_path = Path(db_path)
         self._engine = create_engine(
             f"sqlite:///{self.db_path.resolve()}",
-            connect_args={"check_same_thread": False},
+            connect_args={"check_same_thread": False, "timeout": 30},
             echo=False,
         )
 
@@ -76,6 +86,7 @@ class DataUpdateRunsRepository:
             status="running",
             trigger=trigger,
             started_at=started_at,
+            heartbeat_at=started_at,
             request_path=request_path,
             request_query=request_query,
         )
@@ -119,12 +130,14 @@ class DataUpdateRunsRepository:
                     status=status,
                     trigger=trigger or "manual",
                     started_at=started_at or finished_at,
+                    heartbeat_at=started_at or finished_at,
                     request_path=request_path,
                     request_query=request_query,
                 )
                 session.add(row)
             row.status = status
             row.finished_at = finished_at
+            row.heartbeat_at = finished_at
             row.duration_ms = duration_ms
             row.error_message = error_message
             row.warning_message = warning_message
@@ -144,6 +157,95 @@ class DataUpdateRunsRepository:
             session.commit()
             session.refresh(row)
             return self._to_dict(row)
+
+    def try_start_run(
+        self,
+        run_id: str,
+        task_id: str,
+        trigger: str,
+        started_at: datetime,
+        request_path: Optional[str] = None,
+        request_query: Optional[str] = None,
+        stale_before: Optional[datetime] = None,
+    ) -> bool:
+        """Атомарно начать запуск, если сейчас не выполняется другое обновление.
+
+        Проверка и вставка выполняются в одной транзакции ``BEGIN IMMEDIATE``,
+        поэтому два процесса (backend и conversion_service) не смогут
+        одновременно начать обновление. Запуски старше ``stale_before``
+        считаются зависшими и не блокируют новый старт.
+
+        Returns:
+            True, если запуск создан; False, если уже есть активное обновление.
+        """
+        stale_before = stale_before or (_utc_now() - _STALE_RUN_AFTER)
+        started_text = _format_db_datetime(started_at)
+        stale_text = _format_db_datetime(stale_before)
+        created_text = _format_db_datetime(_utc_now())
+
+        connection = self._engine.raw_connection()
+        try:
+            cursor = connection.cursor()
+            # BEGIN IMMEDIATE сразу берёт блокировку записи SQLite, поэтому
+            # SELECT и INSERT видят согласованное состояние.
+            cursor.execute("BEGIN IMMEDIATE")
+            cursor.execute(
+                "SELECT 1 FROM data_update_runs "
+                "WHERE status = ? AND COALESCE(heartbeat_at, started_at) >= ? LIMIT 1",
+                (_STATUS_RUNNING, stale_text),
+            )
+            if cursor.fetchone() is not None:
+                connection.rollback()
+                return False
+
+            cursor.execute(
+                "INSERT INTO data_update_runs ("
+                "run_id, task_id, status, trigger, started_at, heartbeat_at, "
+                "request_path, request_query, created_at"
+                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    run_id,
+                    task_id,
+                    _STATUS_RUNNING,
+                    trigger,
+                    started_text,
+                    started_text,
+                    request_path,
+                    request_query,
+                    created_text,
+                ),
+            )
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+        self._maybe_prune()
+        return True
+
+    def update_run_log(self, run_id: str, log_text: Optional[str]) -> bool:
+        """Обновить текст лога выполняющегося запуска, не меняя его статус.
+
+        Обновление выполняется только для записей в статусе running, поэтому
+        запоздавший heartbeat не может перезаписать итоговый лог завершённого
+        запуска.
+        """
+        with Session(self._engine) as session:
+            result = session.execute(
+                update(DataUpdateRun)
+                .where(
+                    DataUpdateRun.run_id == run_id,
+                    DataUpdateRun.status == _STATUS_RUNNING,
+                )
+                .values(
+                    log_text=(log_text or "")[:_MAX_LOG_CHARS],
+                    heartbeat_at=_utc_now(),
+                )
+            )
+            session.commit()
+            return int(result.rowcount or 0) > 0
 
     def get_latest_runs(self) -> list[dict[str, Any]]:
         """Вернуть последний запуск по каждому пункту обновления."""

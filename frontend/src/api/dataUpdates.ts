@@ -14,6 +14,7 @@ export interface DataUpdateStatusItem {
   warning_message: string | null;
   run_id: string | null;
   log_available: boolean;
+  progress: string | null;
 }
 
 export interface DataUpdateStatusesResponse {

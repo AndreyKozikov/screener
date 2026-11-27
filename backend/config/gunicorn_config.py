@@ -12,7 +12,7 @@ backlog = 2048
 
 # Worker processes
 workers = multiprocessing.cpu_count() * 2 + 1
-worker_class = "uvicorn.workers.UvicornWorker"
+worker_class = "config.uvicorn_worker.BondsScreenerUvicornWorker"
 worker_connections = 1000
 timeout = 1200
 keepalive = 5

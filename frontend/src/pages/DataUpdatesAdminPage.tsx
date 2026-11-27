@@ -94,6 +94,7 @@ const DataUpdateRow: FC<{
   const hasLog = Boolean(item?.log_available && item?.run_id);
   const isRunning = kind === 'running';
   const warning = kind === 'success' ? item?.warning_message ?? null : null;
+  const progress = isRunning ? item?.progress ?? null : null;
 
   return (
     <Box
@@ -157,11 +158,15 @@ const DataUpdateRow: FC<{
                 : duration
                   ? `Длительность: ${duration}`
                   : 'Подробности в логе'
-              : duration
-                ? `Длительность: ${duration}`
-                : kind === 'unknown'
-                  ? 'Обновление ещё не запускалось'
-                  : ''}
+              : progress
+                ? progress.length > 160
+                  ? `${progress.slice(0, 160)}…`
+                  : progress
+                : duration
+                  ? `Длительность: ${duration}`
+                  : kind === 'unknown'
+                    ? 'Обновление ещё не запускалось'
+                    : ''}
         </Typography>
       </Box>
 
@@ -190,9 +195,21 @@ const DataUpdateRow: FC<{
             </IconButton>
           </Tooltip>
         )}
+        {hasLog && isRunning && (
+          <Tooltip title="Открыть текущий лог обновления">
+            <IconButton
+              size="small"
+              aria-label={`Открыть лог: ${task.statusLabel}`}
+              onClick={() => onOpenLog(task, item?.run_id as string)}
+              sx={{ color: 'text.secondary' }}
+            >
+              <DescriptionOutlinedIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        )}
         {isRunning && !hasLog && (
           <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
-            Лог появится после завершения
+            Ожидание прогресса…
           </Typography>
         )}
       </Box>
@@ -217,9 +234,11 @@ export const DataUpdatesAdminPage: FC = () => {
   const [logError, setLogError] = useState<string | null>(null);
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
 
-  const loadStatuses = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const loadStatuses = useCallback(async (silent = false) => {
+    if (!silent) {
+      setLoading(true);
+      setError(null);
+    }
     try {
       const data = await fetchDataUpdateStatuses();
       const next: Record<string, DataUpdateStatusItem> = {};
@@ -229,9 +248,13 @@ export const DataUpdatesAdminPage: FC = () => {
       setStatuses(next);
       setGeneratedAt(data.generated_at);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось загрузить историю обновлений');
+      if (!silent) {
+        setError(err instanceof Error ? err.message : 'Не удалось загрузить историю обновлений');
+      }
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   }, []);
 
@@ -261,6 +284,16 @@ export const DataUpdatesAdminPage: FC = () => {
     () => DATA_REFRESH_TASKS.some((task) => Boolean(statuses[task.id]?.status)),
     [statuses],
   );
+
+  useEffect(() => {
+    if (counts.running === 0) {
+      return;
+    }
+    const intervalId = window.setInterval(() => {
+      void loadStatuses(true);
+    }, 10_000);
+    return () => window.clearInterval(intervalId);
+  }, [counts.running, loadStatuses]);
 
   const openLog = useCallback(async (task: DataRefreshTaskDefinition, runId: string) => {
     setLogTask(task);

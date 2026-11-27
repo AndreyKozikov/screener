@@ -34,7 +34,7 @@ class RepositoryCall(BaseModel):
         "get_reg_number_by_secid", "get_run", "get_secid_to_emitent_title_index", "get_secids_by_ids",
         "get_secids_by_regnumber", "get_stats", "has_coupons_for_secid", "insert_batch",
         "list_articles", "prune", "save", "save_event_changes", "save_forecast", "save_kbd_records",
-        "save_many", "save_moex_coupons", "save_records", "start_run", "update",
+        "save_many", "save_moex_coupons", "save_records", "start_run", "try_start_run", "update_run_log", "update",
         "upsert", "upsert_mapping", "upsert_ratings_for_bond", "get_by_email", "get_by_id",
         "find_duplicate", "get_current_positions_for_user", "get_current_position_trades_for_user", "get_for_user", "list_for_user", "save_report_import",
     ]

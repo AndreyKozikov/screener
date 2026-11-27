@@ -137,12 +137,33 @@ class RefreshAllTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["total_bonds"], 4)
         self.assertEqual(result["updated"], 1)
         self.assertEqual(result["errors"], 1)
+        self.assertEqual(result["failed"], 1)
         self.assertEqual(result["skipped"], 2)
+        self.assertEqual(
+            result["error_samples"],
+            [{"secid": "BAD", "error": "boom for BAD"}],
+        )
 
         self.assertEqual(len(db.batches), 1)
         saved = db.batches[0]
         self.assertEqual(len(saved), 1)
         self.assertEqual(saved[0]["bond_id"], 1)
+
+    def test_saves_in_chunks_and_reports_progress(self):
+        bonds = [(i, f"SEC{i:02d}") for i in range(1, 11)]
+        coupons = [make_coupon(1), make_coupon(2)]
+        client = FakeMoexClient(
+            coupons_by_secid={secid: coupons for _, secid in bonds},
+        )
+        service, db = make_service(client, bonds)
+        progress = mock.Mock()
+
+        with mock.patch.object(service_module, "COUPON_SAVE_CHUNK_SIZE", 4):
+            result = self._run(service.refresh_all(progress=progress))
+
+        self.assertEqual(result["updated"], 10)
+        self.assertEqual([len(batch) for batch in db.batches], [8, 8, 4])
+        self.assertGreaterEqual(progress.call_count, 3)
 
     def test_no_bonds_saves_nothing_but_calls_db(self):
         service, db = make_service(FakeMoexClient(), [])

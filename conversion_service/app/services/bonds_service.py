@@ -49,17 +49,85 @@ class BondsUpdateService:
         self.bond_transformer = BondTransformer()
 
     async def update_bonds_data(self):
-        payload = self.moex.bonds_data_load(self.MOEX_BONDS_URL)
-        raw_bonds_data = self.bond_transformer.transform_raw_payload(payload)
+        payload = await asyncio.to_thread(self.moex.bonds_data_load, self.MOEX_BONDS_URL)
+        raw_bonds_data = await asyncio.to_thread(
+            self.bond_transformer.transform_raw_payload, payload
+        )
         secids = list(raw_bonds_data.keys())
         bonds_rating_map = await self._load_ratings_map()
         emitents_rating_map = await self._load_emitent_map()
 
         current_coupon = await self._load_current_coupons(secids)
 
-        print("=============================================================")
-        type_mapping, kind_mapping = self.bond_transformer.load_mappings()
+        logger.info("=============================================================")
+        type_mapping, kind_mapping = await asyncio.to_thread(
+            self.bond_transformer.load_mappings
+        )
 
+        await asyncio.to_thread(
+            self._enrich_bonds_data,
+            raw_bonds_data,
+            bonds_rating_map,
+            emitents_rating_map,
+            current_coupon,
+            type_mapping,
+            kind_mapping,
+        )
+
+        bonds_data_dto = await asyncio.to_thread(
+            BondsDataDTO.model_validate, raw_bonds_data
+        )
+        client = get_db_repository_client()
+
+        def _post_bonds_data() -> Any:
+            return client.post(
+                "/api/bonds_data_update",
+                json=bonds_data_dto.model_dump(by_alias=False),
+            )
+
+        response = await asyncio.to_thread(_post_bonds_data)
+        response.raise_for_status()
+        result = response.json()
+
+        try:
+            bond_descriptions = await asyncio.to_thread(
+                self.moex.bond_descriptions_load,
+                secids,
+            )
+            if bond_descriptions:
+                description_response = await asyncio.to_thread(
+                    client.post,
+                    "/api/bond_descriptions/update",
+                    json=bond_descriptions,
+                )
+                description_response.raise_for_status()
+                description_result = description_response.json()
+                logger.info(
+                    "Обновлены описания MOEX: записей=%s, SECID без облигаций=%s, ошибок валидации=%s",
+                    description_result.get("updated", 0),
+                    len(description_result.get("unmatched_secids", [])),
+                    len(description_result.get("invalid_secids", [])),
+                )
+        except Exception:
+            logger.exception("Не удалось обновить описания облигаций из MOEX")
+            raise
+
+        return result
+
+    def _enrich_bonds_data(
+        self,
+        raw_bonds_data: Dict[str, Any],
+        bonds_rating_map: Dict[str, Dict[str, List[Dict[str, Any]]]],
+        emitents_rating_map: Dict[str, Dict[str, Any]],
+        current_coupon: Dict[str, Any],
+        type_mapping: Dict[str, Any],
+        kind_mapping: Dict[str, Any],
+    ) -> None:
+        """Обогатить данные облигаций рейтингами и расчетными полями.
+
+        Метод синхронный и вызывается через asyncio.to_thread, чтобы не
+        блокировать event loop на время CPU-обработки тысяч бумаг.
+        """
         for secid, bond_data in raw_bonds_data.items():
             bond_data["securities"]["RATING_AGENCY"] = ""
             bond_data["securities"]["RATING_LEVEL"] = ""
@@ -134,51 +202,18 @@ class BondsUpdateService:
                 )
             bond_data["securities"]["COUPONYIELDTOPRICE"] = coupon_yield_to_price
 
-        bonds_data_dto = BondsDataDTO.model_validate(raw_bonds_data)
-        client = get_db_repository_client()
-        response = await asyncio.to_thread(
-            client.post,
-            "/api/bonds_data_update",
-            json=bonds_data_dto.model_dump(by_alias=False),
-        )
-        response.raise_for_status()
-        result = response.json()
-
-        try:
-            bond_descriptions = await asyncio.to_thread(
-                self.moex.bond_descriptions_load,
-                secids,
-            )
-            if bond_descriptions:
-                description_response = await asyncio.to_thread(
-                    client.post,
-                    "/api/bond_descriptions/update",
-                    json=bond_descriptions,
-                )
-                description_response.raise_for_status()
-                description_result = description_response.json()
-                logger.info(
-                    "Обновлены описания MOEX: записей=%s, SECID без облигаций=%s, ошибок валидации=%s",
-                    description_result.get("updated", 0),
-                    len(description_result.get("unmatched_secids", [])),
-                    len(description_result.get("invalid_secids", [])),
-                )
-        except Exception:
-            logger.exception("Не удалось обновить описания облигаций из MOEX")
-            raise
-
-        return result
-
     async def _load_current_coupons(self, secids: List[str]):
-
         client = get_db_repository_client()
-        response = await asyncio.to_thread(
-            client.post,
-            "/api/coupons/current_coupon",
-            json=secids,
-        )
-        response.raise_for_status()
-        return response.json()
+
+        def _load() -> Any:
+            response = client.post(
+                "/api/coupons/current_coupon",
+                json=secids,
+            )
+            response.raise_for_status()
+            return response.json()
+
+        return await asyncio.to_thread(_load)
 
     async def _load_ratings_map(self) -> Dict[str, Dict[str, List[Dict[str, Any]]]]:
         """Загружает рейтинги облигаций из БД (bond_ratings + bonds + rating_agency).
@@ -190,31 +225,32 @@ class BondsUpdateService:
         Returns:
             Словарь: ключ — secid, значение — {"all_ratings": [{"agency_name_short_ru", "rating_level_name", "rating_level_name_short_ru"}, ...]}.
         """
-        ratings_map: Dict[str, Dict[str, List[Dict[str, Any]]]] = {}
         client = get_db_repository_client()
-        response = await asyncio.to_thread(
-            client.get,
-            "/api/ratings/bonds_rating_map",
-        )
-        response.raise_for_status()
-        rows = response.json()
 
-        for secid, agency_name_short_ru, rating_level_name in rows:
-            if not secid:
-                continue
-            name_ru = (agency_name_short_ru or "").strip()
-            level = standardize_rating(rating_level_name) or ""
-            if not name_ru:
-                continue
-            entry = {
-                "agency_name_short_ru": name_ru,
-                "rating_level_name": level,
-                "rating_level_name_short_ru": level,
-            }
-            if secid not in ratings_map:
-                ratings_map[secid] = {"all_ratings": []}
-            ratings_map[secid]["all_ratings"].append(entry)
-        return ratings_map
+        def _load() -> Dict[str, Dict[str, List[Dict[str, Any]]]]:
+            ratings_map: Dict[str, Dict[str, List[Dict[str, Any]]]] = {}
+            response = client.get("/api/ratings/bonds_rating_map")
+            response.raise_for_status()
+            rows = response.json()
+
+            for secid, agency_name_short_ru, rating_level_name in rows:
+                if not secid:
+                    continue
+                name_ru = (agency_name_short_ru or "").strip()
+                level = standardize_rating(rating_level_name) or ""
+                if not name_ru:
+                    continue
+                entry = {
+                    "agency_name_short_ru": name_ru,
+                    "rating_level_name": level,
+                    "rating_level_name_short_ru": level,
+                }
+                if secid not in ratings_map:
+                    ratings_map[secid] = {"all_ratings": []}
+                ratings_map[secid]["all_ratings"].append(entry)
+            return ratings_map
+
+        return await asyncio.to_thread(_load)
 
     async def _load_emitent_map(self) -> Dict[str, Dict[str, Any]]:
         """Загружает данные эмитентов из БД (bonds -> emitents -> emitent_ratings -> rating_agency).
@@ -226,28 +262,29 @@ class BondsUpdateService:
         Returns:
             Словарь: ключ — secid, значение — {"type": str|None, "cci_rating_companies": [...]}.
         """
-        emitent_map: Dict[str, Dict[str, Any]] = {}
         client = get_db_repository_client()
-        response = await asyncio.to_thread(
-            client.get,
-            "/api/ratings/emitents_rating_map",
-        )
-        response.raise_for_status()
-        rows = response.json()
 
-        for secid, emitent_type, agency_name_short_ru, rating_level_name in rows:
-            if not secid:
-                continue
-            name_ru = (agency_name_short_ru or "").strip()
-            level = standardize_rating(rating_level_name) or ""
-            if secid not in emitent_map:
-                type_val = (emitent_type or "").strip() or None
-                emitent_map[secid] = {"type": type_val, "cci_rating_companies": []}
-            emitent_map[secid]["cci_rating_companies"].append({
-                "agency_name_short_ru": name_ru,
-                "rating_level_name_short_ru": level,
-            })
-        return emitent_map
+        def _load() -> Dict[str, Dict[str, Any]]:
+            emitent_map: Dict[str, Dict[str, Any]] = {}
+            response = client.get("/api/ratings/emitents_rating_map")
+            response.raise_for_status()
+            rows = response.json()
+
+            for secid, emitent_type, agency_name_short_ru, rating_level_name in rows:
+                if not secid:
+                    continue
+                name_ru = (agency_name_short_ru or "").strip()
+                level = standardize_rating(rating_level_name) or ""
+                if secid not in emitent_map:
+                    type_val = (emitent_type or "").strip() or None
+                    emitent_map[secid] = {"type": type_val, "cci_rating_companies": []}
+                emitent_map[secid]["cci_rating_companies"].append({
+                    "agency_name_short_ru": name_ru,
+                    "rating_level_name_short_ru": level,
+                })
+            return emitent_map
+
+        return await asyncio.to_thread(_load)
 
     def _get_worst_rating(self, ratings_list: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         """Определяет наихудший рейтинг из списка рейтингов.

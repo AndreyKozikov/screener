@@ -10,8 +10,11 @@ Group={{DEPLOY_USER}}
 WorkingDirectory={{APP_DIR}}
 Environment="PATH={{APP_DIR}}/.venv/bin:/usr/local/bin:/usr/bin:/bin"
 Environment="PYTHONPATH={{APP_DIR}}"
+Environment="NO_PROXY=*"
+Environment="no_proxy=*"
 EnvironmentFile=-{{APP_DIR}}/conversion_service/.env
-ExecStart={{APP_DIR}}/.venv/bin/python -m conversion_service.scheduled_updates.runner %i
+# env гарантирует NO_PROXY=* даже если .env задаёт свои значения.
+ExecStart=/usr/bin/env NO_PROXY=* no_proxy=* {{APP_DIR}}/.venv/bin/python -m conversion_service.scheduled_updates.runner %i
 SuccessExitStatus=0 3
 TimeoutStartSec=6h
 StandardOutput=journal

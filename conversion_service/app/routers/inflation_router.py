@@ -1,5 +1,6 @@
 """Роутер API для загрузки и парсинга данных инфляционных ожиданий."""
 
+import asyncio
 import logging
 from pathlib import Path
 from typing import Any, Dict
@@ -42,7 +43,11 @@ async def upload_and_parse_inflation_expectations(
             clean_filename = Path(file.filename).name
             target_excel_path = DEFAULT_EXCEL_PATH.parent / clean_filename
 
-        FileStorage().save_binary_file(target_excel_path, content)
+        await asyncio.to_thread(
+            FileStorage().save_binary_file,
+            target_excel_path,
+            content,
+        )
         logger.info(
             "[INFLATION EXPECTATIONS ROUTER] Файл %s сохранён на диск, запуск парсинга",
             target_excel_path,
@@ -82,7 +87,11 @@ async def upload_and_parse_inflation_data(
             clean_filename = Path(file.filename).name
             target_excel_path = DEFAULT_EXCEL_PATH.parent / clean_filename
 
-        FileStorage().save_binary_file(target_excel_path, content)
+        await asyncio.to_thread(
+            FileStorage().save_binary_file,
+            target_excel_path,
+            content,
+        )
         logger.info(
             "[INFLATION DATA ROUTER] Файл %s сохранён на диск, запуск парсинга",
             target_excel_path,

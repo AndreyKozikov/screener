@@ -4,14 +4,11 @@
 к API MOEX и первичной обработки ошибок (сеть, таймаут, некорректный JSON).
 """
 
-from typing import Any, Dict, List
-from urllib.error import URLError
-from urllib.request import Request, urlopen
+from typing import Any, Dict, List, Optional
 
-import orjson
-
-from conversion_service.app.utils.coupon_utils import clean_string_value, extract_coupon_for_storage
 import logging
+from conversion_service.app.utils.coupon_utils import clean_string_value, extract_coupon_for_storage
+from conversion_service.app.utils.moex_http import MoexHttpClient, get_moex_http_client
 from conversion_service.config.paths import MOEX_BONDIZATION_BASE_URL, MOEX_COUPONS_QUERY
 
 
@@ -22,19 +19,16 @@ class MoexClient:
     Обрабатывает сетевые ошибки и ошибки парсинга JSON.
 
     Attributes:
-        timeout: Таймаут запроса в секундах (по умолчанию 30).
-        user_agent: Заголовок User-Agent для запроса.
+        _http: Общий HTTP-клиент MOEX с лимитом частоты и ретраями.
     """
 
-    def __init__(self, timeout: int = 30, user_agent: str = "Mozilla/5.0"):
+    def __init__(self, http_client: Optional[MoexHttpClient] = None):
         """Инициализирует клиент MOEX.
 
         Args:
-            timeout: Таймаут HTTP запроса в секундах.
-            user_agent: Значение заголовка User-Agent.
+            http_client: Общий HTTP-клиент MOEX; по умолчанию берется синглтон процесса.
         """
-        self.timeout = timeout
-        self.user_agent = user_agent
+        self._http = http_client or get_moex_http_client()
         self._logger = logging.getLogger(__name__)
 
 
@@ -58,21 +52,12 @@ class MoexClient:
             RuntimeError: При сетевой ошибке, таймауте или некорректном формате ответа.
         """
         url = f"{MOEX_BONDIZATION_BASE_URL.format(secid=secid)}{MOEX_COUPONS_QUERY}"
-        request = Request(url, headers={"User-Agent": self.user_agent})
 
         try:
-            with urlopen(request, timeout=self.timeout) as response:
-                raw_payload = response.read()
-        except URLError as exc:
+            payload = self._http.get_json(url)
+        except RuntimeError as exc:
             raise RuntimeError(
                 f"Failed to download coupons data for {secid}: {exc}"
-            ) from exc
-
-        try:
-            payload = orjson.loads(raw_payload)
-        except orjson.JSONDecodeError as exc:
-            raise RuntimeError(
-                f"Received invalid JSON for {secid}: {exc}"
             ) from exc
 
         result: Dict[str, List[Dict[str, Any]]] = {

@@ -25,6 +25,10 @@ class DataUpdateRun(SQLModel, table=True):
     status: str = Field(index=True, max_length=16, description="running | success | error")
     trigger: str = Field(max_length=16, description="manual | scheduled")
     started_at: datetime = Field(index=True, description="Время начала запуска (UTC, без tzinfo)")
+    heartbeat_at: Optional[datetime] = Field(
+        default=None,
+        description="Время последнего heartbeat выполняющегося запуска (UTC, без tzinfo)",
+    )
     finished_at: Optional[datetime] = Field(default=None, description="Время завершения запуска (UTC, без tzinfo)")
     duration_ms: Optional[int] = Field(default=None, description="Длительность запуска в миллисекундах")
     error_message: Optional[str] = Field(default=None, description="Текст ошибки для неуспешного запуска")
