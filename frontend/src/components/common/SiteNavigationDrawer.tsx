@@ -1,20 +1,20 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   Box,
+  Collapse,
+  Drawer,
   IconButton,
   ListItemButton,
   ListItemIcon,
   ListItemText,
-  Collapse,
-  Paper,
+  Menu,
+  MenuItem,
   Typography,
   Tooltip,
-  Popper,
-  Fade,
-  ClickAwayListener,
-  useTheme,
   useMediaQuery,
+  useTheme,
 } from '@mui/material';
+import { alpha } from '@mui/material/styles';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -23,12 +23,15 @@ import ShowChartIcon from '@mui/icons-material/ShowChart';
 import AdminPanelSettingsOutlinedIcon from '@mui/icons-material/AdminPanelSettingsOutlined';
 import { useAdminCapabilities } from '../../contexts/adminCapabilitiesContext';
 
+export type SiteNavigationGroup = 'data' | 'work' | 'content';
+
 export type SiteNavigationItem = {
   id: string;
   label: string;
   icon?: React.ReactNode;
   children?: SiteNavigationItem[];
   requiresAuth?: boolean;
+  group?: SiteNavigationGroup;
 };
 
 type SiteNavigationDrawerProps = {
@@ -40,22 +43,53 @@ type SiteNavigationDrawerProps = {
 
 const NAV_EXPANDED_STORAGE_KEY = 'bonds-screener:nav-expanded';
 
+// ─── Общие размеры и типографика панели ─────────────────────────────────────
+
+const TRANSITION_DURATION = 300;
+const EASING = 'cubic-bezier(0.4, 0, 0.2, 1)';
+const RAIL_WIDTH = 64;
+const PANEL_WIDTH = 300;
+const MOBILE_PANEL_WIDTH = 'min(86vw, 320px)';
+
+const ICON_SLOT_WIDTH = 24;
+const ICON_SIZE = 20;
+
+const TEXT_ITEM = '0.9375rem';
+const TEXT_SUB_ITEM = '0.875rem';
+const TEXT_GROUP = '0.8125rem';
+const TEXT_META = '0.8125rem';
+
+const HOVER_MEDIA = '@media (hover: hover) and (pointer: fine)';
+const REDUCED_MOTION = '@media (prefers-reduced-motion: reduce)';
+
 const containsActiveItem = (item: SiteNavigationItem, activeId: string): boolean =>
   item.id === activeId || Boolean(item.children?.some((child) => containsActiveItem(child, activeId)));
 
-// ─── Collapsed-mode: icon-only row with Click-to-Open Popper & Hover Tooltip ───
+const isGroupStart = (items: SiteNavigationItem[], index: number): boolean =>
+  index > 0 && items[index - 1]?.group !== items[index]?.group;
+
+// ─── Свёрнутый рельс: иконка, tooltip и меню подразделов ────────────────────
 
 const CollapsedRow: React.FC<{
   item: SiteNavigationItem;
   activeId: string;
   isOpen: boolean;
+  isMobile: boolean;
   onToggleOpen: () => void;
   onClose: () => void;
   onSelect: (id: string) => void;
-}> = ({ item, activeId, isOpen, onToggleOpen, onClose, onSelect }) => {
+}> = ({ item, activeId, isOpen, isMobile, onToggleOpen, onClose, onSelect }) => {
+  const theme = useTheme();
   const anchorRef = useRef<HTMLButtonElement>(null);
   const isActive = containsActiveItem(item, activeId);
   const hasChildren = Boolean(item.children?.length);
+  const isHighlighted = isActive || isOpen;
+
+  const primary = theme.palette.primary.main;
+  const activeColor = theme.palette.primary.dark;
+  const textColor = theme.palette.text.primary;
+  const selectedBg = alpha(primary, 0.1);
+  const selectedHoverBg = alpha(primary, 0.16);
 
   const handleClick = () => {
     if (hasChildren) {
@@ -66,27 +100,8 @@ const CollapsedRow: React.FC<{
     }
   };
 
-  const handleClickAway = (event: MouseEvent | TouchEvent) => {
-    const target = event.target as Node | null;
-    if (!target) return;
-
-    // Игнорируем клики по самой кнопке
-    if (anchorRef.current && anchorRef.current.contains(target)) {
-      return;
-    }
-
-    // Игнорируем клики внутри панели навигации — соседние кнопки сами обработают открытие/закрытие
-    const navDrawer = document.getElementById('site-navigation-drawer');
-    if (navDrawer && navDrawer.contains(target)) {
-      return;
-    }
-
-    onClose();
-  };
-
   return (
     <Box sx={{ position: 'relative', display: 'flex', justifyContent: 'center' }}>
-      {/* Tooltip always shown on hover, unless menu is currently open */}
       <Tooltip
         title={item.label}
         placement="right"
@@ -95,56 +110,53 @@ const CollapsedRow: React.FC<{
         slotProps={{
           tooltip: {
             sx: {
-              bgcolor: '#17345B',
-              color: '#FFFFFF',
-              fontSize: '0.8rem',
+              bgcolor: theme.palette.text.primary,
+              color: theme.palette.background.paper,
+              fontSize: TEXT_META,
               fontWeight: 500,
-              boxShadow: '0 4px 14px rgba(29,61,103,0.18)',
+              boxShadow: theme.shadows[3],
               py: 0.6,
               px: 1.2,
-              borderRadius: 1.5,
+              borderRadius: 1,
             },
           },
-          arrow: { sx: { color: '#17345B' } },
+          arrow: { sx: { color: theme.palette.text.primary } },
         }}
       >
         <ListItemButton
           ref={anchorRef}
           component="button"
-          selected={isActive || isOpen}
+          selected={isHighlighted}
           onClick={handleClick}
+          aria-label={item.label}
           aria-current={item.id === activeId ? 'page' : undefined}
-          aria-expanded={hasChildren ? isOpen : undefined}
+          aria-haspopup={hasChildren && !isMobile ? 'menu' : undefined}
+          aria-expanded={hasChildren && !isMobile ? isOpen : undefined}
           sx={{
             width: 44,
             height: 44,
             mx: 'auto',
             justifyContent: 'center',
-            borderRadius: '12px',
-            color: isActive || isOpen ? '#1558A6' : '#2a4060',
-            bgcolor: isActive || isOpen ? 'rgba(255,255,255,0.6)' : 'transparent',
-            boxShadow: isActive || isOpen ? '0 2px 8px rgba(25,118,210,0.15)' : 'none',
+            borderRadius: 1.5,
+            color: isHighlighted ? activeColor : textColor,
+            bgcolor: isHighlighted ? selectedBg : 'transparent',
             position: 'relative',
-            '&:hover': {
-              bgcolor: isActive || isOpen ? 'rgba(255,255,255,0.75)' : 'rgba(255,255,255,0.45)',
-              color: '#1558A6',
-            },
-            '&.Mui-selected': {
-              bgcolor: 'rgba(255,255,255,0.65)',
-              color: '#1558A6',
-              '&:hover': { bgcolor: 'rgba(255,255,255,0.8)' },
-              '&::before': {
-                content: '""',
-                position: 'absolute',
-                left: -6,
-                top: 10,
-                bottom: 10,
-                width: 3,
-                borderRadius: 3,
-                bgcolor: '#1976d2',
+            transition: 'background-color 150ms ease, color 150ms ease',
+            [HOVER_MEDIA]: {
+              '&:hover': {
+                bgcolor: isHighlighted ? selectedHoverBg : alpha(primary, 0.06),
+                color: activeColor,
               },
             },
-            '&:focus-visible': { outline: '2px solid rgba(25,118,210,0.48)', outlineOffset: 1 },
+            '&.Mui-selected': {
+              bgcolor: selectedBg,
+              color: activeColor,
+              [HOVER_MEDIA]: {
+                '&:hover': { bgcolor: selectedHoverBg },
+              },
+            },
+            '&:focus-visible': { outline: `2px solid ${alpha(primary, 0.48)}`, outlineOffset: 1 },
+            [REDUCED_MOTION]: { transition: 'none' },
           }}
         >
           <ListItemIcon
@@ -152,7 +164,7 @@ const CollapsedRow: React.FC<{
               minWidth: 0,
               color: 'inherit',
               justifyContent: 'center',
-              '& svg': { fontSize: 21 },
+              '& svg': { fontSize: ICON_SIZE },
             }}
           >
             {item.icon}
@@ -160,161 +172,162 @@ const CollapsedRow: React.FC<{
         </ListItemButton>
       </Tooltip>
 
-      {/* Popper menu opens strictly on click for items with subcategories */}
-      {hasChildren && (
-        <Popper
+      {hasChildren && !isMobile && (
+        <Menu
           open={isOpen}
           anchorEl={anchorRef.current}
-          placement="right-start"
-          transition
-          disablePortal={false}
-          modifiers={[
-            {
-              name: 'offset',
-              options: { offset: [0, 10] },
+          onClose={onClose}
+          anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+          transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+          slotProps={{
+            paper: {
+              sx: {
+                ml: 1,
+                minWidth: 240,
+                maxWidth: 300,
+                borderRadius: 2,
+                border: `1px solid ${theme.palette.divider}`,
+                boxShadow: theme.shadows[8],
+                bgcolor: theme.palette.background.paper,
+                backgroundImage: 'none',
+              },
             },
-            {
-              name: 'preventOverflow',
-              options: { boundary: 'viewport', padding: 8 },
+            list: {
+              'aria-label': item.label,
+              sx: { py: 0.75 },
             },
-          ]}
-          sx={{ zIndex: 1500 }}
+          }}
         >
-          {({ TransitionProps }) => (
-            <Fade {...TransitionProps} timeout={180}>
-              <div>
-                <ClickAwayListener onClickAway={handleClickAway}>
-                  <Paper
-                    elevation={8}
-                    sx={{
-                      minWidth: 220,
-                      maxWidth: 280,
-                      borderRadius: 2.5,
-                      overflow: 'hidden',
-                      background: 'linear-gradient(180deg, rgba(240,247,255,0.98) 0%, rgba(246,250,255,0.97) 100%)',
-                      backdropFilter: 'blur(20px)',
-                      WebkitBackdropFilter: 'blur(20px)',
-                      border: '1px solid rgba(255,255,255,0.85)',
-                      boxShadow: '0 8px 32px rgba(29,61,103,0.15), 0 2px 8px rgba(29,61,103,0.06)',
-                      py: 0.8,
-                    }}
-                  >
-                    {/* Header = parent category label */}
-                    <Box
-                      sx={{
-                        px: 2,
-                        pt: 1,
-                        pb: 0.8,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 1,
-                        borderBottom: '1px solid rgba(200,218,240,0.5)',
-                        mb: 0.5,
-                      }}
-                    >
-                      {item.icon && (
-                        <Box sx={{ color: '#1558A6', display: 'flex', alignItems: 'center', '& svg': { fontSize: 18 } }}>
-                          {item.icon}
-                        </Box>
-                      )}
-                      <Typography
-                        sx={{
-                          fontSize: '0.82rem',
-                          fontWeight: 700,
-                          color: '#1558A6',
-                          letterSpacing: '0.02em',
-                        }}
-                      >
-                        {item.label}
-                      </Typography>
-                    </Box>
+          {/* Заголовок меню: название родительского раздела */}
+          <MenuItem
+            disabled
+            disableRipple
+            sx={{
+              minHeight: 0,
+              px: 1.5,
+              py: 0.75,
+              mb: 0.5,
+              gap: 1,
+              borderBottom: `1px solid ${theme.palette.divider}`,
+              borderRadius: 0,
+              opacity: '1 !important',
+              '&.Mui-disabled': { opacity: 1 },
+            }}
+          >
+            {item.icon && (
+              <Box
+                sx={{
+                  color: activeColor,
+                  display: 'flex',
+                  alignItems: 'center',
+                  '& svg': { fontSize: 18 },
+                }}
+              >
+                {item.icon}
+              </Box>
+            )}
+            <Typography
+              sx={{
+                fontSize: TEXT_GROUP,
+                fontWeight: 600,
+                color: activeColor,
+                letterSpacing: '0.06em',
+                textTransform: 'uppercase',
+                lineHeight: 1.4,
+              }}
+            >
+              {item.label}
+            </Typography>
+          </MenuItem>
 
-                    {/* Sub-items */}
-                    <Box sx={{ py: 0.2 }}>
-                      {item.children!.map((child) => {
-                        const childActive = child.id === activeId;
-                        return (
-                          <ListItemButton
-                            key={child.id}
-                            component="button"
-                            selected={childActive}
-                            onClick={() => {
-                              onClose();
-                              onSelect(child.id);
-                            }}
-                            sx={{
-                              px: 2,
-                              py: 0.7,
-                              minHeight: 36,
-                              borderRadius: 1.5,
-                              mx: 0.8,
-                              color: childActive ? '#1558A6' : '#2a4060',
-                              fontSize: '0.84rem',
-                              bgcolor: childActive ? 'rgba(255,255,255,0.7)' : 'transparent',
-                              '&:hover': { bgcolor: 'rgba(255,255,255,0.6)' },
-                              '&.Mui-selected': {
-                                bgcolor: 'rgba(255,255,255,0.75)',
-                                color: '#1558A6',
-                                fontWeight: 650,
-                                '&:hover': { bgcolor: 'rgba(255,255,255,0.85)' },
-                              },
-                            }}
-                          >
-                            <Box
-                              aria-hidden="true"
-                              sx={{
-                                width: 5,
-                                height: 5,
-                                flex: '0 0 auto',
-                                mr: 1.25,
-                                borderRadius: '50%',
-                                bgcolor: childActive ? '#1976d2' : 'rgba(156,178,207,0.8)',
-                              }}
-                            />
-                            <Typography
-                              sx={{
-                                fontSize: '0.84rem',
-                                fontWeight: childActive ? 650 : 450,
-                                lineHeight: 1.35,
-                              }}
-                            >
-                              {child.label}
-                            </Typography>
-                          </ListItemButton>
-                        );
-                      })}
-                    </Box>
-                  </Paper>
-                </ClickAwayListener>
-              </div>
-            </Fade>
-          )}
-        </Popper>
+          {item.children!.map((child) => {
+            const childActive = child.id === activeId;
+            return (
+              <MenuItem
+                key={child.id}
+                selected={childActive}
+                onClick={() => {
+                  onClose();
+                  onSelect(child.id);
+                }}
+                sx={{
+                  mx: 1,
+                  px: 1.5,
+                  minHeight: 40,
+                  borderRadius: 1.5,
+                  color: childActive ? activeColor : textColor,
+                  fontSize: TEXT_SUB_ITEM,
+                  bgcolor: childActive ? selectedBg : 'transparent',
+                  [HOVER_MEDIA]: {
+                    '&:hover': { bgcolor: alpha(primary, 0.06) },
+                  },
+                  '&.Mui-selected': {
+                    bgcolor: selectedBg,
+                    color: activeColor,
+                    [HOVER_MEDIA]: {
+                      '&:hover': { bgcolor: selectedHoverBg },
+                    },
+                  },
+                }}
+              >
+                <Box
+                  aria-hidden="true"
+                  sx={{
+                    width: 5,
+                    height: 5,
+                    flex: '0 0 auto',
+                    mr: 1,
+                    borderRadius: '50%',
+                    bgcolor: childActive ? primary : theme.palette.text.disabled,
+                  }}
+                />
+                <Typography
+                  sx={{
+                    fontSize: TEXT_SUB_ITEM,
+                    fontWeight: childActive ? 600 : 400,
+                    lineHeight: 1.35,
+                  }}
+                >
+                  {child.label}
+                </Typography>
+              </MenuItem>
+            );
+          })}
+        </Menu>
       )}
     </Box>
   );
 };
 
-// ─── Expanded-mode: full-width row with collapsible accordion ────────────────
+// ─── Развёрнутая панель: строка со сворачиваемым списком подразделов ────────
 
 const ExpandedRow: React.FC<{
   item: SiteNavigationItem;
   activeId: string;
   depth: number;
   onSelect: (id: string) => void;
-}> = ({ item, activeId, depth, onSelect }) => {
+  forceExpand?: boolean;
+}> = ({ item, activeId, depth, onSelect, forceExpand }) => {
+  const theme = useTheme();
   const isSelected = item.id === activeId;
   const hasActiveChild = !isSelected && Boolean(item.children?.some((child) => containsActiveItem(child, activeId)));
   const hasChildren = Boolean(item.children?.length);
 
   const [expanded, setExpanded] = useState(() => hasActiveChild || isSelected);
 
-  // Auto-expand when a child becomes active
+  // Автоматически раскрываем раздел, в котором находится активный пункт
   useEffect(() => {
     if (hasActiveChild) {
       setExpanded(true);
     }
   }, [hasActiveChild]);
+
+  // На мобильном раздел раскрывается по нажатию на иконку рельса
+  useEffect(() => {
+    if (forceExpand) {
+      setExpanded(true);
+    }
+  }, [forceExpand]);
 
   const handleClick = () => {
     if (hasChildren) {
@@ -324,41 +337,54 @@ const ExpandedRow: React.FC<{
     }
   };
 
+  const primary = theme.palette.primary.main;
+  const activeColor = theme.palette.primary.dark;
+  const textColor = theme.palette.text.primary;
+  const selectedBg = alpha(primary, 0.1);
+  const selectedHoverBg = alpha(primary, 0.16);
+
   return (
     <Box component="li" sx={{ listStyle: 'none' }}>
       <ListItemButton
         component="button"
         selected={isSelected}
         aria-current={isSelected ? 'page' : undefined}
+        aria-expanded={hasChildren ? expanded : undefined}
         onClick={handleClick}
         sx={{
-          position: 'relative',
-          minHeight: depth === 0 ? 46 : 38,
-          px: depth === 0 ? 1.4 : 1.2,
-          py: 0.55,
-          borderRadius: 2,
-          color: isSelected ? '#1558A6' : hasActiveChild ? '#1a4a7a' : '#2a4060',
-          '&:hover': { bgcolor: 'rgba(255,255,255,0.45)' },
+          minHeight: depth === 0 ? 44 : 40,
+          pl: depth === 0 ? 1 : 6.5,
+          pr: 1,
+          py: 0.5,
+          borderRadius: 1.5,
+          color: isSelected ? activeColor : hasActiveChild ? activeColor : textColor,
+          transition: 'background-color 150ms ease, color 150ms ease',
+          [HOVER_MEDIA]: {
+            '&:hover': { bgcolor: alpha(primary, 0.06) },
+          },
           '&.Mui-selected': {
-            bgcolor: 'rgba(255,255,255,0.55)',
-            color: '#1558A6',
-            '&:hover': { bgcolor: 'rgba(255,255,255,0.65)' },
-            '&::before': {
-              content: '""',
-              position: 'absolute',
-              left: 0,
-              top: 8,
-              bottom: 8,
-              width: 3.5,
-              borderRadius: 3,
-              bgcolor: '#1976d2',
+            bgcolor: selectedBg,
+            color: activeColor,
+            [HOVER_MEDIA]: {
+              '&:hover': { bgcolor: selectedHoverBg },
             },
           },
-          '&:focus-visible': { outline: '2px solid rgba(25,118,210,0.48)', outlineOffset: 1 },
+          '&:focus-visible': { outline: `2px solid ${alpha(primary, 0.48)}`, outlineOffset: 1 },
+          [theme.breakpoints.down('md')]: { minHeight: 48 },
+          [REDUCED_MOTION]: { transition: 'none' },
         }}
       >
         {depth === 0 && item.icon && (
-          <ListItemIcon sx={{ minWidth: 34, color: 'inherit', '& svg': { fontSize: 20 } }}>
+          <ListItemIcon
+            sx={{
+              width: ICON_SLOT_WIDTH,
+              minWidth: ICON_SLOT_WIDTH,
+              mr: 1,
+              justifyContent: 'center',
+              color: 'inherit',
+              '& svg': { fontSize: ICON_SIZE },
+            }}
+          >
             {item.icon}
           </ListItemIcon>
         )}
@@ -369,23 +395,28 @@ const ExpandedRow: React.FC<{
               width: 6,
               height: 6,
               flex: '0 0 auto',
-              mr: 1.25,
-              ml: 0.35,
+              mr: 1,
               borderRadius: '50%',
-              bgcolor: isSelected ? '#1976d2' : 'rgba(156,178,207,0.8)',
+              bgcolor: isSelected ? primary : theme.palette.text.disabled,
             }}
           />
         )}
         <ListItemText
           primary={item.label}
-          primaryTypographyProps={{
-            fontSize: depth === 0 ? '0.895rem' : '0.845rem',
-            lineHeight: 1.35,
-            fontWeight: isSelected ? 650 : hasActiveChild ? 600 : depth === 0 ? 550 : 450,
+          slotProps={{
+            primary: {
+              sx: {
+                fontSize: depth === 0 ? TEXT_ITEM : TEXT_SUB_ITEM,
+                lineHeight: 1.35,
+                fontWeight: isSelected ? 600 : depth === 0 ? 500 : 400,
+                [theme.breakpoints.down('md')]: { fontSize: '1rem' },
+              },
+            },
           }}
         />
         {hasChildren && depth === 0 && (
           <Box
+            aria-hidden="true"
             sx={{
               color: 'inherit',
               opacity: 0.6,
@@ -393,6 +424,7 @@ const ExpandedRow: React.FC<{
               alignItems: 'center',
               ml: 0.5,
               transition: 'transform 0.2s ease',
+              [REDUCED_MOTION]: { transition: 'none' },
             }}
           >
             {expanded ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
@@ -406,15 +438,13 @@ const ExpandedRow: React.FC<{
             component="ul"
             sx={{
               m: 0,
-              mt: 0.4,
-              mb: 0.7,
-              ml: depth === 0 ? 2.1 : 1.7,
-              pl: 1.2,
-              borderLeft: '1px solid rgba(200,218,240,0.6)',
+              p: 0,
+              mt: 0.5,
+              mb: 1,
               listStyle: 'none',
               display: 'flex',
               flexDirection: 'column',
-              gap: 0.3,
+              gap: 0.5,
             }}
           >
             {item.children!.map((child) => (
@@ -433,13 +463,7 @@ const ExpandedRow: React.FC<{
   );
 };
 
-// ─── Shared constants ────────────────────────────────────────────────────────
-
-const TRANSITION_DURATION = 300;
-const EASING = 'cubic-bezier(0.4, 0, 0.2, 1)';
-const RAIL_WIDTH = 64;
-
-// ─── Main component ──────────────────────────────────────────────────────────
+// ─── Основной компонент ─────────────────────────────────────────────────────
 
 export const SiteNavigationDrawer: React.FC<SiteNavigationDrawerProps> = ({
   activeId,
@@ -452,11 +476,12 @@ export const SiteNavigationDrawer: React.FC<SiteNavigationDrawerProps> = ({
   const { refresh_data: canRefreshData, manage_settings: canManageSettings } = useAdminCapabilities();
   const isAdmin = canRefreshData || canManageSettings;
 
-  // Track which collapsed item's popup is currently open
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [mobileExpandId, setMobileExpandId] = useState<string | null>(null);
 
-  // Initialize expanded state with memory / responsiveness
-  const [isExpanded, setIsExpanded] = useState<boolean>(() => {
+  // Развёрнутость панели на десктопе: по умолчанию подписи видны
+  const [desktopExpanded, setDesktopExpanded] = useState<boolean>(() => {
     if (typeof window === 'undefined') return true;
     try {
       const saved = window.sessionStorage.getItem(NAV_EXPANDED_STORAGE_KEY);
@@ -464,26 +489,264 @@ export const SiteNavigationDrawer: React.FC<SiteNavigationDrawerProps> = ({
         return JSON.parse(saved) as boolean;
       }
     } catch {
-      // fallback
+      // Значение из storage недоступно — используем значение по умолчанию
     }
-    // Default: collapsed on smaller screens, expanded on larger
-    return !window.matchMedia('(max-width: 1024px)').matches;
+    return true;
   });
+
+  useEffect(() => {
+    if (!isMobile) {
+      setMobileOpen(false);
+    }
+    setOpenMenuId(null);
+  }, [isMobile]);
 
   const toggleExpanded = useCallback(() => {
     setOpenMenuId(null);
-    setIsExpanded((prev) => {
+    if (isMobile) {
+      setMobileOpen((prev) => !prev);
+      return;
+    }
+
+    setDesktopExpanded((prev) => {
       const next = !prev;
       try {
         window.sessionStorage.setItem(NAV_EXPANDED_STORAGE_KEY, JSON.stringify(next));
       } catch {
-        // ignore
+        // Игнорируем недоступность storage
       }
       return next;
     });
-  }, []);
+  }, [isMobile]);
 
-  const expandedPanelWidth = isMobile ? 'min(80vw, 290px)' : 280;
+  const closeMobileDrawer = useCallback(() => setMobileOpen(false), []);
+
+  const handleSelect = useCallback(
+    (id: string) => {
+      setOpenMenuId(null);
+      if (isMobile) {
+        setMobileOpen(false);
+      }
+      onSelect(id);
+    },
+    [isMobile, onSelect],
+  );
+
+  const handleRailToggleOpen = useCallback(
+    (id: string) => {
+      if (isMobile) {
+        setMobileExpandId(id);
+        setMobileOpen(true);
+        return;
+      }
+      setOpenMenuId((prev) => (prev === id ? null : id));
+    },
+    [isMobile],
+  );
+
+  const primary = theme.palette.primary.main;
+  const activeColor = theme.palette.primary.dark;
+  const divider = theme.palette.divider;
+
+  const panelSurfaceSx = {
+    display: 'flex',
+    flexDirection: 'column',
+    height: '100vh',
+    '@supports (height: 100dvh)': { height: '100dvh' },
+    color: theme.palette.text.primary,
+    background: 'linear-gradient(180deg, rgba(235,244,255,0.95) 0%, rgba(241,247,255,0.92) 100%)',
+    backdropFilter: 'blur(16px)',
+    WebkitBackdropFilter: 'blur(16px)',
+    borderRight: `1px solid ${divider}`,
+    boxShadow: theme.shadows[2],
+  };
+
+  const navigationList = (
+    <Box
+      component="ul"
+      sx={{ m: 0, p: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 0.5 }}
+    >
+      {items.map((item, index) => (
+        <React.Fragment key={item.id}>
+          {isGroupStart(items, index) && (
+            <Box component="li" aria-hidden="true" sx={{ listStyle: 'none', height: 1, my: 0.5 }} />
+          )}
+          <ExpandedRow
+            item={item}
+            activeId={activeId}
+            depth={0}
+            onSelect={handleSelect}
+            forceExpand={isMobile && mobileOpen && mobileExpandId === item.id}
+          />
+        </React.Fragment>
+      ))}
+    </Box>
+  );
+
+  const panelContent = (
+    <>
+      {/* Шапка: логотип, название и кнопка сворачивания */}
+      <Box
+        sx={{
+          height: 60,
+          flex: '0 0 auto',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          px: 2.5,
+          borderBottom: `1px solid ${divider}`,
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+          <Box
+            sx={{
+              width: ICON_SLOT_WIDTH,
+              height: ICON_SLOT_WIDTH,
+              flex: '0 0 auto',
+              borderRadius: 1.5,
+              bgcolor: alpha(primary, 0.1),
+              border: `1px solid ${alpha(primary, 0.2)}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: activeColor,
+            }}
+          >
+            <ShowChartIcon sx={{ fontSize: 16 }} />
+          </Box>
+          <Typography
+            sx={{
+              fontSize: '1rem',
+              fontWeight: 700,
+              color: theme.palette.text.primary,
+              letterSpacing: '-0.01em',
+            }}
+          >
+            BondsScreener
+          </Typography>
+        </Box>
+
+        <IconButton
+          aria-label="Панель разделов"
+          aria-expanded={isMobile ? mobileOpen : desktopExpanded}
+          aria-controls="site-navigation-drawer"
+          onClick={toggleExpanded}
+          sx={{
+            width: 44,
+            height: 44,
+            flex: '0 0 auto',
+            borderRadius: 1.5,
+            color: theme.palette.text.secondary,
+            bgcolor: alpha(theme.palette.background.paper, 0.7),
+            border: `1px solid ${divider}`,
+            [HOVER_MEDIA]: {
+              '&:hover': { bgcolor: theme.palette.background.paper, color: activeColor },
+            },
+            [REDUCED_MOTION]: { transition: 'none' },
+          }}
+        >
+          <ChevronLeftIcon fontSize="small" />
+        </IconButton>
+      </Box>
+
+      {/* Список разделов */}
+      <Box
+        id="site-navigation-items"
+        component="nav"
+        aria-label="Разделы сайта"
+        sx={{
+          flex: 1,
+          minHeight: 0,
+          overflowY: 'auto',
+          px: 1.5,
+          py: 1.5,
+          scrollbarWidth: 'thin',
+          scrollbarColor: `${alpha(theme.palette.text.primary, 0.28)} transparent`,
+          '&::-webkit-scrollbar': { width: 6 },
+          '&::-webkit-scrollbar-thumb': {
+            backgroundColor: alpha(theme.palette.text.primary, 0.24),
+            borderRadius: 3,
+          },
+          '&::-webkit-scrollbar-track': { backgroundColor: 'transparent' },
+        }}
+      >
+        {navigationList}
+      </Box>
+
+      {/* Карточка перехода в админ-панель */}
+      {isAdmin && (
+        <Box sx={{ flex: '0 0 auto', p: 1.5, borderTop: `1px solid ${divider}` }}>
+          <Box
+            component="button"
+            type="button"
+            onClick={onOpenAdmin}
+            aria-label="Открыть админ-панель"
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1,
+              width: '100%',
+              p: 1,
+              borderRadius: 1.5,
+              bgcolor: alpha(theme.palette.background.paper, 0.7),
+              border: `1px solid ${divider}`,
+              cursor: 'pointer',
+              textAlign: 'left',
+              fontFamily: 'inherit',
+              color: theme.palette.text.primary,
+              transition: 'background-color 150ms ease, border-color 150ms ease',
+              [HOVER_MEDIA]: {
+                '&:hover': { bgcolor: theme.palette.background.paper, borderColor: alpha(primary, 0.4) },
+              },
+              [REDUCED_MOTION]: { transition: 'none' },
+            }}
+          >
+            <Box
+              sx={{
+                width: ICON_SLOT_WIDTH,
+                height: ICON_SLOT_WIDTH,
+                borderRadius: 1.5,
+                bgcolor: primary,
+                color: theme.palette.primary.contrastText,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}
+            >
+              <AdminPanelSettingsOutlinedIcon sx={{ fontSize: 16 }} />
+            </Box>
+            <Box sx={{ minWidth: 0, flex: 1 }}>
+              <Typography
+                noWrap
+                sx={{
+                  fontSize: TEXT_SUB_ITEM,
+                  fontWeight: 600,
+                  color: theme.palette.text.primary,
+                  lineHeight: 1.2,
+                }}
+              >
+                Админ-панель
+              </Typography>
+              <Typography
+                noWrap
+                sx={{
+                  fontSize: TEXT_META,
+                  color: theme.palette.text.secondary,
+                  lineHeight: 1.2,
+                  mt: 0.25,
+                }}
+              >
+                Управление сервисом
+              </Typography>
+            </Box>
+          </Box>
+        </Box>
+      )}
+    </>
+  );
+
+  const railHidden = !isMobile && desktopExpanded;
 
   return (
     <Box
@@ -496,16 +759,43 @@ export const SiteNavigationDrawer: React.FC<SiteNavigationDrawerProps> = ({
         alignSelf: 'flex-start',
         zIndex: (theme) => theme.zIndex.appBar + 1,
         flex: '0 0 auto',
-        width: isExpanded ? expandedPanelWidth : RAIL_WIDTH,
-        height: '100dvh',
-        minHeight: '100vh',
+        width: isMobile ? RAIL_WIDTH : desktopExpanded ? PANEL_WIDTH : RAIL_WIDTH,
+        height: '100vh',
+        '@supports (height: 100dvh)': { height: '100dvh' },
         overflow: 'visible',
         transition: `width ${TRANSITION_DURATION}ms ${EASING}`,
+        [REDUCED_MOTION]: { transition: 'none' },
       }}
     >
-      {/* ── Collapsed rail (icon-only, shown when isExpanded = false) ── */}
+      {/* Панель с подписями для десктопа */}
+      {!isMobile && (
+        <Box
+          aria-hidden={!desktopExpanded}
+          sx={{
+            ...panelSurfaceSx,
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: PANEL_WIDTH,
+            opacity: desktopExpanded ? 1 : 0,
+            transform: desktopExpanded ? 'translateX(0)' : 'translateX(-24px)',
+            pointerEvents: desktopExpanded ? 'auto' : 'none',
+            visibility: desktopExpanded ? 'visible' : 'hidden',
+            transition: [
+              `opacity ${TRANSITION_DURATION}ms ${EASING}`,
+              `transform ${TRANSITION_DURATION}ms ${EASING}`,
+              `visibility 0ms ${desktopExpanded ? '0ms' : `${TRANSITION_DURATION}ms`}`,
+            ].join(', '),
+            [REDUCED_MOTION]: { transition: 'none' },
+          }}
+        >
+          {panelContent}
+        </Box>
+      )}
+
+      {/* Свёрнутый рельс: остаётся точкой входа на мобильном */}
       <Box
-        aria-hidden={isExpanded}
+        aria-hidden={railHidden}
         sx={{
           position: 'absolute',
           top: 0,
@@ -513,62 +803,64 @@ export const SiteNavigationDrawer: React.FC<SiteNavigationDrawerProps> = ({
           display: 'flex',
           flexDirection: 'column',
           width: RAIL_WIDTH,
-          height: '100dvh',
-          minHeight: '100vh',
-          color: '#17345B',
+          height: '100vh',
+          '@supports (height: 100dvh)': { height: '100dvh' },
+          color: theme.palette.text.primary,
           background: 'linear-gradient(180deg, rgba(235,244,255,0.95) 0%, rgba(241,247,255,0.92) 100%)',
           backdropFilter: 'blur(16px)',
           WebkitBackdropFilter: 'blur(16px)',
-          borderRight: '1px solid rgba(255,255,255,0.72)',
-          boxShadow: '8px 0 24px rgba(29, 61, 103, 0.06)',
-          opacity: isExpanded ? 0 : 1,
-          pointerEvents: isExpanded ? 'none' : 'auto',
-          visibility: isExpanded ? 'hidden' : 'visible',
+          borderRight: `1px solid ${divider}`,
+          boxShadow: theme.shadows[2],
+          opacity: railHidden ? 0 : 1,
+          pointerEvents: railHidden ? 'none' : 'auto',
+          visibility: railHidden ? 'hidden' : 'visible',
           transition: [
             `opacity ${TRANSITION_DURATION}ms ${EASING}`,
-            `visibility 0ms ${isExpanded ? `${TRANSITION_DURATION}ms` : '0ms'}`,
+            `visibility 0ms ${railHidden ? `${TRANSITION_DURATION}ms` : '0ms'}`,
           ].join(', '),
+          [REDUCED_MOTION]: { transition: 'none' },
         }}
       >
-        {/* Header with logo button to expand (inspired by top hexagon on screenshot) */}
         <Box
           sx={{
             height: 60,
+            flex: '0 0 auto',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            borderBottom: '1px solid rgba(200,218,240,0.4)',
+            borderBottom: `1px solid ${divider}`,
           }}
         >
           <Tooltip title="Развернуть панель" placement="right" arrow>
             <IconButton
               onClick={toggleExpanded}
-              aria-label="Развернуть панель навигации"
+              aria-label="Панель разделов"
+              aria-expanded={isMobile ? mobileOpen : desktopExpanded}
+              aria-controls="site-navigation-drawer"
               sx={{
-                width: 42,
-                height: 42,
-                borderRadius: '12px',
-                color: '#1558A6',
-                bgcolor: 'rgba(255,255,255,0.7)',
-                boxShadow: '0 2px 8px rgba(29,61,103,0.08)',
-                '&:hover': {
-                  bgcolor: '#FFFFFF',
-                  transform: 'scale(1.05)',
+                width: 44,
+                height: 44,
+                borderRadius: 1.5,
+                color: activeColor,
+                bgcolor: alpha(theme.palette.background.paper, 0.7),
+                border: `1px solid ${divider}`,
+                [HOVER_MEDIA]: {
+                  '&:hover': { bgcolor: theme.palette.background.paper },
                 },
-                transition: 'all 0.2s ease',
+                [REDUCED_MOTION]: { transition: 'none' },
               }}
             >
-              <ChevronRightIcon />
+              <ChevronRightIcon fontSize="small" />
             </IconButton>
           </Tooltip>
         </Box>
 
-        {/* Navigation icon items list */}
         <Box
           component="nav"
           aria-label="Разделы сайта"
           sx={{
             flex: 1,
+            minHeight: 0,
             overflowY: 'auto',
             overflowX: 'visible',
             px: 0.5,
@@ -577,28 +869,31 @@ export const SiteNavigationDrawer: React.FC<SiteNavigationDrawerProps> = ({
             '&::-webkit-scrollbar': { display: 'none' },
             display: 'flex',
             flexDirection: 'column',
-            gap: 0.6,
+            gap: 0.5,
           }}
         >
-          {items.map((item) => (
-            <CollapsedRow
-              key={item.id}
-              item={item}
-              activeId={activeId}
-              isOpen={openMenuId === item.id}
-              onToggleOpen={() => setOpenMenuId((prev) => (prev === item.id ? null : item.id))}
-              onClose={() => setOpenMenuId(null)}
-              onSelect={onSelect}
-            />
+          {items.map((item, index) => (
+            <React.Fragment key={item.id}>
+              {isGroupStart(items, index) && <Box aria-hidden="true" sx={{ height: 8 }} />}
+              <CollapsedRow
+                item={item}
+                activeId={activeId}
+                isOpen={openMenuId === item.id}
+                isMobile={isMobile}
+                onToggleOpen={() => handleRailToggleOpen(item.id)}
+                onClose={() => setOpenMenuId(null)}
+                onSelect={handleSelect}
+              />
+            </React.Fragment>
           ))}
         </Box>
 
-        {/* Compact footer: administrator panel shortcut */}
         {isAdmin && (
           <Box
             sx={{
+              flex: '0 0 auto',
               py: 1.5,
-              borderTop: '1px solid rgba(200,218,240,0.5)',
+              borderTop: `1px solid ${divider}`,
               display: 'flex',
               justifyContent: 'center',
             }}
@@ -608,220 +903,42 @@ export const SiteNavigationDrawer: React.FC<SiteNavigationDrawerProps> = ({
                 onClick={onOpenAdmin}
                 aria-label="Открыть админ-панель"
                 sx={{
-                  width: 38,
-                  height: 38,
-                  borderRadius: '10px',
-                  bgcolor: 'rgba(25,118,210,0.12)',
-                  border: '1px solid rgba(25,118,210,0.2)',
-                  color: '#1558A6',
-                  transition: 'all 0.2s ease',
-                  '&:hover': {
-                    bgcolor: 'rgba(25,118,210,0.2)',
-                    transform: 'scale(1.05)',
-                  },
+                  width: 44,
+                  height: 44,
+                  borderRadius: 1.5,
+                  bgcolor: alpha(primary, 0.1),
+                  border: `1px solid ${alpha(primary, 0.2)}`,
+                  color: activeColor,
+                  [HOVER_MEDIA]: { '&:hover': { bgcolor: alpha(primary, 0.16) } },
+                  [REDUCED_MOTION]: { transition: 'none' },
                 }}
               >
-                <AdminPanelSettingsOutlinedIcon sx={{ fontSize: 20 }} />
+                <AdminPanelSettingsOutlinedIcon sx={{ fontSize: ICON_SIZE }} />
               </IconButton>
             </Tooltip>
           </Box>
         )}
       </Box>
 
-      {/* ── Expanded panel (full width, shown when isExpanded = true) ── */}
-      <Box
-        sx={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          display: 'flex',
-          flexDirection: 'column',
-          width: expandedPanelWidth,
-          height: '100dvh',
-          minHeight: '100vh',
-          color: '#17345B',
-          background: 'linear-gradient(180deg, rgba(235,244,255,0.95) 0%, rgba(241,247,255,0.92) 100%)',
-          backdropFilter: 'blur(16px)',
-          WebkitBackdropFilter: 'blur(16px)',
-          borderRight: '1px solid rgba(255,255,255,0.72)',
-          boxShadow: '8px 0 24px rgba(29, 61, 103, 0.06)',
-          opacity: isExpanded ? 1 : 0,
-          transform: isExpanded ? 'translateX(0)' : 'translateX(-24px)',
-          pointerEvents: isExpanded ? 'auto' : 'none',
-          visibility: isExpanded ? 'visible' : 'hidden',
-          transition: [
-            `opacity ${TRANSITION_DURATION}ms ${EASING}`,
-            `transform ${TRANSITION_DURATION}ms ${EASING}`,
-            `visibility 0ms ${isExpanded ? '0ms' : `${TRANSITION_DURATION}ms`}`,
-          ].join(', '),
-        }}
-      >
-        {/* Header: Logo + Title + Collapse Button (like CodingLab on screenshot) */}
-        <Box
-          sx={{
-            height: 60,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            px: 1.8,
-            borderBottom: '1px solid rgba(200,218,240,0.4)',
-          }}
-        >
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2 }}>
-            <Box
-              sx={{
-                width: 34,
-                height: 34,
-                borderRadius: '9px',
-                bgcolor: 'rgba(25,118,210,0.12)',
-                border: '1px solid rgba(25,118,210,0.22)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#1558A6',
-              }}
-            >
-              <ShowChartIcon sx={{ fontSize: 20 }} />
-            </Box>
-            <Typography
-              sx={{
-                fontSize: '1rem',
-                fontWeight: 700,
-                color: '#1558A6',
-                letterSpacing: '-0.01em',
-              }}
-            >
-              BondsScreener
-            </Typography>
-          </Box>
-
-          <IconButton
-            aria-label="Свернуть меню разделов"
-            onClick={toggleExpanded}
-            tabIndex={isExpanded ? 0 : -1}
-            sx={{
-              width: 36,
-              height: 36,
-              borderRadius: '10px',
-              color: '#29476F',
-              bgcolor: 'rgba(255,255,255,0.7)',
-              border: '1px solid rgba(216,228,242,0.9)',
-              boxShadow: '0 2px 6px rgba(29,61,103,0.06)',
-              '&:hover': { bgcolor: '#FFFFFF' },
-            }}
-          >
-            <ChevronLeftIcon fontSize="small" />
-          </IconButton>
-        </Box>
-
-        {/* Navigation items list */}
-        <Box
-          id="site-navigation-items"
-          component="nav"
-          aria-label="Разделы сайта"
-          sx={{
-            flex: 1,
-            overflowY: 'auto',
-            px: 1.25,
-            py: 1.5,
-            scrollbarWidth: 'none',
-            '&::-webkit-scrollbar': { display: 'none' },
-          }}
-        >
-          <Box
-            component="ul"
-            sx={{ m: 0, p: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 0.4 }}
-          >
-            {items.map((item, index) => (
-              <React.Fragment key={item.id}>
-                {index === 1 && (
-                  <Box component="li" aria-hidden="true" sx={{ listStyle: 'none', py: 0.5, px: 1 }}>
-                    <Box sx={{ height: '1px', bgcolor: 'rgba(200,218,240,0.5)' }} />
-                  </Box>
-                )}
-                <ExpandedRow item={item} activeId={activeId} depth={0} onSelect={onSelect} />
-              </React.Fragment>
-            ))}
-          </Box>
-        </Box>
-
-        {/* Footer administrator panel card */}
-        {isAdmin && (
-        <Box
-          sx={{
-            p: 1.5,
-            borderTop: '1px solid rgba(200,218,240,0.5)',
-          }}
-        >
-          <Box
-            component="button"
-            type="button"
-            onClick={onOpenAdmin}
-            aria-label="Открыть админ-панель"
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 1.25,
-              width: '100%',
-              p: 1,
-              borderRadius: 2,
-              bgcolor: 'rgba(255,255,255,0.45)',
-              border: '1px solid rgba(255,255,255,0.7)',
-              cursor: 'pointer',
-              textAlign: 'left',
-              fontFamily: 'inherit',
-              color: '#17345B',
-              transition: 'all 0.2s ease',
-              '&:hover': {
-                bgcolor: 'rgba(255,255,255,0.75)',
-                transform: 'translateY(-1px)',
+      {/* Мобильная панель: оверлей поверх страницы, закрывается по выбору и Escape */}
+      {isMobile && (
+        <Drawer
+          open={mobileOpen}
+          onClose={closeMobileDrawer}
+          anchor="left"
+          slotProps={{
+            paper: {
+              sx: {
+                ...panelSurfaceSx,
+                width: MOBILE_PANEL_WIDTH,
+                maxWidth: '86vw',
               },
-            }}
-          >
-            <Box
-              sx={{
-                width: 36,
-                height: 36,
-                borderRadius: '10px',
-                bgcolor: '#1558A6',
-                color: '#FFFFFF',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-                boxShadow: '0 2px 6px rgba(21,88,166,0.3)',
-              }}
-            >
-                <AdminPanelSettingsOutlinedIcon sx={{ fontSize: 20 }} />
-            </Box>
-            <Box sx={{ minWidth: 0, flex: 1 }}>
-              <Typography
-                noWrap
-                sx={{
-                  fontSize: '0.83rem',
-                  fontWeight: 650,
-                  color: '#17345B',
-                  lineHeight: 1.2,
-                }}
-              >
-                Админ-панель
-              </Typography>
-              <Typography
-                noWrap
-                sx={{
-                  fontSize: '0.72rem',
-                  color: 'rgba(100,120,150,0.85)',
-                  lineHeight: 1.2,
-                  mt: 0.2,
-                }}
-              >
-                Управление сервисом
-              </Typography>
-            </Box>
-          </Box>
-        </Box>
-        )}
-      </Box>
+            },
+          }}
+        >
+          {panelContent}
+        </Drawer>
+      )}
     </Box>
   );
 };

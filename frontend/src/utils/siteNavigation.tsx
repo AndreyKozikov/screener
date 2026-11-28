@@ -95,16 +95,19 @@ export const siteNavigationItems: SiteNavigationItem[] = [
   {
     id: 'home',
     label: 'Центр управления',
+    group: 'data',
     icon: <HomeOutlinedIcon />,
   },
   {
     id: 'market',
     label: 'Рынок облигаций',
+    group: 'data',
     icon: <ShowChartIcon />,
   },
   {
     id: 'forecasts',
     label: 'Прогнозы',
+    group: 'data',
     icon: <TrendingUpIcon />,
     children: [
       { id: 'forecast:macro-dashboard', label: 'Макроэкономический обзор' },
@@ -120,6 +123,7 @@ export const siteNavigationItems: SiteNavigationItem[] = [
   {
     id: 'portfolio',
     label: 'Мой портфель',
+    group: 'work',
     icon: <AccountBalanceWalletIcon />,
     requiresAuth: true,
     children: [
@@ -132,6 +136,7 @@ export const siteNavigationItems: SiteNavigationItem[] = [
   {
     id: 'comparison',
     label: 'Сравнение',
+    group: 'work',
     icon: <CompareArrowsIcon />,
     children: [
       { id: 'comparison:comparison', label: 'Сравнение облигаций' },
@@ -141,16 +146,19 @@ export const siteNavigationItems: SiteNavigationItem[] = [
   {
     id: 'blog',
     label: 'Блог',
+    group: 'content',
     icon: <ArticleIcon />,
   },
   {
     id: 'guide',
     label: 'Гид по выбору облигаций',
+    group: 'content',
     icon: <SchoolIcon />,
   },
   {
     id: 'chat',
     label: 'Чат с ИИ',
+    group: 'content',
     icon: <SmartToyIcon />,
   },
 ];
