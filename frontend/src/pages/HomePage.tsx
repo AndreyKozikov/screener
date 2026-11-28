@@ -984,7 +984,7 @@ export const HomePage: React.FC = () => {
             maxWidth={false} 
             sx={{ 
               px: isForecastOverview || isReadingSection ? 0 : isCbrForecastSection ? { xs: 2, md: 3.5, xl: 4.5 } : 2,
-              py: isForecastOverview ? { xs: 3, md: 6 } : isReadingSection ? { xs: 2, md: 3 } : isBondMarketSection || isCbrForecastSection ? { xs: 1.5, md: 2 } : 3,
+              py: isForecastOverview ? 0 : isReadingSection ? { xs: 2, md: 3 } : isBondMarketSection || isCbrForecastSection ? { xs: 1.5, md: 2 } : 3,
               flexGrow: 1, 
               display: 'flex', 
               flexDirection: 'column', 
