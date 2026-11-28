@@ -719,7 +719,12 @@ export const HomePage: React.FC = () => {
         ...(viewMode === 'TABLE'
           ? isReadingSection
             ? { minHeight: 'calc(100dvh - 62px)' }
-            : { height: 'calc(100vh - 62px)' }
+            : {
+                height: { xs: 'calc(100vh - 52px)', md: 'calc(100vh - 62px)' },
+                '@supports (height: 100dvh)': {
+                  height: { xs: 'calc(100dvh - 52px)', md: 'calc(100dvh - 62px)' },
+                },
+              }
           : {})
       }}>
         <React.Suspense
@@ -980,6 +985,8 @@ export const HomePage: React.FC = () => {
             sx={{ 
               px: isForecastOverview || isReadingSection ? 0 : isCbrForecastSection ? { xs: 2, md: 3.5, xl: 4.5 } : 2,
               py: isForecastOverview ? { xs: 3, md: 6 } : isReadingSection ? { xs: 2, md: 3 } : isBondMarketSection || isCbrForecastSection ? { xs: 1.5, md: 2 } : 3,
+              maxWidth: isBondMarketSection ? 1660 : 'none',
+              mx: isBondMarketSection ? 'auto' : 0,
               flexGrow: 1, 
               display: 'flex', 
               flexDirection: 'column', 

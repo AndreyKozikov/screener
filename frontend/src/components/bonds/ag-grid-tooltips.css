@@ -16,24 +16,24 @@
 }
 
 .ag-body-viewport::-webkit-scrollbar-track {
-  background: #f5f5f5;
-  border-radius: 4px;
+  background: transparent;
+  border-radius: 999px;
 }
 
 .ag-body-viewport::-webkit-scrollbar-thumb {
-  background: #ccc;
-  border-radius: 4px;
+  background: #c3cfdf;
+  border-radius: 999px;
   transition: background 0.2s;
 }
 
 .ag-body-viewport::-webkit-scrollbar-thumb:hover {
-  background: #999;
+  background: #9fb0c6;
 }
 
 /* Для Firefox */
 .ag-body-viewport {
   scrollbar-width: thin;
-  scrollbar-color: #ccc #f5f5f5;
+  scrollbar-color: #c3cfdf transparent;
 }
 
 /* Убираем тень у pinned-right секции для визуального единства таблицы */

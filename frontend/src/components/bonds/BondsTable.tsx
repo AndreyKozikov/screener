@@ -4,12 +4,12 @@ import { AgGridReact } from 'ag-grid-react';
 import type { ColDef, RowClickedEvent, CellClickedEvent, ICellRendererParams, IHeaderParams } from 'ag-grid-community';
 import { themeQuartz } from 'ag-grid-community';
 import './ag-grid-tooltips.css';
-import { Box, Card, CardContent, Tooltip, IconButton } from '@mui/material';
+import { Box, Card, CardContent, Menu, MenuItem, Tooltip, IconButton, Typography, useMediaQuery } from '@mui/material';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import FullscreenIcon from '@mui/icons-material/Fullscreen';
 import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
-import CloseIcon from '@mui/icons-material/Close';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
 import ShowChartIcon from '@mui/icons-material/ShowChart';
 
 import { useBondsStore } from '../../stores/bondsStore';
@@ -57,7 +57,7 @@ const bondsGridTheme = themeQuartz.withParams({
   rowHeight: 42,
   spacing: 8,
   wrapperBorder: { color: '#e4eaf2', width: 1 },
-  wrapperBorderRadius: 8,
+  wrapperBorderRadius: 12,
   headerRowBorder: { color: '#e4eaf2', width: 1 },
   headerColumnBorder: false,
   columnBorder: false,
@@ -128,10 +128,11 @@ const bondsGridLocaleRu: Record<string, string> = {
   noRowsToShow: 'Нет данных',
 };
 
-type TooltipHeaderParams = IHeaderParams & { tooltipText?: string };
+type TooltipHeaderParams = IHeaderParams & { tooltipText?: string; align?: 'left' | 'center' | 'right' };
 
 const BondHeaderLabel = React.memo((params: TooltipHeaderParams) => {
   const label = params.displayName || '';
+  const align = params.align ?? 'center';
 
   return (
     <Box
@@ -139,17 +140,17 @@ const BondHeaderLabel = React.memo((params: TooltipHeaderParams) => {
       sx={{
         display: 'flex',
         alignItems: 'center',
-        justifyContent: 'center',
+        justifyContent: align === 'right' ? 'flex-end' : align === 'left' ? 'flex-start' : 'center',
         gap: 0.35,
         width: '100%',
         maxWidth: '100%',
         minWidth: 0,
         px: 0.5,
         whiteSpace: 'normal',
-        textAlign: 'center',
+        textAlign: align,
       }}
     >
-      <Box component="span" sx={{ flex: '0 1 auto', minWidth: 0, whiteSpace: 'normal' }}>
+      <Box component="span" sx={{ flex: '0 1 auto', minWidth: 0, whiteSpace: 'normal', textAlign: align }}>
         {label}
       </Box>
       {params.tooltipText && (
@@ -184,15 +185,15 @@ const BondHeaderLabel = React.memo((params: TooltipHeaderParams) => {
             onMouseDown={(event) => event.stopPropagation()}
             sx={{
               flex: '0 0 auto',
-              width: 18,
-              height: 18,
-              p: 0,
-              color: '#7b8ba2',
+              width: 24,
+              height: 24,
+              p: 0.25,
+              color: '#5C6B80',
               '&:hover': { color: 'primary.main', bgcolor: 'rgba(25, 118, 210, 0.08)' },
               '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main' },
             }}
           >
-            <InfoOutlinedIcon sx={{ fontSize: 14 }} />
+            <InfoOutlinedIcon sx={{ fontSize: 16 }} />
           </IconButton>
         </Tooltip>
       )}
@@ -221,6 +222,30 @@ const flattenDescriptions = (descriptions: DescriptionsResponse): FieldDescripti
 };
 
 /**
+ * Заголовок раздела «Рынок облигаций»: название, пояснение и количество найденных бумаг.
+ */
+const MarketHeading: React.FC<{ foundCount?: number }> = ({ foundCount }) => (
+  <Box component="header" sx={{ minWidth: 0 }}>
+    <Typography
+      component="h1"
+      sx={{ fontSize: { xs: '1.25rem', md: '1.5rem' }, fontWeight: 700, lineHeight: 1.2, color: '#10264A' }}
+    >
+      Рынок облигаций
+    </Typography>
+    <Box sx={{ mt: 0.35, display: 'flex', alignItems: 'baseline', flexWrap: 'wrap', columnGap: 1, rowGap: 0.25 }}>
+      <Typography sx={{ fontSize: { xs: '0.9375rem', md: '0.9375rem' }, lineHeight: 1.4, color: '#42526B' }}>
+        Поиск и фильтрация облигаций по доходности, рейтингу и параметрам выпуска
+      </Typography>
+      {foundCount !== undefined && (
+        <Typography sx={{ fontSize: '0.9375rem', fontWeight: 600, color: '#10264A', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+          Найдено: {foundCount.toLocaleString('ru-RU')}
+        </Typography>
+      )}
+    </Box>
+  </Box>
+);
+
+/**
  * BondsTable Component
  * 
  * Main data table displaying bonds using AG Grid
@@ -236,8 +261,9 @@ export const BondsTable: React.FC = () => {
   const [fieldDescriptions, setFieldDescriptions] = useState<FieldDescriptionMap>({});
   const metadataLoadedRef = useRef(false);
   const gridRef = useRef<AgGridReact<BondListItem>>(null);
-  const [headerHeight, setHeaderHeight] = useState<number | undefined>(undefined);
+  const isCompact = useMediaQuery('(max-width:599.95px)');
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [moreMenuAnchor, setMoreMenuAnchor] = useState<HTMLElement | null>(null);
   const [isClosed, setIsClosed] = useState(false);
   const [floaterSecids, setFloaterSecids] = useState<Set<string>>(new Set());
   const [floaterDialogOpen, setFloaterDialogOpen] = useState(false);
@@ -686,10 +712,15 @@ export const BondsTable: React.FC = () => {
     };
 
     // Base column definition with common properties
-    const createColumnDef = (field: string, headerName: string, otherProps: Partial<ColDef> = {}): ColDef => {
+    const createColumnDef = (
+      field: string,
+      headerName: string,
+      otherProps: Partial<ColDef> = {},
+      align: 'left' | 'center' | 'right' = 'center',
+    ): ColDef => {
       // Descriptions are rendered inside the provided header so AG Grid keeps
       // ownership of sorting, filter buttons, menu and keyboard navigation.
-      const { cellStyle: otherCellStyle, headerTooltip, ...restProps } = otherProps;
+      const { cellStyle: otherCellStyle, headerTooltip, headerClass: otherHeaderClass, ...restProps } = otherProps;
       const tooltipText = headerTooltip !== undefined ? headerTooltip : getFieldDescription(field);
       
       // Create cellStyle without undefined properties
@@ -705,20 +736,20 @@ export const BondsTable: React.FC = () => {
           cellStyle = filtered as Record<string, string | number>;
         }
       } else {
-        cellStyle = { textAlign: 'center' };
+        cellStyle = { textAlign: align };
       }
       
       return {
         field,
         headerName,
-        headerClass: 'ag-header-center',
+        headerClass: otherHeaderClass ?? `ag-header-${align}`,
         headerComponentParams: tooltipText
           ? {
               innerHeaderComponent: BondHeaderLabel,
-              innerHeaderComponentParams: { tooltipText },
+              innerHeaderComponentParams: { tooltipText, align },
             }
           : undefined,
-        // Center align cell content by default (can be overridden in otherProps)
+        // Выравнивание по умолчанию задаётся параметром align (можно переопределить в otherProps)
         cellStyle,
         ...restProps,
       };
@@ -726,21 +757,22 @@ export const BondsTable: React.FC = () => {
 
     return [
     createColumnDef('SHORTNAME', 'Название', {
-      minWidth: 120,
+      minWidth: 140,
       pinned: 'left',
       cellRenderer: ShortNameRenderer,
       cellStyle: { textAlign: 'left' }, // Left align for name column
       headerTooltip: getFieldDescription('SHORTNAME'),
       autoHeaderHeight: true,
-    }),
-    ...(filters.couponMonths.length ? [createColumnDef('MATCHED_COUPON_DATE', 'Выплата в выбранном месяце (любой год)', {
+    }, 'left'),
+    ...(filters.couponMonths.length ? [createColumnDef('MATCHED_COUPON_DATE', 'Выплата в месяце', {
       valueFormatter: ({ value }) => typeof value === 'string' ? value.split('-').reverse().join('.') : '—',
+      headerTooltip: 'Дата купонной выплаты в выбранном месяце любого будущего года',
     })] : []),
     ...(filters.requireCouponBenchmark || filters.couponBenchmark?.length || filters.spreadMin != null || filters.spreadMax != null ? [
       createColumnDef('COUPON_BENCHMARK', 'База купона', {
         valueFormatter: ({ value }) => indicatorNames[value] ?? value ?? '—',
       }),
-      createColumnDef('COUPON_BENCHMARK_SPREAD', 'Премия, п.п.'),
+      createColumnDef('COUPON_BENCHMARK_SPREAD', 'Премия, п.п.', {}, 'right'),
     ] : []),
     createColumnDef('RATING_LEVEL', 'Рейтинг', {
       minWidth: 100,
@@ -765,13 +797,13 @@ export const BondsTable: React.FC = () => {
       filter: false,
     }),
     createColumnDef('PREVPRICE', 'Текущая цена', {
-      minWidth: 100,
+      minWidth: 104,
       valueFormatter: (params) => formatNumber(params.value, 2),
       type: 'numericColumn',
       headerTooltip: getFieldDescription('PREVPRICE'),
       autoHeaderHeight: true,
-    }),
-    createColumnDef('COUPON_YIELD_TO_PRICE', 'Доходность купона к текущей цене', {
+    }, 'right'),
+    createColumnDef('COUPON_YIELD_TO_PRICE', 'Купонная доходность к цене', {
       minWidth: 120,
       valueGetter: (params) => {
         const bond = params.data;
@@ -786,9 +818,9 @@ export const BondsTable: React.FC = () => {
       type: 'numericColumn',
       headerTooltip: 'Рассчитывается как (Размер купона / (Текущая цена × Номинал / 100)) × (Число выплат в год) × 100',
       autoHeaderHeight: true,
-    }),
-    createColumnDef('YIELDATPREVWAPRICE', 'Доходность к погашению при текущей цене', {
-      minWidth: 140,
+    }, 'right'),
+    createColumnDef('YIELDATPREVWAPRICE', 'Доходность к погашению', {
+      minWidth: 124,
       valueFormatter: (params) => formatPercent(params.value),
       type: 'numericColumn',
       headerTooltip: (() => {
@@ -799,23 +831,23 @@ export const BondsTable: React.FC = () => {
           : additionalText;
       })(),
       autoHeaderHeight: true,
-    }),
-    createColumnDef('FACEVALUE', 'Номинальная стоимость', {
-      minWidth: 100,
+    }, 'right'),
+    createColumnDef('FACEVALUE', 'Номинал', {
+      minWidth: 96,
       valueFormatter: (params) => formatNumber(params.value, 0),
       type: 'numericColumn',
       headerTooltip: getFieldDescription('FACEVALUE'),
       autoHeaderHeight: true,
-    }),
+    }, 'right'),
     createColumnDef('FACEUNIT', 'Валюта', {
-      minWidth: 60,
+      minWidth: 64,
       valueGetter: (params) => params.data?.FACEUNIT ?? null,
       valueFormatter: (params) => params.value || '-',
       headerTooltip: getFieldDescription('FACEUNIT') || 'Валюта номинала',
       autoHeaderHeight: true,
     }),
-    createColumnDef('COUPONPERCENT', 'Купон', {
-      minWidth: 100,
+    createColumnDef('COUPONPERCENT', 'Купон, ₽', {
+      minWidth: 96,
       valueGetter: (params) => params.data?.COUPONVALUE ?? null,
       valueFormatter: (params) => {
         if (params.value == null || params.value === undefined) return '-';
@@ -824,17 +856,17 @@ export const BondsTable: React.FC = () => {
       type: 'numericColumn',
       headerTooltip: 'Сумма купона в рублях из данных о купонных выплатах',
       autoHeaderHeight: true,
-    }),
-    createColumnDef('COUPONPERCENT_NOMINAL', 'Доходность купона относительно номинала', {
-      minWidth: 130,
+    }, 'right'),
+    createColumnDef('COUPONPERCENT_NOMINAL', 'Купонная доходность к номиналу', {
+      minWidth: 124,
       valueGetter: (params) => params.data?.COUPONPERCENT ?? null,
       valueFormatter: (params) => formatPercent(params.value),
       type: 'numericColumn',
       headerTooltip: getFieldDescription('COUPONPERCENT_NOMINAL') || getFieldDescription('COUPONPERCENT'),
       autoHeaderHeight: true,
-    }),
-    createColumnDef('COUPONPERIOD', 'Частота купона', {
-      minWidth: 80,
+    }, 'right'),
+    createColumnDef('COUPONPERIOD', 'Купоны в год', {
+      minWidth: 92,
       valueGetter: (params) => {
         const bond = params.data;
         if (!bond) return null;
@@ -845,16 +877,16 @@ export const BondsTable: React.FC = () => {
       type: 'numericColumn',
       headerTooltip: getFieldDescription('COUPONPERIOD'),
       autoHeaderHeight: true,
-    }),
-    createColumnDef('ACCRUEDINT', 'НКД', {
-      minWidth: 80,
+    }, 'right'),
+    createColumnDef('ACCRUEDINT', 'НКД, ₽', {
+      minWidth: 84,
       valueFormatter: (params) => formatNumber(params.value, 2),
       type: 'numericColumn',
       headerTooltip: getFieldDescription('ACCRUEDINT'),
       autoHeaderHeight: true,
-    }),
+    }, 'right'),
     createColumnDef('DURATION_YEARS', 'Дюрация, лет', {
-      minWidth: 80,
+      minWidth: 92,
       valueGetter: (params) => {
         const bond = params.data;
         if (!bond) return null;
@@ -869,13 +901,13 @@ export const BondsTable: React.FC = () => {
       type: 'numericColumn',
       headerTooltip: getFieldDescription('DURATION') || 'Дюрация, лет',
       autoHeaderHeight: true,
-    }),
+    }, 'right'),
     {
       headerName: '',
       field: 'priceHistory',
       minWidth: 40,
       maxWidth: 40,
-      pinned: 'right',
+      pinned: isCompact ? undefined : 'right',
       cellRenderer: (params: ICellRendererParams) => (
         <IconButton
           size="small"
@@ -901,7 +933,7 @@ export const BondsTable: React.FC = () => {
       headerName: '',
       minWidth: 55,
       width: 55,
-      pinned: 'right',
+      pinned: isCompact ? undefined : 'right',
       sortable: false,
       filter: false,
       suppressMenu: true,
@@ -919,7 +951,7 @@ export const BondsTable: React.FC = () => {
       headerName: '',
       minWidth: 55,
       width: 55,
-      pinned: 'right',
+      pinned: isCompact ? undefined : 'right',
       sortable: false,
       filter: false,
       suppressMenu: true,
@@ -933,7 +965,7 @@ export const BondsTable: React.FC = () => {
       suppressSizeToFit: true, // Prevent auto-sizing to avoid layout shifts
     },
     ];
-  }, [filters.couponMonths.length, filters.requireCouponBenchmark, filters.couponBenchmark, filters.spreadMin, filters.spreadMax, getFieldDescription, floaterSecids, handleFloaterNameClick, handleOpenPriceHistory]);
+  }, [filters.couponMonths.length, filters.requireCouponBenchmark, filters.couponBenchmark, filters.spreadMin, filters.spreadMax, getFieldDescription, floaterSecids, handleFloaterNameClick, handleOpenPriceHistory, isCompact]);
 
   // Default column properties
   const defaultColDef: ColDef = useMemo(() => ({
@@ -1059,62 +1091,6 @@ export const BondsTable: React.FC = () => {
   }, [navigate, tableLocation]);
 
 
-  // Calculate dynamic header height based on content
-  const calculateHeaderHeight = useCallback(() => {
-    const gridContainer = document.querySelector<HTMLElement>('.bonds-grid');
-    if (!gridContainer) return;
-
-    const headerCells = gridContainer.querySelectorAll<HTMLElement>('.ag-header-cell');
-    if (headerCells.length === 0) return;
-
-    let maxContentHeight = 0;
-
-    // Measure each header cell's content height
-    headerCells.forEach((cell) => {
-      const label = cell.querySelector<HTMLElement>('.ag-header-cell-label');
-      if (!label) return;
-
-      // Temporarily set height to auto to measure content
-      const originalDisplay = label.style.display;
-      const originalHeight = label.style.height;
-      const originalOverflow = label.style.overflow;
-      
-      label.style.display = 'block';
-      label.style.height = 'auto';
-      label.style.overflow = 'visible';
-
-      // Measure the scroll height (actual content height)
-      const contentHeight = label.scrollHeight;
-      
-      // Restore original styles
-      label.style.display = originalDisplay;
-      label.style.height = originalHeight;
-      label.style.overflow = originalOverflow;
-
-      if (contentHeight > maxContentHeight) {
-        maxContentHeight = contentHeight;
-      }
-    });
-
-    // Calculate total header height: content + padding + borders
-    // Padding: 4px top + 4px bottom = 8px, plus cell padding: 2px + 2px = 4px
-    const calculatedHeight = Math.max(Math.ceil(maxContentHeight) + 12, 40);
-
-    // Update header height if it changed
-    if (calculatedHeight !== headerHeight) {
-      setHeaderHeight(calculatedHeight);
-      
-      // Also update CSS variable for AG Grid
-      gridContainer.style.setProperty('--ag-header-height', `${calculatedHeight}px`);
-      
-    }
-  }, [headerHeight]);
-
-  // Handle grid ready
-  const onGridReady = useCallback(() => {
-    window.setTimeout(calculateHeaderHeight, 250);
-  }, [calculateHeaderHeight]);
-
   // Handle first data rendered - set default sort
   const onFirstDataRendered = useCallback(() => {
     if (gridRef.current?.api) {
@@ -1149,33 +1125,6 @@ export const BondsTable: React.FC = () => {
     });
   }, [bonds, filters.search]);
 
-  // Recalculate header height when data, columns, or descriptions change.
-  // Column widths are fitted once by AG Grid's autoSizeStrategy and then remain stable.
-  useEffect(() => {
-    if (bonds.length > 0 && gridRef.current?.api) {
-      const timeoutId = setTimeout(() => {
-        calculateHeaderHeight();
-      }, 500);
-
-      return () => clearTimeout(timeoutId);
-    }
-  }, [bonds.length, columnDefs, fieldDescriptions, calculateHeaderHeight, bonds]);
-
-
-  // Recalculate on window resize
-  useEffect(() => {
-    const handleResize = () => {
-      if (bonds.length > 0) {
-        setTimeout(() => {
-          calculateHeaderHeight();
-        }, 100);
-      }
-    };
-
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, [bonds.length, calculateHeaderHeight]);
-
   // Refresh "Add to Portfolio" column cells when portfolio changes
   // Use suppressFlash to prevent visual flashing and layout shifts
   useEffect(() => {
@@ -1203,9 +1152,10 @@ export const BondsTable: React.FC = () => {
   // Loading state - only show spinner on initial load
   if (isLoading && bonds.length === 0) {
     return (
-      <Box sx={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+      <Box sx={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', gap: { xs: 1.25, md: 1.5 } }}>
+        <MarketHeading />
         <BondMarketFilters />
-        <Card sx={{ flex: 1, minHeight: { xs: 220, sm: 280 }, display: 'grid', placeItems: 'center', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.88)', bgcolor: 'rgba(255,255,255,0.7)' }}>
+        <Card sx={{ flex: 1, minHeight: { xs: 220, sm: 280 }, display: 'grid', placeItems: 'center', borderRadius: '1.25rem', border: '1px solid rgba(255,255,255,0.9)', bgcolor: 'rgba(255,255,255,0.82)' }}>
           <LoadingSpinner message="Загрузка облигаций..." />
         </Card>
       </Box>
@@ -1215,9 +1165,10 @@ export const BondsTable: React.FC = () => {
   // Error state
   if (error) {
     return (
-      <Box sx={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+      <Box sx={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', gap: { xs: 1.25, md: 1.5 } }}>
+        <MarketHeading />
         <BondMarketFilters />
-        <Card sx={{ flex: 1, minHeight: { xs: 220, sm: 280 }, display: 'grid', placeItems: 'center', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.88)', bgcolor: 'rgba(255,255,255,0.7)' }}>
+        <Card sx={{ flex: 1, minHeight: { xs: 220, sm: 280 }, display: 'grid', placeItems: 'center', borderRadius: '1.25rem', border: '1px solid rgba(255,255,255,0.9)', bgcolor: 'rgba(255,255,255,0.82)' }}>
           <ErrorMessage message={error} onRetry={() => useUiStore.getState().triggerDataRefresh()} />
         </Card>
       </Box>
@@ -1227,8 +1178,69 @@ export const BondsTable: React.FC = () => {
   // Note: We always render the table, even with empty data
   // AG Grid will show its overlay for empty results, keeping the table structure visible
 
+  // Действия над таблицей находятся в заголовке раздела — один ряд управления
+  const actionButtonSx = {
+    width: { xs: 44, md: 36 },
+    height: { xs: 44, md: 36 },
+    borderRadius: '0.5rem',
+    color: '#42526B',
+    '&:hover': { bgcolor: 'rgba(25, 118, 210, 0.08)', color: 'primary.main' },
+    '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' },
+  } as const;
+
+  const tableActions = (
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }}>
+      <Tooltip title="Обновить список облигаций">
+        <span>
+          <IconButton
+            size="small"
+            aria-label="Обновить список облигаций"
+            onClick={() => triggerDataRefresh()}
+            disabled={isLoading}
+            sx={actionButtonSx}
+          >
+            <RefreshIcon fontSize="small" />
+          </IconButton>
+        </span>
+      </Tooltip>
+      <Tooltip title={isFullscreen ? 'Свернуть' : 'На весь экран'}>
+        <IconButton
+          size="small"
+          aria-label={isFullscreen ? 'Свернуть таблицу' : 'Развернуть таблицу на весь экран'}
+          onClick={() => setIsFullscreen(prev => !prev)}
+          sx={actionButtonSx}
+        >
+          {isFullscreen ? <FullscreenExitIcon fontSize="small" /> : <FullscreenIcon fontSize="small" />}
+        </IconButton>
+      </Tooltip>
+      <Tooltip title="Ещё действия">
+        <IconButton
+          size="small"
+          aria-label="Ещё действия"
+          aria-haspopup="menu"
+          aria-expanded={Boolean(moreMenuAnchor)}
+          onClick={(event) => setMoreMenuAnchor(event.currentTarget)}
+          sx={actionButtonSx}
+        >
+          <MoreVertIcon fontSize="small" />
+        </IconButton>
+      </Tooltip>
+      <Menu
+        anchorEl={moreMenuAnchor}
+        open={Boolean(moreMenuAnchor)}
+        onClose={() => setMoreMenuAnchor(null)}
+      >
+        <MenuItem onClick={() => { setIsClosed(true); setMoreMenuAnchor(null); }}>Скрыть таблицу</MenuItem>
+      </Menu>
+    </Box>
+  );
+
   return (
-    <Box sx={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+    <Box sx={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', gap: { xs: 1.25, md: 1.5 } }}>
+    <Box sx={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
+      <MarketHeading foundCount={filteredBonds.length} />
+      {tableActions}
+    </Box>
     <BondMarketFilters />
     <Card sx={{ 
       position: isFullscreen ? 'fixed' : 'relative',
@@ -1239,7 +1251,7 @@ export const BondsTable: React.FC = () => {
       zIndex: isFullscreen ? 2000 : 'auto',
       minHeight: 0,
       flex: isFullscreen ? 'none' : 1,
-      borderRadius: isFullscreen ? 0 : '20px',
+      borderRadius: isFullscreen ? 0 : '1.25rem',
       backgroundColor: 'rgba(255,255,255,0.84)',
       border: '1px solid rgba(255,255,255,0.9)',
       boxShadow: isFullscreen ? '0 8px 28px rgba(15, 23, 42, 0.18)' : '0 10px 28px rgba(54, 86, 139, 0.09)',
@@ -1255,80 +1267,39 @@ export const BondsTable: React.FC = () => {
         flexDirection: 'column', 
         '&:last-child': { pb: 0 },
       }}>
-        {/* Header with search and icon buttons */}
-        <Box
-          sx={{
-            px: 2,
-            py: 1.15,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'flex-end',
-            borderBottom: '1px solid #e8edf4',
-            backgroundColor: 'rgba(246,250,255,0.78)',
-            minHeight: '54px',
-            gap: 2,
-          }}
-        >
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            {/* Refresh button */}
-            <Tooltip title="Обновить данные">
-              <IconButton
-                size="small"
-                aria-label="Обновить данные"
-                onClick={() => triggerDataRefresh()}
-                disabled={isLoading}
-                sx={{ 
-                  width: 34,
-                  height: 34,
-                  borderRadius: 1.5,
-                  color: '#5c6b80',
-                  '&:hover': { bgcolor: 'rgba(25, 118, 210, 0.08)', color: 'primary.main' },
-                  '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' },
-                }}
-              >
-                <RefreshIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-            
-            {/* Fullscreen button */}
-            <Tooltip title={isFullscreen ? 'Свернуть' : 'На весь экран'}>
-              <IconButton
-                size="small"
-                aria-label={isFullscreen ? 'Свернуть таблицу' : 'Развернуть таблицу на весь экран'}
-                onClick={() => setIsFullscreen(prev => !prev)}
-                sx={{ 
-                  width: 34,
-                  height: 34,
-                  borderRadius: 1.5,
-                  color: '#5c6b80',
-                  '&:hover': { bgcolor: 'rgba(25, 118, 210, 0.08)', color: 'primary.main' },
-                  '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' },
-                }}
-              >
-                {isFullscreen ? <FullscreenExitIcon fontSize="small" /> : <FullscreenIcon fontSize="small" />}
-              </IconButton>
-            </Tooltip>
-            
-            {/* Close button */}
-            <Tooltip title="Закрыть таблицу">
-              <IconButton
-                size="small"
-                aria-label="Закрыть таблицу"
-                onClick={() => setIsClosed(true)}
-                sx={{ 
-                  width: 34,
-                  height: 34,
-                  borderRadius: 1.5,
-                  color: '#5c6b80',
-                  '&:hover': { bgcolor: 'rgba(239, 68, 68, 0.08)', color: 'error.main' },
-                  '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main' },
-                }}
-              >
-                <CloseIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
+        {/* В полноэкранном режиме заголовок раздела скрыт — действия остаются доступными */}
+        {isFullscreen && (
+          <Box
+            sx={{
+              px: 2,
+              py: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'flex-end',
+              gap: 0.5,
+              borderBottom: '1px solid #e8edf4',
+              backgroundColor: 'rgba(246,250,255,0.9)',
+            }}
+          >
+            <IconButton
+              size="small"
+              aria-label="Обновить список облигаций"
+              onClick={() => triggerDataRefresh()}
+              disabled={isLoading}
+              sx={actionButtonSx}
+            >
+              <RefreshIcon fontSize="small" />
+            </IconButton>
+            <IconButton
+              size="small"
+              aria-label="Свернуть таблицу"
+              onClick={() => setIsFullscreen(false)}
+              sx={actionButtonSx}
+            >
+              <FullscreenExitIcon fontSize="small" />
+            </IconButton>
           </Box>
-        </Box>
+        )}
 
         {/* Table content */}
         <Box sx={{ 
@@ -1347,9 +1318,6 @@ export const BondsTable: React.FC = () => {
             width: '100%',
             flexGrow: 1,
             fontFamily: 'var(--app-font-family)',
-            ...(headerHeight && {
-              '--ag-header-height': `${headerHeight}px`,
-            }),
             '& .ag-root-wrapper': {
               overflow: 'hidden',
             },
@@ -1371,7 +1339,7 @@ export const BondsTable: React.FC = () => {
               lineHeight: 1.35,
               textAlign: 'center',
               hyphens: 'manual',
-              fontSize: '13px',
+              fontSize: '0.875rem',
             },
             '& .ag-header-cell-menu-button, & .ag-header-cell-filter-button': {
               opacity: 0.72,
@@ -1382,12 +1350,12 @@ export const BondsTable: React.FC = () => {
             },
             '& .ag-cell': {
               fontFamily: 'inherit',
-              fontSize: '14px',
+              fontSize: '0.9375rem',
               lineHeight: 1.4,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              padding: '8px 12px !important',
+              padding: '0.5rem 0.75rem !important',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               boxSizing: 'border-box',
@@ -1396,9 +1364,9 @@ export const BondsTable: React.FC = () => {
               justifyContent: 'flex-start',
               textAlign: 'left !important',
             },
-            '& .ag-cell[col-id="PREVPRICE"], & .ag-cell[col-id="COUPON_YIELD_TO_PRICE"], & .ag-cell[col-id="YIELDATPREVWAPRICE"], & .ag-cell[col-id="FACEVALUE"], & .ag-cell[col-id="COUPONPERCENT"], & .ag-cell[col-id="COUPONPERCENT_NOMINAL"], & .ag-cell[col-id="COUPONPERIOD"], & .ag-cell[col-id="ACCRUEDINT"], & .ag-cell[col-id="DURATION_YEARS"]': {
-              justifyContent: 'center',
-              textAlign: 'center !important',
+            '& .ag-cell[col-id="PREVPRICE"], & .ag-cell[col-id="COUPON_YIELD_TO_PRICE"], & .ag-cell[col-id="YIELDATPREVWAPRICE"], & .ag-cell[col-id="FACEVALUE"], & .ag-cell[col-id="COUPONPERCENT"], & .ag-cell[col-id="COUPONPERCENT_NOMINAL"], & .ag-cell[col-id="COUPONPERIOD"], & .ag-cell[col-id="ACCRUEDINT"], & .ag-cell[col-id="DURATION_YEARS"], & .ag-cell[col-id="COUPON_BENCHMARK_SPREAD"]': {
+              justifyContent: 'flex-end',
+              textAlign: 'right !important',
               fontVariantNumeric: 'tabular-nums',
             },
             '& .ag-cell[col-id="FACEUNIT"], & .ag-cell[col-id="RATING"]': {
@@ -1416,6 +1384,18 @@ export const BondsTable: React.FC = () => {
             },
             '& .ag-header-center .ag-header-cell-label': {
               justifyContent: 'center',
+            },
+            '& .ag-header-right .ag-header-cell-label': {
+              justifyContent: 'flex-end',
+            },
+            '& .ag-header-left .ag-header-cell-label': {
+              justifyContent: 'flex-start',
+            },
+            '& .ag-header-right .ag-header-cell-text': {
+              textAlign: 'right',
+            },
+            '& .ag-header-left .ag-header-cell-text': {
+              textAlign: 'left',
             },
             '& .ag-pinned-right-header': {
               boxShadow: 'none',
@@ -1438,14 +1418,12 @@ export const BondsTable: React.FC = () => {
             defaultColDef={defaultColDef}
             onRowClicked={onRowClicked}
             onCellClicked={onCellClicked}
-            onGridReady={onGridReady}
             onFirstDataRendered={onFirstDataRendered}
             animateRows={true}
             pagination={true}
             paginationPageSize={100}
             paginationPageSizeSelector={[50, 100, 200, 500]}
             enableCellTextSelection={true}
-            headerHeight={headerHeight}
             rowHeight={42}
             autoSizeStrategy={{
               type: 'fitGridWidth',
@@ -1457,10 +1435,10 @@ export const BondsTable: React.FC = () => {
             localeText={bondsGridLocaleRu}
             theme={bondsGridTheme}
             overlayNoRowsTemplate={
-              '<div style="padding: 20px; text-align: center; color: #666;">' +
-              '<div style="font-size: 48px; margin-bottom: 16px;">🔍</div>' +
-              '<div style="font-size: 18px; font-weight: 500; margin-bottom: 8px;">Ничего не найдено</div>' +
-              '<div style="font-size: 14px; color: #999;">Попробуйте изменить параметры поиска или фильтры</div>' +
+              '<div style="display:flex;flex-direction:column;align-items:center;gap:0.5rem;padding:2rem 1rem;text-align:center;font-family:inherit;">' +
+              '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#5C6B80" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"></circle><path d="m15.5 15.5 4 4"></path></svg>' +
+              '<div style="font-size:1.0625rem;font-weight:600;color:#10264A;">Ничего не найдено</div>' +
+              '<div style="font-size:0.9375rem;color:#42526B;max-width:26rem;">Попробуйте изменить параметры поиска или фильтры</div>' +
               '</div>'
             }
           />

@@ -14,9 +14,12 @@ import {
   Typography,
 } from '@mui/material';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
+import CheckIcon from '@mui/icons-material/Check';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import CloseIcon from '@mui/icons-material/Close';
 import CurrencyExchangeIcon from '@mui/icons-material/CurrencyExchange';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
@@ -24,6 +27,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import LayersIcon from '@mui/icons-material/Layers';
 import PercentIcon from '@mui/icons-material/Percent';
 import SearchIcon from '@mui/icons-material/Search';
+import TuneIcon from '@mui/icons-material/Tune';
 import ViewWeekIcon from '@mui/icons-material/ViewWeek';
 import { indicatorNames } from './couponTerms';
 import { useFiltersStore } from '../../stores/filtersStore';
@@ -78,12 +82,32 @@ const FILTER_BUTTONS: Array<{ id: FilterId; label: string; icon: React.ReactNode
   { id: 'defaults', label: 'Дефолты', icon: <ArticleOutlinedIcon /> },
 ];
 
+/** Фильтры, всегда видимые на узких экранах; остальные собраны в «Все фильтры». */
+const QUICK_FILTER_IDS: FilterId[] = ['maturity', 'yield', 'rating'];
+const SECONDARY_FILTERS = FILTER_BUTTONS.filter((button) => !QUICK_FILTER_IDS.includes(button.id));
+
 const FILTER_KEYS: Array<keyof BondFilters> = [
   'search', 'matdateFrom', 'matdateTo', 'yieldMin', 'yieldMax', 'couponMin', 'couponMax',
   'couponYieldMin', 'couponYieldMax', 'ratingMin', 'ratingMax', 'couponMonths', 'faceunit',
   'bondtype', 'bondtype43', 'listlevel', 'requireCouponBenchmark', 'couponBenchmark', 'spreadMin', 'spreadMax',
     'excludeNonqualifiedInvestors', 'excludeQualifiedInvestors', 'excludeDefaults', 'excludeTechnicalDefaults',
 ];
+
+/** Тонкий скроллбар в цветах интерфейса вместо системного. */
+const thinScrollSx = {
+  scrollbarWidth: 'thin',
+  scrollbarColor: '#c3cfdf transparent',
+  '&::-webkit-scrollbar': { width: 8, height: 8 },
+  '&::-webkit-scrollbar-track': { background: 'transparent' },
+  '&::-webkit-scrollbar-thumb': { background: '#c3cfdf', borderRadius: 999 },
+} as const;
+
+/** Общие размеры полей: 44 px на телефоне для удобного нажатия. */
+const fieldSx = {
+  '& .MuiOutlinedInput-root': { height: { xs: '2.75rem', md: '2.5rem' } },
+  '& .MuiInputBase-input': { fontSize: { xs: '1.05rem', md: '0.9375rem' } },
+  '& .MuiInputLabel-root': { fontSize: { xs: '1rem', md: '0.875rem' } },
+} as const;
 
 const numberLabel = (value: number): string => value.toLocaleString('ru-RU', { maximumFractionDigits: 2 });
 
@@ -117,9 +141,9 @@ const ClearFiltersSvg: React.FC = () => (
   </svg>
 );
 
-const FilterPopoverPaper: React.FC<{ title: string; children: React.ReactNode; width?: number }> = ({ title, children, width = 320 }) => (
-  <Box sx={{ width: { xs: `min(${width}px, calc(100vw - 24px))`, sm: width }, p: 1.5, color: '#142B4D' }}>
-    <Typography sx={{ mb: 1, fontSize: '0.95rem', fontWeight: 600, color: '#142B4D' }}>{title}</Typography>
+const FilterPopoverPaper: React.FC<{ title: string; children: React.ReactNode; width?: number; fluid?: boolean }> = ({ title, children, width = 320, fluid = false }) => (
+  <Box sx={{ width: fluid ? '100%' : { xs: `min(${width}px, calc(100vw - 24px))`, sm: width }, p: 1.5, color: '#10264A' }}>
+    <Typography sx={{ mb: 1, fontSize: { xs: '1.0625rem', md: '0.95rem' }, fontWeight: 600, color: '#10264A' }}>{title}</Typography>
     {children}
   </Box>
 );
@@ -131,7 +155,8 @@ const NumericRangeEditor: React.FC<{
   max: number;
   step: number;
   unit?: string;
-}> = ({ title, minKey, maxKey, max, step, unit = '%' }) => {
+  fluid?: boolean;
+}> = ({ title, minKey, maxKey, max, step, unit = '%', fluid = false }) => {
   const { draftFilters, setDraftFilter } = useFiltersStore();
   const minValue = draftFilters[minKey] as number | null;
   const maxValue = draftFilters[maxKey] as number | null;
@@ -142,7 +167,7 @@ const NumericRangeEditor: React.FC<{
   };
 
   return (
-    <FilterPopoverPaper title={title}>
+    <FilterPopoverPaper title={title} fluid={fluid}>
       <Stack direction="row" spacing={0.75}>
         <TextField
           label="От"
@@ -152,7 +177,7 @@ const NumericRangeEditor: React.FC<{
           value={minValue ?? ''}
           onChange={(event) => setValue(minKey, event.target.value)}
           inputProps={{ min: 0, max, step }}
-          sx={{ '& .MuiOutlinedInput-root': { height: 38 }, '& .MuiInputBase-input': { fontSize: '0.9rem' }, '& .MuiInputLabel-root': { fontSize: '0.86rem' } }}
+          sx={fieldSx}
           InputProps={{ endAdornment: unit ? <InputAdornment position="end">{unit}</InputAdornment> : undefined }}
         />
         <TextField
@@ -163,7 +188,7 @@ const NumericRangeEditor: React.FC<{
           value={maxValue ?? ''}
           onChange={(event) => setValue(maxKey, event.target.value)}
           inputProps={{ min: 0, max, step }}
-          sx={{ '& .MuiOutlinedInput-root': { height: 38 }, '& .MuiInputBase-input': { fontSize: '0.9rem' }, '& .MuiInputLabel-root': { fontSize: '0.86rem' } }}
+          sx={fieldSx}
           InputProps={{ endAdornment: unit ? <InputAdornment position="end">{unit}</InputAdornment> : undefined }}
         />
       </Stack>
@@ -171,7 +196,7 @@ const NumericRangeEditor: React.FC<{
   );
 };
 
-const MaturityEditor: React.FC = () => {
+const MaturityEditor: React.FC<{ fluid?: boolean }> = ({ fluid = false }) => {
   const { draftFilters, setDraftFilter } = useFiltersStore();
   const [mode, setMode] = useState<'period' | 'presets'>('period');
   const presets = [
@@ -182,12 +207,12 @@ const MaturityEditor: React.FC = () => {
   ];
 
   return (
-    <FilterPopoverPaper title="Дата погашения" width={360}>
+    <FilterPopoverPaper title="Дата погашения" width={360} fluid={fluid}>
       <Stack direction="row" spacing={0.5} sx={{ mb: 1 }}>
-        <Button size="small" variant={mode === 'period' ? 'contained' : 'text'} onClick={() => setMode('period')} sx={{ minHeight: 34, px: 0.75, borderRadius: 2, fontSize: '0.86rem' }}>
+        <Button size="small" variant={mode === 'period' ? 'contained' : 'text'} onClick={() => setMode('period')} sx={{ minHeight: { xs: '2.75rem', md: '2.25rem' }, px: 0.75, borderRadius: '0.5rem', fontSize: { xs: '1rem', md: '0.875rem' }, textTransform: 'none' }}>
           Период
         </Button>
-        <Button size="small" variant={mode === 'presets' ? 'contained' : 'text'} onClick={() => setMode('presets')} sx={{ minHeight: 34, px: 0.75, borderRadius: 2, fontSize: '0.86rem' }}>
+        <Button size="small" variant={mode === 'presets' ? 'contained' : 'text'} onClick={() => setMode('presets')} sx={{ minHeight: { xs: '2.75rem', md: '2.25rem' }, px: 0.75, borderRadius: '0.5rem', fontSize: { xs: '1rem', md: '0.875rem' }, textTransform: 'none' }}>
           Готовые диапазоны
         </Button>
       </Stack>
@@ -201,7 +226,7 @@ const MaturityEditor: React.FC = () => {
             value={draftFilters.matdateFrom || ''}
             onChange={(event) => setDraftFilter('matdateFrom', event.target.value || null)}
             InputLabelProps={{ shrink: true }}
-            sx={{ '& .MuiOutlinedInput-root': { height: 38 }, '& .MuiInputBase-input': { fontSize: '0.88rem', px: 1 } }}
+            sx={{ ...fieldSx, '& .MuiInputBase-input': { fontSize: { xs: '1.05rem', md: '0.9375rem' }, px: 1 } }}
           />
           <TextField
             label="По"
@@ -211,7 +236,7 @@ const MaturityEditor: React.FC = () => {
             value={draftFilters.matdateTo || ''}
             onChange={(event) => setDraftFilter('matdateTo', event.target.value || null)}
             InputLabelProps={{ shrink: true }}
-            sx={{ '& .MuiOutlinedInput-root': { height: 38 }, '& .MuiInputBase-input': { fontSize: '0.88rem', px: 1 } }}
+            sx={{ ...fieldSx, '& .MuiInputBase-input': { fontSize: { xs: '1.05rem', md: '0.9375rem' }, px: 1 } }}
           />
         </Stack>
       ) : (
@@ -225,7 +250,7 @@ const MaturityEditor: React.FC = () => {
                 setDraftFilter('matdateFrom', preset.from);
                 setDraftFilter('matdateTo', preset.to);
               }}
-              sx={{ minHeight: 34, px: 0.85, borderRadius: 2, textTransform: 'none', fontSize: '0.84rem' }}
+              sx={{ minHeight: { xs: '2.75rem', md: '2.25rem' }, px: 1, borderRadius: '0.5rem', textTransform: 'none', fontSize: { xs: '1rem', md: '0.875rem' } }}
             >
               {preset.label}
             </Button>
@@ -236,7 +261,7 @@ const MaturityEditor: React.FC = () => {
   );
 };
 
-const RatingEditor: React.FC = () => {
+const RatingEditor: React.FC<{ fluid?: boolean }> = ({ fluid = false }) => {
   const { draftFilters, setDraftFilter } = useFiltersStore();
   const [openBound, setOpenBound] = useState<'min' | 'max' | null>(null);
 
@@ -269,7 +294,7 @@ const RatingEditor: React.FC = () => {
 
     return (
       <Box key={bound} sx={{ minWidth: 0 }}>
-        <Typography sx={{ mb: 0.45, fontSize: '0.84rem', fontWeight: 600, color: '#637A98' }}>{label}</Typography>
+        <Typography sx={{ mb: 0.45, fontSize: { xs: '0.9375rem', md: '0.875rem' }, fontWeight: 600, color: '#42526B' }}>{label}</Typography>
         <Button
           fullWidth
           variant="outlined"
@@ -280,14 +305,14 @@ const RatingEditor: React.FC = () => {
           onClick={() => setOpenBound((current) => current === bound ? null : bound)}
           endIcon={<ExpandMoreIcon sx={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 120ms ease' }} />}
           sx={{
-            minHeight: 40,
+            minHeight: { xs: '2.75rem', md: '2.5rem' },
             justifyContent: 'space-between',
             px: 1.1,
-            borderColor: isOpen ? '#287AF3' : 'rgba(134,164,205,0.4)',
-            borderRadius: '10px',
-            bgcolor: 'rgba(255,255,255,0.86)',
-            color: '#253C5E',
-            fontSize: '0.88rem',
+            borderColor: isOpen ? 'primary.main' : 'rgba(134,164,205,0.45)',
+            borderRadius: '0.5rem',
+            bgcolor: 'rgba(255,255,255,0.9)',
+            color: '#10264A',
+            fontSize: { xs: '1rem', md: '0.9rem' },
             textTransform: 'none',
             '& .MuiButton-endIcon': { ml: 0.5 },
           }}
@@ -301,13 +326,14 @@ const RatingEditor: React.FC = () => {
             aria-label={`${label} рейтинг`}
             sx={{
               mt: 0.5,
-              maxHeight: 168,
+              maxHeight: { xs: 220, md: 180 },
               overflowY: 'auto',
               overscrollBehavior: 'contain',
-              border: '1px solid rgba(134,164,205,0.28)',
-              borderRadius: '10px',
+              border: '1px solid rgba(134,164,205,0.32)',
+              borderRadius: '0.5rem',
               bgcolor: '#fff',
               boxShadow: '0 6px 16px rgba(40,70,120,0.10)',
+              ...thinScrollSx,
             }}
           >
             {[{ label: 'Без ограничений', value: null }, ...availableRatings.map((rating) => ({ label: rating, value: rating }))].map((option) => {
@@ -324,16 +350,16 @@ const RatingEditor: React.FC = () => {
                     display: 'flex',
                     alignItems: 'center',
                     width: '100%',
-                    minHeight: 30,
-                    px: 0.8,
+                    minHeight: { xs: 44, md: 34 },
+                    px: 1,
                     border: 0,
-                    bgcolor: selected ? 'rgba(40,122,243,0.10)' : 'transparent',
-                    color: selected ? '#075DD1' : '#253C5E',
+                    bgcolor: selected ? 'rgba(25,118,210,0.10)' : 'transparent',
+                    color: selected ? 'primary.dark' : '#10264A',
                     textAlign: 'left',
                     font: 'inherit',
-                    fontSize: '0.88rem',
+                    fontSize: { xs: '1rem', md: '0.9rem' },
                     cursor: 'pointer',
-                    '&:hover, &:focus-visible': { bgcolor: 'rgba(40,122,243,0.08)', outline: 'none' },
+                    '&:hover, &:focus-visible': { bgcolor: 'rgba(25,118,210,0.08)', outline: 'none' },
                   }}
                 >
                   {option.label}
@@ -347,7 +373,7 @@ const RatingEditor: React.FC = () => {
   };
 
   return (
-    <FilterPopoverPaper title="Кредитный рейтинг" width={270}>
+    <FilterPopoverPaper title="Кредитный рейтинг" width={270} fluid={fluid}>
       <Stack
         spacing={0.75}
         onKeyDown={(event) => {
@@ -364,27 +390,44 @@ const RatingEditor: React.FC = () => {
   );
 };
 
+const popoverWidthFor = (title: string): number => (
+  title === 'Уровень листинга' ? 220
+    : title === 'Валюта' ? 230
+      : title === 'Тип облигации' ? 260
+        : title === 'Вид облигации' ? 285
+          : 260
+);
+
 const CheckboxListEditor: React.FC<{
   title: string;
   options: FilterOption[];
   selected: Array<string | number>;
   onToggle: (value: string | number) => void;
-}> = ({ title, options, selected, onToggle }) => (
-  <FilterPopoverPaper title={title} width={title === 'Уровень листинга' ? 220 : title === 'Валюта' ? 230 : title === 'Тип облигации' ? 260 : title === 'Вид облигации' ? 285 : 260}>
+  fluid?: boolean;
+}> = ({ title, options, selected, onToggle, fluid = false }) => (
+  <FilterPopoverPaper title={title} width={popoverWidthFor(title)} fluid={fluid}>
     <Box sx={{
       display: 'grid',
       gridTemplateColumns: title === 'Месяц выплаты' ? 'repeat(2, minmax(0, 1fr))' : '1fr',
       columnGap: title === 'Месяц выплаты' ? 1 : 0,
-      maxHeight: 230,
+      maxHeight: { xs: 260, md: 230 },
       overflowY: 'auto',
+      overscrollBehavior: 'contain',
       mx: -0.5,
+      ...thinScrollSx,
     }}>
       {options.map((option) => (
         <FormControlLabel
           key={option.value}
-          control={<Checkbox size="small" checked={selected.includes(option.value)} onChange={() => onToggle(option.value)} sx={{ p: 0.35, mr: 0.4 }} />}
+          control={<Checkbox size="small" checked={selected.includes(option.value)} onChange={() => onToggle(option.value)} sx={{ p: 0.5, mr: 0.4 }} />}
           label={option.label}
-          sx={{ display: 'flex', mx: 0, my: 0, minHeight: 30, '& .MuiFormControlLabel-label': { fontSize: '0.86rem', lineHeight: 1.35, color: '#253C5E' } }}
+          sx={{
+            display: 'flex',
+            mx: 0,
+            my: 0,
+            minHeight: { xs: 44, md: 34 },
+            '& .MuiFormControlLabel-label': { fontSize: { xs: '1rem', md: '0.9rem' }, lineHeight: 1.35, color: '#10264A' },
+          }}
         />
       ))}
     </Box>
@@ -394,6 +437,8 @@ const CheckboxListEditor: React.FC<{
 const BondMarketFilters: React.FC = () => {
   const { filters, draftFilters, setDraftFilter, applyFilters, resetFilters } = useFiltersStore();
   const [openFilter, setOpenFilter] = useState<{ id: FilterId; anchor: HTMLElement } | null>(null);
+  const [allFiltersAnchor, setAllFiltersAnchor] = useState<HTMLElement | null>(null);
+  const [allFiltersView, setAllFiltersView] = useState<FilterId | null>(null);
 
   const isDirty = useMemo(() => FILTER_KEYS.some((key) => {
     const activeValue = filters[key];
@@ -421,30 +466,58 @@ const BondMarketFilters: React.FC = () => {
     return invalidNumber || invalidDate || invalidRating;
   }, [draftFilters]);
 
+  const hiddenFilterActive = useCallback((id: FilterId): boolean => {
+    switch (id) {
+      case 'couponMonths': return draftFilters.couponMonths.length > 0;
+      case 'currency': return draftFilters.faceunit.length > 0;
+      case 'bondType': return draftFilters.bondtype.length > 0;
+      case 'bondKind': return draftFilters.bondtype43.length > 0;
+      case 'listing': return draftFilters.listlevel.length > 0;
+      case 'investorAccess': return draftFilters.excludeNonqualifiedInvestors || draftFilters.excludeQualifiedInvestors;
+      case 'defaults': return draftFilters.excludeDefaults || draftFilters.excludeTechnicalDefaults;
+      default: return false;
+    }
+  }, [draftFilters]);
+
+  const hiddenActiveCount = useMemo(
+    () => SECONDARY_FILTERS.filter((button) => hiddenFilterActive(button.id)).length,
+    [hiddenFilterActive],
+  );
+
   const toggleFilter = useCallback((id: FilterId, anchor: HTMLElement) => {
     setOpenFilter((current) => current?.id === id ? null : { id, anchor });
   }, []);
 
-  const closeAllPopovers = useCallback(() => setOpenFilter(null), []);
+  const closeAllPopovers = useCallback(() => {
+    setOpenFilter(null);
+    setAllFiltersAnchor(null);
+    setAllFiltersView(null);
+  }, []);
+
   const handleClickAway = useCallback((event: MouseEvent | TouchEvent) => {
     const target = event.target;
-    if (target instanceof Element && target.closest('.MuiMenu-root, .MuiPopover-root')) return;
+    if (target instanceof Element && target.closest('.MuiMenu-root, .MuiPopover-root, [data-bond-filter-popover]')) return;
     closeAllPopovers();
   }, [closeAllPopovers]);
 
   useEffect(() => {
-    if (!openFilter) return undefined;
+    if (!openFilter && !allFiltersAnchor) return undefined;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') closeAllPopovers();
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [closeAllPopovers, openFilter]);
+  }, [closeAllPopovers, openFilter, allFiltersAnchor]);
 
   const handleReset = useCallback(() => {
     resetFilters();
     closeAllPopovers();
   }, [closeAllPopovers, resetFilters]);
+
+  const handleApply = useCallback(() => {
+    applyFilters();
+    closeAllPopovers();
+  }, [applyFilters, closeAllPopovers]);
 
   const toggleArrayValue = useCallback((id: Extract<FilterId, 'couponMonths' | 'currency' | 'bondType' | 'bondKind' | 'listing'>, value: string | number) => {
     if (id === 'couponMonths') {
@@ -551,7 +624,7 @@ const BondMarketFilters: React.FC = () => {
     }
     addRangeChip('yield', 'Доходность к погашению (YTM)', draftFilters.yieldMin, draftFilters.yieldMax);
     addRangeChip('coupon', 'Купонная доходность к номиналу', draftFilters.couponMin, draftFilters.couponMax);
-    addRangeChip('couponYield', 'Купонная доходность к текущей цене', draftFilters.couponYieldMin, draftFilters.couponYieldMax);
+    addRangeChip('couponYield', 'Купонная доходность к цене', draftFilters.couponYieldMin, draftFilters.couponYieldMax);
     if (draftFilters.ratingMin || draftFilters.ratingMax) {
       result.push({
         key: 'rating',
@@ -572,27 +645,34 @@ const BondMarketFilters: React.FC = () => {
     return result;
   }, [clearFilter, draftFilters, selectedFor, setDraftFilter]);
 
-  const renderPopoverContent = (id: FilterId) => {
+  const renderPopoverContent = (id: FilterId, fluid = false) => {
     switch (id) {
-      case 'maturity': return <MaturityEditor />;
+      case 'maturity': return <MaturityEditor fluid={fluid} />;
       case 'yield': return (
-        <Stack spacing={1} sx={{ width: { xs: 'min(360px, calc(100vw - 24px))', sm: 360 } }}>
-          <NumericRangeEditor title="Купонная доходность к номиналу" minKey="couponMin" maxKey="couponMax" max={30} step={0.5} />
-          <NumericRangeEditor title="Купонная доходность к текущей цене" minKey="couponYieldMin" maxKey="couponYieldMax" max={100} step={0.1} />
-          <NumericRangeEditor title="Доходность к погашению (YTM)" minKey="yieldMin" maxKey="yieldMax" max={30} step={0.1} />
+        <Stack spacing={1} sx={{ width: fluid ? '100%' : { xs: 'min(360px, calc(100vw - 24px))', sm: 360 } }}>
+          <NumericRangeEditor fluid={fluid} title="Купонная доходность к номиналу" minKey="couponMin" maxKey="couponMax" max={30} step={0.5} />
+          <NumericRangeEditor fluid={fluid} title="Купонная доходность к цене" minKey="couponYieldMin" maxKey="couponYieldMax" max={100} step={0.1} />
+          <NumericRangeEditor fluid={fluid} title="Доходность к погашению (YTM)" minKey="yieldMin" maxKey="yieldMax" max={30} step={0.1} />
         </Stack>
       );
-      case 'coupon': return <NumericRangeEditor title="Ставка купона" minKey="couponMin" maxKey="couponMax" max={30} step={0.5} />;
-      case 'couponYield': return <NumericRangeEditor title="Купонная доходность к текущей цене" minKey="couponYieldMin" maxKey="couponYieldMax" max={100} step={0.1} />;
-      case 'rating': return <RatingEditor />;
+      case 'coupon': return <NumericRangeEditor fluid={fluid} title="Купонная доходность к номиналу" minKey="couponMin" maxKey="couponMax" max={30} step={0.5} />;
+      case 'couponYield': return <NumericRangeEditor fluid={fluid} title="Купонная доходность к цене" minKey="couponYieldMin" maxKey="couponYieldMax" max={100} step={0.1} />;
+      case 'rating': return <RatingEditor fluid={fluid} />;
       case 'investorAccess':
       case 'defaults': {
         const choices: Array<[keyof BondFilters, string]> = id === 'investorAccess'
           ? [['excludeNonqualifiedInvestors', 'Для неквалифицированных инвесторов'], ['excludeQualifiedInvestors', 'Для квалифицированных инвесторов']]
           : [['excludeDefaults', 'Был дефолт'], ['excludeTechnicalDefaults', 'Был технический дефолт']];
-        return <Stack sx={{ p: 1.5, minWidth: 280 }} spacing={0.5}>
-          <Typography variant="subtitle2" fontWeight={700}>Исключить из поиска</Typography>
-          {choices.map(([key, label]) => <FormControlLabel key={key} control={<Checkbox checked={Boolean(draftFilters[key])} onChange={(_, checked) => setDraftFilter(key, checked)} />} label={label} />)}
+        return <Stack sx={{ p: 1.5, minWidth: fluid ? 0 : 280, width: fluid ? '100%' : 'auto' }} spacing={0.5}>
+          <Typography sx={{ fontSize: { xs: '1.0625rem', md: '0.95rem' }, fontWeight: 700, color: '#10264A' }}>Исключить из поиска</Typography>
+          {choices.map(([key, label]) => (
+            <FormControlLabel
+              key={key}
+              control={<Checkbox checked={Boolean(draftFilters[key])} onChange={(_, checked) => setDraftFilter(key, checked)} />}
+              label={label}
+              sx={{ minHeight: { xs: 44, md: 36 }, '& .MuiFormControlLabel-label': { fontSize: { xs: '1rem', md: '0.9rem' } } }}
+            />
+          ))}
         </Stack>;
       }
       case 'couponMonths':
@@ -605,12 +685,30 @@ const BondMarketFilters: React.FC = () => {
             title={FILTER_BUTTONS.find((button) => button.id === id)?.label ?? 'Фильтр'}
             options={FILTER_OPTIONS[id]}
             selected={selectedFor(id)}
+            fluid={fluid}
             onToggle={(value) => toggleArrayValue(id as Extract<FilterId, 'couponMonths' | 'currency' | 'bondType' | 'bondKind' | 'listing'>, value)}
           />
         );
       default: return null;
     }
   };
+
+  const triggerSx = (isOpen: boolean) => ({
+    minHeight: { xs: '2.75rem', md: '2.25rem' },
+    px: { xs: 1, md: 1 },
+    borderRadius: '0.5rem',
+    borderColor: isOpen ? 'primary.main' : 'rgba(134,164,205,0.45)',
+    bgcolor: isOpen ? 'rgba(25,118,210,0.10)' : 'rgba(255,255,255,0.88)',
+    color: isOpen ? 'primary.dark' : '#10264A',
+    fontSize: { xs: '1rem', md: '0.875rem' },
+    fontWeight: 500,
+    whiteSpace: 'nowrap',
+    textTransform: 'none',
+    boxShadow: isOpen ? '0 0 0 2px rgba(25,118,210,0.12)' : 'none',
+    '&:hover': { borderColor: 'primary.light', bgcolor: 'rgba(25,118,210,0.06)' },
+    '& .MuiButton-startIcon': { mr: 0.55, '& svg': { fontSize: 17 } },
+    '& .MuiButton-endIcon': { ml: 0.35, '& svg': { fontSize: 16 } },
+  } as const);
 
   return (
     <ClickAwayListener onClickAway={handleClickAway}>
@@ -630,20 +728,19 @@ const BondMarketFilters: React.FC = () => {
           position: 'relative',
           zIndex: 2,
           flex: '0 0 auto',
-          p: { xs: 0.9, sm: 1.1, md: 1.25 },
-          border: '1px solid rgba(255,255,255,0.9)',
-          borderRadius: { xs: '18px', md: '24px' },
-          background: 'linear-gradient(118deg, rgba(255,255,255,0.78) 0%, rgba(237,245,255,0.72) 55%, rgba(219,234,255,0.68) 100%)',
-          boxShadow: '0 12px 32px rgba(61, 99, 160, 0.10), inset 0 1px 0 rgba(255,255,255,0.9)',
-          backdropFilter: 'blur(20px) saturate(145%)',
+          p: { xs: 1.25, sm: 1.5 },
+          border: '1px solid rgba(255,255,255,0.92)',
+          borderRadius: '1rem',
+          bgcolor: 'rgba(255,255,255,0.82)',
+          boxShadow: '0 4px 14px rgba(61,99,160,0.08), inset 0 1px 0 rgba(255,255,255,0.9)',
+          backdropFilter: 'blur(14px) saturate(130%)',
         }}
       >
       <Box sx={{
         display: 'flex',
         alignItems: 'center',
         flexWrap: 'wrap',
-        gap: { xs: 0.55, md: 0.7 },
-        pr: isDirty ? '70px' : 0,
+        gap: { xs: 0.75, md: 0.75 },
       }}>
         <TextField
           size="small"
@@ -651,17 +748,17 @@ const BondMarketFilters: React.FC = () => {
           value={draftFilters.search}
           onChange={(event) => setDraftFilter('search', event.target.value)}
           sx={{
-            flex: '1 1 230px',
-            maxWidth: { md: 320 },
-            '& .MuiOutlinedInput-root': { height: 40, borderRadius: '10px', bgcolor: 'rgba(255,255,255,0.76)' },
-            '& .MuiInputBase-input': { fontSize: '0.88rem' },
+            flex: '1 1 14rem',
+            maxWidth: { md: '20rem' },
+            '& .MuiOutlinedInput-root': { height: { xs: '2.75rem', md: '2.5rem' }, borderRadius: '0.5rem', bgcolor: 'rgba(255,255,255,0.9)' },
+            '& .MuiInputBase-input': { fontSize: { xs: '1.05rem', md: '0.9375rem' } },
           }}
           InputProps={{
-            startAdornment: <InputAdornment position="start"><SearchIcon sx={{ color: '#152F57', fontSize: 18 }} /></InputAdornment>,
+            startAdornment: <InputAdornment position="start"><SearchIcon sx={{ color: '#42526B', fontSize: 18 }} /></InputAdornment>,
             endAdornment: draftFilters.search ? (
               <InputAdornment position="end">
                 <IconButton size="small" aria-label="Очистить поиск" onClick={() => setDraftFilter('search', '')} edge="end">
-                  <CloseIcon sx={{ fontSize: 15 }} />
+                  <CloseIcon sx={{ fontSize: 16 }} />
                 </IconButton>
               </InputAdornment>
             ) : undefined,
@@ -671,6 +768,7 @@ const BondMarketFilters: React.FC = () => {
 
         {FILTER_BUTTONS.map((filter) => {
           const isOpen = openFilter?.id === filter.id;
+          const isQuick = QUICK_FILTER_IDS.includes(filter.id);
           return (
             <Button
               key={filter.id}
@@ -683,89 +781,73 @@ const BondMarketFilters: React.FC = () => {
               aria-haspopup="dialog"
               aria-expanded={isOpen}
               aria-controls={isOpen ? `bond-filter-popover-${filter.id}` : undefined}
-              sx={{
-                minHeight: 34,
-                px: { xs: 0.75, sm: 0.9 },
-                borderRadius: '10px',
-                borderColor: isOpen ? '#287AF3' : 'rgba(134,164,205,0.28)',
-                bgcolor: isOpen ? 'rgba(225,239,255,0.95)' : 'rgba(255,255,255,0.76)',
-                color: isOpen ? '#075DD1' : '#18345D',
-                fontSize: '0.84rem',
-                fontWeight: 500,
-                whiteSpace: 'nowrap',
-                boxShadow: isOpen ? '0 0 0 2px rgba(40,122,243,0.12)' : '0 2px 5px rgba(64,98,149,0.04)',
-                '&:hover': { borderColor: '#5A9BFA', bgcolor: 'rgba(239,246,255,0.96)' },
-                '& .MuiButton-startIcon': { mr: 0.55, '& svg': { fontSize: 16 } },
-                '& .MuiButton-endIcon': { ml: 0.35, '& svg': { fontSize: 15 } },
-              }}
+              sx={{ ...triggerSx(isOpen), display: isQuick ? 'inline-flex' : { xs: 'none', md: 'inline-flex' } }}
             >
               {filter.label}
             </Button>
           );
         })}
+
+        <Button
+          data-bond-filter-trigger="true"
+          size="small"
+          variant="outlined"
+          startIcon={<TuneIcon />}
+          endIcon={allFiltersAnchor ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+          onClick={(event) => {
+            setOpenFilter(null);
+            setAllFiltersView(null);
+            setAllFiltersAnchor((current) => current ? null : event.currentTarget);
+          }}
+          aria-haspopup="dialog"
+          aria-expanded={Boolean(allFiltersAnchor)}
+          aria-controls={allFiltersAnchor ? 'bond-all-filters-popover' : undefined}
+          sx={{ ...triggerSx(Boolean(allFiltersAnchor) || hiddenActiveCount > 0), display: { xs: 'inline-flex', md: 'none' } }}
+        >
+          {hiddenActiveCount > 0 ? `Все фильтры · ${hiddenActiveCount}` : 'Все фильтры'}
+        </Button>
       </Box>
 
       {isDirty && (
-        <Box sx={{
-          position: 'absolute',
-          top: { xs: 8, sm: 10, md: 11 },
-          right: { xs: 8, sm: 10, md: 11 },
-          display: 'flex',
-          alignItems: 'center',
-          gap: 0.25,
-        }}>
-          <IconButton
+        <Stack direction="row" spacing={0.75} alignItems="center" sx={{ mt: 1, flexWrap: 'wrap' }}>
+          <Button
             size="small"
-            disableRipple
-            title="Применить фильтры"
-            aria-label="Применить фильтры"
+            variant="contained"
+            startIcon={<CheckIcon />}
             disabled={invalidRanges}
-            onClick={() => {
-              applyFilters();
-              closeAllPopovers();
-            }}
+            onClick={handleApply}
             sx={{
-              width: 30,
-              height: 34,
-              p: 0,
-              borderRadius: 0,
-              color: '#16864B',
-              bgcolor: 'transparent',
-              '&:hover': { bgcolor: 'transparent', '& svg': { transform: 'scale(1.08)' } },
-              '&:focus-visible': { outline: '2px solid rgba(22,134,75,0.45)', outlineOffset: 1 },
-              '&:disabled': { color: 'rgba(22,134,75,0.35)' },
-              '& svg': { transition: 'transform 120ms ease' },
+              minHeight: { xs: '2.75rem', md: '2.25rem' },
+              px: 1.5,
+              borderRadius: '0.5rem',
+              textTransform: 'none',
+              fontSize: { xs: '1rem', md: '0.875rem' },
+              boxShadow: 'none',
             }}
           >
-            <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="23" height="23" fill="none">
-              <path d="M4.5 12.5 9.4 17.2 19.5 6.8" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </IconButton>
-          <IconButton
+            Применить
+          </Button>
+          <Button
             size="small"
-            disableRipple
-            title="Сбросить фильтры"
-            aria-label="Сбросить фильтры"
+            variant="text"
             onClick={handleReset}
             sx={{
-              width: 30,
-              height: 34,
-              p: 0,
-              borderRadius: 0,
-              color: '#C63D45',
-              bgcolor: 'transparent',
-              '&:hover': { bgcolor: 'transparent', '& svg': { transform: 'scale(1.08)' } },
-              '&:focus-visible': { outline: '2px solid rgba(198,61,69,0.4)', outlineOffset: 1 },
-              '& svg': { transition: 'transform 120ms ease' },
+              minHeight: { xs: '2.75rem', md: '2.25rem' },
+              px: 1,
+              borderRadius: '0.5rem',
+              textTransform: 'none',
+              fontSize: { xs: '1rem', md: '0.875rem' },
+              color: '#B3261E',
+              '&:hover': { bgcolor: 'rgba(179,38,30,0.08)' },
             }}
           >
-            <ClearFiltersSvg />
-          </IconButton>
-        </Box>
+            Сбросить
+          </Button>
+        </Stack>
       )}
 
       {chips.length > 0 && (
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.8 }}>
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 0.75, mt: 1 }}>
           {chips.map((chip) => (
             <Chip
               key={chip.key}
@@ -774,14 +856,14 @@ const BondMarketFilters: React.FC = () => {
               onDelete={chip.onDelete}
               deleteIcon={<CloseIcon />}
               sx={{
-                height: 26,
-                pl: 0.25,
-                border: '1px solid rgba(67,139,235,0.22)',
-                bgcolor: 'rgba(194,222,255,0.76)',
-                color: '#0759C7',
-                fontSize: '0.82rem',
+                height: { xs: 34, md: 28 },
+                pl: 0.5,
+                border: '1px solid rgba(25,118,210,0.28)',
+                bgcolor: 'rgba(25,118,210,0.10)',
+                color: '#0F4C96',
+                fontSize: { xs: '0.9375rem', md: '0.875rem' },
                 fontWeight: 500,
-                '& .MuiChip-deleteIcon': { color: '#1769D5', fontSize: 16, '&:hover': { color: '#0A4DAA' } },
+                '& .MuiChip-deleteIcon': { color: '#0F4C96', fontSize: 18, '&:hover': { color: '#0A3A73' } },
               }}
             />
           ))}
@@ -793,16 +875,15 @@ const BondMarketFilters: React.FC = () => {
               aria-label="Очистить все фильтры"
               onClick={handleReset}
               sx={{
-                width: 30,
-                height: 26,
+                width: { xs: 34, md: 30 },
+                height: { xs: 34, md: 28 },
                 p: 0,
                 ml: 'auto',
-                borderRadius: 0,
-                color: '#C63D45',
+                borderRadius: '0.5rem',
+                color: '#B3261E',
                 bgcolor: 'transparent',
-                '&:hover': { bgcolor: 'transparent', '& svg': { transform: 'scale(1.08)' } },
-                '&:focus-visible': { outline: '2px solid rgba(198,61,69,0.4)', outlineOffset: 1 },
-                '& svg': { transition: 'transform 120ms ease' },
+                '&:hover': { bgcolor: 'rgba(179,38,30,0.08)' },
+                '&:focus-visible': { outline: '2px solid rgba(179,38,30,0.45)', outlineOffset: 1 },
               }}
             >
               <ClearFiltersSvg />
@@ -812,7 +893,7 @@ const BondMarketFilters: React.FC = () => {
       )}
 
       {invalidRanges && (
-        <Typography role="alert" sx={{ mt: 0.6, fontSize: '0.8rem', color: '#C62828' }}>
+        <Typography role="alert" sx={{ mt: 0.75, fontSize: { xs: '0.9375rem', md: '0.875rem' }, color: '#B3261E' }}>
           Проверьте границы диапазона и даты погашения.
         </Typography>
       )}
@@ -833,7 +914,7 @@ const BondMarketFilters: React.FC = () => {
             ]}
             sx={{ zIndex: 1400 }}
           >
-            <Box sx={{ mt: 0.5, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.94)', borderRadius: '15px', bgcolor: 'rgba(255,255,255,0.96)', boxShadow: '0 12px 30px rgba(40,70,120,0.17)', backdropFilter: 'blur(22px)' }}>
+            <Box sx={{ mt: 0.5, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.94)', borderRadius: '0.75rem', bgcolor: 'rgba(255,255,255,0.97)', boxShadow: '0 12px 30px rgba(40,70,120,0.17)', backdropFilter: 'blur(22px)' }}>
               <Box id={`bond-filter-popover-${id}`} role="dialog" aria-label={filter.label} data-bond-filter-popover="true">
                 {renderPopoverContent(id)}
               </Box>
@@ -841,6 +922,116 @@ const BondMarketFilters: React.FC = () => {
           </Popper>
         );
       })()}
+
+      {allFiltersAnchor && (
+        <Popper
+          open
+          anchorEl={allFiltersAnchor}
+          placement="bottom-start"
+          modifiers={[
+            { name: 'flip', options: { fallbackPlacements: ['bottom-end', 'top-start', 'top-end'] } },
+            { name: 'preventOverflow', options: { padding: 12 } },
+          ]}
+          sx={{ zIndex: 1400 }}
+        >
+          <Box sx={{ mt: 0.5, width: { xs: 'min(20rem, calc(100vw - 1.5rem))', sm: '21rem' }, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.94)', borderRadius: '0.75rem', bgcolor: 'rgba(255,255,255,0.97)', boxShadow: '0 12px 30px rgba(40,70,120,0.17)', backdropFilter: 'blur(22px)' }}>
+            <Box id="bond-all-filters-popover" role="dialog" aria-label="Все фильтры" data-bond-filter-popover="true" sx={{ p: 1 }}>
+              {allFiltersView === null ? (
+                <>
+                  <Typography sx={{ px: 1, pt: 0.5, pb: 0.75, fontSize: '1.0625rem', fontWeight: 600, color: '#10264A' }}>
+                    Все фильтры
+                  </Typography>
+                  <Stack spacing={0.25}>
+                    {SECONDARY_FILTERS.map((filter) => {
+                      const isActive = hiddenFilterActive(filter.id);
+                      return (
+                        <Button
+                          key={filter.id}
+                          fullWidth
+                          onClick={() => setAllFiltersView(filter.id)}
+                          startIcon={filter.icon}
+                          endIcon={<ChevronRightIcon />}
+                          sx={{
+                            justifyContent: 'flex-start',
+                            minHeight: 44,
+                            px: 1,
+                            borderRadius: '0.5rem',
+                            color: isActive ? 'primary.dark' : '#10264A',
+                            bgcolor: isActive ? 'rgba(25,118,210,0.08)' : 'transparent',
+                            fontSize: '1rem',
+                            fontWeight: isActive ? 600 : 500,
+                            textTransform: 'none',
+                            '& .MuiButton-endIcon': { ml: 'auto' },
+                          }}
+                        >
+                          {filter.label}
+                        </Button>
+                      );
+                    })}
+                  </Stack>
+                  {isDirty && (
+                    <Stack direction="row" spacing={0.75} sx={{ mt: 1 }}>
+                      <Button
+                        fullWidth
+                        size="small"
+                        variant="contained"
+                        startIcon={<CheckIcon />}
+                        disabled={invalidRanges}
+                        onClick={handleApply}
+                        sx={{ minHeight: 44, borderRadius: '0.5rem', textTransform: 'none', fontSize: '1rem', boxShadow: 'none' }}
+                      >
+                        Применить
+                      </Button>
+                      <Button
+                        size="small"
+                        variant="text"
+                        onClick={handleReset}
+                        sx={{ minHeight: 44, borderRadius: '0.5rem', textTransform: 'none', fontSize: '1rem', color: '#B3261E' }}
+                      >
+                        Сбросить
+                      </Button>
+                    </Stack>
+                  )}
+                </>
+              ) : (
+                <>
+                  <Button
+                    onClick={() => setAllFiltersView(null)}
+                    startIcon={<ArrowBackIcon />}
+                    sx={{ justifyContent: 'flex-start', minHeight: 40, px: 0.75, mb: 0.5, borderRadius: '0.5rem', color: '#42526B', fontSize: '0.9375rem', textTransform: 'none' }}
+                  >
+                    Все фильтры
+                  </Button>
+                  {renderPopoverContent(allFiltersView, true)}
+                  {isDirty && (
+                    <Stack direction="row" spacing={0.75} sx={{ px: 1.5, pb: 1.5 }}>
+                      <Button
+                        fullWidth
+                        size="small"
+                        variant="contained"
+                        startIcon={<CheckIcon />}
+                        disabled={invalidRanges}
+                        onClick={handleApply}
+                        sx={{ minHeight: 44, borderRadius: '0.5rem', textTransform: 'none', fontSize: '1rem', boxShadow: 'none' }}
+                      >
+                        Применить
+                      </Button>
+                      <Button
+                        size="small"
+                        variant="text"
+                        onClick={handleReset}
+                        sx={{ minHeight: 44, borderRadius: '0.5rem', textTransform: 'none', fontSize: '1rem', color: '#B3261E' }}
+                      >
+                        Сбросить
+                      </Button>
+                    </Stack>
+                  )}
+                </>
+              )}
+            </Box>
+          </Box>
+        </Popper>
+      )}
       </Box>
     </ClickAwayListener>
   );
