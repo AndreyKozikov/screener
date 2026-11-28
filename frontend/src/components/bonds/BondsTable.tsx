@@ -1,7 +1,7 @@
 import { useLocation, useNavigate } from 'react-router-dom';
 import React, { useEffect, useMemo, useCallback, useState, useRef } from 'react';
 import { AgGridReact } from 'ag-grid-react';
-import type { ColDef, RowClickedEvent, CellClickedEvent, ICellRendererParams, IHeaderParams } from 'ag-grid-community';
+import type { ColDef, GridSizeChangedEvent, RowClickedEvent, CellClickedEvent, ICellRendererParams, IHeaderParams } from 'ag-grid-community';
 import { themeQuartz } from 'ag-grid-community';
 import './ag-grid-tooltips.css';
 import { Box, Card, CardContent, Menu, MenuItem, Tooltip, IconButton, Typography, useMediaQuery } from '@mui/material';
@@ -276,6 +276,9 @@ export const BondsTable: React.FC = () => {
   const [priceHistoryError, setPriceHistoryError] = useState<string | null>(null);
   const [priceHistorySecid, setPriceHistorySecid] = useState('');
   const [priceHistoryBondName, setPriceHistoryBondName] = useState('');
+
+  /** Таймер пересчёта ширины колонок после изменения размеров сетки */
+  const fitWidthTimerRef = useRef<number | undefined>(undefined);
 
   // Load field descriptions
   useEffect(() => {
@@ -1106,6 +1109,18 @@ export const BondsTable: React.FC = () => {
     }
   }, []);
 
+  // Держим колонки растянутыми на всю доступную ширину сетки при изменении контейнера
+  const onGridSizeChanged = useCallback((params: GridSizeChangedEvent) => {
+    window.clearTimeout(fitWidthTimerRef.current);
+    fitWidthTimerRef.current = window.setTimeout(() => {
+      if (!params.api.isDestroyed()) {
+        params.api.sizeColumnsToFit();
+      }
+    }, 50);
+  }, []);
+
+  useEffect(() => () => window.clearTimeout(fitWidthTimerRef.current), []);
+
   // Filter bonds by search query
   const filteredBonds = useMemo(() => {
     if (!filters.search || filters.search.trim() === '') {
@@ -1419,6 +1434,7 @@ export const BondsTable: React.FC = () => {
             onRowClicked={onRowClicked}
             onCellClicked={onCellClicked}
             onFirstDataRendered={onFirstDataRendered}
+            onGridSizeChanged={onGridSizeChanged}
             animateRows={true}
             pagination={true}
             paginationPageSize={100}
