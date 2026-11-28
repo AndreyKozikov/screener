@@ -73,7 +73,9 @@ export function BlogPage({ slug, onSelect }: BlogPageProps) {
   return (
     <Box sx={{
       width: '100%',
-      maxWidth: slug ? '48rem' : '85rem',
+      maxWidth: slug
+        ? { xs: '100%', sm: '48rem', md: '60rem', lg: '72rem', xl: '75rem' }
+        : '85rem',
       mx: 'auto',
       px: { xs: 2, md: 3 },
       pb: { xs: 4, md: 6 },
@@ -116,8 +118,7 @@ export function BlogPage({ slug, onSelect }: BlogPageProps) {
           {showCover && cover && (
             <Box sx={{
               width: '100%',
-              aspectRatio: { xs: '4 / 3', sm: '16 / 9' },
-              maxHeight: { xs: '45svh', md: '28rem' },
+              aspectRatio: { xs: '4 / 3', sm: '16 / 9', lg: '21 / 9' },
               bgcolor: 'grey.100',
               overflow: 'hidden',
             }}>
